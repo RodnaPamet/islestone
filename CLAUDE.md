@@ -8,7 +8,7 @@ Read [docs/ROADMAP.md](docs/ROADMAP.md) (phases, the global preamble in section 
 
 ## Current state
 
-Sub-phase 1.1, the repository skeleton. What exists: a Next.js 16 App Router app with a placeholder home page and `/api/livez` and `/api/readyz`; the two env modules; Jest, Playwright, ESLint and CI; a local Postgres, PgBouncer and Redis stack. What does not exist yet: a database schema, auth, permissions, usecases, policies, repositories, the audit log, jobs, the shared UI. Do not write code or docs that assume they do.
+Sub-phase 1.1, the repository skeleton. What exists: a Next.js 16 App Router app with a placeholder home page and `/api/livez` and `/api/readyz`; the two env modules; baseline security headers on every response (`src/lib/security-headers.ts`, wired in `next.config.ts`; a Content-Security-Policy with `script-src` needs per-request nonces and belongs to the security perimeter, sub-phase 1.5); Jest, Playwright, ESLint and CI; a local Postgres, PgBouncer and Redis stack. What does not exist yet: a database schema, auth, permissions, usecases, policies, repositories, the audit log, jobs, the shared UI. Do not write code or docs that assume they do.
 
 ## Commands
 
@@ -17,7 +17,7 @@ npm run dev             # Next.js dev server (needs .env.local; copy .env.exampl
 npm run build           # production build; SKIP_ENV_VALIDATION=1 builds without an env
 npm run start           # serve the build
 npm run lint            # eslint . --max-warnings=0
-npm run typecheck       # next typegen && tsc --noEmit (needs a valid env or SKIP_ENV_VALIDATION=1)
+npm run typecheck       # next typegen (env validation off, scripts/next-typegen.mjs) && tsc --noEmit; needs no env
 npm test                # Jest, both projects
 npm run test:unit       # Jest node project (tests/unit, tests/guards)
 npm run test:rendered   # Jest jsdom project (tests/rendered)
@@ -30,9 +30,10 @@ docker compose up -d    # local Postgres (pgvector), PgBouncer, Redis
 
 ## Rules that apply now
 
-- **Two env modules.** Server variables live in `src/env.ts`; `NEXT_PUBLIC_` variables live in `src/env-client.ts`. Code a `'use client'` file can reach, directly or through any chain of imports, imports `@/env-client` only. `tests/guards/client-env-boundary.test.ts` walks the import graph from every `'use client'` file and fails, naming the chain, if `src/env.ts` is reachable. It has no allowlist. Import them as `@/env` / `@/env-client`, never by a relative path (lint enforces it). No raw `process.env` reads in `src/` outside the env modules: add the variable to the right module and to `.env.example`.
+- **Two env modules.** Server variables live in `src/env.ts`; `NEXT_PUBLIC_` variables live in `src/env-client.ts`. Code a `'use client'` file can reach, directly or through any chain of imports, imports `@/env-client` only. `tests/guards/client-env-boundary.test.ts` walks the import graph from every file Next.js ships to the browser (`'use client'` files, `instrumentation-client.*`, Pages Router files) and fails, naming the chain, if `src/env.ts` is reachable. It has no allowlist. It cannot follow an import of this repository's own workspace packages yet, so it fails on one from client code; sub-phase 1.2 teaches it to resolve them. Import them as `@/env` / `@/env-client`, never by a relative path (lint enforces it). No raw `process.env` reads in `src/` outside the env modules: add the variable to the right module and to `.env.example`.
 - **Lint rules in `src/`:** no `console` (logging arrives with the observability layer in 1.6), no explicit `any`. Type-only imports say `import type`.
 - **Exact versions.** `.npmrc` sets `save-exact`; every dependency in `package.json` is pinned.
+- **No AGENTS.md.** `next.config.ts` sets `agentRules: false`, so `next dev` in an agent session does not write one. Agents read this file.
 - **Tests ship with behaviour** and must fail when that behaviour regresses. A failing test is fixed, not bypassed.
 
 ## Rules for layers that do not exist yet
@@ -63,12 +64,13 @@ Sub-phase 0.3's intake policy. Read the files below before adding a dependency o
 
 - **[`PROVENANCE.md`](PROVENANCE.md)** records everything taken from elsewhere, including patterns learned by reading (write "pattern only, no code copied"). Add the row in the same pull request as the code. A roadmap port candidate is listed there as UNPINNED: before first use, re-read its LICENSE at the commit you use, pin that commit, and move the row to Adopted (H0). Copied code that needs an attribution also goes in [`NOTICE`](NOTICE).
 - **`scripts/licence-gate.mjs`** (`npm run licence:check`, CI job `Licence`) fails on:
-  - a production dependency whose licence is not on its allowlist;
-  - an import from an `ee` folder or a deny-listed package anywhere in `src/`, `packages/`, `scripts/` or a root-level source file.
+  - a production dependency whose licence is not on its allowlist (roadmap 0.3's list exactly). Production is walked from the `package.json` files on disk, which must agree with the lockfile, and includes any devDependency that code which can ship imports;
+  - an import from an `ee` folder or a deny-listed package in any git-listed source file (JavaScript, TypeScript, CSS, MDX), except the gate's own fixtures;
+  - code that can ship importing a `DEV_ONLY_PATHS` path (tests, dev-tool configuration), and a file the scanner cannot read to the end.
 
-  The policy and its reasons are at the top of the script. Never widen `ALLOWED_LICENCES`, `DATA_ONLY_LICENCES` or `DENIED_PACKAGES` to make a build pass: that is an owner decision.
-- **`scripts/licence-exemptions.json`** is the only way past the allowlist. Each entry needs `licence` (SPDX; `LicenseRef-…` for a proprietary licence), `reason` (the evidence) and `adr` (an existing `docs/adr/` file). Pin `version` when the evidence was read at one version. An exemption stops applying when the package's declared licence changes, and the gate fails on a stale or unneeded entry. Delete an entry when its package leaves the tree. The README's "Third-party code and licences" section shows the planned tldraw entry; it is not live.
-- **Tests:** `tests/unit/licence-gate.test.ts` uses fixtures in `tests/fixtures/licence-gate/`. Those fixtures break the policy on purpose, so the gate's scan, `tsconfig.json` and `eslint.config.mjs` all leave `tests/fixtures/` out.
+  The policy and its reasons are at the top of the script. Never widen `ALLOWED_LICENCES` or `ALLOWED_EXCEPTIONS`, shrink `DENIED_PACKAGES`, or add to `DEV_ONLY_PATHS` to make a build pass: that is an owner decision, recorded in ADR 0007.
+- **`scripts/licence-exemptions.json`** is the only way past the allowlist. Each entry needs `licence` (SPDX; `LicenseRef-…` for a proprietary licence), `reason` (the evidence) and `adr` (an existing `docs/adr/` file that names the package). Pin `version` when the evidence was read at one version; it is required when the package's declaration is not SPDX (`SEE LICENSE IN`, `UNLICENSED`, missing). An exemption stops applying when the package's declared licence changes, and the gate fails on a stale or unneeded entry. Delete an entry when its package leaves the tree. The README's "Third-party code and licences" section shows the planned tldraw entry (the owner chose tldraw 3.x on 2026-11-18); it is not live.
+- **Tests:** `tests/unit/licence-gate.test.ts` uses fixtures in `tests/fixtures/licence-gate/`. Those fixtures break the policy on purpose, so the gate's scan leaves `tests/fixtures/licence-gate/` out, and `tsconfig.json` and `eslint.config.mjs` leave `tests/fixtures/` out.
 
 ## Test conventions
 

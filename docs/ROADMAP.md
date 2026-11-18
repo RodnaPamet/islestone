@@ -60,7 +60,7 @@ Five ideas worth taking from the field:
 | Calendar | inflect-compliance calendar surface; FullCalendar MIT core if more is needed | Resource timelines are premium |
 | Scheduling | In-house critical path and Monte Carlo; Timefold Community (Apache-2.0, JVM sidecar) later | No credible JavaScript critical-path library exists |
 | Workflow | BullMQ flows (already used) plus React Flow (MIT) for a visual builder | |
-| Search | Postgres full-text search plus pgvector | Row-level security applies for free |
+| Search | Postgres full-text search plus pgvector | Row-level security applies for free. Encrypted fields (descriptions, comment bodies) need the search decision in ADR 0002 section 11 |
 | Tables | TanStack Table (already used) | Univer (Apache-2.0) if formulas are needed |
 | Charts | visx charts already in `@inflect/ui` | |
 | Integrations | Vendor SDKs: `octokit`, `@gitbeaker/rest`, `jira.js`, `@linear/sdk`, `asana`, `trello.js` | No good open-source importer library exists; write mappers |
@@ -192,7 +192,7 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 - **Prompt:** "Add an intake stage: public and internal forms built with react-hook-form, an inbound email address per project, and a triage inbox where an item is accepted, declined, merged into a duplicate or snoozed before it reaches the backlog. Rate-limit and sanitise every public entry point."
 
 #### 2.7 Search, inbox and My Work (M)
-- **Prompt:** "Add Postgres full-text search over items and comments with a tenant-leading index, a notification inbox with per-event preferences and digests, mentions, and a My Work page (assigned, created, watching, due soon). Search lives inside the filter popover and the command palette."
+- **Prompt:** "Add Postgres full-text search over items and comments with a tenant-leading index, searching encrypted description and comment bodies only as the search ADR called for by ADR 0002 section 11 decides, a notification inbox with per-event preferences and digests, mentions, and a My Work page (assigned, created, watching, due soon). Search lives inside the filter popover and the command palette."
 
 **Hardening H2.**
 - Performance: seeded tenants at 10,000 and 100,000 items; list, board and search stay under an agreed response budget; no query in a loop; every list query has a backing index (port the index and query-shape guardrails).

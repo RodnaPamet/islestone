@@ -2,7 +2,7 @@
 
 Islestone is an AI-enabled project-management SaaS: one work-item table with many views, planning and forecasting computed in code, and agents that work as delegates of accountable people, writing only through proposals a person approves.
 
-**Status:** repository skeleton (roadmap sub-phase 1.1). There is no product yet: a placeholder home page, health endpoints, the env modules, the test and CI tooling, and a local service stack. What gets built, in which order, and the gate that closes each phase are in [docs/ROADMAP.md](docs/ROADMAP.md). Decisions are recorded in [docs/adr/](docs/adr/).
+**Status:** repository skeleton (roadmap sub-phase 1.1). There is no product yet: a placeholder home page, health endpoints, the env modules, the test and CI tooling, and a local service stack. What gets built, in which order, and the gate that closes each phase are in [docs/ROADMAP.md](docs/ROADMAP.md). Architecture decisions are proposed in [docs/adr/](docs/adr/) ([index](docs/adr/README.md)); every one of them still awaits the owner's sign-off. The owner decisions taken on 2026-11-18 are recorded in [docs/HANDOFF.md](docs/HANDOFF.md) until ADR 0001 records them.
 
 ## Prerequisites
 
@@ -19,7 +19,7 @@ docker compose up -d         # optional for now
 npm run dev                  # http://localhost:3000
 ```
 
-`next dev`, `next build` and `next start` validate the environment through `next.config.ts` and refuse to start with an invalid one. Set `SKIP_ENV_VALIDATION=1` to skip that (CI's build does).
+`next dev`, `next build` and `next start` validate the environment through `next.config.ts` and refuse to start with an invalid one. Set `SKIP_ENV_VALIDATION=1` to skip that (CI's build does). `npm run typecheck`, and so `npm run verify`, need no environment: a type check reads no runtime value, so `scripts/next-typegen.mjs` runs `next typegen` with validation off.
 
 ## Commands
 
@@ -29,7 +29,7 @@ npm run dev                  # http://localhost:3000
 | `npm run build` | Production build |
 | `npm run start` | Serve the production build |
 | `npm run lint` | ESLint, zero warnings allowed |
-| `npm run typecheck` | `next typegen`, then `tsc --noEmit` |
+| `npm run typecheck` | `next typegen` with env validation off (`scripts/next-typegen.mjs`), then `tsc --noEmit`; needs no `.env.local` |
 | `npm test` | Jest, both projects |
 | `npm run test:unit` | Jest `node` project: `tests/unit`, `tests/guards` |
 | `npm run test:rendered` | Jest `jsdom` project: `tests/rendered` |
@@ -50,10 +50,11 @@ Roadmap sub-phase 0.3 sets the intake policy. Three files hold it:
 - [`PROVENANCE.md`](PROVENANCE.md) records everything taken from another project: source, commit, licence and changes. It also lists the roadmap's port candidates, each unpinned until first use.
 - [`NOTICE`](NOTICE) carries the attributions that copied code requires. There are none yet.
 - `scripts/licence-gate.mjs` (`npm run licence:check`, and the `Licence` job in CI) fails the build when:
-  - a **production** dependency's licence is not on the allowlist. The allowlist is MIT, MIT-0, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, BlueOak-1.0.0, CC0-1.0, Unlicense, Python-2.0, PostgreSQL, and MPL-2.0 for unmodified use only. CC-BY-4.0 is allowed only for named data-only packages, such as caniuse-lite.
-  - a source file under `src/`, `packages/` or `scripts/`, or at the root, imports from an `ee` folder or from a deny-listed package (n8n, windmill, @liveblocks/server, hyperformula, handsontable, planby, @blocknote/xl-*).
+  - a **production** dependency's licence is not on the allowlist. The allowlist is roadmap 0.3's: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, PostgreSQL, and MPL-2.0 for unmodified use only. `L WITH X` passes only when `X` is an SPDX exception that adds permissions ("MIT WITH Commons-Clause" fails). Widening the list is an owner decision, recorded in [ADR 0007](docs/adr/0007-third-party-licence-exceptions.md).
+  - any source file in the repository, except the gate's own test fixtures, imports from an `ee` folder (or n8n's `.ee.` files) or from a deny-listed package: n8n and its `n8n-*` and `@n8n/*` libraries, windmill-components, task-master-ai, @liveblocks/server, hyperformula, handsontable and `@handsontable/*`, planby, `@blocknote/xl-*`. The scan reads JavaScript, TypeScript, stylesheets and MDX, decodes escapes, and follows `#` imports and tsconfig aliases.
+  - code that can ship imports test code, or the scanner cannot read a file to the end.
 
-The policy is written out at the top of the script. Dev-only dependencies are not checked. `SEE LICENSE IN …`, `UNLICENSED` and missing licences fail until a person reads the licence and records an exemption.
+The policy is written out at the top of the script. The production tree is walked from the `package.json` files on disk, which must agree with the lockfile (`npm-shrinkwrap.json` when present, as npm prefers it). Dev-only dependencies are not checked, unless code that can ship imports them: Next.js bundles those just the same. `SEE LICENSE IN …`, `UNLICENSED` and missing licences fail until a person reads the licence and records an exemption.
 
 ### Exemptions
 
@@ -61,26 +62,27 @@ The policy is written out at the top of the script. Dev-only dependencies are no
 
 - `licence`: the licence a person verified, as an SPDX expression. A proprietary licence uses a `LicenseRef-` identifier.
 - `reason`: the evidence and the justification.
-- `adr`: the decision record, which must exist.
-- `version`: optional. When given, the exemption covers only that version.
+- `adr`: the decision record, which must exist and must name the package.
+- `version`: when given, the exemption covers only that version. It is required when the package's declaration is not an SPDX expression (`SEE LICENSE IN …`, `UNLICENSED`, missing), because there is then nothing else to bind the entry to.
 
 An exemption applies only while the package still declares the licence it was granted for. The gate reports an exemption that is stale (the package has left the tree) or not needed (the licence is already allowed). An exemption cannot lift a deny-listed package.
 
-Today the file exempts the 14 `@img/sharp-*` packages: prebuilt libvips binaries under LGPL-3.0-or-later, which `next` installs through its optional `sharp` dependency for image optimisation. Each one names the version whose README and integrity hash were checked.
+Today the file holds 16 exemptions, all proposed in [ADR 0007](docs/adr/0007-third-party-licence-exceptions.md) for the owner to decide, and all reached through `next`:
 
-**Planned, not live: a tldraw exception.** ADR 0001 decision D3 picks the canvas library. If it chooses tldraw, both `tldraw` and `@tldraw/editor` declare `SEE LICENSE IN LICENSE.md`, so each needs an entry like the one below. This example is not in the exemptions file, because tldraw is not installed, and the gate would report the entry as stale:
+- the 14 `@img/sharp-*` packages: prebuilt libvips binaries under LGPL-3.0-or-later, which `next` installs through its optional `sharp` dependency for image optimisation. Each names the version whose README and integrity hash were checked.
+- `tslib` (0BSD) and `caniuse-lite` (CC-BY-4.0, a browser-support database). Each is bound to its declared licence rather than to a version.
+
+**Planned, not live: a tldraw exception.** On 2026-11-18 the owner chose option 3a of ADR 0001 decision D3: tldraw 3.x with the watermark ([docs/HANDOFF.md](docs/HANDOFF.md); ADR 0001 does not record it yet, and recommended against 3a). Both `tldraw` and `@tldraw/editor` declare `SEE LICENSE IN LICENSE.md`, so each needs an entry like the one below once it is installed, with `version` pinned. This example is not in the exemptions file, because tldraw is not installed, and the gate would report the entry as stale:
 
 ```json
 "tldraw": {
   "licence": "LicenseRef-tldraw-3",
   "version": "3.15.6",
-  "reason": "tldraw licence at tag v3.15.6 (sha256 a051565874fd424cc9c19049d425ead719b9b7cf214546f31a368b4a3822755d): production use allowed with the watermark visible and unaltered. Chosen as option 3a of ADR 0001 decision D3.",
+  "reason": "tldraw licence at tag v3.15.6 (sha256 a051565874fd424cc9c19049d425ead719b9b7cf214546f31a368b4a3822755d): production use allowed with the watermark visible and unaltered. Owner decision of 2026-11-18: option 3a of ADR 0001 decision D3.",
   "adr": "docs/adr/0001-code-provenance-and-licences.md"
 }
 ```
 
-Under a paid key (option 3b), the `licence` becomes the commercial licence's reference, and the `reason` records the key's term and renewal date. Under Excalidraw (option 3c), no exemption is needed if its dependency tree passes.
-
 ## Licence
 
-Not chosen yet. Islestone's own licence is an open owner decision (roadmap 0.1), so `package.json` says `"license": "UNLICENSED"`: no licence is granted. Code from inflect-compliance (BUSL-1.1) is not copied into this repository until ADR 0001 records the written grant.
+BUSL-1.1, by the owner's decision of 2026-11-18: see [`LICENSE`](LICENSE) and [`LICENSING.md`](LICENSING.md). The same day the owner allowed code to be copied from inflect-compliance, with every copied file recorded in `PROVENANCE.md`. ADR 0001 still lists both decisions as open, and `package.json` still says `"license": "UNLICENSED"`; [docs/HANDOFF.md](docs/HANDOFF.md) lists those updates as its next step.
