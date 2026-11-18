@@ -42,6 +42,16 @@ count includes 270 Nucleo icons whose notice forbids use outside the product the
 with. The engines (tasks, automation, agentic, MCP, canvas) show no overlap. The owner
 accepted the risk (decision 4). `NOTICE` and ADR 0001 must still say so: next step 2.
 
+## Branches
+
+- `main` was created at `449fb38` (the roadmap only), on the owner's go-ahead.
+- Draft PR #1 (https://github.com/RodnaPamet/islestone/pull/1) merges
+  `claude/great-planck-57ljb4` into `main`, so CI runs. `ci.yml` runs only on pull
+  requests and on pushes to `main`, so CI has not run before PR #1.
+- The owner sets `main` as the default branch and protects it, requiring a pull request
+  and the CI checks.
+- Merge PR #1 only when its CI is green.
+
 ## What is on the branch
 
 `claude/great-planck-57ljb4`:
