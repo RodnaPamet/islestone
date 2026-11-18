@@ -665,9 +665,24 @@ test('core.autocrlf=true rewrites the copy on checkout; a root `packages/ui/** -
   assert.equal(kept.code, 0, kept.stdout);
 });
 
-test("the repository's own packages/ui matches its UPSTREAM.json", () => {
+test("the repository's own packages/ui matches its UPSTREAM.json", (t) => {
   // Read-only, against the real tree and the real environment. This is the
   // test that fails when somebody edits a file inside packages/ui.
+  const repo = path.resolve(path.dirname(SCRIPT), '..');
+  if (!fs.existsSync(path.join(repo, 'packages', 'ui'))) {
+    // Sub-phase 1.2 part A has not landed the package yet, so there is nothing
+    // to verify. The skip holds only while nothing in the repository expects
+    // the package: once git lists a file under packages/ui, or the lockfile
+    // records the workspace, a missing packages/ui is a failure, not a skip.
+    const gitEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+    const listed = execFileSync('git', ['ls-files', '--cached', '--', 'packages/ui'], { cwd: repo, env: gitEnv, encoding: 'utf8' });
+    assert.equal(listed, '', 'git lists files under packages/ui, but the directory is missing');
+    const lock = JSON.parse(fs.readFileSync(path.join(repo, 'package-lock.json'), 'utf8'));
+    assert.equal(lock.packages?.['packages/ui'], undefined, 'package-lock.json records the packages/ui workspace, but the directory is missing');
+    assert.equal(lock.packages?.['node_modules/@inflect/ui'], undefined, 'package-lock.json links @inflect/ui, but packages/ui is missing');
+    t.skip('packages/ui is not in the tree yet (sub-phase 1.2 part A adds it)');
+    return;
+  }
   const res = run(['verify', '--json'], { env: process.env });
   assert.equal(res.code, 0, res.stdout);
   assert.ok(res.json.counts.listed > 0);

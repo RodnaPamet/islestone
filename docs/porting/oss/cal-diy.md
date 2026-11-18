@@ -217,7 +217,7 @@ WorkingDateException   tenantId, scheduleId, date DATE, startMinute?, endMinute?
 TimeOff                tenantId, memberId, startsAt, endsAt, reasonCode, note (encrypted)?, coverMemberId?
 TimeZoneTravel         tenantId, memberId, timeZone, startDate DATE, endDate DATE?
 HolidaySetting         tenantId, memberId | teamId, countryCode, disabledHolidayIds[]   -- holiday data itself: section 9
-CalendarConnection     inflect-compliance's UserCalendarConnection (ADR 0001 D1 pending)
+CalendarConnection     inflect-compliance's UserCalendarConnection (copyable under ADR 0001 D1)
 CalendarSubscription   tenantId, connectionId, externalCalendarId, channelId (unique), channelSecretHash,
                        resourceId?, expiresAt, renewAfter, syncCursor (encrypted), syncedAt?,
                        consecutiveErrors, lastErrorCode?, state (ACTIVE | NEEDS_FULL_SYNC | PAUSED | REVOKED)
@@ -411,7 +411,7 @@ A token is refreshed 5 seconds before expiry. An `expires_in` below the year-200
 | Sub-phase | What to take from Cal.diy (as patterns, re-implemented) | What Islestone adds |
 |---|---|---|
 | **3.1** Timeline and critical path ("working calendars and holidays") | Working weekdays, date exceptions, holidays and business-day addition (4.3, 4.9) as a pure working-day predicate and `addWorkingDays` | Islestone's dates are `@db.Date` (ADR 0002 `startDate`, `dueDate`), so the scheduler needs working DAYS, not minutes. Property tests across zones and DST (H3) can reuse the date-ranges and isOutOfBounds cases |
-| **3.3** Calendar | The adapter port with fetch modes (4.11); the subscription port and lifecycle (4.12); cursor-based incremental sync; renewal batch with error caps; own-event recognition and loop breaking (4.13); OAuth refresh and invalidation (4.15); Google's 90-day chunking; Graph `$batch` with `Retry-After` | Push side comes from inflect-compliance's connection, mapping and reconcile usecases (roadmap 3.3; BUSL, so ADR 0001 D1 first). Inbound matches by the stored remote event id, applies dates only, and runs through the usecase with a version check (5.4). Due dates are pushed as all-day events |
+| **3.3** Calendar | The adapter port with fetch modes (4.11); the subscription port and lifecycle (4.12); cursor-based incremental sync; renewal batch with error caps; own-event recognition and loop breaking (4.13); OAuth refresh and invalidation (4.15); Google's 90-day chunking; Graph `$batch` with `Retry-After` | Push side comes from inflect-compliance's connection, mapping and reconcile usecases (roadmap 3.3; BUSL-1.1, copyable under ADR 0001 D1). Inbound matches by the stored remote event id, applies dates only, and runs through the usecase with a version check (5.4). Due dates are pushed as all-day events |
 | **3.4** Time tracking | Period-start enumeration (`getPeriodStartDatesBetween`) for weekly timesheets | Week start per workspace |
 | **3.5** Workload and capacity | Schedules, weekly rules, overrides, time off, travel and holidays (4.1–4.3); interval algebra (4.4); per-period duration caps as the over-allocation test (4.6); team intersection (4.7) | Capacity = available minutes per member per week from 4.3 minus time off; allocation = estimates or planned hours; over-allocation = 4.6's duration rule, reported, never enforced ("read-only suggestions", roadmap 3.5) |
 | **2.5** Recurrence | Not this repository: Cal.diy only writes RRULE strings for recurring bookings. Use the Kaneo study | — |

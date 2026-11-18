@@ -181,6 +181,18 @@ One sync is one reviewed change that contains the new files and the new
 
 The other sub-phases need these facts, which the copy itself cannot provide.
 
+- **Licence records, in the same change as the copy** (ADR 0001):
+  - **The `@inflect/ui` licence-gate exemption.** The gate checks a workspace that
+    holds `UPSTREAM.json` like any dependency, not as Islestone's own code (ADR 0001,
+    Consequences), so without an entry in `scripts/licence-exemptions.json` for
+    `@inflect/ui` (`licence` `BUSL-1.1`, `adr`
+    `docs/adr/0001-code-provenance-and-licences.md`, which names the package) the
+    build fails.
+  - **`NOTICE`.** Dub's copyright and AGPL-3.0 statement and the Nucleo notice
+    (ADR 0001 D4, "What the decision requires").
+  - **`PROVENANCE.md`.** The rows drafted in `docs/porting/provenance-shared-ui.md`,
+    naming the Dub origin of the files the measurement links to Dub and the Nucleo
+    terms; one row per copied file unless the owner approves the grouping.
 - **Root `tsconfig.json`.** `packages/ui/tsconfig.json` extends `../../tsconfig.json`
   and resets only `baseUrl`, `paths`, `rootDir`, `include` and `exclude`. Everything
   else is inherited from Islestone's root config. inflect's values are `strict`,
@@ -334,5 +346,9 @@ inflect-compliance, which then arrives through a sync.
    - `examples.ts` holds compliance sample data.
    - The others are `bar-field-3d.tsx`, `chart-gloss.tsx`, `chart-gradient.tsx`,
      `index.ts`, `interaction.tsx` and `use-heat-scale.ts`.
-5. **Nucleo licence.** See `docs/porting/provenance-shared-ui.md`. This is the item
-   that blocks shipping, not just tidying.
+5. **Nucleo icons and Dub-derived files: accepted risk, ADR 0001 D4** (owner decision,
+   2026-11-18: "Copy as is, accept risk"). The package is copied as it is. Its
+   `PROVENANCE.md` rows name the Dub origin and the Nucleo terms
+   (`docs/porting/provenance-shared-ui.md`), and `NOTICE` names both from the change
+   that lands it. Removing the risk later is a change upstream (the finding's option
+   1), which then arrives through a sync.

@@ -22,7 +22,7 @@
     "test:e2e": "playwright test",
     "test:scripts": "node --test \"tests/unit/**/*.test.mjs\"",
     "licence:check": "node scripts/licence-gate.mjs",
-    "verify": "npm run lint && npm run typecheck && npm test && npm run licence:check"
+    "verify": "npm run lint && npm run typecheck && npm test && npm run test:scripts && npm run licence:check"
   },
   "dependencies": {
     "@t3-oss/env-nextjs": "0.13.11",

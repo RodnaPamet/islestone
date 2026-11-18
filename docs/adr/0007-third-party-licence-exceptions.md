@@ -57,7 +57,7 @@ Options:
   - The exemptions go. Images are then served without server-side resizing, so pages ship larger images unless a CDN resizes them.
   - The lockfile still lists the packages, so the gate needs a rule for "installed but removed from the image". That rule does not exist and would have to be written.
 
-**Decision: E1a.** Owner decision, 2026-11-18; the owner chose "Keep, exempt them". sharp stays in production for image optimisation. The 14 packages above are exempted, each pinned to the version that was read. The image built in sub-phase 1.8 carries the LGPL notice and leaves the library replaceable. This was the draft's recommendation: the obligations are small and well understood, and E1b costs a feature and a new gate rule.
+**Decision: E1a.** Owner decision, 2026-11-18; the owner chose "Keep, exempt them". sharp stays in production for image optimisation. The 14 packages above are exempted, each pinned to the version that was read. The image built in sub-phase 1.8 carries the LGPL notice and leaves the library replaceable, and `NOTICE` gains an entry for the libvips binaries in the same change. This was the draft's recommendation: the obligations are small and well understood, and E1b costs a feature and a new gate rule.
 
 ### E2 — tslib (0BSD)
 
@@ -100,7 +100,7 @@ The gate accepts `L WITH X` only when `L` is allowed and `X` is on `ALLOWED_EXCE
 - The gate accepts an exemption only when the ADR it cites exists, names the package, and has an Accepted status line. An exemption that cites a Proposed ADR fails the gate.
 - The LGPL entries are pinned to versions, so a `next` or `sharp` upgrade that moves them fails the gate until a person re-reads the new versions.
 - The `caniuse-lite` entry is bound to its declared licence. A licence change fails the gate; a version change does not.
-- Sub-phase 1.8 inherits two obligations from E1a: the LGPL notice in the image, and a replaceable library.
+- Sub-phase 1.8 inherits two obligations from E1a: the LGPL notice in the image, with a `NOTICE` entry in the same change, and a replaceable library.
 - Widening `ALLOWED_LICENCES` stays an amendment to this ADR, never a change made to get a build through.
 
 ## What would change this decision

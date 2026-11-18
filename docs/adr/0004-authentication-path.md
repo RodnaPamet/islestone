@@ -191,7 +191,7 @@ Ported later: API keys, in roadmap 5.2.
 Left out:
 
 - the legacy `JWT_SECRET` cookie (**Verified**: `src/env.ts` line 134; `docs/auth.md` line 145 marks it deprecated);
-- the parent's compliance and agent roles and gates. Roadmap 1.4 writes a new permission set; role names are ADR 0006's question;
+- the parent's compliance and agent roles and gates. Roadmap 1.4 writes a new permission set for the roles ADR 0006 records as decided (owner decisions, 2026-11-18): Owner, Admin, Member, Viewer and Guest, in that order, with Viewer as the fallback;
 - the Entra group-to-role mapping (`src/lib/auth/entra-group-*.ts`). It is not in 1.4's list. Decide when 8.3 starts.
 
 Every ported file gets its `PROVENANCE.md` entry and takes Islestone's names (ADR 0006).
@@ -199,7 +199,7 @@ Every ported file gets its `PROVENANCE.md` entry and takes Islestone's names (AD
 ### A3 — Pin and seam (applies under A; the seam also under B)
 
 - Pin `next-auth` at `4.24.15` and `@next-auth/prisma-adapter` at `1.0.7`, exact. Islestone's `.npmrc` already saves exact versions.
-- Add a guard that fails if either package leaves v4 or takes a pre-release. The parent has such a guard (`tests/guardrails/auth-stack-pinning.test.ts`); write Islestone's fresh, pattern only.
+- Add a guard that fails if either package leaves v4 or takes a pre-release. The parent has such a guard (`tests/guardrails/auth-stack-pinning.test.ts`). ADR 0001 D1 (owner decision, 2026-11-18) allows copying it and editing it for Islestone (COPY+EDIT), with its `PROVENANCE.md` row; the 1.4 porting map lists its edits.
 - Treat a `next-auth` version bump as a significant change (the change-management document arrives in roadmap 1.8). Review it against the contract below.
 - **Recommendation: one seam.** Only the modules under one folder (for example `src/lib/auth/provider/`) import `next-auth` or `better-auth`. Everything else, the edge gate included, calls Islestone's own functions. Enforce it with a lint rule. The parent did not do this: about fifteen server components import its `auth()` shim (`src/auth.ts` lines 14–19). The seam is what makes a later move a bounded change.
 
@@ -289,7 +289,7 @@ Data and cookies:
   - the single seam is a lint rule from the first auth commit;
   - the libraries pass the 0.3 licence allowlist as they stand.
 - Roadmap 9.3's move happens when a trigger fires, not on a date.
-- The permission set and role names in 1.4 are separate decisions (roadmap 1.4; ADR 0006).
+- The permission set in 1.4 is a separate decision (roadmap 1.4). The role names, their order, the Viewer fallback and the public sign-up switch are decided in ADR 0006 (owner decisions, 2026-11-18).
 
 ## What would change this decision
 

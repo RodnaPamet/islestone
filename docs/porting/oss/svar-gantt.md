@@ -318,7 +318,7 @@ Facts from SVAR's PRO tests that are worth matching or deciding against (behavio
 - **SVAR PRO** (commercial; not in the public repositories): do not install a trial build or a PRO package without an ADR and a licence exemption. Do not try to re-enable PRO options by patching `isCommunity()`: the code behind them is not there, and it would only produce empty stubs.
 - **The vendor's Next.js demo** (`react-gantt-demo-nextjs`, no licence): read only.
 - **The `cdn.svar.dev` icon font**: licence unknown; do not load it from the CDN and do not vendor it until its licence is read.
-- **inflect-compliance's `src/components/ui/charts/gantt-chart.tsx`** (450 lines) and `calendar/_components/GanttTimeline.tsx` (286), named in roadmap 3.1's source line: BUSL-1.1, so under ADR 0001's interim rule pattern only, no code copied.
+- **inflect-compliance's `src/components/ui/charts/gantt-chart.tsx`** (450 lines) and `calendar/_components/GanttTimeline.tsx` (286), named in roadmap 3.1's source line: BUSL-1.1 from Islestone's own licensor. ADR 0001 D1 (Accepted, 2026-11-18) allows copying them, with a `PROVENANCE.md` row per copied file.
 - SVAR's "AI tools for coding agents" (MCP server, skills) mentioned in the readme were not examined and are not part of this pin.
 
 ## 9. Attribution Islestone would carry

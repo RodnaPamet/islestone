@@ -255,7 +255,7 @@ type ChangeNotice =
 
 **6.14 The canvas library (ADR 0001, D3).**
 
-ADR 0001 D3 is decided: tldraw 3.x with the watermark (owner decision, 2026-11-18). T2 needs a licensed tldraw, so it does not apply; T1 does.
+ADR 0001 D3 is decided: tldraw 3.x with the watermark, not a licensed tldraw (owner decision, 2026-11-18). **Inference:** T2 as drafted assumes a licensed tldraw, so it does not arise, and T1 is the remaining option. This ADR does not choose T1; that waits for the owner's sign-off. Whether tldraw sync runs under 3.x was not checked.
 
 - **T1. Yjs for the canvas, whichever library is chosen.** Recommended: one collaboration server and one permission model for pages and canvases. With Excalidraw, I found no maintained official binding: `y-excalidraw` was last published 2024-12-10. So the binding (shapes in a `Y.Map` keyed by shape id) is written in-house.
 - **T2. tldraw sync**, only if D3 chooses a licensed tldraw. It is under tldraw's own licence, adds a second realtime server, and ties canvas collaboration to the licence's renewals. Whether tldraw sync runs under 3.x was not checked.
@@ -304,7 +304,7 @@ ADR 0001 D3 is decided: tldraw 3.x with the watermark (owner decision, 2026-11-1
 
 1. Approve E0, and set the reopen thresholds in section 7.
 2. Canvas persistence: C1 (recommended) or C2.
-3. Canvas transport if D3 picks a licensed tldraw: T1 (recommended) or T2. **Settled by ADR 0001 D3** (tldraw 3.x, not licensed): T1.
+3. Canvas transport: T1 (recommended) or T2. ADR 0001 D3 chose tldraw 3.x, not a licensed tldraw, so T2 as drafted does not arise and T1 is the remaining option (an inference, not a decision). It is pending owner sign-off; whether tldraw sync runs under 3.x was not checked.
 4. Client cache: TanStack Query (recommended) or SWR. Needed before 2.3.
 5. Item presence: R1 (recommended) or R2.
 6. Encrypt stored Yjs state and snapshots (recommended), and how page text is searched (follows ADR 0002's S1 to S4).
@@ -324,7 +324,7 @@ ADR 0001 D3 is decided: tldraw 3.x with the watermark (owner decision, 2026-11-1
 - Collaborative content is a CRDT. It cannot be queried in place: search, export, backlinks and agents read projections, which lag the live document by the store debounce (2 to 10 seconds by Hocuspocus's defaults).
 - A schema change in the editor or canvas means transforming stored Yjs documents, which is harder than migrating rows. Each change needs a tested transform.
 - No offline mode. A person who loses the connection keeps typing in a page, and Yjs merges on reconnect, but records cannot be changed offline.
-- ADR 0001 D3 chose tldraw 3.x, so 4.2 binds tldraw 3.x's shapes to Yjs (T1). Whether a maintained binding exists for tldraw 3.x was not checked.
+- ADR 0001 D3 chose tldraw 3.x, so under T1, the remaining option once signed, 4.2 binds tldraw 3.x's shapes to Yjs. Whether a maintained binding exists for tldraw 3.x was not checked.
 - Patterns learned from inflect-compliance, all pattern only, no code copied: an optional-to-required `expectedVersion` with a conditional update; updating the held version from each save's response; SSE for one-way updates with heartbeat, Node runtime and buffering off; an in-process fan-out bus; polling as the fallback for missed pushes. Each goes in `PROVENANCE.md` as pattern only.
 
 ## What would change this decision

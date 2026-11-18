@@ -36,5 +36,6 @@ brings its notice here in the same change that copies it. Two are planned:
 npm dependencies are not copied into the repository. Each package carries its
 own licence and notice files under node_modules, and scripts/licence-gate.mjs
 checks the production dependency tree against the licence allowlist on every
-pull request. The LGPL notice for the libvips binaries that sharp loads
-belongs to the container image built in sub-phase 1.8 (ADR 0007, decision E1).
+pull request. The container image built in sub-phase 1.8 carries the LGPL
+notice for the libvips binaries that sharp loads, and this file gains an entry
+for them in the same change (ADR 0007, decision E1a).

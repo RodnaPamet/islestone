@@ -21,7 +21,7 @@ Planned, not yet written: a search ADR before roadmap 2.7 (ADR 0002 section 11),
 - Take the next free number. Never reuse or renumber one.
 - File name: `NNNN-short-title.md`, lower case, words joined by hyphens.
 - Add its row to the index above in the same pull request.
-- The licence gate accepts an exemption only if the ADR it cites exists, names the package and has an Accepted status line (`scripts/licence-gate.mjs`). A status line reads `Status: Accepted …` once every decision in the ADR is made.
+- The licence gate accepts an exemption only if the ADR it cites exists, names the package and has an Accepted status line (`scripts/licence-gate.mjs`). The status line is the first non-blank line after the `# ` title, as in the template, and nowhere else. It reads `Status: Accepted` once every decision in the ADR is made, optionally followed by ` (…)`, ` — …` or `.`. A status that qualifies the acceptance ("superseded", "in part", "partly", "pending", "awaiting") does not count as Accepted: an ADR accepted only in part stays Proposed and names its decided parts, and a replaced one reads `Status: Superseded by NNNN`.
 
 ## Template
 

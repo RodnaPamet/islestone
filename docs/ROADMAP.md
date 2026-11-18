@@ -26,8 +26,8 @@ Drafted 2026-11-18. Islestone is an AI-enabled project-management SaaS spun off 
 
 Two blockers come out of this inventory:
 
-1. **inflect-compliance is BUSL-1.1**, licensor Inflect Ltd. Islestone may use the code only if Inflect Ltd. grants it or owns Islestone. Get that in writing first (sub-phase 0.1).
-2. **tldraw is proprietary.** inflect-compliance pins `tldraw ^3.15.6`, where production use is allowed with the watermark. Version 4 and later refuse to run in production without a paid key, and the current release is 5.x, so staying on 3.x means no upgrades. Islestone must choose: stay on 3.x, buy a key (price by quote), or move the canvas to Excalidraw (MIT).
+1. **inflect-compliance is BUSL-1.1**, licensor Inflect Ltd. Islestone may use the code only if Inflect Ltd. grants it or owns Islestone. Get that in writing first (sub-phase 0.1). **Decided 2026-11-18 ([ADR 0001](adr/0001-code-provenance-and-licences.md) D1, with D2):** copying is allowed, every copied file gets a `PROVENANCE.md` row, and Islestone is BUSL-1.1 from the same licensor.
+2. **tldraw is proprietary.** inflect-compliance pins `tldraw ^3.15.6`, where production use is allowed with the watermark. Version 4 and later refuse to run in production without a paid key, and the current release is 5.x, so staying on 3.x means no upgrades. Islestone must choose: stay on 3.x, buy a key (price by quote), or move the canvas to Excalidraw (MIT). **Decided 2026-11-18 ([ADR 0001](adr/0001-code-provenance-and-licences.md) D3):** stay on tldraw 3.x (3.15.6) with the watermark visible.
 
 ### 2.2 Open-source project-management suites
 
@@ -56,7 +56,7 @@ Five ideas worth taking from the field:
 | Drag and drop | Atlassian pragmatic-drag-and-drop (Apache-2.0) | Works with virtualised lists. `@dnd-kit/react` is still pre-1.0 |
 | Rich text | Tiptap MIT core (already in inflect-compliance) | Tiptap comments, AI toolkit and conversion are paid: build those. Plate is the MIT fallback with an AI plugin |
 | Document collaboration | Yjs plus Hocuspocus (both MIT) | Self-hosted Node, Redis extension |
-| Canvas | tldraw 3.x or licensed, or Excalidraw (MIT) | Decision in 0.1 |
+| Canvas | tldraw 3.x (3.15.6), watermark visible | Decided 2026-11-18 (ADR 0001 D3). The licensed tldraw and Excalidraw (MIT) were the options not chosen |
 | Calendar | inflect-compliance calendar surface; FullCalendar MIT core if more is needed | Resource timelines are premium |
 | Scheduling | In-house critical path and Monte Carlo; Timefold Community (Apache-2.0, JVM sidecar) later | No credible JavaScript critical-path library exists |
 | Workflow | BullMQ flows (already used) plus React Flow (MIT) for a visual builder | |
@@ -144,6 +144,7 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 #### 1.4 Authentication and roles (L)
 - **Source:** `src/auth.ts`, `src/middleware.ts`, `lib/auth/`, `lib/scim/`, `lib/permissions.ts`, `lib/security/permission-middleware.ts`.
 - **Prompt:** "Port authentication: credentials, Google and Microsoft sign-in, session rows with revocation, MFA, password policy with the breach check, invites, and the tenant-access gate in middleware. Port SSO and SCIM behind a feature flag. Write a new `PermissionSet` for project management (workspace, projects, work items, views, cycles, docs, canvas, automations, integrations, agents, billing, admin) with roles OWNER, ADMIN, MEMBER, GUEST and VIEWER, and port `requirePermission` with its denial audit row. Port the guards for membership-creation paths and permission coverage."
+- **Decided 2026-11-18 ([ADR 0006](adr/0006-vocabulary.md)):** the roles rank Owner > Admin > Member > Viewer > Guest by breadth of access, and `Role` is declared in that order; a user whose role cannot be resolved falls back to Viewer, never Guest; public self-sign-up at `/api/auth/register` sits behind a switch, off by default in production, on in development, opened by an operator without a code change.
 
 #### 1.5 Security perimeter (M)
 - **Source:** `lib/security/` (encryption, sanitize, rate-limit), `lib/audit/`, `scripts/detect-secrets.sh`.

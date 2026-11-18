@@ -1,6 +1,6 @@
 # Islestone
 
-Islestone is an AI-enabled project-management SaaS: one work-item table with many views, planning and forecasting computed in code, and agents that work as delegates of accountable people, writing only through proposals a person approves.
+Islestone is an AI-enabled project-management SaaS: one work-item table with many views, planning and forecasting computed in code, and agents that work as delegates of accountable people, writing through proposals a person approves unless a workspace owner raises a rung (ADR 0003).
 
 **Status:** repository skeleton (roadmap sub-phase 1.1). There is no product yet: a placeholder home page, health endpoints, the env modules, the test and CI tooling, and a local service stack. What gets built, in which order, and the gate that closes each phase are in [docs/ROADMAP.md](docs/ROADMAP.md). Architecture decisions are in [docs/adr/](docs/adr/) ([index](docs/adr/README.md)). ADR 0001 (provenance and licences) and ADR 0007 (licence exceptions) are accepted. ADRs 0002 to 0006 are proposed and await the owner's sign-off, though 0003 and 0006 already record some owner decisions.
 
@@ -34,8 +34,9 @@ npm run dev                  # http://localhost:3000
 | `npm run test:unit` | Jest `node` project: `tests/unit`, `tests/guards` |
 | `npm run test:rendered` | Jest `jsdom` project: `tests/rendered` |
 | `npm run test:e2e` | Playwright against the built app (run `npm run build` first) |
+| `npm run test:scripts` | `node --test` for the plain-ESM script tests (`tests/unit/**/*.test.mjs`), which Jest does not run |
 | `npm run licence:check` | The third-party licence gate (below); `--json` for a machine-readable report |
-| `npm run verify` | lint, typecheck, test and the licence gate |
+| `npm run verify` | lint, typecheck, test, the script tests and the licence gate |
 
 For Playwright with a Chromium already on the machine, set `PW_CHROMIUM_PATH` to its binary or to a directory containing it; otherwise run `npx playwright install chromium` once.
 
@@ -62,7 +63,7 @@ The policy is written out at the top of the script. The production tree is walke
 
 - `licence`: the licence a person verified, as an SPDX expression. A proprietary licence uses a `LicenseRef-` identifier.
 - `reason`: the evidence and the justification.
-- `adr`: the decision record, which must exist, must name the package, and must be accepted: its status line starts `Status: Accepted`.
+- `adr`: the decision record, which must exist, must name the package, and must be accepted: the line right after its `# ` title reads `Status: Accepted`, optionally followed by ` (…)`, ` — …` or `.`, and does not qualify the acceptance ("superseded", "in part", "partly", "pending" and the like make it not accepted).
 - `version`: when given, the exemption covers only that version. It is required when the package's declaration is not an SPDX expression (`SEE LICENSE IN …`, `UNLICENSED`, missing), because there is then nothing else to bind the entry to.
 
 An exemption applies only while the package still declares the licence it was granted for. The gate reports an exemption that is stale (the package has left the tree) or not needed (the licence is already allowed). An exemption cannot lift a deny-listed package. A workspace that holds an `UPSTREAM.json`, such as the `packages/ui` mirror sub-phase 1.2 adds, is checked like any dependency rather than as Islestone's own code, so it needs an exemption too.

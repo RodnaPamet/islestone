@@ -121,15 +121,15 @@ Read at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`. Phase 6 plans to port
 
 - **The authorising person need not be the item's assignee.** A teammate may delegate an assigned item, or mention an agent on it, without being its assignee. That is acceptable for three reasons, and the rules below hold it:
   - the agent can never do more than the authorising person could do themselves (the intersection above), so starting a session grants no one extra reach;
-  - outside its own record, everything the agent changes is a proposal, and by default the review request goes to the item's assignee (section 8), so the assignee still decides what lands on their item;
+  - outside its own record, everything the agent changes is a proposal routed to the item's assignee (decision 8 below; section 8), so the assignee still decides what lands on their item. Until open question 10 is answered, this holds even for a tool a workspace owner has raised to `AUTOMATIC`;
   - the assignee is notified when someone else starts a session on their item, and may end it at once (`COMPLETE`, reason `ENDED_BY_PERSON`).
 - **Decided (open question 8). Owner decision, 2026-11-18; the owner chose "Run now, assignee notified".** A session that someone other than the assignee starts on an item runs at once, within the starter's permissions (the intersection above). Every write it makes outside its own record is a proposal routed to the assignee, and the assignee is notified and can end the session. The alternative, holding the session in `PENDING` until the assignee consents, was not chosen.
   Who may start a session on someone else's item at all is still open question 2.
-- That person's membership and role are re-read at session start and at the start of every run. If they no longer hold the authority, the session ends `ERROR`, reason `INVOKER_NOT_AUTHORISED`. A role change during a run applies from the next run; the run's wall-clock cap bounds the gap.
-- **Direct writes are limited to the agent's own record.** An agent may write, without a proposal:
+- The authorising person's membership and role are re-read at session start and at the start of every run. If they no longer hold the authority, the session ends `ERROR`, reason `INVOKER_NOT_AUTHORISED`. A role change during a run applies from the next run; the run's wall-clock cap bounds the gap.
+- **At the `PROPOSE` rung, direct writes are limited to the agent's own record.** An agent may write, without a proposal:
   - activity entries in its own live session (section 6);
   - its own session's moves listed in section 5, and its heartbeat.
-- **Everything else is a proposal** while the tool is at the `PROPOSE` rung, where every tool starts: creating or changing items, comments, relations, plans and schedule changes. A proposal is decided by a person, and the real usecase then runs as that person (section 8). A tool a workspace owner has raised to `AUTOMATIC` writes directly (section 9).
+- **Everything else is a proposal** while the tool is at the `PROPOSE` rung, where every tool starts: creating or changing items, comments, relations, plans and schedule changes. A proposal is decided by a person, and the real usecase then runs as that person (section 8). A tool a workspace owner has raised to `AUTOMATIC` writes directly (section 9), except in a session that someone other than the item's assignee started: that session's writes are proposals routed to the assignee (decision 8 above). Open question 10 asks whether that exception should give way at `AUTOMATIC`; until it is answered, decision 8 governs.
 
 ### 5. Agent sessions and their states
 
@@ -218,6 +218,7 @@ Changes:
 - **Decided (open question 9). Owner decision, 2026-11-18; the owner chose "Owners may raise rungs".** There is no rung cap. From Phase 6, a workspace owner may raise an agent's autonomy rung, within that agent's grants, as roadmap principle 2 allows. The draft had recommended shipping Phase 6 with a source constant that capped the ladder at `PROPOSE`; the owner decided against it.
 - A workspace owner may raise one agent, for one tool the agent is granted, from `PROPOSE` to `AUTOMATIC`. The change is audited.
 - At `AUTOMATIC`, the write still runs through the same usecase, under the authorising person's permissions, attributed to the agent and session, and under the kill switch, caps and budgets.
+- In a session that someone other than the item's assignee started, the tool's writes still go to the assignee as proposals (decision 8, section 4), until open question 10 decides otherwise.
 
 ### 10. Kill switch
 
@@ -363,14 +364,14 @@ All tables follow roadmap section 4: `tenantId`, a tenant-leading index, RLS pol
 7. This session's network refused `linear.app`. Allowing it would let the Linear agent guidelines be read and cited directly.
 8. **Decided, 2026-11-18** (section 4): a session someone other than the assignee starts on an item runs at once, with the assignee notified and every write a proposal that goes to them. The owner chose "Run now, assignee notified".
 9. **Decided, 2026-11-18** (section 9): no rung cap. Workspace owners may raise rungs from Phase 6, within the agent's grants, as roadmap principle 2 allows. The owner chose "Owners may raise rungs", against the draft's recommendation of a cap at `PROPOSE`.
-10. Raised by decisions 8 and 9 together: when a workspace owner has raised a tool to `AUTOMATIC`, does a session that someone other than the assignee started still send that tool's writes to the assignee as proposals (decision 8 says every write is a proposal), or does it write directly (section 9)? Not decided.
+10. Raised by decisions 8 and 9 together: when a workspace owner has raised a tool to `AUTOMATIC`, does a session that someone other than the assignee started still send that tool's writes to the assignee as proposals (decision 8 says every write is a proposal), or does it write directly (section 9)? Not decided. Until it is answered, decision 8 governs: such a session's writes go to the assignee as proposals at any rung (sections 4 and 9).
 
 ## Consequences
 
 - Every delegated item has a named, accountable person. No item is ever "owned" by an agent.
 - Agents never appear in seat counts, membership lists or sign-in tables. Code that lists "people" never meets an agent by accident.
 - Most agent work produces proposals, so the review queue is the product's main agent surface. Its expiry and sampling controls matter from the first release of Phase 6.
-- From Phase 6, a workspace owner can move an agent's tool to `AUTOMATIC` (section 9). Those writes skip the review queue, but keep the usecase, the authorising person's permissions, attribution to the agent and session, the kill switch, caps and budgets. The rung change is audited.
+- From Phase 6, a workspace owner can move an agent's tool to `AUTOMATIC` (section 9). Those writes skip the review queue, but keep the usecase, the authorising person's permissions, attribution to the agent and session, the kill switch, caps and budgets. The rung change is audited. A session someone other than the assignee started still sends its writes to the assignee as proposals, until open question 10 is answered.
 - A session a teammate starts on someone else's item runs at once (section 4). Its writes still reach that item only as proposals the assignee decides, and the assignee can end it.
 - One live session per item serialises agents on an item. Parallel agent work on one piece of work means splitting it into sub-items.
 - Changing the assignee ends the live session. A person taking over must restart the agent; in exchange, no session carries on into a new assignee's accountability without their choice.
@@ -414,5 +415,5 @@ All tables follow roadmap section 4: `tenantId`, a tenant-leading index, RLS pol
   - `src/app-layer/context-system.ts` (line 346);
   - `src/app-layer/usecases/agent-retirement-cascade.ts`, `agent-ownership-transfer.ts`, `agent-owner-orphan-pass.ts` (existence checked);
   - `docs/implementation-notes/2026-08-12-automation-actor-authority.md` (lines 1–30);
-  - `CLAUDE.md` (#4196 kill before every model call; #4481 agent-bound keys at REST; "A2A messaging" re-wrap exception; "Identity lifecycle" brake constants).
+  - `CLAUDE.md` (#4196 kill before every model call; #4481 agent-bound keys at REST; "A2A messaging" re-wrap exception).
 - Patterns reused from inflect-compliance, all pattern only, no code copied: agent separate from user with a required owner; two-step ownership transfer; the proposal queue's controls; the three-scope kill switch checked before every model and tool call; versioned policy cards; all-or-nothing run caps; pre-run budget check and reserve-before-use; the reaper that leaves human waits alone; re-reading a named person's authority when work runs; write-once triggers that admit the encryption re-wrap.

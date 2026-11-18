@@ -2,13 +2,13 @@
 
 Guidance for Claude Code sessions in this repository.
 
-**Islestone** is an AI-enabled project-management SaaS: one work-item table with many views, deterministic planning, and agents that work as delegates of accountable people and write only through proposals a person approves.
+**Islestone** is an AI-enabled project-management SaaS: one work-item table with many views, deterministic planning, and agents that work as delegates of accountable people and write through proposals a person approves, unless a workspace owner raises a rung (ADR 0003).
 
 Read [docs/ROADMAP.md](docs/ROADMAP.md) (phases, the global preamble in section 4, hardening gates) and [docs/adr/](docs/adr/) before starting. If a step would contradict an ADR, stop and ask.
 
 ## Current state
 
-Sub-phase 1.1, the repository skeleton, is done: PR #1's first CI run, at `3ffb78a`, was green. The owner decisions of Phase 0 are recorded in the ADRs. ADRs 0001 (provenance and licences) and 0007 (licence exceptions) are Accepted. ADRs 0002 to 0006 are Proposed; 0003 and 0006 record some owner decisions in place (see the index in `docs/adr/README.md`). The next step is sub-phase 1.2, the shared UI; it has not landed. What exists: a Next.js 16 App Router app with a placeholder home page and `/api/livez` and `/api/readyz`; the two env modules; baseline security headers on every response (`src/lib/security-headers.ts`, wired in `next.config.ts`; a Content-Security-Policy with `script-src` needs per-request nonces and belongs to the security perimeter, sub-phase 1.5); Jest, Playwright, ESLint and CI; a local Postgres, PgBouncer and Redis stack. What does not exist yet: a database schema, auth, permissions, usecases, policies, repositories, the audit log, jobs, the shared UI. Do not write code or docs that assume they do.
+Sub-phase 1.1, the repository skeleton, is done: PR #1's first completed CI run, at `3ffb78a`, was green. The owner decisions taken so far are recorded in the ADRs. ADRs 0001 (provenance and licences) and 0007 (licence exceptions) are Accepted. ADRs 0002 to 0006 are Proposed and await the owner's sign-off, so Phase 0 is not closed (roadmap 0.2); 0003 and 0006 record some owner decisions in place (see the index in `docs/adr/README.md`). The next step is sub-phase 1.2, the shared UI; it has not landed. What exists: a Next.js 16 App Router app with a placeholder home page and `/api/livez` and `/api/readyz`; the two env modules; baseline security headers on every response (`src/lib/security-headers.ts`, wired in `next.config.ts`; a Content-Security-Policy with `script-src` needs per-request nonces and belongs to the security perimeter, sub-phase 1.5); Jest, Playwright, ESLint and CI; a local Postgres, PgBouncer and Redis stack. What does not exist yet: a database schema, auth, permissions, usecases, policies, repositories, the audit log, jobs, the shared UI. Do not write code or docs that assume they do.
 
 ## Commands
 
@@ -22,8 +22,9 @@ npm test                # Jest, both projects
 npm run test:unit       # Jest node project (tests/unit, tests/guards)
 npm run test:rendered   # Jest jsdom project (tests/rendered)
 npm run test:e2e        # Playwright against the built app; build first
+npm run test:scripts    # node --test for the plain-ESM script tests (tests/unit/**/*.test.mjs: scripts/ui-drift.mjs)
 npm run licence:check   # third-party licence gate (scripts/licence-gate.mjs); --json for JSON
-npm run verify          # lint + typecheck + test + licence:check
+npm run verify          # lint + typecheck + test + test:scripts + licence:check
 npx jest tests/unit/health-routes.test.ts   # one file
 docker compose up -d    # local Postgres (pgvector), PgBouncer, Redis
 ```
@@ -58,7 +59,7 @@ These rules are the owner decisions of 2026-11-18, recorded in [ADR 0001](docs/a
 - **Never copy code from a project the roadmap marks "inspiration only"** (section 2.2: Plane, OpenProject, Twenty, and the rest of that list).
 - **Every other ported or adapted piece of code gets a `PROVENANCE.md` entry** too: source repository and path, commit, licence, and what changed. A design learned by reading gets a row that says "pattern only, no code copied". See "Third-party code" below.
 - **tldraw stays on 3.x (3.15.6) with its watermark visible** (ADR 0001 D3). Never disable, hide, remove or alter the watermark, and do not upgrade to 4.x or later. The canvas port (4.2) brings the 3.x ceiling guard, the Dependabot hold, the tiptap 2.x audit exemption and the tldraw licence-gate exemption. tldraw is not installed yet.
-- **The Dub-derived UI and the Nucleo icons are taken as they are**, with the licence risk accepted (ADR 0001 D4). The change that lands `packages/ui` (1.2) also adds Dub's copyright and AGPL-3.0 statement and the Nucleo notice to `NOTICE`, and the `@inflect/ui` licence-gate exemption.
+- **The Dub-derived UI and the Nucleo icons are taken as they are**, with the licence risk accepted (ADR 0001 D4). The change that lands `packages/ui` (1.2) also adds Dub's copyright and AGPL-3.0 statement and the Nucleo notice to `NOTICE` (D4), and the `@inflect/ui` licence-gate exemption (ADR 0001, Consequences: the gate checks a mirrored workspace like any dependency).
 
 ## Third-party code
 
@@ -71,12 +72,13 @@ Sub-phase 0.3's intake policy. Read the files below before adding a dependency o
   - code that can ship importing a `DEV_ONLY_PATHS` path (tests, dev-tool configuration), and a file the scanner cannot read to the end.
 
   The policy and its reasons are at the top of the script. Never widen `ALLOWED_LICENCES` or `ALLOWED_EXCEPTIONS`, shrink `DENIED_PACKAGES`, or add to `DEV_ONLY_PATHS` to make a build pass: that is an owner decision, recorded in ADR 0007.
-- **`scripts/licence-exemptions.json`** is the only way past the allowlist. Each entry needs `licence` (SPDX; `LicenseRef-…` for a proprietary licence), `reason` (the evidence) and `adr` (an existing `docs/adr/` file that names the package and whose status line starts `Status: Accepted`). Pin `version` when the evidence was read at one version; it is required when the package's declaration is not SPDX (`SEE LICENSE IN`, `UNLICENSED`, missing). An exemption stops applying when the package's declared licence changes, and the gate fails on a stale or unneeded entry. Delete an entry when its package leaves the tree. The README's "Third-party code and licences" section shows the planned tldraw entry (ADR 0001 D3); it is not live. A workspace that holds an `UPSTREAM.json` (a byte-for-byte mirror, such as `packages/ui`) is checked like any dependency, not as Islestone's own code.
+- **`scripts/licence-exemptions.json`** is the only way past the allowlist. Each entry needs `licence` (SPDX; `LicenseRef-…` for a proprietary licence), `reason` (the evidence) and `adr` (an existing `docs/adr/` file that names the package and is Accepted: the line right after its `# ` title reads `Status: Accepted`, optionally followed by ` (…)`, ` — …` or `.`, with no qualifier such as "superseded" or "in part"). Pin `version` when the evidence was read at one version; it is required when the package's declaration is not SPDX (`SEE LICENSE IN`, `UNLICENSED`, missing). An exemption stops applying when the package's declared licence changes, and the gate fails on a stale or unneeded entry. Delete an entry when its package leaves the tree. The README's "Third-party code and licences" section shows the planned tldraw entry (ADR 0001 D3); it is not live. A workspace that holds an `UPSTREAM.json` (a byte-for-byte mirror, such as the `packages/ui` mirror that sub-phase 1.2 adds) is checked like any dependency, not as Islestone's own code.
 - **Tests:** `tests/unit/licence-gate.test.ts` uses fixtures in `tests/fixtures/licence-gate/`. Those fixtures break the policy on purpose, so the gate's scan leaves `tests/fixtures/licence-gate/` out, and `tsconfig.json` and `eslint.config.mjs` leave `tests/fixtures/` out.
 
 ## Test conventions
 
 - **Jest projects:** `node` runs `tests/unit/**/*.test.ts` and `tests/guards/**/*.test.ts`; `jsdom` runs `tests/rendered/**/*.test.tsx` with Testing Library and `@testing-library/jest-dom`. The transformer is `@swc/jest`; `tsc` owns type errors. Plain ESM scripts (`scripts/*.mjs`) are compiled to CommonJS for Jest the same way, so a test can import them; each gets a `.d.mts` beside it for its types.
+- **Script tests:** `tests/unit/**/*.test.mjs` run under `node --test` (`npm run test:scripts`, in `verify` and in CI's `Test` job), not Jest, whose projects match `.ts`/`.tsx` only. `tests/unit/ui-drift.test.mjs` checks `scripts/ui-drift.mjs`; its last case verifies the real `packages/ui` and is skipped until sub-phase 1.2 lands it, but only while nothing in the repository expects the package (no git-listed file under `packages/ui`, no lockfile entry for it).
 - **Env in Jest:** `@/env` and `@/env-client` map to `tests/mocks/env.ts` (t3-env is ESM-only), which reads `process.env` live; a test sets a variable for itself and restores it. `jest.setup.ts` sets `SKIP_ENV_VALIDATION=1`.
 - **Guards** (`tests/guards/`) check source structure. A guard takes its file population from git (`gitFiles()` in `tests/helpers/git-files.ts`, i.e. `git ls-files --cached --others --exclude-standard`), never from a directory walk with a skip list, and proves itself against a planted fixture (a throwaway git repository in a temp directory) so it cannot pass by checking nothing.
 - **Rendered tests** query by role or label.

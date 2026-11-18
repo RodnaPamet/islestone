@@ -22,7 +22,7 @@ inflect-compliance is licensed under the Business Source License 1.1, and Inflec
 - licence notices the copied material carries are kept, such as a package's `"license": "BUSL-1.1"` field or a bundled notice;
 - third-party material inside the copied code brings its notice into [`NOTICE`](NOTICE) in the same change.
 
-No inflect-compliance code has been copied yet. The rows below that name it are pattern only: those components were written fresh while the interim rule applied, and they stay as written. The shared UI that sub-phase 1.2 copies has its rows drafted in [`docs/porting/provenance-shared-ui.md`](docs/porting/provenance-shared-ui.md); they move here with `packages/ui`, together with the Dub and Nucleo attributions that ADR 0001 decision D4 requires.
+No inflect-compliance code has been copied yet. The rows below that name it are pattern only: those components were written fresh while the interim rule applied, and they stay as written. The shared UI that sub-phase 1.2 copies has its rows drafted in [`docs/porting/provenance-shared-ui.md`](docs/porting/provenance-shared-ui.md); they move here with `packages/ui`, naming the Dub origin of the files the measurement links to Dub and the Nucleo terms of the icons (ADR 0001 decision D4). The Dub and Nucleo attributions that D4 requires go into [`NOTICE`](NOTICE) in the same change.
 
 All inflect-compliance rows were read in the sibling checkout at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e` (2026-11-17, "chore(release): 3.404.0"), remote `github.com/RodnaPamet/inflect-compliance`.
 

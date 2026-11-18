@@ -334,6 +334,27 @@ describe('the detector, against a planted repository', () => {
         expect(without.serverBoundaries).toEqual([]);
     });
 
+    it("never treats the server env module as a boundary, even with a 'use server' directive", () => {
+        plant({
+            // The directive Next.js would honour: every client import of the env
+            // module would become a server-reference stub, and `next build` passes.
+            'src/env.ts': "'use server';\nexport const env = { DATABASE_URL: 'x' };\n",
+            'src/components/direct.tsx': "'use client';\nimport { env } from '@/env';\nexport const D = env;\n",
+            // Clean beside it: a real Server Functions module stays a boundary.
+            'src/components/save-button.tsx': "'use client';\nimport { save } from '@/app/actions';\nexport const S = save;\n",
+            'src/app/actions.ts': "'use server';\nimport { env } from '@/env';\nexport async function save() {\n    return String(env);\n}\n",
+        });
+
+        const report = checkClientEnvBoundary(root);
+        const chains = Object.fromEntries(report.violations.map((v) => [v.entry, v.chain]));
+        expect(chains['src/components/direct.tsx']).toEqual(['src/components/direct.tsx', 'src/env.ts']);
+        // The two-hop chains of the base fixture still end at the env module.
+        expect(chains['src/components/badge.tsx']).toEqual(['src/components/badge.tsx', 'src/components/format.ts', 'src/env.ts']);
+        expect(chains['src/components/save-button.tsx']).toBeUndefined();
+        expect(report.serverBoundaries).toEqual([{ from: 'src/components/save-button.tsx', to: 'src/app/actions.ts' }]);
+        expect(report.serverBoundaries.filter((b) => b.to === 'src/env.ts')).toEqual([]);
+    });
+
     it('goes green when the offending edge is fixed, so the verdict follows the source', () => {
         plant({ 'src/components/format.ts': "import { env } from '@/env-client';\nexport const label = String(env);\n" });
 
