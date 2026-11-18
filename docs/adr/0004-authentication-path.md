@@ -144,9 +144,9 @@ Inferences:
 
 ### The licence dependency on ADR 0001
 
-- **Verified.** ADR 0001 decision D1 (Islestone's right to use inflect-compliance code) is unsigned. Its interim rule forbids copying, and item 6 lists roadmap 1.4 among the steps that wait for D1 or run as fresh writes.
+- ADR 0001 decision D1 (Islestone's right to use inflect-compliance code) is decided: the owner allowed copying on 2026-11-18, with a `PROVENANCE.md` row for every copied file. When this ADR was drafted, D1 was unsigned and its interim rule held roadmap 1.4 back; that rule is retired.
 - **Verified.** The libraries are not the problem. `next-auth` and `@next-auth/prisma-adapter` are ISC; `better-auth`, `@node-saml/node-saml` and `jose` are MIT. Roadmap 0.3 lists ISC and MIT on the allowlist.
-- So the case for porting rests entirely on D1. Without the grant, option A below is not available, and every remaining option is a fresh write.
+- So the case for porting rested entirely on D1. With D1 decided, option A below is available.
 
 ## Decision
 
@@ -154,7 +154,7 @@ The options and their consequences follow. The recommendation is a proposal for 
 
 ### A1 — Which path
 
-- **A. Port the parent's auth layer, on NextAuth v4, pinned exactly.** Needs D1 (1a or 1b).
+- **A. Port the parent's auth layer, on NextAuth v4, pinned exactly.** Needs D1, which ADR 0001 now records as decided.
   - Fastest route to credentials, Google, Microsoft, sign-in session rows with revocation, MFA per workspace, invites, the edge gate, SSO and SCIM. These exist and have been hardened against real defects.
   - Islestone takes v4's age with it: no v5 path that upstream recommends, and two superseded majors (`jose` 4, `openid-client` 5) in the tree.
   - Needs the exit criteria and the contract below, so that the later move is planned rather than forced.
@@ -168,9 +168,8 @@ The options and their consequences follow. The recommendation is a proposal for 
 
 **Recommendation:**
 
-- If D1 is signed (1a or 1b): **A**, with the scope, the pin, the seam, the exit criteria and the contract below.
-- If D1 ends at 1d (port nothing): **B**. The case for A is reuse. Without reuse, B is the better trade.
-- If roadmap 1.4 is due to start while D1 is still open: the owner chooses between waiting for D1 and starting B. Do not start D.
+- D1 is decided (ADR 0001: copying allowed), so the recommendation is **A**, with the scope, the pin, the seam, the exit criteria and the contract below.
+- Had D1 ended at 1d (port nothing), it would have been **B**: the case for A is reuse, and without reuse B is the better trade. Do not start D.
 
 Owner sign-off: ____  Date: ____
 
@@ -272,7 +271,7 @@ Data and cookies:
 
 ### Open questions for the owner
 
-1. Will D1 be signed before roadmap 1.4 starts? If not, wait, or start on B?
+1. Answered: "Will D1 be signed before roadmap 1.4 starts?" ADR 0001 D1 was decided on 2026-11-18 (copying allowed).
 2. Are the numbers in T1 to T3 (30 days, 90 days, twelve months, six months) acceptable?
 3. Do SSO and SCIM need to be ported in 1.4 behind a flag, or can they wait for 8.3? This changes how much 1.4 ports.
 4. Should Islestone keep the parent's fail-open on a database error during the session check (contract item 6)?
@@ -282,7 +281,7 @@ Data and cookies:
 
 ## Consequences
 
-- Under A, roadmap 1.4 waits for D1 (ADR 0001). Once D1 is signed, 1.4 is mostly a port with renames. Islestone receives the parent's later auth fixes only if the grant covers later versions (ADR 0001, open question 6).
+- Under A, 1.4 is mostly a port with renames: ADR 0001 D1 allows the copying. Each later sync of the parent's auth fixes is a new copy, pinned to the commit read.
 - Under A, the tree carries `jose` 4 and `openid-client` 5 until the move. T1 watches them.
 - Under B, 1.4 is a fresh write and grows. Roadmap 9.3's "move to Better Auth" item disappears.
 - Under either path:
@@ -294,7 +293,7 @@ Data and cookies:
 
 ## What would change this decision
 
-- The D1 outcome in ADR 0001. This is the main input.
+- ADR 0001 D1, decided on 2026-11-18 (copying allowed), was the main input. Reversing it would reopen this decision.
 - A trigger in A4 firing.
 - Auth.js v5 shipping as stable. The parent's GAP-04 note planned that move. Given upstream's current recommendation, re-evaluate before taking it.
 - Better Auth showing, by test, that its plugins express per-workspace MFA and single-workspace SSO sessions natively. That would shrink B.
@@ -310,7 +309,7 @@ Data and cookies:
   - 4 (global preamble);
   - 5: 0.2 item 4, 0.3, H0, 1.4, 1.8, H1, 5.2, 8.3, 8.6, H6, H8, 9.3;
   - 7, open decisions 1 and 4.
-- Islestone: `docs/adr/0001-code-provenance-and-licences.md` (D1, interim rule); `docs/adr/0006-vocabulary.md` ("sign-in session", role names); `package.json`; `CLAUDE.md`.
+- Islestone: `docs/adr/0001-code-provenance-and-licences.md` (D1 and the copy rule); `docs/adr/0006-vocabulary.md` ("sign-in session", role names); `package.json`; `CLAUDE.md`.
 - inflect-compliance, read-only, at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`:
   - `package.json` (lines 108, 109, 122, 175, 184, 185, 192, 344–347) and `package-lock.json`;
   - `src/auth.ts` (lines 1–30, 86, 395–484, 679–722, 1110–1135, 1240–1266);

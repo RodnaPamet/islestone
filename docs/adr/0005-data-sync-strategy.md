@@ -26,7 +26,7 @@ How to read this ADR: a line marked **Verified** was read in the named file or r
 
 ### What inflect-compliance has built, and what it has not
 
-Read at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`. Under ADR 0001's interim rule, Islestone may learn these patterns but copies no code.
+Read at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`, for their design; nothing was copied. ADR 0001 D1 (owner decision, 2026-11-18) now allows copying inflect-compliance code, with a `PROVENANCE.md` row for every copied file.
 
 Built:
 
@@ -255,6 +255,8 @@ type ChangeNotice =
 
 **6.14 The canvas library (ADR 0001, D3).**
 
+ADR 0001 D3 is decided: tldraw 3.x with the watermark (owner decision, 2026-11-18). T2 needs a licensed tldraw, so it does not apply; T1 does.
+
 - **T1. Yjs for the canvas, whichever library is chosen.** Recommended: one collaboration server and one permission model for pages and canvases. With Excalidraw, I found no maintained official binding: `y-excalidraw` was last published 2024-12-10. So the binding (shapes in a `Y.Map` keyed by shape id) is written in-house.
 - **T2. tldraw sync**, only if D3 chooses a licensed tldraw. It is under tldraw's own licence, adds a second realtime server, and ties canvas collaboration to the licence's renewals. Whether tldraw sync runs under 3.x was not checked.
 
@@ -302,7 +304,7 @@ type ChangeNotice =
 
 1. Approve E0, and set the reopen thresholds in section 7.
 2. Canvas persistence: C1 (recommended) or C2.
-3. Canvas transport if D3 picks a licensed tldraw: T1 (recommended) or T2.
+3. Canvas transport if D3 picks a licensed tldraw: T1 (recommended) or T2. **Settled by ADR 0001 D3** (tldraw 3.x, not licensed): T1.
 4. Client cache: TanStack Query (recommended) or SWR. Needed before 2.3.
 5. Item presence: R1 (recommended) or R2.
 6. Encrypt stored Yjs state and snapshots (recommended), and how page text is searched (follows ADR 0002's S1 to S4).
@@ -322,7 +324,7 @@ type ChangeNotice =
 - Collaborative content is a CRDT. It cannot be queried in place: search, export, backlinks and agents read projections, which lag the live document by the store debounce (2 to 10 seconds by Hocuspocus's defaults).
 - A schema change in the editor or canvas means transforming stored Yjs documents, which is harder than migrating rows. Each change needs a tested transform.
 - No offline mode. A person who loses the connection keeps typing in a page, and Yjs merges on reconnect, but records cannot be changed offline.
-- The canvas binding under Excalidraw is in-house work for 4.2.
+- ADR 0001 D3 chose tldraw 3.x, so 4.2 binds tldraw 3.x's shapes to Yjs (T1). Whether a maintained binding exists for tldraw 3.x was not checked.
 - Patterns learned from inflect-compliance, all pattern only, no code copied: an optional-to-required `expectedVersion` with a conditional update; updating the held version from each save's response; SSE for one-way updates with heartbeat, Node runtime and buffering off; an in-process fan-out bus; polling as the fallback for missed pushes. Each goes in `PROVENANCE.md` as pattern only.
 
 ## What would change this decision
@@ -341,7 +343,7 @@ type ChangeNotice =
   - 0.2 item 5; section 3, principles 2, 3 and 5; section 4 (global preamble);
   - 1.4 (roles, guests), 1.5 (field encryption), 1.6 (worker), 2.2, 2.3, H1, H2;
   - 4.1, 4.2, 4.3, H4; 8.3 (retention), 8.4 (private projects, guests), 8.5 (PWA); 9.3; section 7, open decision 5.
-- Islestone ADRs: `docs/adr/0001-code-provenance-and-licences.md` (interim rule, D3), `docs/adr/0002-work-item-model.md` (sections 5, 9, 11, 13), `docs/adr/0003-assignee-and-delegate.md` (proposals), `docs/adr/0006-vocabulary.md`.
+- Islestone ADRs: `docs/adr/0001-code-provenance-and-licences.md` (D1, D3), `docs/adr/0002-work-item-model.md` (sections 5, 9, 11, 13), `docs/adr/0003-assignee-and-delegate.md` (proposals), `docs/adr/0006-vocabulary.md`.
 - Islestone files: `package.json`, `docker-compose.yml`, `CLAUDE.md`.
 - inflect-compliance, read-only, at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`:
   - `docs/processes-realtime-collab.md` (lines 10–15, 38–43, 58–63, 83–102, 147–152, 154–165);

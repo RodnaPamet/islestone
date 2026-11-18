@@ -16,6 +16,7 @@ import * as path from 'node:path';
 
 import type { Exemption, GateReport, PackageRecord } from '../../scripts/licence-gate.mjs';
 import {
+    adrStatusLine,
     ALLOWED_LICENCES,
     checkDependencies,
     declarationKey,
@@ -25,6 +26,7 @@ import {
     extractStyleSpecifiers,
     GateError,
     hasEePath,
+    isAcceptedAdr,
     isDeniedPackage,
     isScannedSourcePath,
     judgePackage,
@@ -44,6 +46,7 @@ const FIXTURES = path.join(REPO_ROOT, 'tests/fixtures/licence-gate');
 const FIXTURE_ROOT = path.join(FIXTURES, 'root');
 const FIXTURE_ADR = 'docs/adr/0099-fixture-exemption.md';
 const UNRELATED_ADR = 'docs/adr/0098-fixture-unrelated.md';
+const PROPOSED_ADR = 'docs/adr/0097-fixture-proposed.md';
 
 type LockEntry = Record<string, unknown>;
 interface Lock {
@@ -135,12 +138,17 @@ describe('licence declarations', () => {
         expect(normaliseDeclaration({ license: '(MIT OR ISC) AND 0BSD' })).toMatchObject({ expression: '(MIT OR ISC) AND 0BSD' });
     });
 
-    it.each(['0BSD', 'CC0-1.0', 'Unlicense', 'MIT-0', 'BlueOak-1.0.0', 'Python-2.0', 'CC-BY-4.0'])(
-        'fails %s: the allowlist is roadmap 0.3\'s list, and anything else needs an exemption (ADR 0007)',
+    it.each(['CC0-1.0', 'Unlicense', 'MIT-0', 'BlueOak-1.0.0', 'Python-2.0', 'CC-BY-4.0'])(
+        'fails %s: the allowlist is roadmap 0.3\'s list plus 0BSD, and anything else needs an exemption (ADR 0007 E4)',
         (id) => {
             expect(judge({ license: id })).toMatchObject({ verdict: 'fail', code: 'NOT_ALLOWED' });
         },
     );
+
+    it('passes 0BSD, which the owner added to the allowlist on 2026-11-18 (ADR 0007 E2b), so tslib needs no exemption', () => {
+        expect(judge({ license: '0BSD' }, 'tslib')).toMatchObject({ verdict: 'pass', relied: ['0BSD'], notices: [] });
+        expect(judge({ license: '0bsd' }, 'tslib').verdict).toBe('pass');
+    });
 
     it('reads WITH as adding permissions to an allowed licence, never as making one allowed', () => {
         expect(judge({ license: 'Apache-2.0 WITH LLVM-exception' }).verdict).toBe('pass');
@@ -241,8 +249,8 @@ describe('licence declarations', () => {
         expect(judge({ license: '(MPL-2.0 OR Apache-2.0)' })).toMatchObject({ verdict: 'pass', relied: ['Apache-2.0'], notices: [] });
     });
 
-    it('holds exactly roadmap 0.3\'s licences, with BSD read as the 2- and 3-clause forms', () => {
-        expect([...ALLOWED_LICENCES].sort()).toEqual(['Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MIT', 'MPL-2.0', 'PostgreSQL']);
+    it('holds exactly roadmap 0.3\'s licences, with BSD read as the 2- and 3-clause forms, plus 0BSD (ADR 0007 E2b)', () => {
+        expect([...ALLOWED_LICENCES].sort()).toEqual(['0BSD', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MIT', 'MPL-2.0', 'PostgreSQL']);
     });
 
     it('compares expressions by meaning, not spelling', () => {
@@ -451,6 +459,50 @@ describe('the production tree', () => {
             );
         });
 
+        describe('a workspace that mirrors another project (it holds UPSTREAM.json)', () => {
+            /** tree-shapes with the root and both workspaces on BUSL-1.1, as Islestone and a mirrored @inflect/ui are. */
+            const buslTree = (uiLicence: string | null = 'BUSL-1.1'): Lock => {
+                const lock = lockfile('tree-shapes');
+                entry(lock, '').license = 'BUSL-1.1';
+                if (uiLicence === null) delete entry(lock, 'packages/ui').license;
+                else entry(lock, 'packages/ui').license = uiLicence;
+                return lock;
+            };
+            const mirrorAt = (...locations: string[]) => (location: string) => locations.includes(location);
+
+            it("skips a workspace that declares the root's licence when it holds no UPSTREAM.json: that is Islestone's own code", () => {
+                const report = checkDependencies(buslTree(), { root: FIXTURE_ROOT });
+                expect(report.skipped.map((s) => s.location)).toEqual(['', 'packages/ported', 'packages/ui']);
+                expect(report.failures).toEqual([]);
+            });
+
+            it("checks a mirror like any dependency, even when it declares the root's licence, and says why", () => {
+                const report = checkDependencies(buslTree(), { root: FIXTURE_ROOT, isUpstreamMirror: mirrorAt('packages/ui') });
+                expect(record(report, '@fixture/ui')).toMatchObject({ verdict: 'fail', code: 'NOT_ALLOWED', declared: 'BUSL-1.1', licenceSource: 'workspace' });
+                expect(report.failures.map((f) => f.name)).toEqual(['@fixture/ui']);
+                // The workspace without the file is still Islestone's own.
+                expect(report.skipped.map((s) => s.location)).toEqual(['', 'packages/ported']);
+                expect(report.notices).toEqual([expect.objectContaining({ code: 'UPSTREAM_MIRROR', message: expect.stringContaining('packages/ui') })]);
+            });
+
+            it('fails a mirror that declares no licence, rather than reading the silence as the root licence', () => {
+                const report = checkDependencies(buslTree(null), { root: FIXTURE_ROOT, isUpstreamMirror: mirrorAt('packages/ui') });
+                expect(record(report, '@fixture/ui')).toMatchObject({ verdict: 'fail', code: 'MISSING' });
+            });
+
+            it('passes a mirror through an exemption that cites an Accepted ADR, and not through one that cites a Proposed ADR', () => {
+                const exemption = (adr: string) => ({ '@fixture/ui': { licence: 'BUSL-1.1', version: '0.0.0', reason: 'Fixture: mirrored package.', adr } });
+                const options = { root: FIXTURE_ROOT, isUpstreamMirror: mirrorAt('packages/ui') };
+                const accepted = checkDependencies(buslTree(), { ...options, exemptions: exemption(FIXTURE_ADR) });
+                expect(record(accepted, '@fixture/ui').verdict).toBe('exempt');
+                expect(accepted.failures).toEqual([]);
+                expect(accepted.exemptionProblems).toEqual([]);
+                const proposed = checkDependencies(buslTree(), { ...options, exemptions: exemption(PROPOSED_ADR) });
+                expect(record(proposed, '@fixture/ui').verdict).toBe('fail');
+                expect(proposed.exemptionProblems.map((p) => `${p.name} ${p.code}`)).toEqual(['@fixture/ui ADR_NOT_ACCEPTED']);
+            });
+        });
+
         it('fails a workspace on disk that the lockfile does not describe, and one the lockfile lists that is not on disk', () => {
             const lock = lockfile('tree-shapes');
             const manifests = { ...honestManifests(lock), 'packages/ui': entry(lock, 'packages/ui') };
@@ -558,12 +610,12 @@ describe('exemptions', () => {
     ])('does not apply an exemption with %s', (_label, exemption, problem) => {
         const report = check({ 'fixture-gpl-lib': exemption });
         expect(report.failures.map((f) => f.name)).toEqual(['fixture-gpl-lib']);
-        expect(report.exemptionProblems).toEqual([{ name: 'fixture-gpl-lib', problem: expect.stringContaining(problem) }]);
+        expect(report.exemptionProblems).toEqual([{ name: 'fixture-gpl-lib', code: 'EXEMPTION_INVALID', problem: expect.stringContaining(problem) }]);
     });
 
     it('refuses an exemptions file that is not one object', () => {
         const report = check([valid]);
-        expect(report.exemptionProblems).toEqual([{ name: null, problem: expect.stringContaining('one JSON object') }]);
+        expect(report.exemptionProblems).toEqual([{ name: null, code: 'EXEMPTIONS_NOT_AN_OBJECT', problem: expect.stringContaining('one JSON object') }]);
         expect(report.failures.map((f) => f.name)).toEqual(['fixture-gpl-lib']);
     });
 
@@ -614,12 +666,68 @@ describe('exemptions', () => {
 
     it('reports an exemption for a package the tree does not hold', () => {
         const report = check({ 'fixture-gpl-lib': valid, 'left-the-tree': { ...valid, licence: 'MIT' } });
-        expect(report.exemptionProblems).toEqual([{ name: 'left-the-tree', problem: expect.stringContaining('stale') }]);
+        expect(report.exemptionProblems).toEqual([{ name: 'left-the-tree', code: 'EXEMPTION_STALE', problem: expect.stringContaining('stale') }]);
     });
 
     it('reports an exemption that is not needed', () => {
         const report = check({ 'fixture-gpl-lib': valid, 'fixture-mit-lib': { ...valid, licence: 'MIT' } });
-        expect(report.exemptionProblems).toEqual([{ name: 'fixture-mit-lib', problem: expect.stringContaining('not needed') }]);
+        expect(report.exemptionProblems).toEqual([{ name: 'fixture-mit-lib', code: 'EXEMPTION_NOT_NEEDED', problem: expect.stringContaining('not needed') }]);
+    });
+
+    describe('the cited ADR must be Accepted', () => {
+        it('does not apply an exemption whose ADR is Proposed, and says which status it found', () => {
+            const report = check({ 'fixture-gpl-lib': { ...valid, adr: PROPOSED_ADR } });
+            expect(report.exemptionProblems).toEqual([
+                {
+                    name: 'fixture-gpl-lib',
+                    code: 'ADR_NOT_ACCEPTED',
+                    problem: expect.stringContaining('whose status is "Status: Proposed — awaiting owner sign-off'),
+                },
+            ]);
+            expect(report.failures).toEqual([expect.objectContaining({ name: 'fixture-gpl-lib', code: 'NOT_ALLOWED' })]);
+            expect(report.exempted).toEqual([]);
+        });
+
+        it('applies the same exemption once it cites an Accepted ADR', () => {
+            const report = check({ 'fixture-gpl-lib': valid });
+            expect(report.exemptionProblems).toEqual([]);
+            expect(report.exempted.map((e) => e.name)).toEqual(['fixture-gpl-lib']);
+        });
+
+        it('reports a Proposed ADR beside any other problem with the entry, each under its own code', () => {
+            const report = check({ 'fixture-gpl-lib': { licence: 'GPL-3.0', adr: PROPOSED_ADR } });
+            expect(report.exemptionProblems.map((p) => p.code)).toEqual(['EXEMPTION_INVALID', 'ADR_NOT_ACCEPTED']);
+        });
+
+        it.each<[string, boolean]>([
+            ['# 0001 — T\n\nStatus: Accepted — Owner decision, 2026-11-18\n', true],
+            ['Status: Accepted', true],
+            ['Status: Accepted\r\n\n## Context\r\n', true],
+            ['Status: Accepted (superseded in part by 0009)', true],
+            ['Status: Proposed — awaiting owner sign-off (2026-11-18 drafted)', false],
+            ['Status: Proposed\n\nStatus: Accepted', false],
+            ['# T\n\n```markdown\nStatus: Accepted\n```\n', false],
+            ['# T\n\n## Context\n\nStatus: Accepted\n', false],
+            ['# T\n\n~~~md\nStatus: Proposed\n~~~\n\nStatus: Accepted\n', true],
+            ['Status: Acceptedish', false],
+            ['Status: Accepted-ish', false],
+            ['Status: Superseded by 0009', false],
+            ['Status:Accepted', false],
+            ['status: Accepted', false],
+            [' Status: Accepted', false],
+            ['**Status:** Accepted', false],
+            ['# 0001 — No status line\n\nAccepted.\n', false],
+            ['', false],
+        ])('reads %j as Accepted: %s', (text, accepted) => {
+            expect(isAcceptedAdr(text)).toBe(accepted);
+        });
+
+        it('takes the first "Status:" line of the header as the status, outside code fences', () => {
+            expect(adrStatusLine('# T\n\nStatus: Proposed — x\r\n\nStatus: Accepted\n')).toBe('Status: Proposed — x');
+            expect(adrStatusLine('# T\n')).toBeNull();
+            expect(isAcceptedAdr(fs.readFileSync(path.join(FIXTURE_ROOT, PROPOSED_ADR), 'utf8'))).toBe(false);
+            expect(isAcceptedAdr(fs.readFileSync(path.join(FIXTURE_ROOT, FIXTURE_ADR), 'utf8'))).toBe(true);
+        });
     });
 });
 
@@ -1208,7 +1316,72 @@ describe('the command line', () => {
         });
         const r = report(root);
         expect(r.status).toBe(1);
-        expect(r.dependencies.exemptionProblems).toEqual([{ name: 'fixture-gpl-lib', problem: expect.stringContaining('does not mention fixture-gpl-lib') }]);
+        expect(r.dependencies.exemptionProblems).toEqual([
+            { name: 'fixture-gpl-lib', code: 'EXEMPTION_INVALID', problem: expect.stringContaining('does not mention fixture-gpl-lib') },
+        ]);
+    });
+
+    it('refuses an exemption whose ADR is not Accepted, and applies it once the ADR is', () => {
+        const proposed = fs.readFileSync(path.join(FIXTURE_ROOT, PROPOSED_ADR), 'utf8');
+        const root = plant({
+            'package-lock.json': lockText('planted-gpl'),
+            'src/index.ts': benign,
+            [PROPOSED_ADR]: proposed,
+            'scripts/licence-exemptions.json': JSON.stringify({ 'fixture-gpl-lib': { licence: 'GPL-3.0', reason: 'Fixture.', adr: PROPOSED_ADR } }),
+        });
+        const human = run(root);
+        expect(human.status).toBe(1);
+        expect(human.stdout).toContain('FAIL  fixture-gpl-lib  [ADR_NOT_ACCEPTED]');
+        expect(human.stdout).toContain('FAIL  fixture-gpl-lib@1.0.0  [NOT_ALLOWED]');
+        expect(report(root).dependencies.exemptionProblems).toEqual([
+            { name: 'fixture-gpl-lib', code: 'ADR_NOT_ACCEPTED', problem: expect.stringContaining('not Accepted') },
+        ]);
+
+        // An ADR with no status line at all is not Accepted either.
+        fs.writeFileSync(path.join(root, PROPOSED_ADR), proposed.replace(/^Status: .*\n/m, ''));
+        expect(report(root).dependencies.exemptionProblems).toEqual([
+            { name: 'fixture-gpl-lib', code: 'ADR_NOT_ACCEPTED', problem: expect.stringContaining('no "Status:" line') },
+        ]);
+
+        // The owner accepts the ADR: the same exemption now applies.
+        fs.writeFileSync(path.join(root, PROPOSED_ADR), proposed.replace(/^Status: Proposed.*$/m, 'Status: Accepted — owner decision, 2026-11-18'));
+        const accepted = run(root);
+        expect(accepted.stdout).toContain('EXEMPT  fixture-gpl-lib@1.0.0  as GPL-3.0  (docs/adr/0097-fixture-proposed.md)');
+        expect(accepted.status).toBe(0);
+    });
+
+    it("checks a workspace that holds UPSTREAM.json like any dependency, even with the root's BUSL-1.1 licence", () => {
+        const lock = {
+            name: 'fixture-app',
+            version: '1.0.0',
+            lockfileVersion: 3,
+            requires: true,
+            packages: {
+                '': { name: 'fixture-app', version: '1.0.0', license: 'BUSL-1.1', workspaces: ['packages/*'] },
+                'node_modules/@fixture/ui': { resolved: 'packages/ui', link: true },
+                'packages/ui': { name: '@fixture/ui', version: '0.0.0', license: 'BUSL-1.1' },
+            },
+        };
+        const root = plant({
+            'package-lock.json': JSON.stringify(lock),
+            'packages/ui/package.json': JSON.stringify({ name: '@fixture/ui', version: '0.0.0', license: 'BUSL-1.1' }),
+            'packages/ui/src/index.ts': benign,
+        });
+        // Without UPSTREAM.json the workspace is Islestone's own code.
+        const own = report(root);
+        expect(own.status).toBe(0);
+        expect(own.dependencies.skipped.map((s) => s.name)).toEqual(['fixture-app', '@fixture/ui']);
+
+        // A mirror is another project's code, so BUSL-1.1 is not on the allowlist for it.
+        fs.writeFileSync(path.join(root, 'packages/ui/UPSTREAM.json'), '{}\n');
+        const mirror = report(root);
+        expect(mirror.status).toBe(1);
+        expect(codes(mirror)).toEqual(['NOT_ALLOWED @fixture/ui']);
+        expect(mirror.dependencies.notices.map((n) => n.code)).toContain('UPSTREAM_MIRROR');
+
+        // Hiding the file from git does not hide the mirror.
+        fs.writeFileSync(path.join(root, '.gitignore'), 'packages/ui/UPSTREAM.json\n');
+        expect(codes(report(root))).toEqual(['NOT_ALLOWED @fixture/ui']);
     });
 
     it('exits 2, saying why, when it cannot run', () => {

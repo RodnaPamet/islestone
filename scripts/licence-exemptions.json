@@ -85,12 +85,7 @@
   },
   "caniuse-lite": {
     "licence": "CC-BY-4.0",
-    "reason": "Reached through next > caniuse-lite (browserslist build targets). The package is the caniuse.com browser-support database (data/) with a small decoder (dist/); its LICENSE at 1.0.30001826 is Creative Commons Attribution 4.0 International, which asks for attribution and has no copyleft. Not pinned to a version, because the database is republished about weekly: the entry is bound to the declared licence, so a licence change fails the gate. Interim until the owner decides ADR 0007 E3. Verified 2026-11-18.",
-    "adr": "docs/adr/0007-third-party-licence-exceptions.md"
-  },
-  "tslib": {
-    "licence": "0BSD",
-    "reason": "Reached through next > @swc/helpers > tslib. node_modules/tslib/LICENSE.txt at 2.9.1 is the Zero-Clause BSD licence, which grants every right and asks for nothing, not even attribution; package.json declares 0BSD. 0BSD is outside roadmap 0.3's list only because the gate reads \"BSD\" as the 2- and 3-clause forms. Not pinned to a version: the entry is bound to the declared licence, so a licence change fails the gate. Interim until the owner decides ADR 0007 E2 (E2b would add 0BSD to the allowlist and delete this entry). Verified 2026-11-18.",
+    "reason": "Reached through next > caniuse-lite (browserslist build targets). The package is the caniuse.com browser-support database (data/) with a small decoder (dist/); its LICENSE at 1.0.30001826 is Creative Commons Attribution 4.0 International, which asks for attribution and has no copyleft. Exempted by name under owner decision of 2026-11-18 (ADR 0007 E3a): not pinned to a version, because the database is republished about weekly; the entry is bound to the declared licence, so a licence change fails the gate. Verified 2026-11-18.",
     "adr": "docs/adr/0007-third-party-licence-exceptions.md"
   }
 }

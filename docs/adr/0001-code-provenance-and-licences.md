@@ -1,18 +1,19 @@
 # 0001 — Code provenance and licences
 
-Status: Proposed — awaiting owner sign-off (2026-11-18 drafted)
+Status: Accepted (owner decisions, 2026-11-18)
 
 ## Context
 
-Islestone plans to reuse a large part of inflect-compliance (roadmap section 2.1). Before any of that code can enter this repository, three things must be settled:
+Islestone plans to reuse a large part of inflect-compliance (roadmap section 2.1). Before any of that code could enter this repository, these things had to be settled:
 
 - **D1.** Islestone's right to use inflect-compliance code.
 - **D2.** Islestone's own licence.
 - **D3.** The canvas library: tldraw, which is proprietary, or Excalidraw.
+- **D4.** The Dub-derived files and Nucleo icons in inflect-compliance's UI layer. This arose after the first draft, from the measurement in `docs/porting/licence/dub-nucleo-finding.md`.
 
-This ADR records what the files say, the options for each decision, and a recommendation for each. **None of the three decisions is made.** Each one waits for the owner's sign-off. Until D1 is signed, the interim rule below applies.
+This ADR was drafted on 2026-11-18 with the options for D1 to D3 and a recommendation for each. The repository owner decided all four in the working session the same day. Each decision below records the option chosen and the owner's words where they were given. Where the owner chose against the draft's recommendation, the decision says so. The options that were not chosen are kept, briefly, because "What would change this decision" points back to them.
 
-How to read this ADR: a line marked **Verified** was read in the named file on 2026-11-18. Everything else is a recommendation, an inference, or an open question, and is labelled as one. This ADR is not legal advice.
+How to read this ADR: a line marked **Verified** was read in the named file on 2026-11-18. Everything else is a decision, an inference or an open question, and is labelled as one. This ADR is not legal advice.
 
 ### What was read
 
@@ -24,8 +25,9 @@ How to read this ADR: a line marked **Verified** was read in the named file on 2
 **Verified**: the licence declarations.
 
 - `package.json` line 5: `"license": "BUSL-1.1"`. Line 4: `"private": true`.
-- `packages/ui/package.json` line 5: `"license": "BUSL-1.1"`. The shared UI package that roadmap 1.2 plans to copy byte for byte is under the same licence.
+- `packages/ui/package.json` line 5: `"license": "BUSL-1.1"`. The shared UI package that roadmap 1.2 copies byte for byte is under the same licence.
 - `LICENSE` line 1: "Business Source License 1.1".
+- No source file carries its own BUSL header: under `src/`, `packages/ui/` and `prisma/`, the only file that mentions "BUSL" or "Business Source" is `packages/ui/package.json`, and no file carries an SPDX line.
 
 **Verified**: the five parameters, quoted exactly from `LICENSE` lines 10–35.
 
@@ -78,32 +80,34 @@ Change License:       Apache License, Version 2.0
 - `NOTICE` line 2 reads "Copyright (c) Inflect Compliance contributors." `LICENSE` line 16 reads "The Licensed Work is © 2026 Inflect Ltd."
 - `CONTRIBUTING.md` and `.github/workflows/`: no contributor licence agreement and no DCO sign-off requirement were found. Searched for CLA, DCO, "signed-off", "assign" and "copyright".
 
-**Verified**: third-party material inside inflect-compliance. A port would carry its obligations with it.
+**Verified**: third-party material inside inflect-compliance. A port carries its obligations with it.
 
 - `NOTICE` lines 7–19: the AI guard's rule taxonomy in `src/app-layer/ai/guard/` is adapted from pipelock, under Apache-2.0. A port of the guard (roadmap 6.1) carries that attribution.
 - `NOTICE` lines 52–77: six files under `.claude/skills/` are redistributed copies of NVIDIA/OpenShell files, under Apache-2.0.
 - `LICENSING.md` lines 42–46: libvips (LGPL), elkjs (EPL-2.0) and FSL-licensed build tools.
 - `package-lock.json`: `elkjs` 0.12.1 is recorded as `EPL-2.0 OR GPL-3.0-or-later`. `@dagrejs/dagre` 3.1.3 is `MIT`.
 - `package.json` line 18: the parent's own gate, `license:check`, fails on AGPL, SSPL, BUSL-1.1 and Commons Clause. It excludes three packages: `inflect-compliance` itself, `@inflect/ui` and `@rodnapamet/scanent-contract` 0.16.0.
+- The UI layer is largely derived from Dub and carries Nucleo icons. See "The Dub and Nucleo finding" below.
 
-### What the BUSL grant allows Islestone, and what it does not
+### What the BUSL text alone allowed Islestone
 
-This is a plain reading of the text above. It is not a legal opinion.
+This is a plain reading of the text above, written before D1 and D2 were decided. It is not a legal opinion. It is kept because it explains why D1 needed a decision rather than a reading of the licence.
 
-The licence allows, without asking anyone:
+The licence allows anyone, without asking:
 
-- Reading the code and learning its design.
-- Copying, modifying, making derivative works and redistributing, for **non-production** use (lines 44–46).
-- Production use, but only inside the Additional Use Grant.
+- reading the code and learning its design;
+- copying, modifying, making derivative works and redistributing, for **non-production** use (lines 44–46);
+- production use, but only inside the Additional Use Grant.
 
-The licence does not allow, or does not clearly allow:
+Without a decision by the owner, the licence did not allow, or did not clearly allow:
 
-- **Islestone's production use.** Islestone is a SaaS offered to third parties. The grant forbids that when the service "competes with any product or service offered by the Licensor". The licence does not define "competes". It covers "any" product of the Licensor, and that list can change. So the text alone cannot tell us whether Islestone is inside the grant.
-- **Choosing Islestone's own licence for ported code.** Copies and derivative works stay under BUSL-1.1 with Inflect Ltd.'s parameters (lines 60–63). Only the copyright holder can let Islestone license them differently.
+- **Islestone's production use.** Islestone is a SaaS offered to third parties, and the grant forbids that when the service "competes with any product or service offered by the Licensor". "Competes" is undefined.
+- **Choosing Islestone's licence for ported code.** Copies and derivative works stay under BUSL-1.1 (lines 60–63).
 - **Leaving out the notice.** Every copy must display the BUSL licence (lines 65–66).
-- **Safety on breach.** A breach ends the rights to every version, not just the one copied (lines 70–72).
+- **Safety on breach.** A breach ends the rights to every version (lines 70–72).
 - **Using Inflect Ltd.'s names or logos** (lines 74–76).
-- **Help from the Change Date.** The stated date is 2030-07-17. Islestone needs the rights now.
+
+D1 and D2 settle this: the owner, who states that inflect-compliance is their software, allowed the copying, and made Inflect Ltd., the licensor of inflect-compliance, Islestone's licensor as well.
 
 ### The canvas library
 
@@ -154,152 +158,138 @@ The ceiling costs one audit exemption.
 - It is still a 0.x release.
 - **Not checked:** the licences of its dependencies.
 
-**Not verified:** tldraw's prices, and what its commercial licence includes. Roadmap 2.1 says "price by quote" and says nothing about tldraw sync. The vendor's own pages reportedly say that tldraw sync is included in the commercial licence. This environment's network proxy refused `tldraw.dev`, so neither the price nor that claim was read.
+**Not verified:** tldraw's prices, and what its commercial licence includes. This environment's network proxy refused `tldraw.dev`. Under D3 neither matters today.
+
+### The Dub and Nucleo finding
+
+**Verified**, from `docs/porting/licence/dub-nucleo-finding.md` (measured on 2026-11-18 at inflect-compliance commit `5528464`; the script is `docs/porting/licence/dub-overlap.py`), and from a read-only clone of `github.com/dubinc/dub` at commit `6b463b4bdd9ed2fd9aa416f67b5b77d317b1471e` (2026-10-26):
+
+- Dub's `LICENSE.md` opens "Copyright (c) 2024-present Dub Technologies, Inc." Files under two `(ee)` folders of `apps/web` are under a separate licence. "Content outside of the above mentioned directories … is available under the 'AGPLv3' license." `@dub/ui` and `@dub/utils` declare no licence of their own, so the repository licence governs them.
+- Section 13 of that AGPL text ("Remote Network Interaction") requires a modified version to offer its Corresponding Source to "all users interacting with it remotely through a computer network".
+- Dub ships Nucleo icons with a `README.md` that inflect-compliance copied verbatim into `packages/ui/src/components/ui/icons/nucleo/README.md`: "Copyright © Nucleo", "Redistribution of icons is prohibited." and "Icons are restricted for use only within the product they are bundled with."
+- Normalised-line overlap between inflect-compliance's UI files and Dub's `packages/ui` and `packages/utils`: **368 of 597 inflect UI files share at least 50% of their normalised lines with Dub.** That count includes the 270 Nucleo icon files, 62 of the 63 other `packages/ui` icons, 12 of 56 non-icon `packages/ui` files (charts, hooks), 17 of 184 non-icon `src/components/ui` files and 7 of its 9 icons. None of the 15 `src/lib/hooks` files reaches 50%.
+- The engines Islestone plans to take (tasks, automation, agentic, MCP, canvas) show no overlap. Of the roughly 2,600 other files under `src/`, one reaches 50% (`src/lib/http/fetch-with-retry.ts`, 75%).
+- inflect-compliance's own documents call this code "Dub-ported" or "Dub-originated". No `NOTICE`, attribution or licence assessment in inflect-compliance records Dub's licence or Nucleo's notice.
+- Caveat, from the finding: line overlap shows shared text, not who wrote it first. A few files (`label`, `form`, `slider`) also resemble shadcn/ui (MIT). The icons, charts, filter system and date picker are Dub's own work.
 
 ## Decision
 
-Each option below lists its consequences. The recommendations are proposals for the owner. They are not decisions.
+### D1 — Islestone's right to use inflect-compliance code: copying is allowed
 
-### D1 — Islestone's right to use inflect-compliance code
+**Decision: code may be copied from inflect-compliance into Islestone.** Owner decision, 2026-11-18. The owner's words: "inflect compliance is my software, it's in the same Organization- you can copy".
 
-Options:
+- **Basis.** The owner states that inflect-compliance is their software. Both repositories sit in the same GitHub organisation: inflect-compliance's remote is `github.com/RodnaPamet/inflect-compliance` (**Verified**), and Islestone's `LICENSE` names `github.com/RodnaPamet/islestone`. Under D2, Islestone's licensor is Inflect Ltd., which is also inflect-compliance's licensor. Of the drafted options this is closest to 1a ("Islestone is a product of Inflect Ltd.").
+- **Signed reference.** No separate grant document was produced. The owner's decision in the working session of 2026-11-18 is the authority, and this ADR records it.
+- **How copying is done:** the copy rule below. It replaces the interim "pattern only, copy no code" rule that applied while D1 was open. That rule is retired.
 
-- **1a. Islestone is a product of Inflect Ltd.** Inflect Ltd. records in writing that it owns and operates Islestone.
-  - Inflect Ltd. then uses its own code and needs no licence for what it owns.
-  - It must still confirm that it owns all of that code (open questions 2 and 3).
-  - Islestone's licence (D2) becomes Inflect Ltd.'s choice.
-- **1b. Inflect Ltd. gives a written licence grant or copyright assignment to Islestone's owner.** The document should state:
-  - which repositories and versions it covers, including later versions Islestone pulls (roadmap 1.2 expects ongoing upstream sync);
-  - the right to copy and modify the code, and to use it in production as a hosted service offered to third parties;
-  - that the competition limit in the Additional Use Grant does not apply to Islestone's field (project management);
-  - whether ported code may be licensed under Islestone's own licence (D2), or stays BUSL-1.1;
-  - that it is perpetual and irrevocable, and survives a change of control of either party;
-  - who carries the third-party notices (pipelock, elkjs and others).
-- **1c. Rely on the Additional Use Grant alone.** Not recommended.
-  - "Competes" is undefined, and the Licensor's products can change.
-  - Ported code stays BUSL-1.1.
-  - A breach would end the rights to every version.
-- **1d. Port nothing.** The interim rule becomes permanent.
-  - Every "port as is" and "port with renames" verdict in roadmap 2.1 becomes a rewrite.
-  - Phase 1 grows by several weeks. This is an estimate, not a measurement.
+Options considered and not chosen: **1b** (a written licence grant or copyright assignment from Inflect Ltd. to another owner), **1c** (relying on the Additional Use Grant alone; "competes" is undefined and a breach ends the rights to every version), **1d** (port nothing, which would turn every "port" verdict in roadmap 2.1 into a rewrite).
 
-**Recommendation:** 1a if Islestone is in fact Inflect Ltd.'s product, otherwise 1b. Copy nothing before one of them is signed (roadmap section 7, open decision 1).
+### D2 — Islestone's own licence: BUSL-1.1
 
-Signed reference: ____
+**Decision: Islestone is licensed under the Business Source License 1.1.** Owner decision, 2026-11-18. The owner's words: "Make it BUSL as well". This is drafted option 2b; the draft had recommended 2a (proprietary) for now.
 
-Owner sign-off: ____  Date: ____
+The parameters, as `LICENSE` states them (lines 10–34):
 
-### D2 — Islestone's own licence
+- **Licensor:** Inflect Ltd., a company registered in Bulgaria. The owner chose "Inflect Ltd." when asked.
+- **Licensed Work:** Islestone, as made available in `github.com/RodnaPamet/islestone` and in each version released by the Licensor; © 2026 Inflect Ltd.
+- **Additional Use Grant:** production use is allowed, except to provide to third parties a hosted, managed, embedded or software-as-a-service product or service that competes with any product or service of the Licensor. The grant names, as included, "any project-management, work-management, compliance, governance, risk, or audit-management product or service" (the owner chose "PM + compliance"). Using Islestone to manage your own organization's (and affiliates') internal projects and work, including through consultants or service providers acting solely on your behalf, is permitted.
+- **Change Date:** 2030-11-18, four years after the initial version's first public availability, determined separately for each version.
+- **Change License:** Apache License, Version 2.0.
 
-Options:
+`LICENSING.md` is the plain-language summary; `LICENSE` governs. Because one licensor, Inflect Ltd., licenses both repositories, the concern the draft raised under 2b (two BUSL licensors in one repository) does not arise.
 
-- **2a. Proprietary.** `package.json` carries `"license": "UNLICENSED"` and `"private": true`.
-  - This works with every D1 outcome.
-  - BUSL notices stay on any ported files, unless the grant says otherwise.
-  - The source is not public, and Islestone cannot be called open source.
-- **2b. BUSL-1.1, like the parent,** with Islestone's own parameters.
-  - Islestone would need its own Additional Use Grant, Change Date and Change License. The Change License must be GPL-compatible (`LICENSE` lines 96–101).
-  - If Islestone's licensor is not Inflect Ltd., ported files keep Inflect Ltd.'s parameters, so the repository would hold two BUSL licensors.
-  - The source is available but not open source.
-- **2c. An OSI licence.** Apache-2.0 or MIT if permissive, AGPL-3.0 if copyleft.
-  - Inflect Ltd. must relicense every ported file under it. That publishes those parts of inflect-compliance before 2030-07-17, which ends the parent's commercial window for them: a competitor could take the tenancy, auth or agent-engine code back into a compliance product.
-  - tldraw, if chosen in D3, keeps its own licence. Its terms bind anyone who self-hosts Islestone.
+Options considered and not chosen: **2a** (proprietary, `UNLICENSED`), **2c** (an OSI licence, which would have published the copied parts of inflect-compliance before their own Change Date).
 
-**Recommendation:** 2a for now. Opening a licence later is easy. Publishing under an open licence cannot be undone. Revisit before general availability (roadmap 9.2), or earlier if the owner wants a community or self-hosted edition.
+### D3 — The canvas library: tldraw 3.x with the watermark
 
-Owner sign-off: ____  Date: ____
+**Decision: option 3a. The canvas stays on tldraw 3.x (3.15.6), in commercial production, with the watermark visible.** Owner decision, 2026-11-18. The owner's words: "we can use the 3.x in commercial production with the watermark, it's open sourced". The draft had recommended against 3a (it preferred 3c, Excalidraw, unless a tldraw quote was acceptable).
 
-### D3 — The canvas library
+What the decision relies on is the v3.15.6 licence text (Context, **Verified**): it grants use "in your commercial or non-commercial projects" and forbids disabling, hiding, removing or altering the watermark. That licence is tldraw's own, not an OSI open-source licence; roadmap 2.1 calls tldraw proprietary. Its terms are what bind.
 
-Needed before roadmap 4.2 starts, not before Phase 1. It also decides whether the licence allowlist in 0.3 carries a tldraw exception.
+Rules that follow:
 
-- **3a. Stay on tldraw 3.x (3.15.6) with the watermark and no upgrades.**
-  - Cost: no licence fee.
-  - The watermark shows in production and must not be hidden or altered.
-  - No 4.x or 5.x fixes or features. Further 3.x patches are not promised.
-  - Islestone would copy the parent's three mechanisms:
-    - a guard that pins the canvas major at 3 (H4);
-    - a Dependabot hold on `tldraw` and on transitive `@tiptap/core`;
-    - an audit exemption for tiptap 2.x, re-justified on its own evidence.
-  - The 0.3 allowlist needs a recorded tldraw exception.
-  - Porting the parent's canvas code needs D1. The roadmap's own Tiptap editor (roadmap section 2.3, "Rich text" row; built in sub-phase 4.1) would be Tiptap 3, as in the parent, which declares `@tiptap/react` and `@tiptap/starter-kit` at `^3.33.1` (`package.json` lines 141–142). It would sit beside tldraw's tiptap 2.x in the same tree, as it does in the parent.
-- **3b. Buy a tldraw commercial licence key.**
-  - Cost: by quote. Not verified here.
-  - Allows 5.x (5.6.1 today) and later upgrades while the licence lasts.
-  - The 4.x+ licence is time-limited ("for the specified period"). If it lapses, production use is banned, and the software contains technical enforcement. Canvas availability then depends on renewals.
-  - The licence says the software may send usage data to tldraw. tldraw would need assessing as a data recipient in the sub-processor register (H6) and the privacy notice (8.6).
-  - The parent's three mechanisms change as follows:
-    - the ceiling guard becomes a guard on the licensed major (H4);
-    - the Dependabot hold goes;
-    - the tiptap exemption can retire, because 5.6.1 declares tiptap `^3.12.1`. A floor check still makes sense, since that range admits tiptap 3 releases older than the 3.30.4 fix.
-  - The parent's canvas code targets 3.x, so a port needs a migration to 5.x. Its size is not assessed.
-  - The 0.3 allowlist records the licence, the key's term and the renewal date.
-- **3c. Move the canvas to Excalidraw (MIT).**
-  - Cost: no licence fee, but an engineering cost.
-  - The parent's canvas binds to tldraw in 27 files, so roadmap 4.2 becomes a rewrite of the editor layer rather than a port. The parent has a test named `auto-layout-is-engine-free`, which suggests its layout code is engine-neutral. This was not verified.
-  - No watermark, no key, no vendor data flow.
-  - No allowlist exception, if its dependency tree passes the 0.3 gate. That tree is not yet checked.
-  - Excalidraw is pre-1.0, so its API may change.
-  - It reduces how much canvas code depends on D1.
+- tldraw and `@tldraw/*` stay at 3.15.6, or a later 3.x release whose licence text is re-read and found unchanged. No 4.x or 5.x: their licence forbids production use without a paid key.
+- The watermark stays visible. Nobody disables, hides, removes or alters it, or the key validation that governs it.
+- Any distribution carries a verbatim copy of tldraw's licence.
+- These follow when roadmap 4.2 ports the canvas, not before (nothing from tldraw is in the tree today):
+  - a guard that pins the canvas library's major at 3 (H4), on the parent's pattern;
+  - a Dependabot hold on `tldraw` `>=4.0.0` and on transitive `@tiptap/core` `>=3.0.0`;
+  - an audit exemption for tiptap 2.x under tldraw, re-justified on its own evidence;
+  - a licence-gate exemption for `tldraw` and `@tldraw/editor`, which declare `SEE LICENSE IN LICENSE.md`. Each entry pins `version` and cites this ADR.
+- The roadmap's own Tiptap editor (sub-phase 4.1) is Tiptap 3, as in the parent (`package.json` lines 141–142 declare `@tiptap/react` and `@tiptap/starter-kit` at `^3.33.1`). It sits beside tldraw's tiptap 2.x in the same tree, as it does in the parent.
 
-**Recommendation:** ask tldraw for a quote now, because asking costs nothing. Choose 3c unless the quote's price, term and data terms are acceptable to the owner; in that case choose 3b. Do not choose 3a: it is a version dead end and it carries the tiptap exemption.
+Options considered and not chosen: **3b** (a commercial tldraw key: time-limited, with a usage-data clause and renewals), **3c** (Excalidraw, MIT, at the cost of rewriting the parent's editor layer).
 
-Owner sign-off: ____  Date: ____
+### D4 — Dub-derived UI and Nucleo icons: copied as they are, risk accepted
 
-### Interim rule (applies while D1 is unsigned)
+**Decision: Islestone copies inflect-compliance's UI layer as it is, including the Dub-derived files and the Nucleo icons, and accepts the licence risk.** Owner decision, 2026-11-18. The owner chose "Copy as is, accept risk" when asked.
 
-This rule only restricts Islestone, so it needs no owner decision to start.
+The options put to the owner, from the finding:
 
-1. Read inflect-compliance to learn its design and patterns.
-2. Copy no code from it: no file copies, no pasted functions, no verbatim blocks, no byte-for-byte package copies.
-3. Write everything fresh.
-4. Record each pattern adopted from inflect-compliance in `PROVENANCE.md`. Each entry gives the source path, the commit read and the words "pattern only, no code copied". If `PROVENANCE.md` does not exist yet (roadmap 0.3), the pull request lists the items, and the file picks them up when it lands.
-5. Never copy code from a project the roadmap marks "inspiration only" (roadmap 2.2), whatever D1 says.
-6. Every roadmap step whose Source line or prompt names inflect-compliance, or says "port" or "copy" from it, waits for D1, or runs as a fresh write under this rule. As of 2026-11-18 these are 1.2 to 1.7, 2.1 to 2.3, 3.1, 3.3, 3.6, 4.1, 4.2, 4.4, 5.1, 5.2, 6.1, 6.2, 6.5, 6.6, 8.1 and 8.6; a later roadmap edit can add more, and the rule covers them without this list changing. Roadmap 1.1's "port the env pattern" runs as pattern only.
+1. Clean the shared package upstream, replacing the Dub-derived files with Inflect-authored or MIT/ISC-sourced code, then copy it.
+2. Copy only the files with no Dub overlap into Islestone, and rebuild the rest from MIT/ISC sources.
+3. Obtain licences: a commercial licence from Dub Technologies, and a Nucleo licence covering Islestone.
+4. Copy as is and accept the risk. The finding did not recommend it. **This is the option chosen.**
 
-This rule is stricter than BUSL itself, whose Terms allow non-production copying (lines 44–46). It refuses that copying anyway, for three reasons:
+The risk accepted, stated plainly:
 
-- Islestone code is written for production.
-- Copied code stays BUSL-1.1 (lines 60–63), so it would decide D2 before the owner does.
-- Removing copied code later is expensive and hard to prove complete.
+- **AGPL-3.0.** It requires a work that includes AGPL code to be conveyed under the AGPL. Islestone is BUSL-1.1 (D2). Section 13 of the AGPL also reaches users who interact with a modified version over a network, which is how a SaaS is used.
+- **Nucleo.** Its notice prohibits redistribution and restricts the icons to "the product they are bundled with". Committing them to Islestone's repository is redistribution outside that product.
+- The same exposure exists for inflect-compliance itself, independent of Islestone.
+
+What the decision requires:
+
+- **`NOTICE`** carries Dub's copyright and AGPL-3.0 statement ("Copyright (c) 2024-present Dub Technologies, Inc.", AGPL-3.0 outside Dub's `(ee)` folders, source `github.com/dubinc/dub`) and the Nucleo notice ("Copyright © Nucleo"; redistribution prohibited; use restricted to the product the icons are bundled with; `nucleoapp.com/license`). Both are added in the same change that lands `packages/ui` (sub-phase 1.2). Neither is in the tree today, because no Dub-derived file or Nucleo icon is in the tree today.
+- **`PROVENANCE.md`** rows for the shared UI name the Dub origin of the files the measurement links to Dub, and the Nucleo terms for the Nucleo folder, as `docs/porting/provenance-shared-ui.md` drafts.
+- The Nucleo `README.md` is copied with the icons and kept.
+
+D4 is about the Dub-derived files and Nucleo icons as they exist in inflect-compliance's UI. Taking anything from Dub's own repository, or from another Nucleo source, is not part of it and would need its own decision.
+
+### The copy rule
+
+This replaces the interim rule that applied while D1 was open.
+
+1. **Copying from inflect-compliance is allowed** (D1): whole files, functions, and packages byte for byte.
+2. **Every copied file gets a `PROVENANCE.md` row**: source repository and path, the commit read (`5528464fc54a8681956f3b9ce23ca9c075f0420e` for the porting maps in `docs/porting/maps/`; a later read pins its own commit), licence BUSL-1.1 with licensor Inflect Ltd., and what changed ("None" for a byte-for-byte copy). Add the row in the same pull request as the file.
+3. **Keep BUSL and other licence notices on copied files.** inflect-compliance's source files carry no per-file BUSL header (Context, **Verified**). What exists is kept: a copied package's `"license": "BUSL-1.1"` field, and any notice bundled with copied material, such as the Nucleo `README.md`. Islestone's own `LICENSE` displays BUSL-1.1 for the repository.
+4. **Third-party material inside inflect-compliance keeps its own terms.** Its attribution goes into Islestone's `NOTICE` in the same change as the copy: pipelock (Apache-2.0) with the AI guard (6.1), Dub and Nucleo with the shared UI (D4).
+5. **Never copy code from a project the roadmap marks "inspiration only"** (roadmap 2.2), whatever D1 says.
+6. **A roadmap port candidate other than inflect-compliance** follows H0: its LICENSE is re-read at the commit used and that commit is pinned in `PROVENANCE.md` before first use.
+7. **A pattern learned by reading, with no code copied,** still gets a `PROVENANCE.md` row that says "pattern only, no code copied". The rows written under the interim rule stay as they are: those components were written fresh.
 
 ### Third-party licence facts (H0)
 
-The third-party licence facts in the roadmap were checked on 2026-11-18. Re-read each one at the pinned commit at first use, and pin that commit in `PROVENANCE.md`, as hardening gate H0 requires. The tldraw and Excalidraw readings in this ADR are pinned to the tags and hashes given in the Context.
+The third-party licence facts in the roadmap were checked on 2026-11-18. Re-read each one at the pinned commit at first use, and pin that commit in `PROVENANCE.md`, as hardening gate H0 requires. The tldraw and Excalidraw readings in this ADR are pinned to the tags and hashes given in the Context. The port candidates' licence checks are in `docs/porting/oss/<project>.md`, section "Licence check", and `PROVENANCE.md` lists each with the commit it was read at.
 
 ### Open questions for the owner
 
-1. Is Islestone a product of Inflect Ltd., or of another person or entity? This decides between 1a and 1b.
-2. Does Inflect Ltd. hold the copyright in all of inflect-compliance? `NOTICE` line 2 credits "contributors". No CLA or DCO was found. A grant covers only what Inflect Ltd. owns.
-3. The Licensed Work names `github.com/inflect-compliance/inflect-compliance`. The checkout's remote is `github.com/RodnaPamet/inflect-compliance`. Should the grant name both?
-4. Does Inflect Ltd. consider a project-management SaaS to compete with any product it offers or plans? This matters only under 1c.
-5. Which Change Date applies to the commit Islestone would read? `LICENSE` states 2030-07-17. `LICENSE` and `LICENSING.md` also say each version has its own date.
-6. Should the grant cover later versions? The hash-synced copy model in roadmap 1.2 assumes continuing updates from upstream.
-7. Will counsel confirm that "read for patterns, write fresh" does not create a derivative work under BUSL? This ADR assumes it does not. That is not a legal opinion.
-8. What does a tldraw commercial licence cost, for how long, and what does it cover: sync, self-hosting, the number of apps or domains, the data its enforcement sends? Not readable here, because the proxy refused `tldraw.dev`.
-9. Does tldraw 3.15.6's watermark or key check contact tldraw's servers? Not tested. This matters for privacy whichever tldraw option is chosen.
-10. `elkjs` (`EPL-2.0 OR GPL-3.0-or-later`) is not on the 0.3 allowlist. The parent's canvas uses elk for auto-layout (roadmap 4.2). Add an EPL-2.0 entry, or use dagre (MIT) only?
-11. Does tldraw still sell a 3.x "Business License" to remove the watermark?
+These remain after the decisions above.
+
+1. The owner states that inflect-compliance is their software. Its `NOTICE` line 2 credits "contributors", and no CLA or DCO was found. Does any file Islestone will copy contain code by an outside contributor? The checkout is shallow, so authorship could not be read. Third-party-derived code is D4's subject.
+2. Which Change Date does a file copied into Islestone carry: inflect-compliance's (its `LICENSE` states 2030-07-17, and each version has its own date) or Islestone's (2030-11-18)? Both are Inflect Ltd.'s to set.
+3. Does tldraw 3.15.6's watermark or key check contact tldraw's servers? Not tested. Under D3 this matters for privacy.
+4. `elkjs` (`EPL-2.0 OR GPL-3.0-or-later`) is not on the 0.3 allowlist. The parent's canvas uses elk for auto-layout (roadmap 4.2). Add an EPL-2.0 entry, or use dagre (MIT) only?
+5. Should 4.2 add a test that the tldraw watermark stays visible? The parent has none (Context).
 
 ## Consequences
 
-- No inflect-compliance code enters Islestone until D1 is signed. Phase 1 sub-phases that plan to port must either wait or write fresh under the interim rule.
-- Each pattern-only reuse leaves a `PROVENANCE.md` line, so the boundary between reading and copying is auditable.
-- Under 1b, ported files keep their BUSL notice unless the grant says otherwise. `PROVENANCE.md` records the licence of each entry.
-- If `@inflect/ui` becomes a workspace package (roadmap 1.2), it carries `"license": "BUSL-1.1"`. The 0.3 allowlist gate must then treat it as a recorded exception, or the gate fails on Islestone's own workspace.
+- inflect-compliance code can be copied now. The roadmap steps the interim rule held back (1.2 to 1.7, 2.1 to 2.3, 3.1, 3.3, 3.6, 4.1, 4.2, 4.4, 5.1, 5.2, 6.1, 6.2, 6.5, 6.6, 8.1 and 8.6) no longer wait for D1. The porting maps in `docs/porting/maps/` give the files and the copy order.
+- Every copied file leaves a `PROVENANCE.md` row, so what was copied, from which commit and with which changes stays auditable.
+- Islestone is source-available, not open source. Each version converts to Apache-2.0 on its own Change Date. Copied code stays BUSL-1.1 from the same licensor.
+- `@inflect/ui`, copied as a workspace package (1.2), keeps `"license": "BUSL-1.1"`. The licence gate checks a workspace that holds an `UPSTREAM.json` (a byte-for-byte mirror) like any dependency, not as Islestone's own code, so the change that lands `@inflect/ui` also adds its exemption (`BUSL-1.1`), citing this ADR.
 - A port of the AI guard carries the pipelock attribution in Islestone's `NOTICE`.
-- The D3 choice decides whether 0.3 records a tldraw exception, and what the H4 guard pins.
-- Under 3b, tldraw joins the sub-processor and data-recipient review (H6, 8.6), and the licence renewal becomes an operational date.
-- Under 2a, Islestone cannot be described as open source until D2 is reopened.
+- Under D3, production shows tldraw's watermark, and the canvas gets no upgrades past 3.x. If a security fix is published only for 4.x or later, D3 has to be reopened to take it. Sub-phase 4.2 adds the H4 guard on major 3, the Dependabot hold, the tiptap 2.x audit exemption and the tldraw licence-gate exemption.
+- Under D4, Islestone carries AGPL-3.0-derived code and Nucleo icons under an accepted, unresolved licence risk, from the day `packages/ui` lands. `NOTICE` names both from that day. The finding's options 1 to 3 remain open as later ways to remove the risk.
+- The licence gate accepts an exemption only when the ADR it cites names the package and has an Accepted status line. This ADR names `tldraw` and `@tldraw/editor`, so their 4.2 exemptions can cite it.
 
 ## What would change this decision
 
-- Inflect Ltd. relicenses inflect-compliance, or changes its Additional Use Grant to cover Islestone. D1 might then need no separate document.
-- The Change Date passes for the versions Islestone needs. Those versions would then be Apache-2.0.
-- Islestone or Inflect Ltd. changes ownership.
-- Counsel advises differently on "competes", or on where a pattern ends and a copy begins.
-- tldraw changes its licence or its prices, or Excalidraw changes its licence or stops being maintained.
-- The owner chooses a community or self-hosted edition, which reopens D2.
+- Islestone, inflect-compliance or Inflect Ltd. changes ownership, or Inflect Ltd. relicenses inflect-compliance.
+- The Change Date passes for the versions Islestone holds. Those versions are then Apache-2.0.
+- The owner chooses a community or self-hosted edition. Distribution widens the reach of the AGPL, Nucleo, LGPL (ADR 0007) and tldraw obligations.
+- A claim from Dub Technologies or Nucleo, or advice from counsel, about D4. Or inflect-compliance cleans its UI upstream (the finding's option 1): Islestone then syncs the cleaned package, and `NOTICE` drops the entries that no longer apply.
+- tldraw changes its 3.x licence, a security fix arrives only for 4.x or later, or the canvas needs a feature only a later major has. Options 3b and 3c are the alternatives.
+- Excalidraw changes its licence or stops being maintained.
 
 ## References
 
@@ -313,13 +303,14 @@ The third-party licence facts in the roadmap were checked on 2026-11-18. Re-read
   - 4 (global preamble);
   - 5, Phase 0: 0.1, 0.3 and H0;
   - 1.1 and 1.2;
-  - 4.2 and H4;
+  - 4.1, 4.2 and H4;
   - 6.1;
   - 7, open decisions 1 to 3, and the limits of the research.
+- Islestone: `LICENSE`, `LICENSING.md`, `NOTICE`, `PROVENANCE.md`; `docs/porting/licence/dub-nucleo-finding.md` and `docs/porting/licence/dub-overlap.py`; `docs/porting/provenance-shared-ui.md`; `docs/porting/shared-ui.md`; `docs/porting/oss/`; ADR 0007 (licence exceptions).
 - inflect-compliance, read-only, at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`:
   - `LICENSE`, `LICENSING.md`, `NOTICE`, `CONTRIBUTING.md`;
-  - `package.json` (lines 4, 5, 18, 205) and `package-lock.json`;
-  - `packages/ui/package.json`;
+  - `package.json` (lines 4, 5, 18, 141–142, 205) and `package-lock.json`;
+  - `packages/ui/package.json`; `packages/ui/src/components/ui/icons/nucleo/README.md`;
   - `docs/dependency-risk-review.md` (lines 14–29, 387–470);
   - `tests/guards/dependency-risk-review.test.ts`;
   - `tests/guards/tiptap-proto-merge-is-fixed.test.ts`;
@@ -327,6 +318,8 @@ The third-party licence facts in the roadmap were checked on 2026-11-18. Re-read
   - `security/audit-allowlist.json`;
   - `src/components/processes/agent-view/AgentCanvasView.tsx`;
   - `src/components/processes/agent-flow/AgentFlowCanvas.tsx`.
+- Dub, `github.com/dubinc/dub` at commit `6b463b4bdd9ed2fd9aa416f67b5b77d317b1471e`: `LICENSE.md` (sha256 `0ba48e458023946432010b4fb1adade52e89843371b42f43cca7f7cc7af6ecd2`), `packages/ui/src/icons/nucleo/README.md`.
 - tldraw licence text at tags `v3.15.6`, `v4.0.0` and `v5.6.1`: `https://github.com/tldraw/tldraw/blob/<tag>/LICENSE.md`.
 - Excalidraw licence at tag `v0.18.1`: `https://github.com/excalidraw/excalidraw/blob/v0.18.1/LICENSE`.
 - npm registry, read 2026-11-18: `tldraw` and `@tldraw/editor` at 3.15.6, 4.0.0 and 5.6.1; `@excalidraw/excalidraw` at 0.18.1.
+- Owner decisions of 2026-11-18, as given in the working session; `docs/HANDOFF.md` lists them.

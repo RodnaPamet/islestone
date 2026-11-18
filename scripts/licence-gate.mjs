@@ -8,7 +8,8 @@
  *
  * 1. Every PRODUCTION dependency carries a licence on the allowlist below, or
  *    has a recorded exemption in scripts/licence-exemptions.json that names
- *    its reason and the ADR that decided it (an ADR that names the package).
+ *    its reason and the ADR that decided it (an ADR that names the package
+ *    and whose status is Accepted).
  * 2. No source file in the repository imports from an open-core `ee` folder
  *    or from a deny-listed package (roadmap 2.3 and 2.5), and no file that
  *    can ship imports test code.
@@ -77,11 +78,21 @@
  *   FAIL, unless exempted. "SEE LICENSE IN" means a person must read the file
  *   and record what it says.
  *
- * The root package (Islestone itself: private, UNLICENSED) is skipped, and so
- * is each workspace package that declares the root's licence or none, because
- * that is Islestone's own code. A workspace package that declares ANOTHER
- * licence is checked like any dependency: ADR 0001 expects a ported
- * BUSL-1.1 `@inflect/ui` to need a recorded exception, not a free pass.
+ * The root package (Islestone itself: private, BUSL-1.1, see LICENSE; owner
+ * decision of 2026-11-18, ADR 0001 D2) is skipped, and so is each workspace
+ * package that declares the root's licence or none, because that is
+ * Islestone's own code. Two kinds of workspace are checked like any
+ * dependency instead:
+ *
+ * - one that declares ANOTHER licence;
+ * - one that holds an UPSTREAM.json (UPSTREAM_MANIFEST), whatever it
+ *   declares. That file marks a byte-for-byte mirror of another project's
+ *   package, pinned by scripts/ui-drift.mjs, so the code is that project's,
+ *   not Islestone's. Now that the root is BUSL-1.1, the mirrored BUSL-1.1
+ *   `@inflect/ui` (sub-phase 1.2) would otherwise pass as "Islestone itself";
+ *   it needs a recorded exemption citing an Accepted ADR like any other
+ *   package. The check reads the file on disk, so a mirror whose UPSTREAM.json
+ *   git ignores is still a mirror.
  *
  * The import scan
  * ---------------
@@ -113,13 +124,16 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * Licences a production dependency may carry, as canonical SPDX identifiers:
- * exactly roadmap 0.3's list. "BSD" means the 2- and 3-clause forms; the
- * 4-clause advertising clause is not on it. Anything else (0BSD, CC0-1.0, the
- * Unlicense, CC-BY-4.0 data, LGPL) passes only through a recorded exemption;
- * ADR 0007 puts the open cases to the owner. Widening this list is an owner
- * decision, recorded in an ADR, never a change made to get a build through.
+ * roadmap 0.3's list, plus 0BSD. "BSD" means the 2- and 3-clause forms; the
+ * 4-clause advertising clause is not on it. 0BSD (Zero-Clause BSD, which
+ * grants every right and asks for nothing) was added by owner decision of
+ * 2026-11-18, ADR 0007 E2b. Anything else (CC0-1.0, the Unlicense, CC-BY-4.0
+ * data, LGPL) passes only through a recorded exemption, and ADR 0007 E4 adds
+ * no other licence until a dependency needs one. Widening this list is an
+ * owner decision, recorded in an ADR, never a change made to get a build
+ * through.
  */
-export const ALLOWED_LICENCES = Object.freeze(['MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MPL-2.0', 'PostgreSQL']);
+export const ALLOWED_LICENCES = Object.freeze(['MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MPL-2.0', 'PostgreSQL', '0BSD']);
 
 /** Allowed licences whose condition the report repeats on every run. */
 export const NOTICE_LICENCES = Object.freeze({
@@ -226,6 +240,21 @@ export const DEFAULT_EXEMPTIONS_FILE = 'scripts/licence-exemptions.json';
 
 /** The lockfiles npm installs from, in the order npm prefers them. */
 export const LOCKFILE_NAMES = Object.freeze(['npm-shrinkwrap.json', 'package-lock.json']);
+
+/**
+ * The file that marks a workspace as a mirror of another project's package
+ * (written by scripts/ui-drift.mjs). A workspace holding one is never
+ * Islestone's own code, whatever licence it declares.
+ */
+export const UPSTREAM_MANIFEST = 'UPSTREAM.json';
+
+/**
+ * The status an ADR must have before an exemption may cite it. An ADR's status
+ * is the first "Status:" line of its header (see `adrStatusLine`); only one
+ * that starts with "Status: Accepted" counts. A Proposed ADR records a
+ * question put to the owner, not a decision, so it cannot carry an exemption.
+ */
+export const ACCEPTED_ADR_STATUS = 'Status: Accepted';
 
 const ADR_PATH = /^docs\/adr\/\d{4}-[a-z0-9][a-z0-9-]*\.md$/;
 const EXEMPTION_FIELDS = new Set(['licence', 'reason', 'adr', 'version']);
@@ -550,19 +579,23 @@ function describeDeclaration(declaration) {
  * (`LicenseRef-…` for a proprietary one). `reason` and `adr` are required:
  * an exemption nobody can trace to a decision does not apply. The ADR file
  * must exist AND name the package, so an unrelated ADR cannot stand in for
- * the decision. `version`, when given, binds the exemption to that exact
- * version, so an upgrade has to be re-read before it passes; it is required
- * for a package whose declaration is not an SPDX expression (see
- * `judgePackage`).
+ * the decision, AND be Accepted (ACCEPTED_ADR_STATUS), so a question still
+ * waiting for the owner cannot stand in for the answer. `version`, when
+ * given, binds the exemption to that exact version, so an upgrade has to be
+ * re-read before it passes; it is required for a package whose declaration
+ * is not an SPDX expression (see `judgePackage`).
  *
- * Returns `{ entries: Map<name, entry>, errors: [{ name, problem }] }`.
- * An invalid entry is reported and not applied.
+ * Returns `{ entries: Map<name, entry>, errors: [{ name, code, problem }] }`
+ * where `code` is EXEMPTIONS_NOT_AN_OBJECT (the file), EXEMPTION_INVALID (a
+ * field is missing or wrong, or the ADR is missing or does not name the
+ * package) or ADR_NOT_ACCEPTED (the cited ADR's status is not Accepted). An
+ * entry with any error is reported and not applied.
  */
 export function validateExemptions(raw, root) {
     const entries = new Map();
     const errors = [];
     if (!isPlainObject(raw)) {
-        errors.push({ name: null, problem: 'the exemptions file must hold one JSON object keyed by package name' });
+        errors.push({ name: null, code: 'EXEMPTIONS_NOT_AN_OBJECT', problem: 'the exemptions file must hold one JSON object keyed by package name' });
         return { entries, errors };
     }
     const adrTexts = new Map();
@@ -572,6 +605,7 @@ export function validateExemptions(raw, root) {
     };
     for (const [name, value] of Object.entries(raw)) {
         const problems = [];
+        let statusProblem = null;
         if (!isPlainObject(value)) {
             problems.push('must be an object with "licence", "reason" and "adr"');
         } else {
@@ -591,16 +625,23 @@ export function validateExemptions(raw, root) {
                 const adr = value.adr.trim();
                 if (!ADR_PATH.test(adr)) problems.push(`"adr" must be a repository path like docs/adr/0001-name.md, not "${adr}"`);
                 else if (!fs.existsSync(path.join(root, adr))) problems.push(`"adr" names ${adr}, which does not exist`);
-                else if (!adrText(adr).includes(name)) problems.push(`"adr" names ${adr}, which does not mention ${name}: cite the ADR that decided this package`);
+                else {
+                    if (!adrText(adr).includes(name)) problems.push(`"adr" names ${adr}, which does not mention ${name}: cite the ADR that decided this package`);
+                    const status = adrStatusLine(adrText(adr));
+                    if (!isAcceptedStatus(status)) {
+                        statusProblem =
+                            `"adr" names ${adr}, whose status is ${status === null ? 'not stated (it has no "Status:" line)' : `"${status}"`}, not Accepted: ` +
+                            `an exemption applies only once the owner has accepted the ADR that decides it (a line starting "${ACCEPTED_ADR_STATUS}")`;
+                    }
+                }
             }
             if ('version' in value && (typeof value.version !== 'string' || value.version.trim() === '')) {
                 problems.push('"version", when present, must be a non-empty string');
             }
         }
-        if (problems.length > 0) {
-            errors.push({ name, problem: problems.join('; ') });
-            continue;
-        }
+        if (problems.length > 0) errors.push({ name, code: 'EXEMPTION_INVALID', problem: problems.join('; ') });
+        if (statusProblem !== null) errors.push({ name, code: 'ADR_NOT_ACCEPTED', problem: statusProblem });
+        if (problems.length > 0 || statusProblem !== null) continue;
         const licence = value.licence.trim();
         const ast = parseSpdxExpression(licence).ast;
         entries.set(name, {
@@ -613,6 +654,42 @@ export function validateExemptions(raw, root) {
         });
     }
     return { entries, errors };
+}
+
+/**
+ * An ADR's status line, without its line ending, or null when there is none.
+ * It is the first line that starts with "Status:" in the ADR's header: before
+ * its first section heading (`## …`) and outside any fenced code block. The
+ * ADR template (docs/adr/README.md) puts it there. Only the first counts, so
+ * a quoted or templated "Status: Accepted" cannot stand in for the ADR's own
+ * status.
+ */
+export function adrStatusLine(text) {
+    let fence = null;
+    for (const line of String(text).split(/\r?\n/)) {
+        const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+        if (fence !== null) {
+            if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null;
+            continue;
+        }
+        if (marker) {
+            fence = marker[1];
+            continue;
+        }
+        if (/^#{2,}\s/.test(line)) return null;
+        if (line.startsWith('Status:')) return line.trimEnd();
+    }
+    return null;
+}
+
+/** Whether a status line (from `adrStatusLine`) says Accepted. */
+function isAcceptedStatus(line) {
+    return line !== null && line.startsWith(ACCEPTED_ADR_STATUS) && !/^[\w-]/.test(line.slice(ACCEPTED_ADR_STATUS.length));
+}
+
+/** Whether an ADR's text records it as Accepted. */
+export function isAcceptedAdr(text) {
+    return isAcceptedStatus(adrStatusLine(text));
 }
 
 /** Why an exemption does not cover this package, or null when it does. */
@@ -837,12 +914,20 @@ function manifestDisagreements(manifest, lockEntry, { root }) {
  *   - `extraRoots`: `[{ location, from }]`, lockfile locations that a file
  *     which can ship imports (`from` names the file). They are walked like
  *     the manifests' dependencies, whatever their dev flag.
+ *   - `isUpstreamMirror(location)`: whether the workspace directory at
+ *     `location` holds an UPSTREAM_MANIFEST, which makes it a mirror of
+ *     another project's package. A mirror is never skipped as Islestone's own
+ *     code. When omitted, no workspace is a mirror; `runGate` always passes
+ *     the real check.
  *
  * Returns `{ lockfileVersion, packages: [{ name, version, location, declaration,
- * licenceSource, chain, mismatch, workspace }], skipped, notices, problems }`
- * where `problems` are tree-level failures.
+ * licenceSource, chain, mismatch, workspace, mirror }], skipped, notices,
+ * problems }` where `problems` are tree-level failures.
  */
-export function listProductionPackages(lock, { readInstalled = () => null, readManifest = null, diskWorkspaces = null, extraRoots = [] } = {}) {
+export function listProductionPackages(
+    lock,
+    { readInstalled = () => null, readManifest = null, diskWorkspaces = null, extraRoots = [], isUpstreamMirror = () => false } = {},
+) {
     if (!isPlainObject(lock)) throw new GateError('the lockfile is not a JSON object');
     if (![2, 3].includes(lock.lockfileVersion) || !isPlainObject(lock.packages)) {
         throw new GateError(
@@ -1020,11 +1105,17 @@ export function listProductionPackages(lock, { readInstalled = () => null, readM
             const declaration = normaliseDeclaration(manifest);
             const name = manifest.name ?? nameAt(location);
             const version = typeof manifest.version === 'string' ? manifest.version : null;
-            if (declaration.kind === 'missing' || declarationKey(declaration) === rootLicenceKey) {
+            const mirror = isUpstreamMirror(location) === true;
+            if (mirror) {
+                notices.push({
+                    code: 'UPSTREAM_MIRROR',
+                    message: `${name} (${location}) holds ${UPSTREAM_MANIFEST}, so it mirrors another project's package and is checked like any dependency, not skipped as Islestone's own code`,
+                });
+            } else if (declaration.kind === 'missing' || declarationKey(declaration) === rootLicenceKey) {
                 skipped.push({ name, location, why: 'a workspace package with the root licence (Islestone itself)' });
                 continue;
             }
-            result.push({ name, version, location, declaration, licenceSource: 'workspace', chain: chainTo(location), mismatch: null, workspace: true });
+            result.push({ name, version, location, declaration, licenceSource: 'workspace', chain: chainTo(location), mismatch: null, workspace: true, mirror });
             continue;
         }
         const name = nameAt(location);
@@ -1052,7 +1143,7 @@ export function listProductionPackages(lock, { readInstalled = () => null, readM
             declaration = { kind: 'missing', raw: null, legacy: null };
             licenceSource = 'none';
         }
-        result.push({ name, version, location, declaration, licenceSource, chain: chainTo(location), mismatch, workspace: false });
+        result.push({ name, version, location, declaration, licenceSource, chain: chainTo(location), mismatch, workspace: false, mirror: false });
     }
     if (staleInstalls > 0) {
         notices.push({
@@ -1076,7 +1167,7 @@ export function checkDependencies(lock, { root, exemptions: rawExemptions = {}, 
     const exempted = [];
     const judged = [];
     const namesInTree = new Set();
-    const exemptionProblems = [...exemptionErrors.map((e) => ({ name: e.name, problem: e.problem }))];
+    const exemptionProblems = [...exemptionErrors.map((e) => ({ name: e.name, code: e.code, problem: e.problem }))];
     for (const pkg of tree.packages) {
         namesInTree.add(pkg.name);
         const verdict = judgePackage(pkg, entries);
@@ -1103,17 +1194,17 @@ export function checkDependencies(lock, { root, exemptions: rawExemptions = {}, 
             exempted.push({ ...record, licence: verdict.exemption.licence, adr: verdict.exemption.adr, exemptionReason: verdict.exemption.reason });
         }
         for (const notice of verdict.notices) notices.push({ ...notice, message: `${pkg.name}@${pkg.version}: ${notice.message}` });
-        if (verdict.exemptionProblem) exemptionProblems.push({ name: pkg.name, problem: verdict.exemptionProblem });
+        if (verdict.exemptionProblem) exemptionProblems.push({ name: pkg.name, code: 'EXEMPTION_NOT_NEEDED', problem: verdict.exemptionProblem });
     }
     for (const name of entries.keys()) {
         if (!namesInTree.has(name)) {
-            exemptionProblems.push({ name, problem: 'stale: no production package of that name is in the tree; delete the entry' });
+            exemptionProblems.push({ name, code: 'EXEMPTION_STALE', problem: 'stale: no production package of that name is in the tree; delete the entry' });
         }
     }
     // One problem per name, in a stable order.
     const seen = new Set();
     const dedupedExemptionProblems = exemptionProblems.filter((p) => {
-        const key = `${p.name}\0${p.problem}`;
+        const key = `${p.name}\0${p.code}\0${p.problem}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -2367,6 +2458,8 @@ export function runGate({ root = DEFAULT_ROOT, exemptionsFile = null } = {}) {
         readManifest,
         diskWorkspaces,
         extraRoots: imported.roots,
+        // On disk, not from git: an UPSTREAM.json that .gitignore hides still marks a mirror.
+        isUpstreamMirror: (location) => fs.existsSync(path.join(absoluteRoot, location, UPSTREAM_MANIFEST)),
     });
     dependencies.notices.unshift(...notices);
     const problemCount = dependencies.failures.length + dependencies.exemptionProblems.length + sources.failures.length;
@@ -2410,7 +2503,7 @@ export function formatReport(report) {
     if (deps.failures.length === 0) lines.push('  no dependency failures');
     lines.push('');
     lines.push(`Exemptions (${report.exemptionsFile}): ${deps.exempted.length} applied, ${deps.exemptionProblems.length} problem(s)`);
-    for (const p of deps.exemptionProblems) lines.push(`  FAIL  ${p.name ?? '(file)'}: ${p.problem}`);
+    for (const p of deps.exemptionProblems) lines.push(`  FAIL  ${p.name ?? '(file)'}  [${p.code}]  ${p.problem}`);
     lines.push('');
     lines.push(
         `Source imports: ${sources.scanned} file(s) scanned, every git-listed source file except ${EXCLUDED_SOURCE_PREFIXES.join(', ')}; ${sources.shippedFiles} can ship, the rest are on DEV_ONLY_PATHS`,
@@ -2429,7 +2522,7 @@ export function formatReport(report) {
     lines.push(
         report.ok
             ? 'Result: PASS.'
-            : `Result: FAIL, ${report.problemCount} problem(s). The policy is at the top of scripts/licence-gate.mjs; exemptions need a reason and an ADR that names the package.`,
+            : `Result: FAIL, ${report.problemCount} problem(s). The policy is at the top of scripts/licence-gate.mjs; exemptions need a reason and an Accepted ADR that names the package.`,
     );
     return `${lines.join('\n')}\n`;
 }

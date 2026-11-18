@@ -114,6 +114,7 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 - **Build:** written grant from Inflect Ltd. for Islestone's use of the BUSL-1.1 code; Islestone's own licence choice; the tldraw decision.
 - **Prompt:** "Write `docs/adr/0001-code-provenance-and-licences.md`. Record: the inflect-compliance licence (BUSL-1.1, Additional Use Grant) and the exact grant Islestone relies on, with a placeholder for the signed reference; Islestone's own licence; the canvas decision among tldraw 3.x with watermark, a paid tldraw key, or Excalidraw, with the cost and upgrade consequence of each. List what you could not confirm from the repositories as open questions for the owner."
 - **Done when:** the owner has signed off each decision in the ADR.
+- **Decided, 2026-11-18** ([ADR 0001](adr/0001-code-provenance-and-licences.md), Accepted): code may be copied from inflect-compliance, each copied file recorded in `PROVENANCE.md` (D1); Islestone is BUSL-1.1, licensor Inflect Ltd. (D2); the canvas stays on tldraw 3.x with the watermark (D3). A fourth decision came out of the work: inflect-compliance's UI layer is largely derived from Dub (AGPL-3.0) and carries Nucleo icons, and the owner chose to copy it as is and accept the licence risk (D4).
 
 #### 0.2 Architecture decisions (S)
 - **Build:** ADRs for the work-item model, the assignee/delegate rule, the auth path, the sync strategy and the naming of the task aggregate.
@@ -439,14 +440,16 @@ Gaps found in review and how they were closed:
 - Live updates were implied by collaboration but not specified for boards; added as 4.3.
 - Forecast honesty on thin history was unstated; added to 3.6 and H3.
 
-Open decisions for the owner, none of which the research could settle:
+Decisions for the owner that the research could not settle. The first three were decided on 2026-11-18 and are recorded in [ADR 0001](adr/0001-code-provenance-and-licences.md):
 
-1. The written BUSL grant from Inflect Ltd. (0.1). Nothing should be ported before it.
-2. The canvas licence path (0.1).
-3. Whether Islestone itself is open source, and under which licence.
+1. The written BUSL grant from Inflect Ltd. (0.1). **Decided (D1):** copying from inflect-compliance is allowed; every copied file gets a `PROVENANCE.md` row. No separate grant document was produced: the owner's decision, recorded in the ADR, is the authority.
+2. The canvas licence path (0.1). **Decided (D3):** tldraw 3.x with the watermark visible.
+3. Whether Islestone itself is open source, and under which licence. **Decided (D2):** BUSL-1.1, licensor Inflect Ltd., Change License Apache-2.0; source-available, not open source.
 4. Auth: port NextAuth v4 now (recommended, because SSO, MFA and SCIM come with it) or start on Better Auth.
 5. Hosting target and data residency regions.
 6. Which embeddings provider, since a hosted one is a new sub-processor.
 7. Pricing and how AI usage is metered.
+
+Raised after the research and decided on 2026-11-18 (ADR 0001 D4): inflect-compliance's UI layer, which 1.2 copies, is largely derived from Dub (AGPL-3.0) and includes Nucleo icons whose notice forbids redistribution. The owner chose to copy it as is and accept the risk; `NOTICE` names both when `packages/ui` lands.
 
 Limits of the research: star counts, vendor prices and some maintenance claims came from secondary sources. Section 2 states licences as read from LICENSE files on 2026-11-18; re-read each one at the pinned commit before porting, as H0 requires.

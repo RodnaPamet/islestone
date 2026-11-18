@@ -27,27 +27,34 @@ each later release opens on its own four-year clock.
 
 ## Code from elsewhere
 
-Islestone reuses code from inflect-compliance, which is BUSL-1.1 from the same licensor.
+Islestone may reuse code from inflect-compliance, which is BUSL-1.1 from the same
+licensor, Inflect Ltd. The owner allowed this on 2026-11-18 (ADR 0001, decision D1).
 Every file taken from another project is recorded in [`PROVENANCE.md`](./PROVENANCE.md),
 and attributions that a source requires are in [`NOTICE`](./NOTICE).
 
-Some of that code has third-party origins with their own terms, and those terms are not
-replaced by this licence:
+Some of that code has third-party origins with their own terms, and this licence does
+not replace those terms. The main case is the shared UI that sub-phase 1.2 copies from
+inflect-compliance. It is not in the repository yet. When it lands:
 
-- Parts of the shared UI (`packages/ui` and some files under `src/components/ui`) are
-  derived from **Dub** (github.com/dubinc/dub), which is licensed **AGPL-3.0**.
+- much of it (`packages/ui`, and some files that will go under `src/components/ui`) is
+  derived from **Dub** (github.com/dubinc/dub), which is licensed **AGPL-3.0** outside
+  its `(ee)` folders;
 - `packages/ui/src/components/ui/icons/nucleo/` holds **Nucleo** icons, whose notice
   prohibits redistribution and use outside the product they are bundled with.
 
 The owner decided on 2026-11-18 to take this code as it is and accept the open licence
 risk. The decision and the measurements behind it are in
-[`docs/adr/0001-code-provenance-and-licences.md`](./docs/adr/0001-code-provenance-and-licences.md).
+[`docs/adr/0001-code-provenance-and-licences.md`](./docs/adr/0001-code-provenance-and-licences.md)
+(decision D4). `NOTICE` names Dub and Nucleo in the same change that lands the shared UI.
 
 ## Third-party dependencies
 
 A CI gate (`npm run licence:check`, `scripts/licence-gate.mjs`) fails the build when a
 production dependency's licence is not on its allowlist. Exemptions are recorded in
-`scripts/licence-exemptions.json`, each citing an ADR.
+`scripts/licence-exemptions.json`, each citing an accepted ADR
+([ADR 0007](./docs/adr/0007-third-party-licence-exceptions.md) for those in the tree
+today).
 
-tldraw (the canvas, roadmap 4.2) is used at major version 3 under its own licence, which
-allows commercial production use only with its watermark visible. Do not hide or alter it.
+The canvas (roadmap 4.2) will use tldraw at major version 3, under tldraw's own licence,
+which allows commercial production use only with its watermark visible (ADR 0001,
+decision D3). Do not hide or alter the watermark. tldraw is not installed yet.

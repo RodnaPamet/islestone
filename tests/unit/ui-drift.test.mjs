@@ -1,4 +1,5 @@
-// Tests for scripts/ui-drift.mjs. Run with: node --test tests/unit/ui-drift.test.mjs
+// Tests for scripts/ui-drift.mjs. Run with: npm run test:scripts (node --test;
+// Jest's projects match only .ts and .tsx tests, so it does not run this file).
 //
 // Every fixture lives in a fresh temp directory, removed when the file's tests
 // finish: a throwaway git repository standing in for inflect-compliance, and a

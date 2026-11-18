@@ -26,6 +26,16 @@
  * counts it; the `consistent-type-imports` lint rule makes such imports say
  * `type`, so the two agree.
  *
+ * WHAT IS A BOUNDARY. A module whose directive prologue holds `'use server'`
+ * (a file of Server Functions). When client code imports one, Next.js does not
+ * bundle it: the client gets a server-reference stub per exported function,
+ * and the module and everything it imports stay on the server. So the edge
+ * into it is recorded in `serverBoundaries` and the walk does not descend:
+ * a client file may import a Server Function whose module reads `@/env`. The
+ * directive must be in the prologue, as Next.js requires; a `'use server'`
+ * after an import or inside a function body is not a file-level directive and
+ * the module is walked like any other.
+ *
  * WHAT IS NOT WALKED. Bare specifiers (`react`, `next/link`, `node:fs`) are
  * packages. A bare specifier that names one of this repository's own
  * workspace packages (a git-listed `package.json` below the root) is NOT a
@@ -56,6 +66,8 @@ export const ALIAS_TARGET_DIR = 'src';
 export interface ModuleFacts {
     /** The file opens with a `'use client'` directive. */
     readonly isClientEntry: boolean;
+    /** The file's directive prologue holds `'use server'`: a module of Server Functions. */
+    readonly isServerReference: boolean;
     /** Literal specifiers of every bundled edge, in source order. */
     readonly specifiers: readonly string[];
     /** `import()` / `require()` calls whose argument is not a literal. */
@@ -74,17 +86,19 @@ function isSourceFile(file: string): boolean {
 }
 
 /**
- * A directive is a string-literal expression statement in the prologue: the
- * statements before the first one that is not such a literal. Comments and a
- * byte-order mark are trivia to the parser, so they may precede it; any
- * import or code before it means the file is not a client entry.
+ * The directives in a file's prologue. A directive is a string-literal
+ * expression statement in the prologue: the statements before the first one
+ * that is not such a literal. Comments and a byte-order mark are trivia to the
+ * parser, so they may precede it; any import or code before it means it is
+ * not a directive.
  */
-function opensWithUseClient(sf: ts.SourceFile): boolean {
+function prologueDirectives(sf: ts.SourceFile): Set<string> {
+    const directives = new Set<string>();
     for (const statement of sf.statements) {
-        if (!ts.isExpressionStatement(statement) || !ts.isStringLiteral(statement.expression)) return false;
-        if (statement.expression.text === 'use client') return true;
+        if (!ts.isExpressionStatement(statement) || !ts.isStringLiteral(statement.expression)) break;
+        directives.add(statement.expression.text);
     }
-    return false;
+    return directives;
 }
 
 function namedBindingsAllTypes(bindings: ts.NamedImportBindings | ts.NamedExportBindings | undefined): boolean {
@@ -129,7 +143,8 @@ export function analyseModule(source: string, fileName: string): ModuleFacts {
     };
     visit(sf);
 
-    return { isClientEntry: opensWithUseClient(sf), specifiers, opaque };
+    const directives = prologueDirectives(sf);
+    return { isClientEntry: directives.has('use client'), isServerReference: directives.has('use server'), specifiers, opaque };
 }
 
 export type Resolution =
@@ -228,6 +243,11 @@ export interface BoundaryReport {
     readonly opaque: ReadonlyArray<{ readonly from: string; readonly call: string }>;
     /** Imports of this repository's own workspace packages, which the walk cannot follow yet. */
     readonly workspaceImports: ReadonlyArray<{ readonly from: string; readonly specifier: string }>;
+    /**
+     * Edges from the client graph into a `'use server'` module: see "WHAT IS A
+     * BOUNDARY" above. Recorded, not walked.
+     */
+    readonly serverBoundaries: ReadonlyArray<{ readonly from: string; readonly to: string }>;
 }
 
 /**
@@ -256,6 +276,7 @@ export function checkClientEnvBoundary(root: string, serverEnvModule = 'src/env.
     const unresolved: Array<{ from: string; specifier: string }> = [];
     const opaque: Array<{ from: string; call: string }> = [];
     const workspaceImports: Array<{ from: string; specifier: string }> = [];
+    const serverBoundaries: Array<{ from: string; to: string }> = [];
     const edgesCache = new Map<string, string[]>();
     const edgesOf = (file: string): string[] => {
         let edges = edgesCache.get(file);
@@ -267,8 +288,11 @@ export function checkClientEnvBoundary(root: string, serverEnvModule = 'src/env.
             for (const call of facts.opaque) opaque.push({ from: rel(file), call });
             for (const specifier of facts.specifiers) {
                 const r = resolveSpecifier(specifier, file, root);
-                if (r.kind === 'file') edges.push(r.file);
-                else if (r.kind === 'missing') unresolved.push({ from: rel(file), specifier });
+                if (r.kind === 'file') {
+                    // Next.js bundles a stub in place of a 'use server' module, never the module.
+                    if (isSourceFile(r.file) && factsOf(r.file).isServerReference) serverBoundaries.push({ from: rel(file), to: rel(r.file) });
+                    else edges.push(r.file);
+                } else if (r.kind === 'missing') unresolved.push({ from: rel(file), specifier });
                 else if (workspaces.has(packageNameOf(specifier) ?? '')) workspaceImports.push({ from: rel(file), specifier });
             }
         }
@@ -314,6 +338,7 @@ export function checkClientEnvBoundary(root: string, serverEnvModule = 'src/env.
         unresolved: dedupe(unresolved, (u) => `${u.from}\0${u.specifier}`).sort(byFrom),
         opaque: dedupe(opaque, (o) => `${o.from}\0${o.call}`).sort(byFrom),
         workspaceImports: dedupe(workspaceImports, (w) => `${w.from}\0${w.specifier}`).sort(byFrom),
+        serverBoundaries: dedupe(serverBoundaries, (b) => `${b.from}\0${b.to}`).sort(byFrom),
     };
 }
 

@@ -12,7 +12,7 @@ How to read this ADR: a line marked **Verified** was read in the named file on 2
 
 ### What inflect-compliance's task engine does
 
-Read at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`. Under ADR 0001's interim rule, Islestone may learn these patterns but copies no code.
+Read at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`, for their design; nothing was copied. ADR 0001 D1 (owner decision, 2026-11-18) now allows copying inflect-compliance code, with a `PROVENANCE.md` row for every copied file.
 
 - **Verified.** One `Task` table with fixed enums for type, severity, priority, status and source (`prisma/schema/tasks.prisma` lines 5–45; `prisma/schema/enums.prisma` lines 409–503). Types are compliance kinds such as `AUDIT_FINDING` and `CONTROL_GAP`. Nothing is configurable per tenant.
 - **Verified.** Status is a fixed eight-value enum with an explicit transition table. `CLOSED` and `CANCELED` are terminal: nothing moves out of them (`src/app-layer/domain/task-status.ts` lines 116–138). The check is a pure function that returns `null` or a discriminated error (`no_op`, `illegal`, `unknown_from`, `unknown_to`), and refusal messages use display names (lines 140–215).
@@ -489,7 +489,7 @@ List queries also filter `deletedAt IS NULL`. If the pinned Prisma version canno
 - `If-Match` on text edits means clients must handle 409. The automatic retry keeps most conflicts invisible.
 - Description and comment encryption limits search (section 11). The search ADR decides before 2.7, and 2.7's search over comments depends on it.
 - Custom text values are filterable and therefore not encrypted.
-- Under ADR 0001's interim rule, every inflect-compliance pattern named here is rewritten, not copied, and recorded in `PROVENANCE.md` as pattern only.
+- The inflect-compliance patterns named here were read, not copied. Code written fresh from them is recorded in `PROVENANCE.md` as pattern only; code copied under ADR 0001 D1 gets a row per copied file.
 
 ## What would change this decision
 
@@ -512,7 +512,7 @@ List queries also filter `deletedAt IS NULL`. If the pinned Prisma version canno
   - 4.1 (comments on pages), 4.3 (live updates);
   - 5.3 (links by key), 5.5 (importers keep keys);
   - 6.5 (embeddings).
-- Islestone ADRs: `docs/adr/0001-code-provenance-and-licences.md` (interim rule), `docs/adr/0003-assignee-and-delegate.md`, `docs/adr/0006-vocabulary.md`.
+- Islestone ADRs: `docs/adr/0001-code-provenance-and-licences.md` (D1 and the copy rule), `docs/adr/0003-assignee-and-delegate.md`, `docs/adr/0006-vocabulary.md`.
 - inflect-compliance, read-only, at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`:
   - `prisma/schema/tasks.prisma` (lines 5–45, 64, 92–97, 100–114, 116–130);
   - `prisma/schema/enums.prisma` (lines 409–524);

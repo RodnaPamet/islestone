@@ -14,6 +14,8 @@ export declare const DEV_ONLY_PATHS: readonly { readonly path: string; readonly 
 export declare const BUNDLER_PROVIDED_MODULES: readonly string[];
 export declare const DEFAULT_EXEMPTIONS_FILE: string;
 export declare const LOCKFILE_NAMES: readonly string[];
+export declare const UPSTREAM_MANIFEST: string;
+export declare const ACCEPTED_ADR_STATUS: string;
 export declare const DEFAULT_ROOT: string;
 
 export declare class GateError extends Error {}
@@ -56,10 +58,13 @@ export interface Exemption {
     adr: string;
     version: string | null;
 }
+export type ExemptionErrorCode = 'EXEMPTIONS_NOT_AN_OBJECT' | 'EXEMPTION_INVALID' | 'ADR_NOT_ACCEPTED';
 export declare function validateExemptions(
     raw: unknown,
     root: string,
-): { entries: Map<string, Exemption>; errors: { name: string | null; problem: string }[] };
+): { entries: Map<string, Exemption>; errors: { name: string | null; code: ExemptionErrorCode; problem: string }[] };
+export declare function adrStatusLine(text: string): string | null;
+export declare function isAcceptedAdr(text: string): boolean;
 
 export declare function isDeniedPackage(name: string): boolean;
 
@@ -89,12 +94,14 @@ export interface ProductionPackage extends PackageToJudge {
     chain: string[] | null;
     mismatch: string | null;
     workspace: boolean;
+    mirror: boolean;
 }
 export interface TreeOptions {
     readInstalled?: (location: string) => unknown;
     readManifest?: ((location: string) => unknown) | null;
     diskWorkspaces?: string[] | null;
     extraRoots?: { location: string; from: string }[];
+    isUpstreamMirror?: (location: string) => boolean;
 }
 export declare function workspaceMatcher(manifest: unknown): (location: string) => boolean;
 export declare function resolveFrom(packages: Record<string, unknown>, from: string, name: string): string | null;
@@ -129,7 +136,7 @@ export interface DependencyReport {
     failures: PackageRecord[];
     exempted: (PackageRecord & { licence: string; adr: string; exemptionReason: string })[];
     notices: Notice[];
-    exemptionProblems: { name: string | null; problem: string }[];
+    exemptionProblems: { name: string | null; code: ExemptionErrorCode | 'EXEMPTION_NOT_NEEDED' | 'EXEMPTION_STALE'; problem: string }[];
 }
 export declare function checkDependencies(
     lock: unknown,

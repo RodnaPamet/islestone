@@ -2,7 +2,7 @@
 
 Islestone is an AI-enabled project-management SaaS: one work-item table with many views, planning and forecasting computed in code, and agents that work as delegates of accountable people, writing only through proposals a person approves.
 
-**Status:** repository skeleton (roadmap sub-phase 1.1). There is no product yet: a placeholder home page, health endpoints, the env modules, the test and CI tooling, and a local service stack. What gets built, in which order, and the gate that closes each phase are in [docs/ROADMAP.md](docs/ROADMAP.md). Architecture decisions are proposed in [docs/adr/](docs/adr/) ([index](docs/adr/README.md)); every one of them still awaits the owner's sign-off. The owner decisions taken on 2026-11-18 are recorded in [docs/HANDOFF.md](docs/HANDOFF.md) until ADR 0001 records them.
+**Status:** repository skeleton (roadmap sub-phase 1.1). There is no product yet: a placeholder home page, health endpoints, the env modules, the test and CI tooling, and a local service stack. What gets built, in which order, and the gate that closes each phase are in [docs/ROADMAP.md](docs/ROADMAP.md). Architecture decisions are in [docs/adr/](docs/adr/) ([index](docs/adr/README.md)). ADR 0001 (provenance and licences) and ADR 0007 (licence exceptions) are accepted. ADRs 0002 to 0006 are proposed and await the owner's sign-off, though 0003 and 0006 already record some owner decisions.
 
 ## Prerequisites
 
@@ -48,9 +48,9 @@ For Playwright with a Chromium already on the machine, set `PW_CHROMIUM_PATH` to
 Roadmap sub-phase 0.3 sets the intake policy. Three files hold it:
 
 - [`PROVENANCE.md`](PROVENANCE.md) records everything taken from another project: source, commit, licence and changes. It also lists the roadmap's port candidates, each unpinned until first use.
-- [`NOTICE`](NOTICE) carries the attributions that copied code requires. There are none yet.
+- [`NOTICE`](NOTICE) carries the attributions that copied code requires. There are none yet; Dub's and Nucleo's arrive with the shared UI in sub-phase 1.2 (ADR 0001 decision D4).
 - `scripts/licence-gate.mjs` (`npm run licence:check`, and the `Licence` job in CI) fails the build when:
-  - a **production** dependency's licence is not on the allowlist. The allowlist is roadmap 0.3's: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, PostgreSQL, and MPL-2.0 for unmodified use only. `L WITH X` passes only when `X` is an SPDX exception that adds permissions ("MIT WITH Commons-Clause" fails). Widening the list is an owner decision, recorded in [ADR 0007](docs/adr/0007-third-party-licence-exceptions.md).
+  - a **production** dependency's licence is not on the allowlist. The allowlist is roadmap 0.3's: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, PostgreSQL, and MPL-2.0 for unmodified use only; plus 0BSD, added by ADR 0007 (decision E2). `L WITH X` passes only when `X` is an SPDX exception that adds permissions ("MIT WITH Commons-Clause" fails). Widening the list is an owner decision, recorded in [ADR 0007](docs/adr/0007-third-party-licence-exceptions.md).
   - any source file in the repository, except the gate's own test fixtures, imports from an `ee` folder (or n8n's `.ee.` files) or from a deny-listed package: n8n and its `n8n-*` and `@n8n/*` libraries, windmill-components, task-master-ai, @liveblocks/server, hyperformula, handsontable and `@handsontable/*`, planby, `@blocknote/xl-*`. The scan reads JavaScript, TypeScript, stylesheets and MDX, decodes escapes, and follows `#` imports and tsconfig aliases.
   - code that can ship imports test code, or the scanner cannot read a file to the end.
 
@@ -62,17 +62,19 @@ The policy is written out at the top of the script. The production tree is walke
 
 - `licence`: the licence a person verified, as an SPDX expression. A proprietary licence uses a `LicenseRef-` identifier.
 - `reason`: the evidence and the justification.
-- `adr`: the decision record, which must exist and must name the package.
+- `adr`: the decision record, which must exist, must name the package, and must be accepted: its status line starts `Status: Accepted`.
 - `version`: when given, the exemption covers only that version. It is required when the package's declaration is not an SPDX expression (`SEE LICENSE IN …`, `UNLICENSED`, missing), because there is then nothing else to bind the entry to.
 
-An exemption applies only while the package still declares the licence it was granted for. The gate reports an exemption that is stale (the package has left the tree) or not needed (the licence is already allowed). An exemption cannot lift a deny-listed package.
+An exemption applies only while the package still declares the licence it was granted for. The gate reports an exemption that is stale (the package has left the tree) or not needed (the licence is already allowed). An exemption cannot lift a deny-listed package. A workspace that holds an `UPSTREAM.json`, such as the `packages/ui` mirror sub-phase 1.2 adds, is checked like any dependency rather than as Islestone's own code, so it needs an exemption too.
 
-Today the file holds 16 exemptions, all proposed in [ADR 0007](docs/adr/0007-third-party-licence-exceptions.md) for the owner to decide, and all reached through `next`:
+Today the file holds 15 exemptions, all decided in [ADR 0007](docs/adr/0007-third-party-licence-exceptions.md) (accepted on 2026-11-18), and all reached through `next`:
 
 - the 14 `@img/sharp-*` packages: prebuilt libvips binaries under LGPL-3.0-or-later, which `next` installs through its optional `sharp` dependency for image optimisation. Each names the version whose README and integrity hash were checked.
-- `tslib` (0BSD) and `caniuse-lite` (CC-BY-4.0, a browser-support database). Each is bound to its declared licence rather than to a version.
+- `caniuse-lite` (CC-BY-4.0, a browser-support database), bound to its declared licence rather than to a version.
 
-**Planned, not live: a tldraw exception.** On 2026-11-18 the owner chose option 3a of ADR 0001 decision D3: tldraw 3.x with the watermark ([docs/HANDOFF.md](docs/HANDOFF.md); ADR 0001 does not record it yet, and recommended against 3a). Both `tldraw` and `@tldraw/editor` declare `SEE LICENSE IN LICENSE.md`, so each needs an entry like the one below once it is installed, with `version` pinned. This example is not in the exemptions file, because tldraw is not installed, and the gate would report the entry as stale:
+`tslib` (0BSD) needs no exemption, because 0BSD is on the allowlist.
+
+**Planned, not live: a tldraw exception.** [ADR 0001](docs/adr/0001-code-provenance-and-licences.md) decision D3 records the owner's choice of 2026-11-18: tldraw 3.x with the watermark visible (option 3a; the draft had recommended against it). Both `tldraw` and `@tldraw/editor` declare `SEE LICENSE IN LICENSE.md`, so each needs an entry like the one below once it is installed, with `version` pinned. This example is not in the exemptions file, because tldraw is not installed, and the gate would report the entry as stale:
 
 ```json
 "tldraw": {
@@ -85,4 +87,4 @@ Today the file holds 16 exemptions, all proposed in [ADR 0007](docs/adr/0007-thi
 
 ## Licence
 
-BUSL-1.1, by the owner's decision of 2026-11-18: see [`LICENSE`](LICENSE) and [`LICENSING.md`](LICENSING.md). The same day the owner allowed code to be copied from inflect-compliance, with every copied file recorded in `PROVENANCE.md`. ADR 0001 still lists both decisions as open, and `package.json` still says `"license": "UNLICENSED"`; [docs/HANDOFF.md](docs/HANDOFF.md) lists those updates as its next step.
+BUSL-1.1, licensor Inflect Ltd.: see [`LICENSE`](LICENSE) and [`LICENSING.md`](LICENSING.md). `package.json` says `"license": "BUSL-1.1"`. Islestone is source-available, not open source; each version converts to Apache-2.0 on its Change Date. The owner decided this on 2026-11-18, and the same day allowed code to be copied from inflect-compliance, with every copied file recorded in `PROVENANCE.md`. [ADR 0001](docs/adr/0001-code-provenance-and-licences.md) records both decisions.

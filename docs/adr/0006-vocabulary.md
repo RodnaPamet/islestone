@@ -1,6 +1,6 @@
 # 0006 — Vocabulary
 
-Status: Proposed — awaiting owner sign-off (2026-11-18 drafted)
+Status: Proposed — awaiting owner sign-off (2026-11-18 drafted). The role names, their order, the fallback role and the public sign-up switch were decided by the owner on 2026-11-18; the other open questions await sign-off.
 
 ## Context
 
@@ -8,7 +8,7 @@ Islestone will hold dozens of domain concepts. Each one will reach a Prisma mode
 
 This ADR fixes one name per concept before the first model is written (roadmap 1.3 creates the tenancy models, roadmap 2.1 the work-item models). ADRs 0002 and 0003 use these names.
 
-How to read this ADR: a line marked **Verified** was read in the named file on 2026-11-18. Everything else is a recommendation. None of the choices below is made until the owner signs.
+How to read this ADR: a line marked **Verified** was read in the named file on 2026-11-18. A section marked **Decided** records an owner decision of 2026-11-18. Everything else is a recommendation, and is not made until the owner signs.
 
 ### What happened in inflect-compliance
 
@@ -59,7 +59,7 @@ Rows for Phase 2 concepts are fixed by this ADR once signed. Rows for later phas
 | Workspace | The tenant: the unit of isolation, billing and membership. Every tenant table carries its id. | `Tenant`, column `tenantId` (see "Workspace naming" below) | Workspace | Tenant (in UI text), Account, Site, Space, Instance |
 | User | A person's global sign-in identity, independent of any workspace. | `User` | Shown by the person's name | Account (NextAuth's `Account` is a sign-in provider link), Profile |
 | Member | A user's membership in one workspace, with one role. Agents are never members. | `TenantMembership` | Member | Seat (billing only), Employee, Collaborator, Teammate |
-| Role | The permission set a membership carries (roadmap 1.4). | enum `Role` | Role | Access level, Permission level |
+| Role | The permission set a membership carries (roadmap 1.4). One of Owner, Admin, Member, Viewer, Guest (see "Roles" below). | enum `Role`: `OWNER`, `ADMIN`, `MEMBER`, `VIEWER`, `GUEST` | Role; Owner, Admin, Member, Viewer, Guest | Access level, Permission level |
 | Team | A group of members in a workspace. A team owns a workflow, cycles and estimates. | `Team` | Team | Squad, Department, Group (SCIM's word; stays in the SCIM adapter) |
 | Sign-in session | A person's authenticated browser session. | `UserSession` | Session | Login. Never "session" alone in code, because of agent sessions |
 
@@ -172,7 +172,7 @@ The roadmap already writes `tenantId` and "`Tenant` (a workspace)" (section 4 pr
 - **W1. `Tenant` in code and the database; "Workspace" in everything a customer reads.** Recommended.
   - Matches the roadmap's preamble and 1.3 as written.
   - "Tenant" is the precise word for the security boundary. RLS policies, `runInTenantContext`, `getTenantCtx` and the two-tenant tests in H1 are all about isolation.
-  - If the BUSL grant in ADR 0001 lands, ported code keeps its identifiers in the most security-sensitive layer. A missed rename inside RLS code is the worst place for a mistake.
+  - ADR 0001 D1 allows copying inflect-compliance code, so ported code keeps its identifiers in the most security-sensitive layer. A missed rename inside RLS code is the worst place for a mistake.
   - Cost: two words for one concept. This ADR contains it by listing the exception and translating it in one place. The customer-facing contract (UI text, help docs, public API paths and fields, permission keys, API key scopes, webhook payloads, audit exports) says `workspace`; "Where code and UI differ" names where each part is written. A guard refuses `workspaceId` as an identifier outside the public API serializer and the public route segments, and refuses "tenant" in UI catalogue values, permission keys and scopes.
 - **W2. `Workspace` everywhere**, column `workspaceId`, RLS setting named for the workspace.
   - One word, no exception.
@@ -184,15 +184,20 @@ Decide before roadmap 1.3 writes the first migration. The column name is the exp
 
 Owner sign-off: ____  Date: ____
 
-### The `MEMBER` role — needs an owner decision
+### Roles — decided
 
-Roadmap 1.4 names five roles: OWNER, ADMIN, MEMBER, GUEST and VIEWER. "Member" is also the concept "anyone with a membership". A sentence such as "members can create projects" then has two readings.
+**Decided. Owner decisions, 2026-11-18.**
 
-- **M1. Rename the role to `EDITOR`** (UI "Editor"). Recommended. "Member" then means only the concept.
-- **M2. Keep `MEMBER`** and accept the collision. This matches common usage in other project-management tools (not re-checked here). Permission text must then always say "the Member role" or "any member".
-- **M3. Keep the role and call the concept something else**, such as "person". Not recommended: "member" is the word people use.
+- **The standard everyday role is called Member** (enum value `MEMBER`, UI label "Member"). The owner chose "Member". This is drafted option M2 (keep `MEMBER`); the draft had recommended M1 (rename it `EDITOR`). Options M1 and M3 were not chosen.
+- **The roles are Owner, Admin, Member, Viewer and Guest** (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`, `GUEST`).
+- **They rank Owner > Admin > Member > Viewer > Guest, by breadth of access.** The owner chose "Owner>Admin>Member>Viewer>Guest". This is the order the 1.4 porting map recommends for declaring the `Role` enum (`docs/porting/maps/1.4.md`, "Enums"), so code that looks for the most senior member never lands on a guest.
+- **A user whose role cannot be resolved falls back to Viewer, never Guest.**
 
-Owner sign-off: ____  Date: ____
+Because "member" is also the concept "anyone with a membership", text about permissions says either "the Member role" or "any member", never "members" alone where the two readings differ.
+
+### Public sign-up behind a switch — decided
+
+**Decided. Owner decision, 2026-11-18; the owner chose "Behind a switch".** Public self-sign-up at `/api/auth/register` sits behind a switch. It is off by default in production and on in development, and an operator opens it without a code change. This is not a vocabulary rule. It is recorded here because the owner decided it together with the role questions, and ADR 0004 (authentication path) is still Proposed. Roadmap 1.4 builds it when it ports the register route.
 
 ### How Islestone avoids inflect-compliance's two-vocabulary state
 
@@ -214,7 +219,7 @@ These checks are recommendations. Roadmap 1.1 or 2.1 adds them with the first mo
 ### Open questions for the owner
 
 1. Workspace naming: W1, W2 or W3.
-2. The `MEMBER` role: M1, M2 or M3.
+2. **Decided, 2026-11-18:** the `MEMBER` role keeps its name (M2). See "Roles".
 3. "Status" or "State" as the UI label for a workflow state.
 4. UI copy spelling: British or American English? The roadmap mixes both ("authorise", "Organization"). Identifiers follow this table either way.
 5. The roadmap uses "workflows" for agent engine definitions (roadmap 2.1, 6.1). This ADR reserves "workflow" for team states. Recommendation: roadmap 6.1 names the engine's definitions when it starts; "Agent profile" is the candidate, after inflect-compliance's `AgentProfile` model (`prisma/schema/agentic.prisma` line 3469). It must not be "workflow" or "task".
@@ -225,13 +230,15 @@ These checks are recommendations. Roadmap 1.1 or 2.1 adds them with the first mo
 - Every later ADR, prompt and pull request uses these words. ADR 0002 (work-item model) and ADR 0003 (assignee and delegate) are written in them.
 - Roadmap prompts that use other words are read through this table. Examples: 2.5 "`Module` or milestone" is a Milestone; 2.6 "triage inbox" is Intake; 4.2 "whiteboards" are Canvases; 6.1 "workflows" are not workflows in this vocabulary (see the open questions).
 - Under W1, the codebase holds two words for the workspace, at a declared boundary, with a guard. Under W2, the roadmap's preamble needs an amendment.
+- The Member role shares its word with the concept of a member. Permission text and help text must always say "the Member role" or "any member".
+- Roadmap 1.3 declares `Role` in the decided order, and 1.4 writes the permission set for the five roles. The 1.4 porting map's "MEMBER (or EDITOR)" alternatives resolve to `MEMBER`.
 - Integration adapters must map external terms at their boundary. An importer from Jira (roadmap 5.5) reads "issues" and writes work items; nothing past the adapter says "issue".
 - Users of other tools will meet different words: Linear's "issue", Jira's "sprint", Plane's "module". Onboarding and import screens (roadmap 5.5, 8.2) should show the mapping once.
 - The words reserved for later phases constrain those phases' prompts. A later phase that needs a different word amends this ADR first.
 
 ## What would change this decision
 
-- The owner chooses W2 or M2, or another option above. The table changes in the same amendment.
+- The owner chooses W2, or another option above that is still open. The table changes in the same amendment.
 - User research shows that customers do not understand a chosen word. Before launch, a word can change at the cost of one migration. After launch it costs a planned two-deploy change.
 - An external standard Islestone must follow (an MCP extension, an import format) fixes a different word for a concept. The adapter rule (rule 5) is the default answer; a change to the core word would be a deliberate choice.
 - A concept splits in two. For example, if customers need different manual orders per view, "order" may need its own term.
@@ -248,7 +255,8 @@ These checks are recommendations. Roadmap 1.1 or 2.1 adds them with the first mo
   - 2.1, 2.4, 2.5, 2.6, 2.7;
   - 4.1, 4.2;
   - 6.1, 6.2, 6.3, 6.4.
-- Islestone ADRs: `docs/adr/0001-code-provenance-and-licences.md` (interim rule: patterns only), `docs/adr/0002-work-item-model.md`, `docs/adr/0003-assignee-and-delegate.md`.
+- Islestone ADRs: `docs/adr/0001-code-provenance-and-licences.md` (D1 and the copy rule), `docs/adr/0002-work-item-model.md`, `docs/adr/0003-assignee-and-delegate.md`, `docs/adr/0004-authentication-path.md`.
+- Islestone porting map: `docs/porting/maps/1.4.md` (role values, "Enums", and the owner decisions it asked for).
 - inflect-compliance, read-only, at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`:
   - `prisma/schema/tasks.prisma` (lines 1, 5, 100–114);
   - `prisma/schema/enums.prisma` (lines 409–503, 458, 868–885);

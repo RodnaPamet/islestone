@@ -1,18 +1,18 @@
 # Architecture decision records
 
-Each ADR records one decision: the context, the options, the decision, its consequences and what would change it. An ADR is **Proposed** until the owner signs each of its decisions; it is then **Accepted**. A later ADR that replaces one marks the old one **Superseded by NNNN**. If a roadmap step would contradict an ADR, stop and ask (roadmap section 4).
+Each ADR records one decision: the context, the options, the decision, its consequences and what would change it. An ADR is **Proposed** until the owner has made each of its decisions; it is then **Accepted**. A Proposed ADR may already record some owner decisions in place; its status line names them. A later ADR that replaces one marks the old one **Superseded by NNNN**. If a roadmap step would contradict an ADR, stop and ask (roadmap section 4).
 
 ## Index
 
 | No. | Title | Status | Roadmap item |
 |---|---|---|---|
-| [0001](0001-code-provenance-and-licences.md) | Code provenance and licences | Proposed — awaiting owner sign-off. The owner decided D1 (copying allowed), D2 (BUSL-1.1) and D3 (tldraw 3.x with the watermark) on 2026-11-18; [`docs/HANDOFF.md`](../HANDOFF.md) records them until this ADR does. | 0.1 |
+| [0001](0001-code-provenance-and-licences.md) | Code provenance and licences | Accepted (owner decisions, 2026-11-18): copying from inflect-compliance allowed (D1), BUSL-1.1 (D2), tldraw 3.x with the watermark (D3), Dub-derived UI and Nucleo icons copied as is, risk accepted (D4) | 0.1 |
 | [0002](0002-work-item-model.md) | Work item model | Proposed — awaiting owner sign-off | 0.2 (for 2.1–2.4, 2.7, 3.2) |
-| [0003](0003-assignee-and-delegate.md) | Assignee and delegate | Proposed — awaiting owner sign-off | 0.2 (for 6.1–6.3) |
+| [0003](0003-assignee-and-delegate.md) | Assignee and delegate | Proposed — awaiting owner sign-off. Open questions 8 (a session started by someone else runs at once) and 9 (no rung cap) decided 2026-11-18 | 0.2 (for 6.1–6.3) |
 | [0004](0004-authentication-path.md) | Authentication path | Proposed — awaiting owner sign-off | 0.2 (for 1.4, 9.3) |
 | [0005](0005-data-sync-strategy.md) | Data sync strategy | Proposed — awaiting owner sign-off | 0.2 (for 2.3, 4.1–4.3, 9.3) |
-| [0006](0006-vocabulary.md) | Vocabulary | Proposed — awaiting owner sign-off | 0.2 (for 1.3 onward) |
-| [0007](0007-third-party-licence-exceptions.md) | Third-party licence exceptions | Proposed — awaiting owner sign-off | 0.3, H0 |
+| [0006](0006-vocabulary.md) | Vocabulary | Proposed — awaiting owner sign-off. The roles (Owner, Admin, Member, Viewer, Guest), their order, the Viewer fallback and the sign-up switch decided 2026-11-18 | 0.2 (for 1.3 onward) |
+| [0007](0007-third-party-licence-exceptions.md) | Third-party licence exceptions | Accepted (owner decisions, 2026-11-18) | 0.3, H0 |
 
 Planned, not yet written: a search ADR before roadmap 2.7 (ADR 0002 section 11), and the ADRs that roadmap 5.4, 6.4 and 7.5 ask for.
 
@@ -21,7 +21,7 @@ Planned, not yet written: a search ADR before roadmap 2.7 (ADR 0002 section 11),
 - Take the next free number. Never reuse or renumber one.
 - File name: `NNNN-short-title.md`, lower case, words joined by hyphens.
 - Add its row to the index above in the same pull request.
-- The licence gate accepts an exemption only if the ADR it cites exists and names the package (`scripts/licence-gate.mjs`).
+- The licence gate accepts an exemption only if the ADR it cites exists, names the package and has an Accepted status line (`scripts/licence-gate.mjs`). A status line reads `Status: Accepted …` once every decision in the ADR is made.
 
 ## Template
 
@@ -44,6 +44,8 @@ One section per decision (D1, D2, …). For each:
 - the options, each with its consequences;
 - **Recommendation:** the option proposed, and why;
 - Owner sign-off: ____  Date: ____
+
+Once the owner decides, replace the sign-off line with **Decision:** the option chosen, "Owner decision, YYYY-MM-DD", and the owner's words where given. Say so when the choice differs from the recommendation.
 
 ### Open questions for the owner
 

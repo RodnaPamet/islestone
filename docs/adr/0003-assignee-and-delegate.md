@@ -1,6 +1,6 @@
 # 0003 — Assignee and delegate
 
-Status: Proposed — awaiting owner sign-off (2026-11-18 drafted)
+Status: Proposed — awaiting owner sign-off (2026-11-18 drafted). Open questions 8 and 9 were decided by the owner on 2026-11-18; the other open questions await sign-off.
 
 ## Context
 
@@ -25,7 +25,7 @@ How to read this ADR: a line marked **Verified** was read in the named source on
 
 ### What inflect-compliance's agent engine does
 
-Read at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`. Phase 6 plans to port these; under ADR 0001's interim rule, nothing is copied until the grant is signed.
+Read at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`. Phase 6 plans to port these. ADR 0001 D1 (owner decision, 2026-11-18) allows copying them, with a `PROVENANCE.md` row for every copied file; this ADR read them for their design and copied nothing.
 
 - **Verified.** An agent is a `RegisteredAgent` row, separate from `User`, with a required `ownerUserId`, "the accountable human" (`prisma/schema/agentic.prisma` lines 740–800). Its status is `DRAFT`, `ACTIVE`, `SUSPENDED` or `RETIRED`; `DRAFT` cannot run (`prisma/schema/enums.prisma` lines 2091–2099).
 - **Verified.** Ownership moves only by a two-step transfer: only the named recipient completes it, and the initiator never can (`agentic.prisma` lines 3202–3215).
@@ -123,12 +123,13 @@ Read at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`. Phase 6 plans to port
   - the agent can never do more than the authorising person could do themselves (the intersection above), so starting a session grants no one extra reach;
   - outside its own record, everything the agent changes is a proposal, and by default the review request goes to the item's assignee (section 8), so the assignee still decides what lands on their item;
   - the assignee is notified when someone else starts a session on their item, and may end it at once (`COMPLETE`, reason `ENDED_BY_PERSON`).
-  Who may start a session on someone else's item at all is open question 2. Requiring the assignee's consent first is the alternative in open question 8.
+- **Decided (open question 8). Owner decision, 2026-11-18; the owner chose "Run now, assignee notified".** A session that someone other than the assignee starts on an item runs at once, within the starter's permissions (the intersection above). Every write it makes outside its own record is a proposal routed to the assignee, and the assignee is notified and can end the session. The alternative, holding the session in `PENDING` until the assignee consents, was not chosen.
+  Who may start a session on someone else's item at all is still open question 2.
 - That person's membership and role are re-read at session start and at the start of every run. If they no longer hold the authority, the session ends `ERROR`, reason `INVOKER_NOT_AUTHORISED`. A role change during a run applies from the next run; the run's wall-clock cap bounds the gap.
 - **Direct writes are limited to the agent's own record.** An agent may write, without a proposal:
   - activity entries in its own live session (section 6);
   - its own session's moves listed in section 5, and its heartbeat.
-- **Everything else is a proposal:** creating or changing items, comments, relations, plans and schedule changes. A proposal is decided by a person, and the real usecase then runs as that person (section 8).
+- **Everything else is a proposal** while the tool is at the `PROPOSE` rung, where every tool starts: creating or changing items, comments, relations, plans and schedule changes. A proposal is decided by a person, and the real usecase then runs as that person (section 8). A tool a workspace owner has raised to `AUTOMATIC` writes directly (section 9).
 
 ### 5. Agent sessions and their states
 
@@ -214,11 +215,9 @@ Changes:
 
 ### 9. The rung ladder
 
-- A workspace owner may raise one agent, for one tool, from `PROPOSE` to `AUTOMATIC`, up to the cap below. The change is audited.
+- **Decided (open question 9). Owner decision, 2026-11-18; the owner chose "Owners may raise rungs".** There is no rung cap. From Phase 6, a workspace owner may raise an agent's autonomy rung, within that agent's grants, as roadmap principle 2 allows. The draft had recommended shipping Phase 6 with a source constant that capped the ladder at `PROPOSE`; the owner decided against it.
+- A workspace owner may raise one agent, for one tool the agent is granted, from `PROPOSE` to `AUTOMATIC`. The change is audited.
 - At `AUTOMATIC`, the write still runs through the same usecase, under the authorising person's permissions, attributed to the agent and session, and under the kill switch, caps and budgets.
-- **Recommendation: Phase 6 ships with a source constant that caps the ladder at `PROPOSE`.** Raising the cap is a reviewed change with its own ADR. inflect-compliance keeps the same kind of brake constant for its identity write ladder (its `CLAUDE.md`, "Identity lifecycle"). Pattern only.
-- **While the cap is at `PROPOSE`, a request to raise a rung above it is refused** (409, `RUNG_ABOVE_CAP`), and the settings page shows the cap and why. No stored rung ever exceeds the cap, so nothing reports an agent as `AUTOMATIC` that the engine would hold to `PROPOSE`. The engine also clamps any rung it reads to the cap, as a second line.
-- This narrows roadmap principle 2 for Phase 6: under the cap, no workspace owner can raise a rung until a later ADR lifts it. Open question 9 puts that to the owner; if the owner accepts the brake, principle 2 in the roadmap gains a note that Phase 6 ships with it.
 
 ### 10. Kill switch
 
@@ -362,14 +361,17 @@ All tables follow roadmap section 4: `tenantId`, a tenant-leading index, RLS pol
 5. How long may a session wait in `AWAITING_INPUT` before it ends? Recommendation: no automatic end in Phase 6; revisit with usage data.
 6. Default stale bounds: 10 minutes for acknowledgement and 30 minutes for heartbeat (recommended), or other values?
 7. This session's network refused `linear.app`. Allowing it would let the Linear agent guidelines be read and cited directly.
-8. A session someone other than the assignee starts on an item (section 4): let it run at once, with the assignee notified and every write a proposal that goes to them (recommended), or hold it in `PENDING` until the assignee consents?
-9. The rung cap (section 9): ship Phase 6 with the ladder capped at `PROPOSE`, so no workspace owner can raise a rung until a later ADR (recommended), or let owners raise rungs from Phase 6 as roadmap principle 2 allows?
+8. **Decided, 2026-11-18** (section 4): a session someone other than the assignee starts on an item runs at once, with the assignee notified and every write a proposal that goes to them. The owner chose "Run now, assignee notified".
+9. **Decided, 2026-11-18** (section 9): no rung cap. Workspace owners may raise rungs from Phase 6, within the agent's grants, as roadmap principle 2 allows. The owner chose "Owners may raise rungs", against the draft's recommendation of a cap at `PROPOSE`.
+10. Raised by decisions 8 and 9 together: when a workspace owner has raised a tool to `AUTOMATIC`, does a session that someone other than the assignee started still send that tool's writes to the assignee as proposals (decision 8 says every write is a proposal), or does it write directly (section 9)? Not decided.
 
 ## Consequences
 
 - Every delegated item has a named, accountable person. No item is ever "owned" by an agent.
 - Agents never appear in seat counts, membership lists or sign-in tables. Code that lists "people" never meets an agent by accident.
 - Most agent work produces proposals, so the review queue is the product's main agent surface. Its expiry and sampling controls matter from the first release of Phase 6.
+- From Phase 6, a workspace owner can move an agent's tool to `AUTOMATIC` (section 9). Those writes skip the review queue, but keep the usecase, the authorising person's permissions, attribution to the agent and session, the kill switch, caps and budgets. The rung change is audited.
+- A session a teammate starts on someone else's item runs at once (section 4). Its writes still reach that item only as proposals the assignee decides, and the assignee can end it.
 - One live session per item serialises agents on an item. Parallel agent work on one piece of work means splitting it into sub-items.
 - Changing the assignee ends the live session. A person taking over must restart the agent; in exchange, no session carries on into a new assignee's accountability without their choice.
 - Removing a member ends every agent session on the items assigned to them and clears those items' delegates. Offboarding shows the person removing them which items that touches.
@@ -377,14 +379,14 @@ All tables follow roadmap section 4: `tenantId`, a tenant-leading index, RLS pol
 - Required per-agent budgets mean a new agent cannot run until it has one. Plans must supply a default.
 - External agents are bounded by action counts, not money. Their model cost stays with the customer.
 - The session states match Linear's except `stopping`, and the activity types match Linear's six. Agents written for that model map across with little translation; Islestone's own `Agent` model does not match Linear's agents-as-users choice.
-- Under ADR 0001's interim rule, every inflect-compliance pattern named here is written fresh and recorded in `PROVENANCE.md` as pattern only. A signed grant (ADR 0001, D1) would allow porting the engine, queue and kill switch as code in Phase 6.
+- ADR 0001 D1 allows copying inflect-compliance code, so Phase 6 can port the engine, queue and kill switch as code, each copied file with its `PROVENANCE.md` row. The patterns this ADR names were read, not copied; anything written fresh from them is recorded as pattern only.
 
 ## What would change this decision
 
 - Customers need two agents on one item at once, for example a reviewer agent beside a builder agent. A second, read-only session class without a checkout would be the likely change.
 - The owner wants an explicit `CANCELLED` or `STOPPING` state (open question 1).
 - An external standard for agent sessions, such as an MCP extension or a Linear-compatible interface, fixes different states or activity types. Islestone would map at the adapter (ADR 0006, rule 5) before changing its own model.
-- A workspace needs agents to act at `AUTOMATIC` for some tools. The rung cap is then raised by its own ADR.
+- `AUTOMATIC` writes in use from Phase 6 show that raising a rung needs a cap or a stricter process. That would be a new owner decision.
 - Paperclip's schema, once its licence is re-read and its commit pinned under H0, shows a better checkout or budget design.
 - Linear's written guidelines, once readable, say something this ADR contradicts.
 - The owner chooses a different visibility rule for agent activity (open question 4).
@@ -399,7 +401,7 @@ All tables follow roadmap section 4: `tenantId`, a tenant-leading index, RLS pol
   - 1.4 (permission set and roles);
   - 6.1, 6.2, 6.3, 7.7, 8.1, 8.4;
   - H6 and H7.
-- Islestone ADRs: `docs/adr/0001-code-provenance-and-licences.md` (interim rule), `docs/adr/0002-work-item-model.md`, `docs/adr/0006-vocabulary.md`.
+- Islestone ADRs: `docs/adr/0001-code-provenance-and-licences.md` (D1 and the copy rule), `docs/adr/0002-work-item-model.md`, `docs/adr/0006-vocabulary.md`.
 - `@linear/sdk` 103.0.0 (MIT, npm registry), `dist/index-BNMxzn7u.d.mts` lines 320–325, 335–342, 570–578, 6971 and 7018–7019.
 - inflect-compliance, read-only, at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`:
   - `prisma/schema/agentic.prisma` (lines 5–265, 740–800, 1235–1354, 1772–1861, 3202–3215);
@@ -413,4 +415,4 @@ All tables follow roadmap section 4: `tenantId`, a tenant-leading index, RLS pol
   - `src/app-layer/usecases/agent-retirement-cascade.ts`, `agent-ownership-transfer.ts`, `agent-owner-orphan-pass.ts` (existence checked);
   - `docs/implementation-notes/2026-08-12-automation-actor-authority.md` (lines 1–30);
   - `CLAUDE.md` (#4196 kill before every model call; #4481 agent-bound keys at REST; "A2A messaging" re-wrap exception; "Identity lifecycle" brake constants).
-- Patterns reused from inflect-compliance, all pattern only, no code copied: agent separate from user with a required owner; two-step ownership transfer; the proposal queue's controls; the three-scope kill switch checked before every model and tool call; versioned policy cards; all-or-nothing run caps; pre-run budget check and reserve-before-use; the reaper that leaves human waits alone; re-reading a named person's authority when work runs; write-once triggers that admit the encryption re-wrap; a source-constant brake on an autonomy ladder.
+- Patterns reused from inflect-compliance, all pattern only, no code copied: agent separate from user with a required owner; two-step ownership transfer; the proposal queue's controls; the three-scope kill switch checked before every model and tool call; versioned policy cards; all-or-nothing run caps; pre-run budget check and reserve-before-use; the reaper that leaves human waits alone; re-reading a named person's authority when work runs; write-once triggers that admit the encryption re-wrap.

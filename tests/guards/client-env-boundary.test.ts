@@ -13,11 +13,16 @@
  * the only kind a browser can read anyway; if it needs a server variable, it
  * is not really client code and the server part moves behind a server module.
  *
+ * One edge is a boundary, not a path: an import of a module whose directive
+ * prologue holds `'use server'`. Next.js bundles a server-reference stub in
+ * its place, so what that module imports stays on the server. The walk records
+ * such edges in `serverBoundaries` and does not descend into them.
+ *
  * The second half of this file plants a small repository in a temp directory
  * and runs the same check against it, so the guard is shown to catch a
  * violation (two hops away, through an alias, an index file, a re-export, a
  * `require()` and a dynamic import) rather than passing because it walked
- * nothing.
+ * nothing, and to stop at a `'use server'` module and nowhere else.
  */
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -219,6 +224,7 @@ describe('the detector, against a planted repository', () => {
         expect(report.unresolved).toEqual([]);
         expect(report.opaque).toEqual([]);
         expect(report.workspaceImports).toEqual([]);
+        expect(report.serverBoundaries).toEqual([]);
     });
 
     it('also walks from the files Next.js ships to the browser without a directive', () => {
@@ -256,6 +262,67 @@ describe('the detector, against a planted repository', () => {
 
         const report = checkClientEnvBoundary(root);
         expect(report.workspaceImports).toEqual([{ from: 'src/components/toolbar.tsx', specifier: '@acme/ui/button' }]);
+    });
+
+    it("stops at a 'use server' module, whose imports stay on the server, and at nothing else", () => {
+        plant({
+            // Clean: client -> 'use server' module -> @/env. Next.js ships a stub for save().
+            'src/components/save-button.tsx': [
+                "'use client';",
+                "import { save } from '@/app/actions';",
+                'export const SaveButton = () => save;',
+            ].join('\n'),
+            'src/app/actions.ts': [
+                '// Server Functions.',
+                "'use server';",
+                "import { env } from '@/env';",
+                'export async function save() {',
+                '    return String(env);',
+                '}',
+            ].join('\n'),
+
+            // Still a violation: client -> plain module -> @/env, beside the boundary.
+            'src/components/status.tsx': [
+                "'use client';",
+                "import { save } from '@/app/actions';",
+                "import { label } from './format';",
+                'export const Status = () => [save, label];',
+            ].join('\n'),
+
+            // Still a violation: 'use server' after an import is not a directive, so
+            // this module is bundled like any other.
+            'src/components/late-server.tsx': "'use client';\nimport { run } from '@/app/not-actions';\nexport const L = run;\n",
+            'src/app/not-actions.ts': "import { env } from '@/env';\n'use server';\nexport async function run() {\n    return env;\n}\n",
+
+            // Still a violation: a 'use server' inside a function body marks that one
+            // function, not the module.
+            'src/components/inline.tsx': "'use client';\nimport { act } from '@/lib/inline-action';\nexport const I = act;\n",
+            'src/lib/inline-action.ts': "import { env } from '@/env';\nexport async function act() {\n    'use server';\n    return env;\n}\n",
+        });
+
+        const report = checkClientEnvBoundary(root);
+        const chains = Object.fromEntries(report.violations.map((v) => [v.entry, v.chain]));
+        expect(chains['src/components/save-button.tsx']).toBeUndefined();
+        expect(chains['src/components/status.tsx']).toEqual(['src/components/status.tsx', 'src/components/format.ts', 'src/env.ts']);
+        expect(chains['src/components/late-server.tsx']).toEqual(['src/components/late-server.tsx', 'src/app/not-actions.ts', 'src/env.ts']);
+        expect(chains['src/components/inline.tsx']).toEqual(['src/components/inline.tsx', 'src/lib/inline-action.ts', 'src/env.ts']);
+        expect(report.serverBoundaries).toEqual([
+            { from: 'src/components/save-button.tsx', to: 'src/app/actions.ts' },
+            { from: 'src/components/status.tsx', to: 'src/app/actions.ts' },
+        ]);
+        // The boundary module is not part of the client graph, and it is not an entry.
+        expect(report.reached.has('src/app/actions.ts')).toBe(false);
+        expect(report.clientEntries).not.toContain('src/app/actions.ts');
+
+        // Remove the directive and the same import is a violation again.
+        plant({ 'src/app/actions.ts': "import { env } from '@/env';\nexport async function save() {\n    return String(env);\n}\n" });
+        const without = checkClientEnvBoundary(root);
+        expect(Object.fromEntries(without.violations.map((v) => [v.entry, v.chain]))['src/components/save-button.tsx']).toEqual([
+            'src/components/save-button.tsx',
+            'src/app/actions.ts',
+            'src/env.ts',
+        ]);
+        expect(without.serverBoundaries).toEqual([]);
     });
 
     it('goes green when the offending edge is fixed, so the verdict follows the source', () => {
@@ -303,6 +370,19 @@ describe('module facts', () => {
         ['', false],
     ])('%j is a client entry: %s', (source, expected) => {
         expect(analyseModule(source, 'x.tsx').isClientEntry).toBe(expected);
+    });
+
+    it.each([
+        ["'use server';", true],
+        ['"use server"\nexport async function f() {}', true],
+        ["'use strict';\n'use server';", true],
+        ['/* note */\n"use server";', true],
+        ["import x from 'x';\n'use server';", false],
+        ["export async function f() {\n    'use server';\n}", false],
+        ["'use client';", false],
+        ['', false],
+    ])('%j is a server-reference module: %s', (source, expected) => {
+        expect(analyseModule(source, 'x.ts').isServerReference).toBe(expected);
     });
 
     it('collects every bundled edge and skips type-only ones', () => {

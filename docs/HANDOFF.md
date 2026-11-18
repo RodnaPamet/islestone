@@ -6,28 +6,37 @@ Delete this file when everything under "Next steps" is done.
 
 ## Owner decisions, 2026-11-18
 
-Given in the working session by the repository owner. The ADRs do not record them yet
-(next step 2), so this list is the record until they do.
+Given in the working session by the repository owner. The ADRs now record them (next
+step 2); the last column says where.
 
-| # | Decision | Owner's words |
-|---|---|---|
-| 1 | Code may be copied from inflect-compliance. Record every copied file in `PROVENANCE.md`. | "inflect compliance is my software, it's in the same Organization- you can copy" |
-| 2 | The canvas stays on tldraw 3.x with the watermark visible, in commercial production. | "we can use the 3.x in commercial production with the watermark, it's open sourced" |
-| 3 | Islestone is licensed BUSL-1.1, like inflect-compliance. | "Make it BUSL as well" |
-| 4 | The Dub-derived UI (see below) is copied as it is, and the licence risk is accepted. | Chose "Copy as is, accept risk" when asked |
-| 5 | Islestone's Licensor is Inflect Ltd., as in `LICENSE`. | Chose "Inflect Ltd." |
-| 6 | The Additional Use Grant's competing products are project management, work management, compliance, governance, risk and audit management, as in `LICENSE`. | Chose "PM + compliance" |
-| 7 | Public sign-up at `/api/auth/register` sits behind a switch: off by default in production, on in development, and an operator opens it without a code change. | Chose "Behind a switch" |
-| 8 | The standard role is called **Member**. Roles: Owner, Admin, Member, Viewer, Guest. | Chose "Member" |
-| 9 | Roles rank Owner > Admin > Member > Viewer > Guest, by breadth of access. A user whose role cannot be resolved falls back to Viewer, never Guest. | Chose "Owner>Admin>Member>Viewer>Guest" |
-| 10 | On resume, finish Phase 0 + 1.1 first, then the steps below in order. | Chose "Finish Phase 0 + 1.1" |
+| # | Decision | Owner's words | Recorded in |
+|---|---|---|---|
+| 1 | Code may be copied from inflect-compliance. Record every copied file in `PROVENANCE.md`. | "inflect compliance is my software, it's in the same Organization- you can copy" | ADR 0001 D1 |
+| 2 | The canvas stays on tldraw 3.x with the watermark visible, in commercial production. | "we can use the 3.x in commercial production with the watermark, it's open sourced" | ADR 0001 D3 |
+| 3 | Islestone is licensed BUSL-1.1, like inflect-compliance. | "Make it BUSL as well" | ADR 0001 D2 |
+| 4 | The Dub-derived UI (see below) is copied as it is, and the licence risk is accepted. | Chose "Copy as is, accept risk" when asked | ADR 0001 D4 |
+| 5 | Islestone's Licensor is Inflect Ltd., as in `LICENSE`. | Chose "Inflect Ltd." | ADR 0001 D2 |
+| 6 | The Additional Use Grant's competing products are project management, work management, compliance, governance, risk and audit management, as in `LICENSE`. | Chose "PM + compliance" | ADR 0001 D2 |
+| 7 | Public sign-up at `/api/auth/register` sits behind a switch: off by default in production, on in development, and an operator opens it without a code change. | Chose "Behind a switch" | ADR 0006 |
+| 8 | The standard role is called **Member**. Roles: Owner, Admin, Member, Viewer, Guest. | Chose "Member" | ADR 0006 |
+| 9 | Roles rank Owner > Admin > Member > Viewer > Guest, by breadth of access. A user whose role cannot be resolved falls back to Viewer, never Guest. | Chose "Owner>Admin>Member>Viewer>Guest" | ADR 0006 |
+| 10 | On resume, finish Phase 0 + 1.1 first, then the steps below in order. | Chose "Finish Phase 0 + 1.1" | This file |
+| 11 | sharp stays in production for image optimisation; its 14 libvips/sharp packages are exempted, each pinned to the version read. The 1.8 image carries the LGPL notice and leaves the library replaceable. | "Keep, exempt them" | ADR 0007 E1a |
+| 12 | The rest of ADR 0007 as recommended: 0BSD joins the allowlist and the `tslib` exemption goes (E2b); `caniuse-lite` is exempted by name, bound to CC-BY-4.0 (E3a); no other licence is added until a dependency needs one (E4). ADR 0007 is Accepted. | "ADR 0007 as proposed" | ADR 0007 |
+| 13 | A session someone other than the assignee starts on an item runs at once, within the starter's permissions; every write is a proposal routed to the assignee, who is notified and can end the session. | "Run now, assignee notified" | ADR 0003, open question 8 |
+| 14 | No rung cap at `PROPOSE`: from Phase 6 a workspace owner may raise an agent's autonomy rung, within that agent's grants, as roadmap principle 2 allows. This goes against the ADR's recommendation. | "Owners may raise rungs" | ADR 0003, open question 9 |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
 
-Decisions 7 to 9 belong in ADR 0006 (vocabulary), in the 1.4 map, and later in
-`src/lib/permissions.ts` and the register route when 1.4 is ported. The 1.4 map's
-`EDITOR` names become `MEMBER`.
+Decisions 7 to 9 are in ADR 0006 (vocabulary), and reach `src/lib/permissions.ts` and
+the register route when 1.4 is ported. The 1.4 map (`docs/porting/maps/1.4.md`) has not
+been updated yet: it still offers "MEMBER (or EDITOR)" and still lists the role order and
+the sign-up question as open. Update it before porting 1.4.
+
+Decisions 13 and 14 leave one question between them, recorded as ADR 0003 open question
+10: when a tool has been raised to `AUTOMATIC`, does a session a non-assignee started
+still send that tool's writes to the assignee as proposals?
 
 Map housekeeping: `1.5.md` has a "Handoff to 1.6" section, listing what 1.5 already
 places in `metrics.ts`, `tracing.ts`, `edge-logger.ts` and `instrumentation.ts`. Copy it
@@ -40,14 +49,15 @@ into `1.6.md` before porting 1.6.
 least half their text with Dub's `packages/ui`/`packages/utils`, which are AGPL-3.0. That
 count includes 270 Nucleo icons whose notice forbids use outside the product they shipped
 with. The engines (tasks, automation, agentic, MCP, canvas) show no overlap. The owner
-accepted the risk (decision 4). `NOTICE` and ADR 0001 must still say so: next step 2.
+accepted the risk (decision 4), and ADR 0001 D4 records it. `NOTICE` names Dub and Nucleo
+in the change that lands `packages/ui` (next step 3); it says so already.
 
 ## Branches
 
-- `main` was created at `449fb38` (the roadmap only), on the owner's go-ahead.
+- `main` was created at `449fb38` (the roadmap only), on the owner's go-ahead, and exists on the remote.
 - Draft PR #1 (https://github.com/RodnaPamet/islestone/pull/1) merges
   `claude/great-planck-57ljb4` into `main`, so CI runs. `ci.yml` runs only on pull
-  requests and on pushes to `main`, so CI has not run before PR #1.
+  requests and on pushes to `main`. PR #1's first CI run was green, on `3ffb78a`.
 - The owner sets `main` as the default branch and protects it, requiring a pull request
   and the CI checks.
 - Merge PR #1 only when its CI is green.
@@ -59,13 +69,15 @@ accepted the risk (decision 4). `NOTICE` and ADR 0001 must still say so: next st
 - `449fb38` — the roadmap.
 - `0bf9582` — Phase 0 + 1.1 skeleton, checkpointed during its review loop: app skeleton,
   env modules, licence gate, CI, ADRs 0001–0006 as drafts.
-- This commit adds:
+- `c7d1123` adds:
   - `LICENSE` and `LICENSING.md` (BUSL-1.1);
   - the shared-UI drift tooling (`scripts/ui-drift.mjs` with `verify`, `audit`, `compare`
     and `pin`, plus `tests/unit/ui-drift.test.mjs`, run with
     `node --test tests/unit/ui-drift.test.mjs`) and `docs/porting/shared-ui.md`;
   - the porting maps (`docs/porting/maps/`), the open-source studies (`docs/porting/oss/`)
     and the Dub finding (`docs/porting/licence/`).
+- Later commits carry the rest of the Phase 0 + 1.1 work (`3ffb78a` had the first green
+  CI run), refresh the porting maps, and record the owner decisions (next step 2).
 
 ## What is not on the branch
 
@@ -75,17 +87,12 @@ accepted the risk (decision 4). `NOTICE` and ADR 0001 must still say so: next st
 
   This was checked: it reproduces the held copy, `UPSTREAM.json` included. Until then the
   last test in `ui-drift.test.mjs` fails, because it checks the real `packages/ui`.
-  `package.json` still says `UNLICENSED`, and ADR 0001 still lists every decision as open.
-- **Work by the Phase 0 + 1.1 workflow after `0bf9582`.** At pause time it was applying
-  review fixes, then running its final check. Anything it wrote that is not on the
-  branch is lost if the container is reclaimed. Rerun its review (next step 1) rather than
-  trust the checkpoint as final.
 - **Porting-map verification still in progress at pause time.** The maps on the branch are
   the latest saved versions, and some were still being re-verified.
 
 ## Rules learned from the licence re-reads (H0)
 
-Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check".
+Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `PROVENANCE.md` now carries each commit and rule in its port-candidates table.
 
 | Project | Pin | Licence | Rule |
 |---|---|---|---|
@@ -100,21 +107,26 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check".
 
 ## Next steps, in order
 
-1. **Finish Phase 0 + 1.1.** Pull the branch and run `npm ci && npm run verify`, the
-   Playwright smoke test (`npm run build && npm run test:e2e`) and the CI workflow. Fix
-   anything red. A fresh review pass against roadmap Phase 0 and 1.1, and against H0, is
-   worth running, because the workflow's last fix round may not have landed.
-2. **Record the owner decisions.**
-   - ADR 0001: D1 (copy allowed), D2 (BUSL-1.1), D3 (tldraw 3.x with the watermark), and a
-     new D4 (Dub/Nucleo taken as is, risk accepted, with the finding's numbers). Replace
-     its interim "pattern only" rule with "copy, and record each file".
-   - ADR 0006: decisions 7 to 9 (the sign-up switch, Member, the role order and the
-     Viewer fallback). Update the 1.4 map to match.
-   - Set `"license": "BUSL-1.1"` in `package.json`.
-   - `CLAUDE.md` and `PROVENANCE.md`: change the "do not copy inflect-compliance" rule to
-     "copy, record each file".
-   - `NOTICE`: add the Dub copyright and AGPL-3.0 statement, and the Nucleo notice.
-   - `docs/ROADMAP.md` 0.1 and section 7: move the three decisions from open to decided.
+1. **Finish Phase 0 + 1.1.** Done: the skeleton is on the branch, and PR #1's first CI
+   run, on `3ffb78a`, was green.
+2. **Record the owner decisions.** Done. What landed:
+   - ADR 0001 is Accepted. It records D1 (copying allowed), D2 (BUSL-1.1, licensor
+     Inflect Ltd.), D3 (tldraw 3.x with the watermark) and a new D4 (Dub/Nucleo taken as
+     is, risk accepted, with the finding's numbers). Its interim "pattern only" rule is
+     replaced by the copy rule: copy, record each file in `PROVENANCE.md`, keep the BUSL
+     and other licence notices.
+   - ADR 0007 is Accepted (decisions 11 and 12). ADR 0003 records decisions 13 and 14 in
+     place; ADR 0006 records decisions 7 to 9. Both stay Proposed, because their other
+     open questions are unanswered. ADRs 0002, 0004 and 0005 stay Proposed; their
+     references to the retired interim rule were corrected.
+   - `package.json` says `"license": "BUSL-1.1"`.
+   - The licence gate allows 0BSD, the `tslib` exemption is gone, an exemption must cite
+     an Accepted ADR that names the package, and a workspace holding `UPSTREAM.json` is
+     checked like any dependency.
+   - `CLAUDE.md`, `PROVENANCE.md` (the copy rule; the port candidates with the commit each
+     licence was read at and its licence-boundary rule; rows for the patterns the ADRs
+     adopt), `NOTICE`, `LICENSING.md`, `README.md`, and `docs/ROADMAP.md` 0.1 and section 7.
+   - Not done: the 1.4 map's role wording (see the note under the decisions table).
 3. **Land the shared UI (1.2 part A).** Run `pin` (above), then wire it in as listed in
    `docs/porting/shared-ui.md`, "What the rest of Islestone must provide":
    - a root `.gitattributes` with `packages/ui/** -text`;
@@ -124,9 +136,13 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check".
    - CI running `verify --population fs` right after checkout, then `audit` against a
      fetch of inflect-compliance, and the node test.
 
-   The licence gate treats a workspace that declares the root's licence as Islestone's own.
-   Once the root is BUSL-1.1, `@inflect/ui` passes silently, so decide whether a mirrored
-   workspace (one carrying `UPSTREAM.json`) should need an explicit exemption instead.
+   In the same change, per ADR 0001:
+   - add Dub's copyright and AGPL-3.0 statement and the Nucleo notice to `NOTICE`;
+   - move the rows from `docs/porting/provenance-shared-ui.md` into `PROVENANCE.md`. The
+     copy rule asks for a row per copied file, and the draft groups the package into
+     seven rows by folder, so either list each file or put the grouping to the owner;
+   - add the `@inflect/ui` exemption (`BUSL-1.1`, citing ADR 0001). The gate checks a
+     mirrored workspace like any dependency, so without it the build fails.
 4. **1.2 part B (the GENERIC `src/components/ui` files).** Follow `docs/porting/maps/1.2.md`:
    109 files, 14 MIXED files that come along, a second manifest for Islestone-owned
    files, and a 10-batch copy order.
