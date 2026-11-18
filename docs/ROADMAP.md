@@ -96,7 +96,7 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 ## 3. Product principles
 
 1. **People are accountable; agents are delegated.** A work item has one human assignee and, optionally, one agent delegate.
-2. **Agents propose, people approve.** Every agent write goes through the proposal queue until a workspace owner raises a specific rung.
+2. **Agents propose, people approve.** Every agent write goes through the proposal queue until a workspace owner raises a specific rung. A session someone other than the item's assignee started proposes at every rung (ADR 0003, decision 10).
 3. **One work-item table.** Views, cycles, modules and roadmaps are scopes over it.
 4. **Deterministic numbers, explained by a model.** Schedules and forecasts come from code. A model explains them and never invents them.
 5. **Tenant isolation at the database.** Every tenant table has row-level security from its first migration.
@@ -178,6 +178,7 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 #### 2.2 Usecases, API and activity (L)
 - **Source:** `usecases/task.ts`, `TaskRepository.ts`, the 19 task routes, comments, watchers.
 - **Prompt:** "Port the task usecases, repository and routes as work-item equivalents: list with cursor pagination, get, create, update, delete with restore, assign, bulk update, comments with sanitisation, watchers, and an activity feed built from the audit trail. Add optimistic concurrency with a version column and a 409 on conflict. Encrypt description and comment bodies through the manifest."
+- **Owner decision, 2026-11-18** ("In 2.2"): due-date reminders (the shared in-app helper and the daily job) land here with the work-item engine, not in 2.7. The email due digest is part of 2.7's digests.
 
 #### 2.3 List, board and detail views (L)
 - **Source:** `TasksClient.tsx`, task detail page; pragmatic-drag-and-drop; circle (MIT) for layout ideas.
@@ -264,7 +265,8 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 
 #### 5.1 Automation engine and builder (L)
 - **Source:** `app-layer/automation`; `RuleBuilderModal`; React Flow; Paca web (Apache-2.0) for the graph builder.
-- **Prompt:** "Port the automation bus, rules, executions and action executor. Define the event contract for work items, cycles, comments, intake and integrations. Build a trigger, condition, action builder. Actions: set field, assign, comment, notify, create item, call webhook, start an agent run. Detect and stop rule loops with a per-chain depth limit."
+- **Prompt:** "Port the automation bus, rules, executions and action executor. Define the event contract for work items, cycles, comments, intake and integrations. Build a trigger, condition, action builder. Actions: set field, assign, comment, notify, create item, call webhook. Detect and stop rule loops with a per-chain depth limit."
+- **Owner decision, 2026-11-18** ("Add it in Phase 6"): 5.1 ships without an action that starts an agent run. Phase 6 adds it once the agent engine and its kill switch exist, in 6.3.
 
 #### 5.2 Public API and webhooks (M)
 - **Source:** API-key auth, `webhook-headers.ts`, the audit-stream delivery pattern.
@@ -301,7 +303,8 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 
 #### 6.3 Agents as delegates (L)
 - **Source:** Paperclip (MIT) for checkout locks, budgets and heartbeat; Linear's agent guidelines for the interaction model.
-- **Prompt:** "Add the delegate model: `Agent` as an actor separate from `User`, with an accountable human owner; `WorkItem.delegateAgentId` beside the human assignee; `AgentSession` with states pending, active, awaiting input, complete, error and stale; an append-only `AgentActivity` stream shown on the item. Add atomic checkout so two agents never hold one item, per-agent and per-project budgets with hard stops, and invocation by delegation, mention, schedule or automation."
+- **Prompt:** "Add the delegate model: `Agent` as an actor separate from `User`, with an accountable human owner; `WorkItem.delegateAgentId` beside the human assignee; `AgentSession` with states pending, active, awaiting input, complete, error and stale; an append-only `AgentActivity` stream shown on the item. Add atomic checkout so two agents never hold one item, per-agent and per-project budgets with hard stops, and invocation by delegation, mention, schedule or automation. Add the automation-rule action that starts an agent run, which 5.1 left out."
+- **Owner decision, 2026-11-18** ("Add it in Phase 6"): the automation-rule action that starts an agent run lands here, once the agent engine (6.1) and its kill switch exist.
 
 #### 6.4 Assistant surface (M)
 - **Source:** assistant-ui (MIT) or AI Elements (Apache-2.0).

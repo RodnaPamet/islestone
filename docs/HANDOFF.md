@@ -6,8 +6,8 @@ Delete this file when everything under "Next steps" is done.
 
 ## Owner decisions, 2026-11-18
 
-Given in the working session by the repository owner. The ADRs now record them (next
-step 2); the last column says where.
+Given in the working session by the repository owner. The ADRs, the roadmap and the
+porting maps now record them (next step 2); the last column says where.
 
 | # | Decision | Owner's words | Recorded in |
 |---|---|---|---|
@@ -25,6 +25,10 @@ step 2); the last column says where.
 | 12 | The rest of ADR 0007 as recommended: 0BSD joins the allowlist and the `tslib` exemption goes (E2b); `caniuse-lite` is exempted by name, bound to CC-BY-4.0 (E3a); no other licence is added until a dependency needs one (E4). ADR 0007 is Accepted. | "ADR 0007 as proposed" | ADR 0007 |
 | 13 | A session someone other than the assignee starts on an item runs at once, within the starter's permissions; every write is a proposal routed to the assignee, who is notified and can end the session. | "Run now, assignee notified" | ADR 0003, open question 8 |
 | 14 | No rung cap at `PROPOSE`: from Phase 6 a workspace owner may raise an agent's autonomy rung, within that agent's grants, as roadmap principle 2 allows. This goes against the ADR's recommendation. | "Owners may raise rungs" | ADR 0003, open question 9 |
+| 15 | A session started by someone other than the work item's assignee never writes directly, whatever the rung: even where a workspace owner raised a tool to `AUTOMATIC`, its writes go to the assignee as proposals. Decision 13 wins over decision 14 for such sessions; sessions the assignee started follow the rung. | "Proposals to assignee" | ADR 0003, open question 10 (sections 4 and 9) |
+| 16 | Due-date reminders land in sub-phase 2.2 with the work-item engine, not in 2.7. | "In 2.2" | `docs/ROADMAP.md` 2.2; porting maps `1.6.md` and `2.1-2.2.md` |
+| 17 | Islestone's agents have no risk tier: every agent is governed by its grants and its autonomy rung alone. inflect-compliance's tier and what it drives (autonomy cap, policy-card defaults, approval count, readiness checks, re-assessment) are not ported. | "Drop it" | ADR 0003 section 4; porting maps `6.1.md` (section G, which names each replacement) and `6.2.md` |
+| 18 | Automation rules get an action that starts an agent run, added in Phase 6: 5.1 ships without it, and 6.3 adds it once the agent engine and its kill switch exist. | "Add it in Phase 6" | `docs/ROADMAP.md` 5.1 and 6.3; porting map `5.1.md`, open decision 7 |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
@@ -33,10 +37,10 @@ Decisions 7 to 9 are in ADR 0006 (vocabulary), and reach `src/lib/permissions.ts
 the register route when 1.4 is ported. The 1.3 and 1.4 maps (`docs/porting/maps/`) now
 say `MEMBER`, the decided role order, the Viewer fallback and the sign-up switch.
 
-Decisions 13 and 14 leave one question between them, recorded as ADR 0003 open question
+Decisions 13 and 14 left one question between them, recorded as ADR 0003 open question
 10: when a tool has been raised to `AUTOMATIC`, does a session a non-assignee started
-still send that tool's writes to the assignee as proposals? Until the owner answers it,
-decision 13 governs: such a session's writes go to the assignee as proposals at any rung.
+still send that tool's writes to the assignee as proposals? Decision 15 answers it: yes,
+such a session's writes go to the assignee as proposals at any rung.
 
 Map housekeeping: `1.5.md` has a "Handoff to 1.6" section, listing what 1.5 already
 places in `metrics.ts`, `tracing.ts`, `edge-logger.ts` and `instrumentation.ts`. Copy it
@@ -135,6 +139,11 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      ADR 0001 unsigned (1.3, 1.4, 1.5, 1.6, 1.7, 2.1–2.2, 2.3, 5.1, and the Cal.diy, Paca
      and SVAR studies; 6.1 and 6.2 arrived already corrected), and the 1.3 and 1.4 maps
      carry the ADR 0006 role decisions.
+   - Decisions 15 to 18: ADR 0003 records 15 (open question 10) and 17 (no agent risk
+     tier) in place and stays Proposed; `docs/ROADMAP.md` records 16 (under 2.2) and 18
+     (5.1's prompt drops the agent-run action, 6.3's prompt and a bullet under it add it); the
+     1.4, 1.6, 2.1–2.2, 5.1, 6.1 and 6.2 maps follow them; `README.md` and `CLAUDE.md`
+     qualify the rung summary for decision 15, and `CLAUDE.md` says where decisions are recorded.
 3. **Land the shared UI (1.2 part A).** Run `pin` (above), then wire it in as listed in
    `docs/porting/shared-ui.md`, "What the rest of Islestone must provide":
    - a root `.gitattributes` with `packages/ui/** -text`;

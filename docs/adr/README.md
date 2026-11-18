@@ -8,7 +8,7 @@ Each ADR records one decision: the context, the options, the decision, its conse
 |---|---|---|---|
 | [0001](0001-code-provenance-and-licences.md) | Code provenance and licences | Accepted (owner decisions, 2026-11-18): copying from inflect-compliance allowed (D1), BUSL-1.1 (D2), tldraw 3.x with the watermark (D3), Dub-derived UI and Nucleo icons copied as is, risk accepted (D4) | 0.1 |
 | [0002](0002-work-item-model.md) | Work item model | Proposed — awaiting owner sign-off | 0.2 (for 2.1–2.4, 2.7, 3.2) |
-| [0003](0003-assignee-and-delegate.md) | Assignee and delegate | Proposed — awaiting owner sign-off. Open questions 8 (a session started by someone else runs at once) and 9 (no rung cap) decided 2026-11-18 | 0.2 (for 6.1–6.3) |
+| [0003](0003-assignee-and-delegate.md) | Assignee and delegate | Proposed — awaiting owner sign-off. Open questions 8 (a session started by someone else runs at once), 9 (no rung cap) and 10 (such a session's writes go to the assignee as proposals at every rung), and no agent risk tier, decided 2026-11-18 | 0.2 (for 6.1–6.3) |
 | [0004](0004-authentication-path.md) | Authentication path | Proposed — awaiting owner sign-off | 0.2 (for 1.4, 9.3) |
 | [0005](0005-data-sync-strategy.md) | Data sync strategy | Proposed — awaiting owner sign-off | 0.2 (for 2.3, 4.1–4.3, 9.3) |
 | [0006](0006-vocabulary.md) | Vocabulary | Proposed — awaiting owner sign-off. The roles (Owner, Admin, Member, Viewer, Guest), their order, the Viewer fallback and the sign-up switch decided 2026-11-18 | 0.2 (for 1.3 onward) |

@@ -2,13 +2,13 @@
 
 Guidance for Claude Code sessions in this repository.
 
-**Islestone** is an AI-enabled project-management SaaS: one work-item table with many views, deterministic planning, and agents that work as delegates of accountable people and write through proposals a person approves, unless a workspace owner raises a rung (ADR 0003).
+**Islestone** is an AI-enabled project-management SaaS: one work-item table with many views, deterministic planning, and agents that work as delegates of accountable people and write through proposals a person approves, unless a workspace owner raises a rung and the item's assignee started the session (ADR 0003).
 
 Read [docs/ROADMAP.md](docs/ROADMAP.md) (phases, the global preamble in section 4, hardening gates) and [docs/adr/](docs/adr/) before starting. If a step would contradict an ADR, stop and ask.
 
 ## Current state
 
-Sub-phase 1.1, the repository skeleton, is done: PR #1's first completed CI run, at `3ffb78a`, was green. The owner decisions taken so far are recorded in the ADRs. ADRs 0001 (provenance and licences) and 0007 (licence exceptions) are Accepted. ADRs 0002 to 0006 are Proposed and await the owner's sign-off, so Phase 0 is not closed (roadmap 0.2); 0003 and 0006 record some owner decisions in place (see the index in `docs/adr/README.md`). The next step is sub-phase 1.2, the shared UI; it has not landed. What exists: a Next.js 16 App Router app with a placeholder home page and `/api/livez` and `/api/readyz`; the two env modules; baseline security headers on every response (`src/lib/security-headers.ts`, wired in `next.config.ts`; a Content-Security-Policy with `script-src` needs per-request nonces and belongs to the security perimeter, sub-phase 1.5); Jest, Playwright, ESLint and CI; a local Postgres, PgBouncer and Redis stack. What does not exist yet: a database schema, auth, permissions, usecases, policies, repositories, the audit log, jobs, the shared UI. Do not write code or docs that assume they do.
+Sub-phase 1.1, the repository skeleton, is done: PR #1's first completed CI run, at `3ffb78a`, was green. The owner decisions taken so far are recorded in the ADRs, the roadmap and the porting maps. ADRs 0001 (provenance and licences) and 0007 (licence exceptions) are Accepted. ADRs 0002 to 0006 are Proposed and await the owner's sign-off, so Phase 0 is not closed (roadmap 0.2); 0003 and 0006 record some owner decisions in place (see the index in `docs/adr/README.md`). The next step is sub-phase 1.2, the shared UI; it has not landed. What exists: a Next.js 16 App Router app with a placeholder home page and `/api/livez` and `/api/readyz`; the two env modules; baseline security headers on every response (`src/lib/security-headers.ts`, wired in `next.config.ts`; a Content-Security-Policy with `script-src` needs per-request nonces and belongs to the security perimeter, sub-phase 1.5); Jest, Playwright, ESLint and CI; a local Postgres, PgBouncer and Redis stack. What does not exist yet: a database schema, auth, permissions, usecases, policies, repositories, the audit log, jobs, the shared UI. Do not write code or docs that assume they do.
 
 ## Commands
 
