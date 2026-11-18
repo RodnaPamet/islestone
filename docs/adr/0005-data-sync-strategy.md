@@ -21,7 +21,7 @@ How to read this ADR: a line marked **Verified** was read in the named file or r
 ### What Islestone has today
 
 - **Verified.** `package.json` has five runtime dependencies: `@t3-oss/env-nextjs`, `next`, `react`, `react-dom`, `zod`. There is no client data cache, no Redis client and no Yjs.
-- **Verified.** `docker-compose.yml` runs Postgres 17 with pgvector (line 19), PgBouncer in transaction mode in front of it (lines 1–2, 12, 35–36) and Redis 7.4 (line 66).
+- **Verified.** `docker-compose.yml` runs Postgres 17 with pgvector (line 19), PgBouncer in transaction mode in front of it (lines 1–2 and 35–36; `POOL_MODE: transaction` is line 50) and Redis 7.4 (line 66).
 - **Verified.** There is no database schema yet (`CLAUDE.md`, "Current state").
 
 ### What inflect-compliance has built, and what it has not
@@ -141,7 +141,7 @@ Everything in this section is a recommendation for the owner.
 
 ### 4. Change notices (roadmap 4.3)
 
-"Change notice" is a new term. ADR 0006 does not list it (open question 11).
+"Change notice" is a new term. ADR 0006 lists it with this ADR's other new words, for the owner to confirm (open question 11).
 
 **Shape.** A notice names what changed and nothing else. Illustrative, not final:
 
@@ -149,7 +149,7 @@ Everything in this section is a recommendation for the owner.
 type ChangeNotice =
   | { kind: 'workItem'; op: 'upsert' | 'delete'; id: string; projectId: string; version: number }
   | { kind: 'workItemOrder'; id: string; projectId: string }        // sortKey is outside the version (ADR 0002 §5)
-  | { kind: 'project' | 'cycle' | 'milestone' | 'view'; op: 'upsert' | 'delete'; id: string; version: number }
+  | { kind: 'project' | 'cycle' | 'milestone' | 'savedView'; op: 'upsert' | 'delete'; id: string; version: number }
   | { kind: 'resync'; projectId: string }                            // after a bulk write or an import
   | { kind: 'access'; userId: string };                              // this person's access changed
 ```
@@ -201,11 +201,11 @@ type ChangeNotice =
 
 **6.2 Every connection is authorised, and stays authorised.**
 
-- The app mints a **collaboration ticket** through an authorised route. It is signed, lives at most 60 seconds, and binds the user, the sign-in session, the workspace, the document name and the access level (read or write). Minting runs `requirePermission` for that page or canvas.
-- `onAuthenticate` verifies the ticket. Then it re-reads the database: the sign-in session is live, the membership is active, the page or canvas exists in that workspace (read under RLS), and the person may read it or write it. Read-only access makes the connection read-only, so its updates are not applied.
-- Document names include the workspace: `<tenantId>/page/<pageId>`, `<tenantId>/canvas/<canvasId>`. A name alone grants nothing: the ticket must name it.
-- The server checks the `Origin` header on upgrade. A ticket fetched by same-origin script also avoids a WebSocket authenticated by cookie alone, which Zero's documentation warns can be hijacked cross-site. That warning applies to any cookie-authenticated WebSocket.
-- **Tickets are refreshed over the open connection** through `onTokenSync`. Each refresh re-runs every check. A connection whose ticket expires without a refresh is closed. So a revocation takes effect within one ticket lifetime even if its notice is lost.
+- The app mints a **collaboration token** through an authorised route. It is signed, lives at most 60 seconds, and binds the user, the sign-in session, the workspace, the document name and the access level (read or write). Minting runs `requirePermission` for that page or canvas.
+- `onAuthenticate` verifies the token. Then it re-reads the database: the sign-in session is live, the membership is active, the page or canvas exists in that workspace (read under RLS), and the person may read it or write it. Read-only access makes the connection read-only, so its updates are not applied.
+- Document names include the workspace: `<tenantId>/page/<pageId>`, `<tenantId>/canvas/<canvasId>`. A name alone grants nothing: the token must name it.
+- The server checks the `Origin` header on upgrade. A token fetched by same-origin script also avoids a WebSocket authenticated by cookie alone, which Zero's documentation warns can be hijacked cross-site. That warning applies to any cookie-authenticated WebSocket.
+- **Tokens are refreshed over the open connection** through `onTokenSync`. Each refresh re-runs every check. A connection whose token expires without a refresh is closed. So a revocation takes effect within one token lifetime even if its notice is lost.
 - On an `access` notice, the server closes that person's connections in that workspace at once (H4).
 - Connections and update rates are capped per person and per workspace. Values are set at H4.
 
@@ -292,7 +292,7 @@ type ChangeNotice =
 - A two-tenant test: a stream in workspace A never receives a notice from workspace B. A guest never receives a notice for a project outside their access.
 - The notice schema refuses any field beyond kind, op, ids and version.
 - A revoked sign-in session, a removed member and a narrowed role each close the open stream and the collaboration connections within the stated time (H1, H4).
-- A ticket for another workspace's page, an expired ticket and a ticket for another document are refused. A read-only connection's updates are not applied.
+- A token for another workspace's page, an expired token and a token for another document are refused. A read-only connection's updates are not applied.
 - A forged awareness state naming another user is refused.
 - Two clients editing one page or canvas converge. A server-side write during a live session survives the next store (H4's concurrent-save test).
 - Oversized updates and documents are refused. Content with unknown nodes is dropped from projections, and exported HTML is sanitised.
@@ -309,8 +309,8 @@ type ChangeNotice =
 7. Audit granularity for collaborative edits. Recommended: one entry per person per page per 10 minutes.
 8. Does the hosting target (roadmap open decision 5) keep long-lived SSE and WebSocket connections? A serverless-only host would change sections 4 and 6.
 9. Does 8.5's PWA quick capture need to work offline? If yes, condition 1 fires.
-10. Recommended limits to confirm at H4: 60-second ticket lifetime, 60-second stream re-check, connection and update caps.
-11. Add "change notice" and "collaboration server" to ADR 0006's vocabulary.
+10. Recommended limits to confirm at H4: 60-second token lifetime, 60-second stream re-check, connection and update caps.
+11. Confirm the new words this ADR adds to ADR 0006's vocabulary: "change notice", "collaboration server", "collaboration token", "page content" (`PageContent`, a working name) and "projection". ADR 0006 lists them as proposed rows.
 
 ## Consequences
 
@@ -318,7 +318,7 @@ type ChangeNotice =
 - Live updates cost an extra read per change for every open client that shows it. Refetch load must be measured at H2 and H4. It is also one of the reopen thresholds.
 - Notices carry no content, so a leaked or misrouted notice reveals ids only. Filtering per project before writing keeps even ids from guests and from people outside private projects.
 - Phase 4 adds two runtime components: the collaboration server and Redis on the content path. Redis then holds page and canvas updates in flight and must be secured as a data store.
-- Authorisation of a long-lived connection is re-checked, not assumed. This adds a database read per stream per minute and per ticket refresh, in exchange for H1 and H4.
+- Authorisation of a long-lived connection is re-checked, not assumed. This adds a database read per stream per minute and per token refresh, in exchange for H1 and H4.
 - Collaborative content is a CRDT. It cannot be queried in place: search, export, backlinks and agents read projections, which lag the live document by the store debounce (2 to 10 seconds by Hocuspocus's defaults).
 - A schema change in the editor or canvas means transforming stored Yjs documents, which is harder than migrating rows. Each change needs a tested transform.
 - No offline mode. A person who loses the connection keeps typing in a page, and Yjs merges on reconnect, but records cannot be changed offline.

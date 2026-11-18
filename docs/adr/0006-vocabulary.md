@@ -124,7 +124,7 @@ Rows for Phase 2 concepts are fixed by this ADR once signed. Rows for later phas
 |---|---|---|---|---|
 | Change notice | A content-free message that a record changed: kind, id and version, never field values (ADR 0005, section 4). | TypeScript type `ChangeNotice`; no table | Not shown | Event (reserved for automation), Notification (reserved for the Inbox), Message |
 | Collaboration server | The separate Node process that holds live pages and canvases (ADR 0005, section 6.1). | No model | Not shown | Realtime server, Socket server, Sync engine (a sync engine is ADR 0005's deferred option) |
-| Collaboration token | The signed, short-lived credential the app mints for one connection to one document (ADR 0005, section 6.2). | No table; a signed value | Not shown | Ticket (reserved as a banned word for work items and intake), Session, Pass |
+| Collaboration token | The signed, short-lived credential the app mints for one connection to one document (ADR 0005, section 6.2). | No table; a signed value | Not shown | Ticket (banned for work items and intake requests, and refused as an identifier by the recommended ESLint rule), Session, Pass |
 
 **Agents and automation**
 
