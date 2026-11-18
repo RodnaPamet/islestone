@@ -6,8 +6,8 @@ Delete this file when everything under "Next steps" is done.
 
 ## Owner decisions, 2026-11-18
 
-Given in the working session by the repository owner. ADR 0001 does not record them yet
-(next step 2), so this list is the record until it does.
+Given in the working session by the repository owner. The ADRs do not record them yet
+(next step 2), so this list is the record until they do.
 
 | # | Decision | Owner's words |
 |---|---|---|
@@ -15,24 +15,19 @@ Given in the working session by the repository owner. ADR 0001 does not record t
 | 2 | The canvas stays on tldraw 3.x with the watermark visible, in commercial production. | "we can use the 3.x in commercial production with the watermark, it's open sourced" |
 | 3 | Islestone is licensed BUSL-1.1, like inflect-compliance. | "Make it BUSL as well" |
 | 4 | The Dub-derived UI (see below) is copied as it is, and the licence risk is accepted. | Chose "Copy as is, accept risk" when asked |
+| 5 | Islestone's Licensor is Inflect Ltd., as in `LICENSE`. | Chose "Inflect Ltd." |
+| 6 | The Additional Use Grant's competing products are project management, work management, compliance, governance, risk and audit management, as in `LICENSE`. | Chose "PM + compliance" |
+| 7 | Public sign-up at `/api/auth/register` sits behind a switch: off by default in production, on in development, and an operator opens it without a code change. | Chose "Behind a switch" |
+| 8 | The standard role is called **Member**. Roles: Owner, Admin, Member, Viewer, Guest. | Chose "Member" |
+| 9 | Roles rank Owner > Admin > Member > Viewer > Guest, by breadth of access. A user whose role cannot be resolved falls back to Viewer, never Guest. | Chose "Owner>Admin>Member>Viewer>Guest" |
+| 10 | On resume, finish Phase 0 + 1.1 first, then the steps below in order. | Chose "Finish Phase 0 + 1.1" |
 
-Not yet confirmed by the owner, and assumed in `LICENSE`:
+`LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
+not asked separately.
 
-- Licensor: Inflect Ltd. (mirrors inflect-compliance).
-- Additional Use Grant: inflect's, with "project-management, work-management" added to the
-  competing products, and internal use reworded to "manage your own organization's
-  projects and work".
-- Change Date: 2030-11-18.
-
-## Open questions for the owner (from the porting maps)
-
-Raised by `docs/porting/maps/1.4.md`. None of them blocks 1.2 or 1.3.
-
-1. **Role order and the fallback role.** The map recommends declaring the roles as OWNER,
-   ADMIN, MEMBER, VIEWER, GUEST, which ranks them by breadth of access rather than in the
-   roadmap's list order. VIEWER, never GUEST, is the role a user falls back to.
-2. **Public self-signup** at `/api/auth/register`: open, invite-only, or behind a flag.
-3. **MEMBER or EDITOR** as the name of the standard role (ADR 0006).
+Decisions 7 to 9 belong in ADR 0006 (vocabulary), in the 1.4 map, and later in
+`src/lib/permissions.ts` and the register route when 1.4 is ported. The 1.4 map's
+`EDITOR` names become `MEMBER`.
 
 Map housekeeping: `1.5.md` has a "Handoff to 1.6" section, listing what 1.5 already
 places in `metrics.ts`, `tracing.ts`, `edge-logger.ts` and `instrumentation.ts`. Copy it
@@ -103,6 +98,8 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check".
    - ADR 0001: D1 (copy allowed), D2 (BUSL-1.1), D3 (tldraw 3.x with the watermark), and a
      new D4 (Dub/Nucleo taken as is, risk accepted, with the finding's numbers). Replace
      its interim "pattern only" rule with "copy, and record each file".
+   - ADR 0006: decisions 7 to 9 (the sign-up switch, Member, the role order and the
+     Viewer fallback). Update the 1.4 map to match.
    - Set `"license": "BUSL-1.1"` in `package.json`.
    - `CLAUDE.md` and `PROVENANCE.md`: change the "do not copy inflect-compliance" rule to
      "copy, record each file".
