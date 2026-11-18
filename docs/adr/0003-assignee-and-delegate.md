@@ -8,7 +8,7 @@ Roadmap principle 1: people are accountable and agents are delegated. A work ite
 
 Roadmap 2.2 (idea 1) takes this from the field: the agent gets a session, an activity stream, a budget with a hard stop and a review gate. Roadmap 2.4 says to build the delegate, session and activity model in-house on the inherited engine, rather than adopt an agent framework. Roadmap 6.1 ports the engine, 6.2 the proposal queue, and 6.3 builds the delegate model.
 
-This ADR fixes the rules before those phases. It uses the words in ADR 0006 and the work-item model in ADR 0002. Like ADR 0002, it writes `tenantId` and `TenantMembership`, following ADR 0006's recommended option W1. The schema sketch is illustrative, not final.
+This ADR fixes the rules before those phases. It uses the words in ADR 0006 and the work-item model in ADR 0002. In this ADR, "session" alone always means an agent session, the short form ADR 0006 rule 5 allows in prose once a document has defined it; a person's browser session is always called a sign-in session. Like ADR 0002, it writes `tenantId` and `TenantMembership`, following ADR 0006's recommended option W1. The schema sketch is illustrative, not final.
 
 How to read this ADR: a line marked **Verified** was read in the named source on 2026-11-18. Everything else is a recommendation or an open question.
 

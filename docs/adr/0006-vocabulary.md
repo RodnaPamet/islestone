@@ -22,8 +22,8 @@ inflect-compliance is the parent product. Its task engine shows what a two-vocab
   - The `@@map` pin is required because Prisma emits explicit enum casts. An `ALTER TYPE … RENAME` would make still-running old containers fail with SQLSTATE 42704 during a rolling deploy.
   - A test now guards the pin: `tests/integration/task-enum-db-mapping.test.ts`.
 - **Verified.** A third name survives: `src/app-layer/repositories/IssueRepository.ts` lines 1–16 re-export `IssueRepository`, `IssueLinkRepository` and others as deprecated aliases of the `Task*` classes.
-- **Verified.** The UI uses a fourth and a fifth word. `messages/en.json` line 196 maps the entity key `ISSUE` to the label "tasks". Line 450 labels the tasks area "Plan" in the navigation.
-- **Verified.** Prose kept the old words after the code moved. The `TaskKeySequence` comment still names `WorkItemRepository.create` (`prisma/schema/tasks.prisma` line 103). `src/app-layer/domain/task-status.ts` line 2 is headed "Work Item Status Constants" and line 92 names `setIssueStatus`.
+- **Verified.** The UI adds a fourth word and keeps the third. `messages/en.json` line 196 maps the entity key `ISSUE` to the label "tasks", the code's own word. Line 450 labels the tasks area "Plan" in the navigation, and line 449 labels a navigation entry "Issues".
+- **Verified.** Prose kept the old words after the code moved. The `TaskKeySequence` comment still names `WorkItemRepository.create` (`prisma/schema/tasks.prisma` line 103). `src/app-layer/domain/task-status.ts` line 2 is headed "Work Item Status Constants" and line 91 names `setIssueStatus`.
 - **Verified.** The same drift reached the agent queue. `AgentProposal.status` is typed `SuggestionItemStatus` (`prisma/schema/agentic.prisma` line 20), an enum shared with `RiskSuggestionItem` (`prisma/schema/enums.prisma` lines 868–885). A proposal's status is named for a suggestion.
 - **Verified.** inflect-compliance calls an agent execution a `WorkflowRun` (`prisma/schema/agentic.prisma` line 396). In a project-management product, "workflow" means a team's set of states. Ported as is, that word would name two concepts.
 
@@ -34,13 +34,15 @@ The lesson Islestone takes: the cost was not any single name. It was letting a s
 ### Rules
 
 1. **One word per concept.** The table below is the list. A new concept gets a row in this ADR, by amendment, before its first model or UI label exists.
-2. **The model name is the code name.** Prisma models, enums, columns, TypeScript types, repository and usecase names, route segments and i18n keys use the table's model name.
+2. **The model name is the code name.** Prisma models, enums, columns, TypeScript types, repository and usecase names, internal route segments and i18n keys use the table's model name. The customer-facing contract is the exception, listed in "Where code and UI differ": a route segment a customer can see (a page URL, a public API path), a permission key and an API key scope use the UI name, because they appear in the browser, in admin screens and in API documentation.
 3. **Physical names equal Prisma names.** No `@@map` or `@map` renames a model, enum or column in Islestone's own schema. The table name in the RLS policies is the model name.
 4. **Code and customer-facing text use the same word**, except for the closed list in "Where code and UI differ" below. Each exception is translated in one place only. Adding an exception is an amendment to this ADR.
-5. **The "words not to use" are banned** for that concept: as model, enum, column, type or function names, as i18n keys, and as UI labels. They may appear only:
+5. **The "words not to use" are banned** for that concept: as model, enum, column, type or function names, as i18n keys, as UI labels, and in customer-facing documentation. In those places they may appear only:
    - as user data (a workspace may name a work item type "Story" or "Task");
    - inside an integration adapter, as the external system's own term, mapped to Islestone's term at that boundary (a Jira issue, a GitHub issue, a Linear issue, an Asana task, a Trello card, an MCP task, a SCIM group);
    - in prose that quotes another product.
+
+   **Engineering prose** (ADRs, code comments, design notes) follows the table too, with two allowances. A word the table allows in prose stays allowed: "dependency" for a blocks relation. And a qualified term may be shortened once the document has defined it, where no other concept of that word is in play: ADR 0003 writes "session" for agent session and always says "sign-in session" for the other kind. A banned word is never used for the concept itself: an assignee is not the item's "owner", whatever the sentence.
 6. **"Workflow" means a team's workflow states, and nothing else.** The agent engine never uses the word. inflect-compliance's `WorkflowRun` becomes `AgentRun` when its pattern is reused.
 7. **Spelling is part of the vocabulary.** The spellings in the table are the spellings. In particular the state category is `CANCELLED`, with two Ls. inflect-compliance spells its status `CANCELED` (`prisma/schema/enums.prisma` line 458); a reused pattern takes Islestone's spelling.
 8. **Ports translate on the way in.** Any pattern taken from inflect-compliance takes Islestone's names in the same change (`Task` → `WorkItem`, `RegisteredAgent` → `Agent`, `AgentProposal` → `Proposal`, `WorkflowRun` → `AgentRun`). `PROVENANCE.md` records each rename.
@@ -113,6 +115,16 @@ Rows for Phase 2 concepts are fixed by this ADR once signed. Rows for later phas
 |---|---|---|---|---|
 | Page | A rich-text document in a project or workspace tree. | `Page` | Page | Doc, Document, Wiki, Note, Article |
 | Canvas | A freeform drawing surface whose shapes can link to work items. | `Canvas`; children `CanvasNode`, `CanvasEdge`, `CanvasSnapshot` | Canvas | Whiteboard, Board, Process map, Diagram |
+| Page content | A page's stored collaborative state (ADR 0005, section 6.4). The source of truth for the page body. | `PageContent` (working name) | Not shown as a noun | Document state, Body (as a model), Blob |
+| Projection | Data derived from collaborative content on store: plain text, sanitised HTML, mentioned items (ADR 0005, sections 6.4 and 6.5). Read-only to everything but the collaboration server. | Columns or tables named for what they hold, such as `PageContent.plainText` | Not shown | Cache, Copy, Snapshot (a snapshot is a canvas version), Index (except a search index) |
+
+**Sync and collaboration** (ADR 0005; rows proposed with that ADR's open question 11)
+
+| Term | Meaning | Model name | UI label | Words NOT to use |
+|---|---|---|---|---|
+| Change notice | A content-free message that a record changed: kind, id and version, never field values (ADR 0005, section 4). | TypeScript type `ChangeNotice`; no table | Not shown | Event (reserved for automation), Notification (reserved for the Inbox), Message |
+| Collaboration server | The separate Node process that holds live pages and canvases (ADR 0005, section 6.1). | No model | Not shown | Realtime server, Socket server, Sync engine (a sync engine is ADR 0005's deferred option) |
+| Collaboration token | The signed, short-lived credential the app mints for one connection to one document (ADR 0005, section 6.2). | No table; a signed value | Not shown | Ticket (reserved as a banned word for work items and intake), Session, Pass |
 
 **Agents and automation**
 
@@ -140,7 +152,11 @@ Rows for Phase 2 concepts are fixed by this ADR once signed. Rows for later phas
 
 ### Where code and UI differ
 
-This list is closed. Each translation happens in one module: the UI catalogue for labels, and the public API serializer for API field names.
+This list is closed. Each translation has one named home:
+
+- labels: the UI catalogue;
+- API field names, webhook payloads and audit exports: the public API serializer, which those two outputs share;
+- public route segments, permission keys and API key scopes: there is nothing to translate, because they are written in the UI word where they are declared (the route directories under `src/app/`, the permission set of roadmap 1.4, the scope list of roadmap 5.2). Internal code that names the same concept still uses the model name.
 
 | Code name | UI and public-contract name | Why they differ |
 |---|---|---|
@@ -157,7 +173,7 @@ The roadmap already writes `tenantId` and "`Tenant` (a workspace)" (section 4 pr
   - Matches the roadmap's preamble and 1.3 as written.
   - "Tenant" is the precise word for the security boundary. RLS policies, `runInTenantContext`, `getTenantCtx` and the two-tenant tests in H1 are all about isolation.
   - If the BUSL grant in ADR 0001 lands, ported code keeps its identifiers in the most security-sensitive layer. A missed rename inside RLS code is the worst place for a mistake.
-  - Cost: two words for one concept. This ADR contains it by listing the exception and translating it in one place. The customer-facing contract (UI text, help docs, public API paths and fields, permission keys, API key scopes, webhook payloads, audit exports) says `workspace`. A guard refuses `workspaceId` as an identifier outside the public API serializer, and refuses "tenant" in UI catalogue values.
+  - Cost: two words for one concept. This ADR contains it by listing the exception and translating it in one place. The customer-facing contract (UI text, help docs, public API paths and fields, permission keys, API key scopes, webhook payloads, audit exports) says `workspace`; "Where code and UI differ" names where each part is written. A guard refuses `workspaceId` as an identifier outside the public API serializer and the public route segments, and refuses "tenant" in UI catalogue values, permission keys and scopes.
 - **W2. `Workspace` everywhere**, column `workspaceId`, RLS setting named for the workspace.
   - One word, no exception.
   - Nothing is ported yet, so the rename costs little today.
@@ -237,9 +253,9 @@ These checks are recommendations. Roadmap 1.1 or 2.1 adds them with the first mo
   - `prisma/schema/tasks.prisma` (lines 1, 5, 100–114);
   - `prisma/schema/enums.prisma` (lines 409–503, 458, 868–885);
   - `prisma/schema/agentic.prisma` (lines 20, 396, 3469);
-  - `src/app-layer/domain/task-status.ts` (lines 2, 92);
+  - `src/app-layer/domain/task-status.ts` (lines 2, 91);
   - `src/app-layer/repositories/IssueRepository.ts` (lines 1–16);
-  - `messages/en.json` (lines 196, 450);
+  - `messages/en.json` (lines 196, 449, 450);
   - `docs/implementation-notes/2026-08-12-task-vocabulary-and-executing-tests.md`;
   - `tests/integration/task-enum-db-mapping.test.ts`, `tests/unit/task-repository-seam.test.ts` (existence checked).
 - Pattern reuse from inflect-compliance in this ADR: the lesson of the `@@map` pin and its rename note. Pattern only, no code copied.
