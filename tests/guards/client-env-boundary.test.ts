@@ -53,6 +53,15 @@ describe('the client env boundary in this repository', () => {
         expect(report.violations.map((v) => formatChain(v.chain))).toEqual([]);
     });
 
+    it("src/env.ts is not a 'use server' module, and no client edge stops at it as a boundary", () => {
+        // A directive on the env module would turn a client import of it into a
+        // server-reference stub. The walk refuses to treat it as a boundary
+        // anyway; this pins the file itself too.
+        const source = fs.readFileSync(path.join(REPO_ROOT, 'src/env.ts'), 'utf8');
+        expect(analyseModule(source, 'src/env.ts').isServerReference).toBe(false);
+        expect(report.serverBoundaries.filter((b) => b.to === 'src/env.ts')).toEqual([]);
+    });
+
     it('every local import in the client graph resolves to a file', () => {
         // An unresolved `@/x` would be an edge the walk silently dropped.
         expect(report.unresolved).toEqual([]);

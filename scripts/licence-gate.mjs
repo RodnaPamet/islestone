@@ -250,11 +250,24 @@ export const UPSTREAM_MANIFEST = 'UPSTREAM.json';
 
 /**
  * The status an ADR must have before an exemption may cite it. An ADR's status
- * is the first "Status:" line of its header (see `adrStatusLine`); only one
- * that starts with "Status: Accepted" counts. A Proposed ADR records a
- * question put to the owner, not a decision, so it cannot carry an exemption.
+ * line sits in one fixed place, the first non-blank line after its `# ` title
+ * (see `adrStatusLine`). It counts as Accepted only when it reads exactly
+ * "Status: Accepted", optionally followed by " (…)", " — …" or ".", and the
+ * rest names no qualifier that takes full acceptance away ("superseded", "in
+ * part", "partly", "pending", …; see `isAcceptedStatus`). A Proposed ADR
+ * records a question put to the owner, not a decision, so it cannot carry an
+ * exemption, and neither can one accepted only in part or since superseded.
  */
 export const ACCEPTED_ADR_STATUS = 'Status: Accepted';
+
+/** What may follow "Status: Accepted" on an accepted status line. */
+const ACCEPTED_STATUS_CONTINUATION = /^(?:$| \(| —|\.)/;
+
+/**
+ * Words that qualify an acceptance away: the ADR is accepted only in part,
+ * still waits on a decision, or has been replaced (docs/adr/README.md).
+ */
+const ACCEPTANCE_QUALIFIERS = /\b(?:superseded|deprecated|in part|partly|partial(?:ly)?|pending|await(?:s|ing|ed)?)\b/i;
 
 const ADR_PATH = /^docs\/adr\/\d{4}-[a-z0-9][a-z0-9-]*\.md$/;
 const EXEMPTION_FIELDS = new Set(['licence', 'reason', 'adr', 'version']);
@@ -630,8 +643,9 @@ export function validateExemptions(raw, root) {
                     const status = adrStatusLine(adrText(adr));
                     if (!isAcceptedStatus(status)) {
                         statusProblem =
-                            `"adr" names ${adr}, whose status is ${status === null ? 'not stated (it has no "Status:" line)' : `"${status}"`}, not Accepted: ` +
-                            `an exemption applies only once the owner has accepted the ADR that decides it (a line starting "${ACCEPTED_ADR_STATUS}")`;
+                            `"adr" names ${adr}, whose status is ${status === null ? 'not stated (it has no "Status:" line right after its "# " title)' : `"${status}"`}, not Accepted: ` +
+                            `an exemption applies only once the owner has accepted the whole ADR that decides it (the line after its title reads "${ACCEPTED_ADR_STATUS}", ` +
+                            'optionally followed by " (…)", " — …" or ".", and is not qualified as superseded, partial or pending)';
                     }
                 }
             }
@@ -657,34 +671,39 @@ export function validateExemptions(raw, root) {
 }
 
 /**
- * An ADR's status line, without its line ending, or null when there is none.
- * It is the first line that starts with "Status:" in the ADR's header: before
- * its first section heading (`## …`) and outside any fenced code block. The
- * ADR template (docs/adr/README.md) puts it there. Only the first counts, so
- * a quoted or templated "Status: Accepted" cannot stand in for the ADR's own
- * status.
+ * An ADR's status line, without trailing whitespace, or null when it has none.
+ *
+ * The status has one fixed place, the one the ADR template
+ * (docs/adr/README.md) gives it: the file's first non-blank line is its
+ * `# ` title, and the next non-blank line is the status. Nothing is searched
+ * for. Anything else in that place (an HTML comment, a code fence, a setext
+ * heading, a paragraph) means the status is not stated, and a "Status:" line
+ * anywhere further down never counts. So a hidden, quoted or templated
+ * "Status: Accepted" cannot stand in for the ADR's own status, whatever
+ * Markdown construct carries it.
  */
 export function adrStatusLine(text) {
-    let fence = null;
-    for (const line of String(text).split(/\r?\n/)) {
-        const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-        if (fence !== null) {
-            if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null;
-            continue;
-        }
-        if (marker) {
-            fence = marker[1];
-            continue;
-        }
-        if (/^#{2,}\s/.test(line)) return null;
-        if (line.startsWith('Status:')) return line.trimEnd();
-    }
-    return null;
+    const lines = String(text).replace(/^﻿/, '').split(/\r?\n/);
+    let i = 0;
+    const nextNonBlank = () => {
+        while (i < lines.length && lines[i].trim() === '') i++;
+        return i < lines.length ? lines[i++] : null;
+    };
+    const title = nextNonBlank();
+    if (title === null || !/^# \S/.test(title)) return null;
+    const status = nextNonBlank();
+    return status !== null && status.startsWith('Status:') ? status.trimEnd() : null;
 }
 
-/** Whether a status line (from `adrStatusLine`) says Accepted. */
+/**
+ * Whether a status line (from `adrStatusLine`) says the ADR is Accepted, as a
+ * whole and still in force: "Status: Accepted", then nothing, " (", " —" or
+ * ".", and no qualifier (ACCEPTANCE_QUALIFIERS) in the rest of the line.
+ */
 function isAcceptedStatus(line) {
-    return line !== null && line.startsWith(ACCEPTED_ADR_STATUS) && !/^[\w-]/.test(line.slice(ACCEPTED_ADR_STATUS.length));
+    if (line === null || !line.startsWith(ACCEPTED_ADR_STATUS)) return false;
+    const rest = line.slice(ACCEPTED_ADR_STATUS.length);
+    return ACCEPTED_STATUS_CONTINUATION.test(rest) && !ACCEPTANCE_QUALIFIERS.test(rest);
 }
 
 /** Whether an ADR's text records it as Accepted. */

@@ -34,7 +34,10 @@
  * a client file may import a Server Function whose module reads `@/env`. The
  * directive must be in the prologue, as Next.js requires; a `'use server'`
  * after an import or inside a function body is not a file-level directive and
- * the module is walked like any other.
+ * the module is walked like any other. The server env module itself is never
+ * a boundary: a `'use server'` directive added to `src/env.ts` would turn every
+ * client import of it into a server reference and hide exactly the import the
+ * check exists to refuse, so an edge into it is always walked and reported.
  *
  * WHAT IS NOT WALKED. Bare specifiers (`react`, `next/link`, `node:fs`) are
  * packages. A bare specifier that names one of this repository's own
@@ -290,8 +293,11 @@ export function checkClientEnvBoundary(root: string, serverEnvModule = 'src/env.
                 const r = resolveSpecifier(specifier, file, root);
                 if (r.kind === 'file') {
                     // Next.js bundles a stub in place of a 'use server' module, never the module.
-                    if (isSourceFile(r.file) && factsOf(r.file).isServerReference) serverBoundaries.push({ from: rel(file), to: rel(r.file) });
-                    else edges.push(r.file);
+                    // The server env module itself is never a boundary: a client file has no
+                    // business importing it, directive or not (see "WHAT IS A BOUNDARY").
+                    if (r.file !== target && isSourceFile(r.file) && factsOf(r.file).isServerReference) {
+                        serverBoundaries.push({ from: rel(file), to: rel(r.file) });
+                    } else edges.push(r.file);
                 } else if (r.kind === 'missing') unresolved.push({ from: rel(file), specifier });
                 else if (workspaces.has(packageNameOf(specifier) ?? '')) workspaceImports.push({ from: rel(file), specifier });
             }

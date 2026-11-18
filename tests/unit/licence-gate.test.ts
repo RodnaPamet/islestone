@@ -699,34 +699,87 @@ describe('exemptions', () => {
             expect(report.exemptionProblems.map((p) => p.code)).toEqual(['EXEMPTION_INVALID', 'ADR_NOT_ACCEPTED']);
         });
 
+        // What the status line says. Each case has the template's title, so only
+        // the wording of the line decides.
         it.each<[string, boolean]>([
-            ['# 0001 — T\n\nStatus: Accepted — Owner decision, 2026-11-18\n', true],
+            ['Status: Accepted — Owner decision, 2026-11-18', true],
+            ['Status: Accepted (owner decisions, 2026-11-18)', true],
             ['Status: Accepted', true],
-            ['Status: Accepted\r\n\n## Context\r\n', true],
-            ['Status: Accepted (superseded in part by 0009)', true],
+            ['Status: Accepted.', true],
+            ['Status: Accepted   ', true],
             ['Status: Proposed — awaiting owner sign-off (2026-11-18 drafted)', false],
-            ['Status: Proposed\n\nStatus: Accepted', false],
-            ['# T\n\n```markdown\nStatus: Accepted\n```\n', false],
-            ['# T\n\n## Context\n\nStatus: Accepted\n', false],
-            ['# T\n\n~~~md\nStatus: Proposed\n~~~\n\nStatus: Accepted\n', true],
+            // Accepted with a qualifier that takes full acceptance away.
+            ['Status: Accepted (superseded in part by 0009)', false],
+            ['Status: Accepted — superseded by 0009', false],
+            ['Status: Accepted — Superseded by 0009', false],
+            ['Status: Accepted in part — D2 awaits sign-off', false],
+            ['Status: Accepted (in part; D2 awaits sign-off)', false],
+            ['Status: Accepted — partly', false],
+            ['Status: Accepted (partially)', false],
+            ['Status: Accepted (D2 pending)', false],
+            ['Status: Accepted — D2 awaiting the owner', false],
+            ['Status: Accepted — deprecated', false],
+            // Not followed by end of line, " (", " —" or ".".
+            ['Status: Accepted: no', false],
+            ['Status: Accepted, then reopened', false],
             ['Status: Acceptedish', false],
             ['Status: Accepted-ish', false],
+            ['Status: Accepted - owner decision', false],
             ['Status: Superseded by 0009', false],
             ['Status:Accepted', false],
             ['status: Accepted', false],
             [' Status: Accepted', false],
             ['**Status:** Accepted', false],
-            ['# 0001 — No status line\n\nAccepted.\n', false],
-            ['', false],
-        ])('reads %j as Accepted: %s', (text, accepted) => {
+        ])('reads the status line %j as Accepted: %s', (line, accepted) => {
+            expect(isAcceptedAdr(`# 0001 — T\n\n${line}\n\n## Context\n`)).toBe(accepted);
+        });
+
+        // Where the status line is. It is the first non-blank line after the
+        // "# " title, and nowhere else; anything in that place hides nothing.
+        it.each<[string, string, boolean]>([
+            ['the template layout', '# 0001 — T\n\nStatus: Accepted — Owner decision, 2026-11-18\n', true],
+            ['CRLF line endings', '# T\r\n\r\nStatus: Accepted\r\n\r\n## Context\r\n', true],
+            ['a byte-order mark before the title', '﻿# T\n\nStatus: Accepted\n', true],
+            ['no blank line after the title', '# T\nStatus: Accepted\n', true],
+            ['a later Accepted line below the real Proposed one', '# T\n\nStatus: Proposed\n\nStatus: Accepted\n', false],
+            ['no title', 'Status: Accepted\n', false],
+            ['a level-two heading as the title', '## T\n\nStatus: Accepted\n', false],
+            ['a paragraph before the status', '# T\n\nSome text.\n\nStatus: Accepted\n', false],
+            ['a status only inside a fence', '# T\n\n```markdown\nStatus: Accepted\n```\n', false],
+            ['a status only after a section heading', '# T\n\n## Context\n\nStatus: Accepted\n', false],
+            ['a fence before the status', '# T\n\n~~~md\nStatus: Proposed\n~~~\n\nStatus: Accepted\n', false],
+            // Three ways to hide an Accepted line above a visible Proposed one.
+            ['an HTML comment above the real status', '# T\n\n<!--\nStatus: Accepted\n-->\nStatus: Proposed — awaiting owner sign-off\n', false],
+            ['a one-line HTML comment as the status', '# T\n\n<!-- Status: Accepted -->\nStatus: Proposed\n', false],
+            [
+                'a fence whose "closing" line carries text, so it never closes',
+                '# T\n\n```\n``` x\nStatus: Accepted\n```\n\nStatus: Proposed — awaiting owner sign-off\n',
+                false,
+            ],
+            ['a setext heading, with no status line of its own', '# T\n\nContext\n-------\n\nStatus: Accepted\n', false],
+            ['a setext title', 'T\n=\n\nStatus: Accepted\n', false],
+            ['no status line at all', '# 0001 — No status line\n\nAccepted.\n', false],
+            ['an empty file', '', false],
+        ])('reads an ADR with %s as Accepted: %s', (_shape, text, accepted) => {
             expect(isAcceptedAdr(text)).toBe(accepted);
         });
 
-        it('takes the first "Status:" line of the header as the status, outside code fences', () => {
+        it('takes the line right after the title as the status, and nothing further down', () => {
             expect(adrStatusLine('# T\n\nStatus: Proposed — x\r\n\nStatus: Accepted\n')).toBe('Status: Proposed — x');
+            expect(adrStatusLine('# T\n\n<!--\nStatus: Accepted\n-->\nStatus: Proposed\n')).toBeNull();
             expect(adrStatusLine('# T\n')).toBeNull();
             expect(isAcceptedAdr(fs.readFileSync(path.join(FIXTURE_ROOT, PROPOSED_ADR), 'utf8'))).toBe(false);
             expect(isAcceptedAdr(fs.readFileSync(path.join(FIXTURE_ROOT, FIXTURE_ADR), 'utf8'))).toBe(true);
+        });
+
+        it('reads every ADR in this repository as Accepted exactly when its index says so', () => {
+            const index = fs.readFileSync(path.join(REPO_ROOT, 'docs/adr/README.md'), 'utf8');
+            const rows = [...index.matchAll(/^\| \[(\d{4})\]\(([^)]+)\) \| [^|]+ \| ([^|]+) \|/gm)];
+            expect(rows.length).toBeGreaterThan(0);
+            for (const [, number, file, status] of rows) {
+                const text = fs.readFileSync(path.join(REPO_ROOT, 'docs/adr', file as string), 'utf8');
+                expect({ number, accepted: isAcceptedAdr(text) }).toEqual({ number, accepted: (status as string).startsWith('Accepted') });
+            }
         });
     });
 });
@@ -1336,6 +1389,30 @@ describe('the command line', () => {
         expect(report(root).dependencies.exemptionProblems).toEqual([
             { name: 'fixture-gpl-lib', code: 'ADR_NOT_ACCEPTED', problem: expect.stringContaining('not Accepted') },
         ]);
+
+        // A hidden "Status: Accepted" placed above the visible Proposed line does
+        // not accept it, whichever Markdown construct hides it: the status is the
+        // line right after the title, and here that line is not a status at all.
+        for (const hidden of [
+            '<!--\nStatus: Accepted\n-->\n',
+            '```\n``` x\nStatus: Accepted\n```\n\n',
+            'Context\n-------\n\nStatus: Accepted\n\n',
+        ]) {
+            fs.writeFileSync(path.join(root, PROPOSED_ADR), proposed.replace(/^Status: Proposed/m, `${hidden}Status: Proposed`));
+            const hiddenRun = run(root);
+            expect(hiddenRun.status).toBe(1);
+            expect(report(root).dependencies.exemptionProblems).toEqual([
+                { name: 'fixture-gpl-lib', code: 'ADR_NOT_ACCEPTED', problem: expect.stringContaining('not Accepted') },
+            ]);
+        }
+
+        // Nor is an ADR accepted only in part, or accepted and since superseded.
+        for (const qualified of ['Status: Accepted in part — D2 awaits sign-off', 'Status: Accepted — superseded by 0009']) {
+            fs.writeFileSync(path.join(root, PROPOSED_ADR), proposed.replace(/^Status: Proposed.*$/m, qualified));
+            expect(report(root).dependencies.exemptionProblems).toEqual([
+                { name: 'fixture-gpl-lib', code: 'ADR_NOT_ACCEPTED', problem: expect.stringContaining(`"${qualified}", not Accepted`) },
+            ]);
+        }
 
         // An ADR with no status line at all is not Accepted either.
         fs.writeFileSync(path.join(root, PROPOSED_ADR), proposed.replace(/^Status: .*\n/m, ''));
