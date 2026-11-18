@@ -50,6 +50,8 @@ These come from the roadmap's global preamble. They bind from the moment the lay
 
 ## Provenance and licences
 
+> **Owner decisions of 2026-11-18 supersede the first and fourth bullets below.** Copying from inflect-compliance is allowed, with every copied file recorded in `PROVENANCE.md`. Islestone is BUSL-1.1 (`LICENSE`). tldraw stays on 3.x with its watermark. The Dub-derived UI is taken as it is, with the risk accepted. See [docs/HANDOFF.md](docs/HANDOFF.md) until ADR 0001 records these decisions.
+
 - **inflect-compliance is BUSL-1.1** (licensor Inflect Ltd.). Until ADR 0001 records the written grant, do not copy its code: no file copies, no pasted functions, no verbatim blocks. You may read it to learn a design and write your own implementation; record the pattern as "pattern only, no code copied".
 - **Never copy code from a project the roadmap marks "inspiration only"** (section 2.2: Plane, OpenProject, Twenty, and the rest of that list).
 - **Every ported or adapted piece of code gets a `PROVENANCE.md` entry**: source repository and path, commit, licence, and what changed. See "Third-party code" below.
