@@ -59,8 +59,13 @@ Read at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`. Phase 6 plans to port
 
 - `WorkItem.assigneeId` names at most one person. It is null when the item is unassigned.
 - It references the membership, not just the user: a composite foreign key `(tenantId, assigneeId)` → `TenantMembership(tenantId, userId)`. An agent can never be an assignee, because an agent has no membership.
-- Removing a member: the removal usecase unassigns their items first, audited, in the same transaction. The foreign key is `RESTRICT`, so a removal path that forgets fails instead of leaving a dangling assignee.
-- A deactivated member stays assigned and is shown as inactive, so the item is visibly in need of a new owner.
+- **Removing a member** is one transaction, in this order, each step audited:
+  1. for each item assigned to them that has a delegate: end the item's live agent session (`COMPLETE`, reason `ASSIGNEE_REMOVED`) and clear `delegateAgentId`, which the CHECK in section 2 requires before the assignee can be cleared;
+  2. unassign every item assigned to them;
+  3. suspend the agents they own and end those agents' remaining live sessions (section 3, "Owner leaves");
+  4. delete the membership.
+  The foreign key is `RESTRICT`, so a removal path that skips step 2 fails instead of leaving a dangling assignee, and the CHECK makes a path that skips step 1 fail too. The person removing the member sees the delegated items in the confirmation, so nobody is surprised that those agents stopped.
+- A deactivated member stays assigned and is shown as inactive, so the item is visibly in need of a new assignee.
 - A guest can be assigned only items in projects they can access (roadmap 8.4).
 - Roadmap 2.1 creates `assigneeId`. The delegate column arrives with the `Agent` table in roadmap 6.3.
 
@@ -80,16 +85,17 @@ Read at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`. Phase 6 plans to port
 |---|---|---|
 | Delegate cleared | cleared | ends `COMPLETE`, reason `ENDED_BY_PERSON` |
 | Delegate changed to another agent | new agent | old session ends `COMPLETE`, reason `DELEGATE_CHANGED` |
-| Assignee changed | kept | ends `COMPLETE`, reason `ASSIGNEE_CHANGED`. The new assignee restarts it if they want, so the agent never works under one person's authority for another person's item. |
+| Assignee changed | kept | ends `COMPLETE`, reason `ASSIGNEE_CHANGED`. The new assignee becomes accountable for the item without having chosen this session, so it does not carry on under them; they restart it if they want. |
+| Assignee removed with their membership (section 1) | cleared | ends `COMPLETE`, reason `ASSIGNEE_REMOVED` |
 | Item moved to a `DONE` or `CANCELLED` state | kept | ends `COMPLETE`, reason `ITEM_CLOSED` |
 | Item deleted | kept, hidden | ends `COMPLETE`, reason `ITEM_DELETED` |
 
 ### 3. The agent: an actor, not a user
 
 - `Agent` is its own model. It has no `User` row, no membership, no password and no sign-in session, and it never counts as a seat. It appears beside members in the delegate picker only.
-- This differs from Linear, where the delegate is a `User`. Islestone separates them (roadmap 6.3) because a user row carries sign-in, sessions, seats and memberships that an agent must never have, and because accountability needs a required human owner that a user row does not carry.
+- This differs from Linear, where the delegate is a `User`. Islestone separates them (roadmap 6.3) because a user row carries sign-in, sign-in sessions, seats and memberships that an agent must never have, and because accountability needs a required human owner that a user row does not carry.
 - **Owner.** `Agent.ownerUserId` is required. It must be an active member when written. It moves only by a two-step transfer in which only the named recipient completes step two (the inflect-compliance pattern; pattern only, no code copied).
-- **Owner leaves.** The member-removal usecase suspends every agent they own in the same transaction and ends those agents' live sessions (`ERROR`, reason `OWNER_DEPARTED`). A completed transfer to a new owner lets someone reactivate the agent. inflect-compliance does this in a nightly pass driven by HR data; Islestone has no HR feed in scope, so the removal itself is the signal.
+- **Owner leaves.** The member-removal usecase suspends every agent they own in the same transaction and ends those agents' live sessions (`ERROR`, reason `OWNER_DEPARTED`). It runs after the removed member's own items are unassigned (section 1), so a session on an item they were assigned ends `ASSIGNEE_REMOVED`, and only their agents' sessions on other people's items end `OWNER_DEPARTED`. A completed transfer to a new owner lets someone reactivate the agent. inflect-compliance does this in a nightly pass driven by HR data; Islestone has no HR feed in scope, so the removal itself is the signal.
 - **Status:** `DRAFT`, `ACTIVE`, `SUSPENDED`, `RETIRED`. Only `ACTIVE` agents are delegated or invoked.
   - `SUSPENDED` is reversible. Live sessions end `ERROR`, reason `AGENT_NOT_ACTIVE`. Delegate fields stay.
   - `RETIRED` is terminal (a trigger refuses any move out). One transaction ends the agent's sessions, clears its delegate fields (audited), and revokes its API keys. The status is written first and the audit last, as in inflect-compliance's retirement cascade.
@@ -113,6 +119,11 @@ Read at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`. Phase 6 plans to port
 | Schedule | the agent owner |
 | Automation | the rule's accountable author, resolved as in inflect-compliance's automation-authority fix (pattern only) |
 
+- **The authorising person need not be the item's assignee.** A teammate may delegate an assigned item, or mention an agent on it, without being its assignee. That is acceptable for three reasons, and the rules below hold it:
+  - the agent can never do more than the authorising person could do themselves (the intersection above), so starting a session grants no one extra reach;
+  - outside its own record, everything the agent changes is a proposal, and by default the review request goes to the item's assignee (section 8), so the assignee still decides what lands on their item;
+  - the assignee is notified when someone else starts a session on their item, and may end it at once (`COMPLETE`, reason `ENDED_BY_PERSON`).
+  Who may start a session on someone else's item at all is open question 2. Requiring the assignee's consent first is the alternative in open question 8.
 - That person's membership and role are re-read at session start and at the start of every run. If they no longer hold the authority, the session ends `ERROR`, reason `INVOKER_NOT_AUTHORISED`. A role change during a run applies from the next run; the run's wall-clock cap bounds the gap.
 - **Direct writes are limited to the agent's own record.** An agent may write, without a proposal:
   - activity entries in its own live session (section 6);
@@ -150,7 +161,7 @@ Rules:
 - `COMPLETE`, `ERROR` and `STALE` are terminal. A trigger refuses any move out of them. A new invocation creates a new session.
 - `AWAITING_INPUT` never goes stale. Waiting for a person is legitimate, as inflect-compliance's reaper recognises.
 - `endReason` is a closed list with a CHECK per terminal state:
-  - `COMPLETE`: `FINISHED`, `ENDED_BY_PERSON`, `DELEGATE_CHANGED`, `ASSIGNEE_CHANGED`, `ITEM_CLOSED`, `ITEM_DELETED`;
+  - `COMPLETE`: `FINISHED`, `ENDED_BY_PERSON`, `DELEGATE_CHANGED`, `ASSIGNEE_CHANGED`, `ASSIGNEE_REMOVED`, `ITEM_CLOSED`, `ITEM_DELETED`;
   - `ERROR`: `KILLED`, `BUDGET_EXHAUSTED`, `CAP_REACHED`, `INVOKER_NOT_AUTHORISED`, `AGENT_NOT_ACTIVE`, `OWNER_DEPARTED`, `RUN_FAILED`;
   - `STALE`: `NOT_ACKNOWLEDGED`, `NO_HEARTBEAT`.
 - Success metrics count `COMPLETE` with `FINISHED` only.
@@ -203,9 +214,11 @@ Changes:
 
 ### 9. The rung ladder
 
-- A workspace owner may raise one agent, for one tool, from `PROPOSE` to `AUTOMATIC`. The change is audited.
+- A workspace owner may raise one agent, for one tool, from `PROPOSE` to `AUTOMATIC`, up to the cap below. The change is audited.
 - At `AUTOMATIC`, the write still runs through the same usecase, under the authorising person's permissions, attributed to the agent and session, and under the kill switch, caps and budgets.
 - **Recommendation: Phase 6 ships with a source constant that caps the ladder at `PROPOSE`.** Raising the cap is a reviewed change with its own ADR. inflect-compliance keeps the same kind of brake constant for its identity write ladder (its `CLAUDE.md`, "Identity lifecycle"). Pattern only.
+- **While the cap is at `PROPOSE`, a request to raise a rung above it is refused** (409, `RUNG_ABOVE_CAP`), and the settings page shows the cap and why. No stored rung ever exceeds the cap, so nothing reports an agent as `AUTOMATIC` that the engine would hold to `PROPOSE`. The engine also clamps any rung it reads to the cap, as a second line.
+- This narrows roadmap principle 2 for Phase 6: under the cap, no workspace owner can raise a rung until a later ADR lifts it. Open question 9 puts that to the owner; if the owner accepts the brake, principle 2 in the roadmap gains a note that Phase 6 ships with it.
 
 ### 10. Kill switch
 
@@ -349,6 +362,8 @@ All tables follow roadmap section 4: `tenantId`, a tenant-leading index, RLS pol
 5. How long may a session wait in `AWAITING_INPUT` before it ends? Recommendation: no automatic end in Phase 6; revisit with usage data.
 6. Default stale bounds: 10 minutes for acknowledgement and 30 minutes for heartbeat (recommended), or other values?
 7. This session's network refused `linear.app`. Allowing it would let the Linear agent guidelines be read and cited directly.
+8. A session someone other than the assignee starts on an item (section 4): let it run at once, with the assignee notified and every write a proposal that goes to them (recommended), or hold it in `PENDING` until the assignee consents?
+9. The rung cap (section 9): ship Phase 6 with the ladder capped at `PROPOSE`, so no workspace owner can raise a rung until a later ADR (recommended), or let owners raise rungs from Phase 6 as roadmap principle 2 allows?
 
 ## Consequences
 
@@ -356,7 +371,8 @@ All tables follow roadmap section 4: `tenantId`, a tenant-leading index, RLS pol
 - Agents never appear in seat counts, membership lists or sign-in tables. Code that lists "people" never meets an agent by accident.
 - Most agent work produces proposals, so the review queue is the product's main agent surface. Its expiry and sampling controls matter from the first release of Phase 6.
 - One live session per item serialises agents on an item. Parallel agent work on one piece of work means splitting it into sub-items.
-- Changing the assignee ends the live session. A person taking over must restart the agent; in exchange, an agent never acts for someone who no longer owns the item.
+- Changing the assignee ends the live session. A person taking over must restart the agent; in exchange, no session carries on into a new assignee's accountability without their choice.
+- Removing a member ends every agent session on the items assigned to them and clears those items' delegates. Offboarding shows the person removing them which items that touches.
 - Removing a member suspends the agents they own at once. Offboarding needs a transfer step for those agents.
 - Required per-agent budgets mean a new agent cannot run until it has one. Plans must supply a default.
 - External agents are bounded by action counts, not money. Their model cost stays with the customer.

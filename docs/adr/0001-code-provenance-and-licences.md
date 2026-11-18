@@ -73,7 +73,7 @@ Change License:       Apache License, Version 2.0
 
 **Verified**: supporting files.
 
-- `LICENSING.md` lines 15–19 summarise the restriction: no hosted, managed, embedded or SaaS offering to third parties "that **competes** with an Inflect offering". Line 3 says the `LICENSE` file governs.
+- `LICENSING.md` lines 15–19 summarise the restriction: no hosted, managed, embedded or SaaS offering to third parties "that **competes** with an Inflect offering". Lines 5–6 say "the `LICENSE` file always governs".
 - `LICENSING.md` lines 26–30 say each release converts to Apache-2.0 on its own four-year clock. They also say "today's code is Apache-2.0 by 2030-07-17".
 - `NOTICE` line 2 reads "Copyright (c) Inflect Compliance contributors." `LICENSE` line 16 reads "The Licensed Work is © 2026 Inflect Ltd."
 - `CONTRIBUTING.md` and `.github/workflows/`: no contributor licence agreement and no DCO sign-off requirement were found. Searched for CLA, DCO, "signed-off", "assign" and "copyright".
@@ -84,7 +84,7 @@ Change License:       Apache License, Version 2.0
 - `NOTICE` lines 52–77: six files under `.claude/skills/` are redistributed copies of NVIDIA/OpenShell files, under Apache-2.0.
 - `LICENSING.md` lines 42–46: libvips (LGPL), elkjs (EPL-2.0) and FSL-licensed build tools.
 - `package-lock.json`: `elkjs` 0.12.1 is recorded as `EPL-2.0 OR GPL-3.0-or-later`. `@dagrejs/dagre` 3.1.3 is `MIT`.
-- `package.json` line 18: the parent's own gate, `license:check`, fails on AGPL, SSPL, BUSL-1.1 and Commons Clause. It excludes `inflect-compliance` itself and `@inflect/ui`.
+- `package.json` line 18: the parent's own gate, `license:check`, fails on AGPL, SSPL, BUSL-1.1 and Commons Clause. It excludes three packages: `inflect-compliance` itself, `@inflect/ui` and `@rodnapamet/scanent-contract` 0.16.0.
 
 ### What the BUSL grant allows Islestone, and what it does not
 
@@ -154,7 +154,7 @@ The ceiling costs one audit exemption.
 - It is still a 0.x release.
 - **Not checked:** the licences of its dependencies.
 
-**Not verified:** tldraw's prices, and what its commercial licence includes. Roadmap 2.1 says "price by quote". The roadmap and the vendor's own pages reportedly say that tldraw sync is included. This environment's network proxy refused `tldraw.dev`, so neither claim was read.
+**Not verified:** tldraw's prices, and what its commercial licence includes. Roadmap 2.1 says "price by quote" and says nothing about tldraw sync. The vendor's own pages reportedly say that tldraw sync is included in the commercial licence. This environment's network proxy refused `tldraw.dev`, so neither the price nor that claim was read.
 
 ## Decision
 
@@ -222,7 +222,7 @@ Needed before roadmap 4.2 starts, not before Phase 1. It also decides whether th
     - a Dependabot hold on `tldraw` and on transitive `@tiptap/core`;
     - an audit exemption for tiptap 2.x, re-justified on its own evidence.
   - The 0.3 allowlist needs a recorded tldraw exception.
-  - Porting the parent's canvas code needs D1. The roadmap's own Tiptap 3.x editor (2.3) would sit beside tldraw's tiptap 2.x in the same tree, as it does in the parent.
+  - Porting the parent's canvas code needs D1. The roadmap's own Tiptap editor (roadmap section 2.3, "Rich text" row; built in sub-phase 4.1) would be Tiptap 3, as in the parent, which declares `@tiptap/react` and `@tiptap/starter-kit` at `^3.33.1` (`package.json` lines 141–142). It would sit beside tldraw's tiptap 2.x in the same tree, as it does in the parent.
 - **3b. Buy a tldraw commercial licence key.**
   - Cost: by quote. Not verified here.
   - Allows 5.x (5.6.1 today) and later upgrades while the licence lasts.
@@ -255,7 +255,7 @@ This rule only restricts Islestone, so it needs no owner decision to start.
 3. Write everything fresh.
 4. Record each pattern adopted from inflect-compliance in `PROVENANCE.md`. Each entry gives the source path, the commit read and the words "pattern only, no code copied". If `PROVENANCE.md` does not exist yet (roadmap 0.3), the pull request lists the items, and the file picks them up when it lands.
 5. Never copy code from a project the roadmap marks "inspiration only" (roadmap 2.2), whatever D1 says.
-6. Roadmap steps that say "port" or "copy" from inflect-compliance wait for D1, or run as fresh writes under this rule. These include 1.2 to 1.6, 2.1, 2.2, 3.3, 4.2, 6.1, 6.2, 6.5, 6.6, 8.1 and 8.6. Roadmap 1.1's "port the env pattern" runs as pattern only.
+6. Every roadmap step whose Source line or prompt names inflect-compliance, or says "port" or "copy" from it, waits for D1, or runs as a fresh write under this rule. As of 2026-11-18 these are 1.2 to 1.7, 2.1 to 2.3, 3.1, 3.3, 3.6, 4.1, 4.2, 4.4, 5.1, 5.2, 6.1, 6.2, 6.5, 6.6, 8.1 and 8.6; a later roadmap edit can add more, and the rule covers them without this list changing. Roadmap 1.1's "port the env pattern" runs as pattern only.
 
 This rule is stricter than BUSL itself, whose Terms allow non-production copying (lines 44–46). It refuses that copying anyway, for three reasons:
 

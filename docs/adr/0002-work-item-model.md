@@ -20,7 +20,7 @@ Read at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`. Under ADR 0001's inte
 - **Verified.** Parent tables declare `@@unique([id, tenantId])`, and child tables reference `[taskId, tenantId]`. The reason is recorded: Postgres runs foreign-key checks as the table owner, which bypasses RLS, so a single-column child key leaves a cross-tenant reference representable (`tasks.prisma` lines 92–97, issue #2356).
 - **Verified.** Links to other records go through `TaskLink`, with relations such as `RELATES_TO` and `BLOCKED_BY` (`tasks.prisma` lines 116–130; `enums.prisma` lines 518–524). A `TaskLink` points from a task to another kind of record, not task to task. A search of the task usecases and `TaskRepository.ts` found no cycle check.
 - **Verified.** Checklists live in one JSON column. The repository notes that ticking an item is a read-modify-write of the whole array, so two concurrent ticks lose one, and it reads the row `FOR UPDATE` to stop that (`TaskRepository.ts` lines 693–699).
-- **Verified.** `Task` has no version column. The process-map model has one, but its comment says it is "NOT yet enforced as a hard optimistic lock" (`prisma/schema/processes.prisma` lines 54–60).
+- **Verified.** `Task` has no version column. The process-map model has one. Its schema comment says it is "NOT yet enforced as a hard optimistic lock" (`prisma/schema/processes.prisma` lines 54–60), but that comment is stale: `ProcessMapRepository.replaceGraph` does enforce the version whenever the caller sends `expectedVersion`, refusing a mismatch before the write and again with a conditional update (`src/app-layer/repositories/ProcessMapRepository.ts` lines 287–297, 375–384, 581–632). Omitting `expectedVersion` means last-write-wins. ADR 0005 ("What inflect-compliance has built") records the same reading.
 - **Verified.** Soft delete uses `deletedAt` and `deletedByUserId` (`tasks.prisma` lines 43–44). An allowlist of models gets it through a Prisma extension (`src/lib/soft-delete.ts` lines 12–33). The extension filters only the top-level model, so nested counts must add `deletedAt: null` themselves (`TaskRepository.ts` lines 597–605).
 - **Verified.** Field encryption is driven by a manifest. `Task.description`, `Task.resolution` and `TaskComment.body` are in it; `title` is not, because the repository searches `title` and `key` only (`src/lib/security/encrypted-fields.ts` lines 292–296).
 - **Verified.** No fractional indexing, rank or lexorank appears in its `src/`, `prisma/` or `docs/`.
@@ -29,7 +29,7 @@ Read at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`. Under ADR 0001's inte
 
 ### 1. One table, configurable types
 
-Every kind of work is a row in `WorkItem`. Its kind is a `WorkItemType` row that each workspace configures (name, icon, colour, position, archived). Types carry no behaviour in this ADR: any type may parent any type, and every type uses its team's workflow. A workspace seeds default types at creation (ADR 0006, open question 6).
+Every kind of work is a row in `WorkItem`. Its kind is a `WorkItemType` row that each workspace configures (name, icon, colour, sort key, archived). Types carry no behaviour in this ADR: any type may parent any type, and every type uses its team's workflow. A workspace seeds default types at creation (ADR 0006, open question 6).
 
 Why rows, not an enum: types are customer data, and an enum change is a migration and a two-deploy rollout.
 
@@ -92,9 +92,10 @@ Rules:
 - **The column uses the `"C"` collation**, so Postgres compares bytes. Under a language collation, mixed-case keys sort in a different order than they were generated. Prisma cannot declare a column collation, so it goes in the migration SQL with a database-backed test that reads the catalogue. JavaScript compares keys with `<`, never `localeCompare`.
 - Keys grow when many inserts land in the same gap. A job rebalances a project's keys when any key passes a length bound (recommended: 64 characters).
 - **`sortKey` is not part of the item's version** (section 9). Order belongs to the list. Live updates (roadmap 4.3) report order changes as their own message.
+- **Every manually ordered list uses the same column, `sortKey`, under the same rules:** work item types, workflow states, milestones, custom fields and their options. One name and one implementation, so the collation and the rebalance apply to all of them.
 - Implementation, needs an owner decision:
   - **F1. In-house pure module with property tests.** Recommended. The algorithm is small and well described in public writing.
-  - **F2. The `fractional-indexing` package.** **Verified** on the npm registry today: version 4.0.0, licence `CC0-1.0`. CC0 is not on roadmap 0.3's allowlist, so F2 needs CC0 added or a recorded exception.
+  - **F2. The `fractional-indexing` package.** **Verified** on the npm registry today: version 4.0.0, licence `CC0-1.0`. CC0 is not on roadmap 0.3's allowlist, nor on the licence gate's (`scripts/licence-gate.mjs`), so F2 needs CC0-1.0 added (ADR 0007, E4) or a recorded exemption.
 
 ### 6. Relations
 
@@ -118,8 +119,8 @@ Common rules: a CHECK refuses `fromId = toId`; `@@unique([tenantId, type, fromId
 
 ### 7. Custom fields as typed values
 
-- `CustomField` belongs to a project (roadmap 2.4): name, type, position, archived. Types: `TEXT`, `NUMBER`, `SELECT`, `MULTI_SELECT`, `DATE`, `PERSON`, `URL`, `CHECKBOX`.
-- `CustomFieldOption` holds the choices of a select field.
+- `CustomField` belongs to a project (roadmap 2.4): name, type, sort key, archived. Types: `TEXT`, `NUMBER`, `SELECT`, `MULTI_SELECT`, `DATE`, `PERSON`, `URL`, `CHECKBOX`.
+- `CustomFieldOption` holds the choices of a select field, each with a `name` and a sort key.
 - `CustomFieldValue` holds one value in a typed column: `textValue`, `numberValue` (decimal), `dateValue` (date), `boolValue`, `optionId` (foreign key), `userId` (foreign key to a member).
   - The value row repeats the field's type. A composite foreign key to `CustomField(id, type)` keeps it right, and a CHECK requires exactly the matching column to be set.
   - One row per item and field. A multi-select stores one row per chosen option. Two partial unique indexes keep both shapes exact.
@@ -174,7 +175,7 @@ Common rules: a CHECK refuses `fromId = toId`; `@@unique([tenantId, type, fromId
   - **S2. Store a search index derived from the plaintext** (a `tsvector` or embeddings). Full search, but the derived data reveals the words or meaning of the encrypted text, and it must itself be protected by RLS and excluded from exports.
   - **S3. Store keyed hashes of normalised words**, keyed per workspace. Exact-word search without readable words; no ranking by prefix or meaning.
   - **S4. Do not encrypt descriptions and comments.** Simplest; drops roadmap 2.2's requirement.
-  - Recommendation: S1 for Phase 2. Decide between S2 and S3 in a search ADR before 2.7. Embeddings (6.5) are S2 by nature, so 6.5 needs that decision too.
+  - Recommendation: S1 until a search ADR decides between S2 and S3. That ADR lands before roadmap 2.7, because 2.7 asks for full-text search over items and comments, and comment bodies are encrypted: under S1 alone, comments cannot be searched. Embeddings (6.5) are S2 by nature, so 6.5 needs that decision too.
 
 ### 12. Schema sketch (illustrative, not final)
 
@@ -250,7 +251,7 @@ model WorkItemType {
   id         String    @id @default(cuid())
   tenantId   String
   name       String
-  position   String                    // fractional index
+  sortKey    String                    // fractional index (section 5)
   archivedAt DateTime?
   @@unique([tenantId, name])
   @@unique([id, tenantId])
@@ -262,12 +263,12 @@ model WorkflowState {
   teamId     String
   name       String
   category   WorkflowStateCategory  // immutable after create
-  position   String                 // fractional index within the team
+  sortKey    String                 // fractional index within the team (section 5)
   isDefault  Boolean               @default(false)
   archivedAt DateTime?
   @@unique([tenantId, teamId, name])
   @@unique([id, teamId, category, tenantId])   // target of WorkItem's composite FK
-  @@index([tenantId, teamId, position])
+  @@index([tenantId, teamId, sortKey])
 }
 
 model Cycle {
@@ -306,7 +307,7 @@ model WorkItem {
   priority         WorkItemPriority      @default(NONE)
   assigneeId       String?               // a member (ADR 0003)
   delegateAgentId  String?               // an agent (ADR 0003); added with the Agent table in roadmap 6.3
-  creatorId        String
+  createdByUserId  String
   parentId         String?               // FK (parentId, projectId, tenantId) -> WorkItem, DEFERRABLE
   cycleId          String?               // FK (cycleId, teamId, tenantId) -> Cycle
   milestoneId      String?               // FK (milestoneId, projectId, tenantId) -> Milestone
@@ -375,7 +376,7 @@ model CustomField {
   projectId  String
   name       String
   type       CustomFieldType
-  position   String
+  sortKey    String
   archivedAt DateTime?
   @@unique([tenantId, projectId, name])
   @@unique([id, type, tenantId])       // target of the value's composite FK
@@ -385,10 +386,10 @@ model CustomFieldOption {
   id        String @id @default(cuid())
   tenantId  String
   fieldId   String
-  label     String
-  position  String
+  name      String
+  sortKey   String
   @@unique([id, tenantId])
-  @@index([tenantId, fieldId, position])
+  @@index([tenantId, fieldId, sortKey])
 }
 
 model CustomFieldValue {
@@ -458,7 +459,7 @@ Each index backs a named query. H2 measures them on seeded tenants at 10,000 and
 | Cycle page and burn-up | `[tenantId, cycleId, stateCategory]` |
 | Milestone page | `[tenantId, milestoneId, stateCategory]` |
 | Sub-items of an item | `[tenantId, parentId, sortKey]` |
-| Created by me | `[tenantId, creatorId, createdAt]` |
+| Created by me | `[tenantId, createdByUserId, createdAt]` |
 | Recently changed (activity, live-update catch-up) | `[tenantId, projectId, updatedAt, id]` |
 | Due-date reminder job | `[tenantId, stateCategory, dueDate]` |
 | Filter by type | `[tenantId, typeId]` |
@@ -471,7 +472,7 @@ List queries also filter `deletedAt IS NULL`. If the pinned Prisma version canno
 
 ### Open questions for the owner
 
-1. Fractional-index implementation: F1 (in-house) or F2 (`fractional-indexing`, CC0-1.0, needs an allowlist entry).
+1. Fractional-index implementation: F1 (in-house) or F2 (`fractional-indexing`, CC0-1.0, which needs CC0-1.0 on the allowlist or an exemption; ADR 0007, E4).
 2. Search versus encryption: S1 to S4 (section 11).
 3. Soft-delete retention window. Recommendation: 30 days.
 4. Depth caps. Recommendation: 5 levels of sub-items, 3 levels of goals.
@@ -486,7 +487,7 @@ List queries also filter `deletedAt IS NULL`. If the pinned Prisma version canno
 - Several guarantees live in migration SQL that Prisma cannot express: the `"C"` collation, a deferrable foreign key, CHECKs, partial unique indexes. Each needs a database-backed test, in the style of the RLS coverage guardrail.
 - One advisory lock per workspace serialises blocking-graph and re-parenting writes. A very large import must batch those writes.
 - `If-Match` on text edits means clients must handle 409. The automatic retry keeps most conflicts invisible.
-- Description and comment encryption limits search (section 11). The owner decides before 2.7.
+- Description and comment encryption limits search (section 11). The search ADR decides before 2.7, and 2.7's search over comments depends on it.
 - Custom text values are filterable and therefore not encrypted.
 - Under ADR 0001's interim rule, every inflect-compliance pattern named here is rewritten, not copied, and recorded in `PROVENANCE.md` as pattern only.
 
