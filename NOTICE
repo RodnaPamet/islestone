@@ -1,0 +1,24 @@
+Islestone
+Copyright 2026 the Islestone authors
+
+Islestone's owner and legal entity, and the licence under which this
+repository is offered, are open decisions recorded in
+docs/adr/0001-code-provenance-and-licences.md. Until that ADR is signed,
+package.json declares "UNLICENSED": no licence is granted.
+
+-------------------------------------------------------------------------------
+Third-party notices
+-------------------------------------------------------------------------------
+
+This section reproduces the notices that the licences of third-party code
+or data copied into this repository require. Each entry names the component,
+its source and commit as recorded in PROVENANCE.md, its copyright line and its
+licence. A component under Apache-2.0 also brings the contents of its own
+NOTICE file.
+
+None yet. No third-party code or data has been copied into this repository.
+
+npm dependencies are not copied into the repository. Each package carries its
+own licence and notice files under node_modules, and scripts/licence-gate.mjs
+checks the production dependency tree against the licence allowlist on every
+pull request.

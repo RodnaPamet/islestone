@@ -1,0 +1,150 @@
+{
+  "name": "fixture-app",
+  "version": "1.0.0",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "fixture-app",
+      "version": "1.0.0",
+      "license": "UNLICENSED",
+      "workspaces": [
+        "packages/*"
+      ],
+      "dependencies": {
+        "@fixture/ui": "*",
+        "fixture-alias": "npm:fixture-real-name@2.0.0",
+        "fixture-app-core": "1.0.0"
+      },
+      "optionalDependencies": {
+        "fixture-optional-root": "1.0.0"
+      },
+      "devDependencies": {
+        "fixture-dev-optional": "1.0.0",
+        "fixture-dev-tool": "1.0.0",
+        "fixture-shared": "1.0.0"
+      }
+    },
+    "node_modules/@fixture/ported": {
+      "resolved": "packages/ported",
+      "link": true
+    },
+    "node_modules/@fixture/ui": {
+      "resolved": "packages/ui",
+      "link": true
+    },
+    "node_modules/fixture-alias": {
+      "name": "fixture-real-name",
+      "version": "2.0.0",
+      "license": "MIT"
+    },
+    "node_modules/fixture-app-core": {
+      "version": "1.0.0",
+      "license": "MIT",
+      "dependencies": {
+        "fixture-nested": "^2.0.0",
+        "fixture-shared": "^1.0.0"
+      },
+      "optionalDependencies": {
+        "fixture-native-darwin-arm64": "1.0.0",
+        "fixture-native-linux-x64": "1.0.0",
+        "fixture-native-not-in-lockfile": "1.0.0"
+      },
+      "peerDependencies": {
+        "fixture-dev-optional": "^1.0.0",
+        "fixture-peer": "^1.0.0",
+        "fixture-peer-optional-absent": "^1.0.0"
+      },
+      "peerDependenciesMeta": {
+        "fixture-dev-optional": {
+          "optional": true
+        },
+        "fixture-peer-optional-absent": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/fixture-app-core/node_modules/fixture-nested": {
+      "version": "2.0.0",
+      "license": "ISC"
+    },
+    "node_modules/fixture-dev-optional": {
+      "version": "1.0.0",
+      "devOptional": true,
+      "license": "MIT"
+    },
+    "node_modules/fixture-dev-tool": {
+      "version": "1.0.0",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "fixture-nested": "^1.0.0"
+      }
+    },
+    "node_modules/fixture-native-darwin-arm64": {
+      "version": "1.0.0",
+      "optional": true,
+      "os": [
+        "darwin"
+      ],
+      "cpu": [
+        "arm64"
+      ],
+      "license": "Apache-2.0"
+    },
+    "node_modules/fixture-native-linux-x64": {
+      "version": "1.0.0",
+      "optional": true,
+      "os": [
+        "linux"
+      ],
+      "cpu": [
+        "x64"
+      ],
+      "license": "MIT"
+    },
+    "node_modules/fixture-nested": {
+      "version": "1.0.0",
+      "dev": true,
+      "license": "GPL-3.0"
+    },
+    "node_modules/fixture-optional-root": {
+      "version": "1.0.0",
+      "optional": true,
+      "license": "MIT"
+    },
+    "node_modules/fixture-peer": {
+      "version": "1.0.0",
+      "peer": true,
+      "license": "0BSD"
+    },
+    "node_modules/fixture-shared": {
+      "version": "1.0.0",
+      "license": "BSD-3-Clause"
+    },
+    "node_modules/fixture-ui-dep": {
+      "version": "1.0.0",
+      "license": "Apache-2.0"
+    },
+    "node_modules/fixture-ui-dev-only": {
+      "version": "1.0.0",
+      "dev": true,
+      "license": "GPL-3.0"
+    },
+    "packages/ported": {
+      "name": "@fixture/ported",
+      "version": "1.0.0",
+      "license": "BUSL-1.1"
+    },
+    "packages/ui": {
+      "name": "@fixture/ui",
+      "version": "0.0.0",
+      "dependencies": {
+        "fixture-ui-dep": "1.0.0"
+      },
+      "devDependencies": {
+        "fixture-ui-dev-only": "1.0.0"
+      }
+    }
+  }
+}

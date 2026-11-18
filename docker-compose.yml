@@ -1,0 +1,86 @@
+# Local development stack: PostgreSQL (with pgvector), PgBouncer in front of
+# it in transaction mode, and Redis.
+#
+#   docker compose up -d
+#
+# DEVELOPMENT ONLY. Every credential below is a throwaway default, overridable
+# from your shell or a local .env file. Production values never live in this
+# file or anywhere in the repository; they belong to the deployment's secret
+# store (sub-phase 1.8).
+#
+# Ports bind to 127.0.0.1 so the stack is not reachable from the network.
+# The app connects through PgBouncer (6432); migrations will use Postgres
+# directly (5432) once Prisma arrives in sub-phase 1.3.
+
+name: islestone
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg17-trixie
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-islestone}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-islestone_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-islestone}
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.26.1-p0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${POSTGRES_USER:-islestone}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-islestone_dev}
+      DB_NAME: ${POSTGRES_DB:-islestone}
+      AUTH_TYPE: scram-sha-256
+      # Transaction pooling: a server connection is held only for the length
+      # of a transaction, which is what the app's per-request tenant context
+      # (set inside each transaction) is designed for.
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 200
+      DEFAULT_POOL_SIZE: 20
+      # Protocol-level prepared statements survive transaction pooling.
+      MAX_PREPARED_STATEMENTS: 100
+      ADMIN_USERS: ${POSTGRES_USER:-islestone}
+    ports:
+      - '127.0.0.1:${PGBOUNCER_PORT:-6432}:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -p 5432 -U "$${DB_USER}" -d "$${DB_NAME}"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  redis:
+    image: redis:7.4.12-alpine3.22
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-islestone_dev}
+    # The password is passed on the command line; acceptable for a local dev
+    # container, never for a shared host.
+    command: ['sh', '-c', 'exec redis-server --appendonly yes --requirepass "$${REDIS_PASSWORD}"']
+    ports:
+      - '127.0.0.1:${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      # REDISCLI_AUTH keeps the password out of redis-cli's argv.
+      test: ['CMD-SHELL', 'REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  postgres-data:
+  redis-data:

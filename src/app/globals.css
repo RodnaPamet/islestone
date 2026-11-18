@@ -1,0 +1,49 @@
+@import 'tailwindcss';
+
+/*
+ * Placeholder tokens. The real token set (and its contract) arrives with the
+ * shared UI in sub-phase 1.2; until then this block only guarantees a legible
+ * page in both themes.
+ *
+ * Light is the default. Dark applies when the OS asks for it, unless the page
+ * pins a theme with data-theme on <html>.
+ */
+:root {
+    color-scheme: light;
+    --token-bg: #ffffff;
+    --token-fg: #18181b;
+    --token-muted: #52525b;
+    --token-border: #e4e4e7;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+        color-scheme: dark;
+        --token-bg: #0f1115;
+        --token-fg: #f4f4f5;
+        --token-muted: #a1a1aa;
+        --token-border: #27272a;
+    }
+}
+
+:root[data-theme='dark'] {
+    color-scheme: dark;
+    --token-bg: #0f1115;
+    --token-fg: #f4f4f5;
+    --token-muted: #a1a1aa;
+    --token-border: #27272a;
+}
+
+/* Tailwind colours over the tokens: bg-bg, text-fg, text-muted, border-border. */
+@theme inline {
+    --color-bg: var(--token-bg);
+    --color-fg: var(--token-fg);
+    --color-muted: var(--token-muted);
+    --color-border: var(--token-border);
+}
+
+body {
+    background-color: var(--token-bg);
+    color: var(--token-fg);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+}

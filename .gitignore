@@ -1,0 +1,29 @@
+# dependencies
+node_modules/
+
+# next.js build output
+/.next/
+/out/
+/build/
+
+# next.js writes this on dev, build and typegen (Next 16 convention: not committed)
+next-env.d.ts
+
+# typescript
+*.tsbuildinfo
+
+# tests
+/coverage/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# env files: every one is ignored except the committed template
+.env*
+!.env.example
+
+# misc
+.DS_Store
+*.pem
+npm-debug.log*
