@@ -24,6 +24,20 @@ Not yet confirmed by the owner, and assumed in `LICENSE`:
   projects and work".
 - Change Date: 2030-11-18.
 
+## Open questions for the owner (from the porting maps)
+
+Raised by `docs/porting/maps/1.4.md`. None of them blocks 1.2 or 1.3.
+
+1. **Role order and the fallback role.** The map recommends declaring the roles as OWNER,
+   ADMIN, MEMBER, VIEWER, GUEST, which ranks them by breadth of access rather than in the
+   roadmap's list order. VIEWER, never GUEST, is the role a user falls back to.
+2. **Public self-signup** at `/api/auth/register`: open, invite-only, or behind a flag.
+3. **MEMBER or EDITOR** as the name of the standard role (ADR 0006).
+
+Map housekeeping: `1.5.md` has a "Handoff to 1.6" section, listing what 1.5 already
+places in `metrics.ts`, `tracing.ts`, `edge-logger.ts` and `instrumentation.ts`. Copy it
+into `1.6.md` before porting 1.6.
+
 ## Finding: Dub (AGPL-3.0) and Nucleo in inflect's UI
 
 `docs/porting/licence/dub-nucleo-finding.md` has the measurement (script:
