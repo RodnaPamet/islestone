@@ -4,12 +4,16 @@
 
 export declare const ALLOWED_LICENCES: readonly string[];
 export declare const NOTICE_LICENCES: Readonly<Record<string, string>>;
-export declare const DATA_ONLY_LICENCES: Readonly<Record<string, readonly string[]>>;
+export declare const ALLOWED_EXCEPTIONS: readonly string[];
 export declare const DENIED_PACKAGES: readonly string[];
-export declare const SCANNED_DIRECTORIES: readonly string[];
 export declare const SOURCE_EXTENSIONS: readonly string[];
+export declare const STYLE_EXTENSIONS: readonly string[];
+export declare const MDX_EXTENSIONS: readonly string[];
 export declare const EXCLUDED_SOURCE_PREFIXES: readonly string[];
+export declare const DEV_ONLY_PATHS: readonly { readonly path: string; readonly reason: string }[];
+export declare const BUNDLER_PROVIDED_MODULES: readonly string[];
 export declare const DEFAULT_EXEMPTIONS_FILE: string;
+export declare const LOCKFILE_NAMES: readonly string[];
 export declare const DEFAULT_ROOT: string;
 
 export declare class GateError extends Error {}
@@ -29,8 +33,9 @@ export interface Evaluation {
     allowed: boolean;
     relied: string[];
     problems: string[];
+    unknownException: boolean;
 }
-export declare function evaluateExpression(ast: SpdxNode, packageName: string): Evaluation;
+export declare function evaluateExpression(ast: SpdxNode): Evaluation;
 
 export type Legacy = null | 'license-object' | 'license-array' | 'licenses-array';
 export type Declaration =
@@ -80,14 +85,22 @@ export interface Notice {
     message: string;
 }
 export interface ProductionPackage extends PackageToJudge {
-    licenceSource: 'lockfile' | 'installed' | 'none';
+    licenceSource: 'lockfile' | 'installed' | 'workspace' | 'none';
     chain: string[] | null;
     mismatch: string | null;
     workspace: boolean;
 }
+export interface TreeOptions {
+    readInstalled?: (location: string) => unknown;
+    readManifest?: ((location: string) => unknown) | null;
+    diskWorkspaces?: string[] | null;
+    extraRoots?: { location: string; from: string }[];
+}
+export declare function workspaceMatcher(manifest: unknown): (location: string) => boolean;
+export declare function resolveFrom(packages: Record<string, unknown>, from: string, name: string): string | null;
 export declare function listProductionPackages(
     lock: unknown,
-    options?: { readInstalled?: (location: string) => unknown },
+    options?: TreeOptions,
 ): {
     lockfileVersion: number;
     packages: ProductionPackage[];
@@ -120,7 +133,7 @@ export interface DependencyReport {
 }
 export declare function checkDependencies(
     lock: unknown,
-    options?: { root?: string; exemptions?: unknown; readInstalled?: (location: string) => unknown },
+    options?: TreeOptions & { root?: string; exemptions?: unknown },
 ): DependencyReport;
 
 export interface Specifier {
@@ -129,17 +142,28 @@ export interface Specifier {
     kind: string;
     computed: boolean;
     chunks: string[];
+    typeOnly: boolean;
 }
 export interface SourceToken {
     type: 'ident' | 'punct' | 'string' | 'template' | 'regex' | 'number';
     line: number;
     value?: string;
     chunks?: string[];
-    substitutions?: number;
+    subs?: { start: number; end: number }[];
     broken?: boolean;
 }
-export declare function tokenizeSource(text: string): SourceToken[];
-export declare function extractSpecifiers(text: string): Specifier[];
+export interface LexProblem {
+    line: number;
+    message: string;
+}
+export declare function decodeEscapes(body: string): string;
+export declare function tokenizeSource(text: string, options?: { jsx?: boolean }): { tokens: SourceToken[]; problems: LexProblem[] };
+export declare function extractSpecifiers(text: string, options?: { jsx?: boolean }): { specifiers: Specifier[]; problems: LexProblem[] };
+export declare function extractStyleSpecifiers(text: string): { specifiers: Specifier[]; problems: LexProblem[] };
+export declare function extractMdxSpecifiers(text: string): { specifiers: Specifier[]; problems: LexProblem[] };
+export declare function specifiersOf(text: string, file: string): { specifiers: Specifier[]; problems: LexProblem[] };
+export declare function packageNameOf(specifier: string): string | null;
+export declare function hasEePath(text: string): boolean;
 export declare function classifySpecifier(entry: Specifier): { findings: { code: string; reason: string }[]; unchecked: boolean };
 
 export interface SourceFailure {
@@ -149,29 +173,62 @@ export interface SourceFailure {
     code: string;
     reason: string;
 }
-export declare function scanSourceText(text: string): {
+export declare function scanSourceText(
+    text: string,
+    file?: string,
+): {
     failures: SourceFailure[];
     notices: { line: number; code: string; message: string }[];
+    specifiers: Specifier[];
 };
 export declare function isScannedSourcePath(relative: string): boolean;
+export declare function devOnlyEntry(relative: string): { readonly path: string; readonly reason: string } | null;
+export declare function listRepositoryFiles(root: string): string[];
 export declare function listSourceFiles(root: string): string[];
-export declare function scanSources(
-    root: string,
-    files: string[],
-): {
+export declare function parseJsonc(text: string): unknown;
+
+export type AliasTarget = { path: string; bare?: undefined } | { bare: string; path?: undefined };
+export interface AliasResolver {
+    resolve(specifier: string, fromFile: string): AliasTarget[] | null;
+}
+export declare function buildAliasResolver(root: string, repositoryFiles: string[]): AliasResolver;
+
+export interface PackageImport {
+    file: string;
+    line: number;
+    specifier: string;
+    name: string;
+    shipped: boolean;
+    style: boolean;
+}
+export interface SourceScan {
     scanned: number;
     files: string[];
     failures: (SourceFailure & { file: string })[];
     notices: { file: string; line: number; code: string; message: string }[];
-};
+    packageImports: PackageImport[];
+}
+export declare function scanSources(root: string, files: string[], options?: { resolver?: AliasResolver }): SourceScan;
+export declare function resolveImportedPackages(
+    lock: unknown,
+    packageImports: PackageImport[],
+): { roots: { location: string; from: string }[]; failures: (SourceFailure & { file: string })[] };
 
 export interface GateReport {
     ok: boolean;
     problemCount: number;
     root: string;
+    lockfile: string;
     exemptionsFile: string;
     dependencies: DependencyReport;
-    sources: ReturnType<typeof scanSources>;
+    sources: {
+        scanned: number;
+        files: string[];
+        shippedFiles: number;
+        failures: (SourceFailure & { file: string })[];
+        notices: { file: string; line: number; code: string; message: string }[];
+        importedPackages: string[];
+    };
 }
 export declare function runGate(options?: { root?: string; exemptionsFile?: string | null }): GateReport;
 export declare function formatReport(report: GateReport): string;

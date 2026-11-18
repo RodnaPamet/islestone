@@ -15,7 +15,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
-    "typecheck": "next typegen && tsc --noEmit",
+    "typecheck": "node scripts/next-typegen.mjs && tsc --noEmit",
     "test": "jest",
     "test:unit": "jest --selectProjects node",
     "test:rendered": "jest --selectProjects jsdom",

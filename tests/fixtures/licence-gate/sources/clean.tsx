@@ -8,8 +8,9 @@ import { useState } from 'react';
 import fee from './fee/index'; // "fee" is not "ee"
 import eel from '@acme/eel'; // nor is "eel"
 import tree from './tree/ee-utils'; // "ee-utils" is not an "ee" segment
+import coffee from './coffee.eex'; // nor is a ".eex" extension
 import eePackage from 'ee/sub'; // a package named "ee": no slash before it
-import workflow from 'n8n-workflow'; // the deny list matches whole names
+import workflow from 'n8nx'; // the deny list matches whole names or a declared prefix (n8n-*)
 import planbyLike from '@acme/planby'; // a different scope
 import data from './data.json?raw';
 
@@ -32,4 +33,4 @@ export function Note() {
     );
 }
 
-export const used = [fee, eel, tree, eePackage, workflow, planbyLike, data, from, pattern, message, notACall, safe];
+export const used = [fee, eel, tree, coffee, eePackage, workflow, planbyLike, data, from, pattern, message, notACall, safe];

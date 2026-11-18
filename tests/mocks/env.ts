@@ -4,13 +4,15 @@
  * ESM only.
  *
  * Reads are live from `process.env`, so a test sets a variable for itself
- * (and restores it). The defaults mirror the real schemas' defaults; a mock
- * that answered differently from production would let suites pass against a
- * configuration that never ships.
+ * (and restores it). The only default is one the real schema declares:
+ * `NODE_ENV` falls back to `development` in src/env.ts (Jest sets `test`
+ * itself, so the fallback rarely applies). A required variable such as
+ * `NEXT_PUBLIC_APP_URL` has no default here, as it has none in production:
+ * a test that needs it sets it, so a missing required variable never looks
+ * satisfied.
  */
 const DEFAULTS: Readonly<Record<string, string>> = {
-    NODE_ENV: 'test',
-    NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
+    NODE_ENV: 'development',
 };
 
 export const env: Readonly<Record<string, string | undefined>> = new Proxy(

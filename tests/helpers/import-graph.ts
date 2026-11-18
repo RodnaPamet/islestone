@@ -5,7 +5,17 @@
  * Written for Islestone. The idea of walking the client graph from every
  * `'use client'` file comes from inflect-compliance's
  * `client-reachable-modules-import-no-server-env` guard: pattern only, no code
- * copied (to be recorded in PROVENANCE.md when sub-phase 0.3 creates it).
+ * copied. PROVENANCE.md records it in its "Adopted" table.
+ *
+ * WHAT IS A ROOT. Every file Next.js ships to the browser without being
+ * imported by another client file:
+ *   - a file that opens with a `'use client'` directive;
+ *   - `instrumentation-client.*` at the root or in `src/`, which Next.js loads
+ *     in the browser with no directive;
+ *   - every Pages Router file under `pages/` or `src/pages/`, which is client
+ *     code by default, except `api/` routes and `_document`, which only ever
+ *     run on the server.
+ * Files under `tests/` are never roots: no bundle includes them.
  *
  * WHAT IS AN EDGE. Anything a bundler includes: value imports, side-effect
  * imports, re-exports, `import x = require()`, `require('x')` and
@@ -17,8 +27,12 @@
  * `type`, so the two agree.
  *
  * WHAT IS NOT WALKED. Bare specifiers (`react`, `next/link`, `node:fs`) are
- * packages. Workspace packages under `packages/*` will need resolving to
- * their source once the first one exists (sub-phase 1.2).
+ * packages. A bare specifier that names one of this repository's own
+ * workspace packages (a git-listed `package.json` below the root) is NOT a
+ * third-party package: its source is part of the client bundle. The walker
+ * cannot follow one yet, so it reports each such import in
+ * `workspaceImports` and the guard fails on it. Sub-phase 1.2, which adds the
+ * first workspace package, teaches the walker to resolve them to source.
  *
  * WHAT IS REPORTED RATHER THAN GUESSED. A local specifier that resolves to no
  * file, and an `import()` / `require()` whose argument is not a literal. Both
@@ -155,6 +169,44 @@ export function resolveSpecifier(specifier: string, fromFile: string, root: stri
     return file ? { kind: 'file', file } : { kind: 'missing' };
 }
 
+/** Why a repo-relative file is a root of the client graph, or null when it is not one. */
+export function clientRootReason(relative: string, opensWithDirective: boolean): string | null {
+    if (relative.startsWith('tests/') || !isSourceFile(relative)) return null;
+    if (opensWithDirective) return "'use client'";
+    if (/^(?:src\/)?instrumentation-client\.[cm]?[jt]sx?$/.test(relative)) return 'instrumentation-client';
+    const pages = /^(?:src\/)?pages\/(.*)$/.exec(relative);
+    if (pages) {
+        const inside = pages[1] as string;
+        if (inside.startsWith('api/') || /^_document\./.test(inside)) return null;
+        return 'Pages Router';
+    }
+    return null;
+}
+
+/** The package name a bare specifier names (`@scope/name` or `name`), or null for a path or a URL. */
+export function packageNameOf(specifier: string): string | null {
+    if (specifier === '' || /^[./#]/.test(specifier) || specifier.startsWith(ALIAS_PREFIX)) return null;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(specifier)) return null;
+    const parts = specifier.split('/');
+    if (specifier.startsWith('@')) return parts.length >= 2 && parts[1] !== '' ? `${parts[0]}/${parts[1]}` : null;
+    return parts[0] ?? null;
+}
+
+/** The names of this work tree's own workspace packages: every git-listed package.json below the root. */
+export function workspacePackageNames(root: string, population: readonly string[]): Set<string> {
+    const names = new Set<string>();
+    for (const rel of population) {
+        if (!rel.endsWith('/package.json') || rel.startsWith('tests/')) continue;
+        try {
+            const manifest = JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8')) as { name?: unknown };
+            if (typeof manifest.name === 'string' && manifest.name !== '') names.add(manifest.name);
+        } catch {
+            // An unreadable manifest names no package; the build would fail on it first.
+        }
+    }
+    return names;
+}
+
 export interface BoundaryViolation {
     /** The `'use client'` file, repo-relative. */
     readonly entry: string;
@@ -165,7 +217,7 @@ export interface BoundaryViolation {
 export interface BoundaryReport {
     /** Repo-relative files git lists for the work tree. */
     readonly population: readonly string[];
-    /** Repo-relative `'use client'` files under `src/`: the roots of the walk. */
+    /** Repo-relative roots of the walk: see "WHAT IS A ROOT" above. */
     readonly clientEntries: readonly string[];
     /** Repo-relative files reachable from at least one client entry. */
     readonly reached: ReadonlySet<string>;
@@ -174,6 +226,8 @@ export interface BoundaryReport {
     readonly unresolved: ReadonlyArray<{ readonly from: string; readonly specifier: string }>;
     /** Non-literal `import()` / `require()` calls in the client graph. */
     readonly opaque: ReadonlyArray<{ readonly from: string; readonly call: string }>;
+    /** Imports of this repository's own workspace packages, which the walk cannot follow yet. */
+    readonly workspaceImports: ReadonlyArray<{ readonly from: string; readonly specifier: string }>;
 }
 
 /**
@@ -198,8 +252,10 @@ export function checkClientEnvBoundary(root: string, serverEnvModule = 'src/env.
         return facts;
     };
 
+    const workspaces = workspacePackageNames(root, population);
     const unresolved: Array<{ from: string; specifier: string }> = [];
     const opaque: Array<{ from: string; call: string }> = [];
+    const workspaceImports: Array<{ from: string; specifier: string }> = [];
     const edgesCache = new Map<string, string[]>();
     const edgesOf = (file: string): string[] => {
         let edges = edgesCache.get(file);
@@ -213,6 +269,7 @@ export function checkClientEnvBoundary(root: string, serverEnvModule = 'src/env.
                 const r = resolveSpecifier(specifier, file, root);
                 if (r.kind === 'file') edges.push(r.file);
                 else if (r.kind === 'missing') unresolved.push({ from: rel(file), specifier });
+                else if (workspaces.has(packageNameOf(specifier) ?? '')) workspaceImports.push({ from: rel(file), specifier });
             }
         }
         edgesCache.set(file, edges);
@@ -220,9 +277,9 @@ export function checkClientEnvBoundary(root: string, serverEnvModule = 'src/env.
     };
 
     const clientEntries = population
-        .filter((p) => p.startsWith(`${ALIAS_TARGET_DIR}/`) && isSourceFile(p))
-        .map((p) => path.join(root, p))
-        .filter((file) => factsOf(file).isClientEntry);
+        .filter((p) => !p.startsWith('tests/') && isSourceFile(p))
+        .filter((p) => clientRootReason(p, factsOf(path.join(root, p)).isClientEntry) !== null)
+        .map((p) => path.join(root, p));
 
     const reached = new Set<string>();
     const violations: BoundaryViolation[] = [];
@@ -256,6 +313,7 @@ export function checkClientEnvBoundary(root: string, serverEnvModule = 'src/env.
         violations,
         unresolved: dedupe(unresolved, (u) => `${u.from}\0${u.specifier}`).sort(byFrom),
         opaque: dedupe(opaque, (o) => `${o.from}\0${o.call}`).sort(byFrom),
+        workspaceImports: dedupe(workspaceImports, (w) => `${w.from}\0${w.specifier}`).sort(byFrom),
     };
 }
 

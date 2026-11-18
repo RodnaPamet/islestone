@@ -13,7 +13,7 @@ const lazy = () => import('./ee/lazy-module');
 const legacy = require('..\\lib\\ee');
 const where = require.resolve('planby');
 const live = import(`@liveblocks/server`);
-const client = import(`windmill/${'client'}`);
+const client = import(`windmill-components/${'client'}`);
 const block = import(`@blocknote/xl-${'docx'}-exporter`);
 const meta = import.meta.resolve('@acme/sdk/ee/meta');
 

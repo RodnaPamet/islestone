@@ -5,9 +5,11 @@ on:
   push:
     branches: [main]
 
-# Read-only token for every job. A job that needs more asks for it itself.
-permissions:
-  contents: read
+# No token permissions by default. Each job states the read-only scope it
+# needs, so widening one job is a change to that job, never an inherited one.
+# The jobs that run `npm ci` execute dependencies' install scripts, which is
+# why none of them may inherit a wider default.
+permissions: {}
 
 # A new push to a pull request cancels that PR's run in flight. Runs on main
 # are never cancelled, so every commit there gets a complete result.
@@ -23,6 +25,8 @@ jobs:
     name: Lint
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -38,9 +42,11 @@ jobs:
     name: Typecheck
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    env:
-      # `next typegen` loads next.config.ts, which validates the env modules.
-      SKIP_ENV_VALIDATION: '1'
+    permissions:
+      contents: read
+    # No SKIP_ENV_VALIDATION here: `npm run typecheck` sets it for `next
+    # typegen` itself (scripts/next-typegen.mjs), so this job proves a fresh
+    # clone with no environment can type-check.
     steps:
       - uses: actions/checkout@v7
         with:
@@ -56,6 +62,8 @@ jobs:
     name: Test
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -71,8 +79,6 @@ jobs:
     name: Licence
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    # Stated on the job as well as the workflow, so the job stays read-only
-    # even if a later change widens the workflow's default.
     permissions:
       contents: read
     steps:
@@ -96,6 +102,8 @@ jobs:
     name: Build
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      contents: read
     env:
       SKIP_ENV_VALIDATION: '1'
       # Inlined into the client bundle; matches the e2e server's origin.
@@ -127,6 +135,8 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:

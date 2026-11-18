@@ -14,14 +14,17 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import type { Exemption, PackageRecord } from '../../scripts/licence-gate.mjs';
+import type { Exemption, GateReport, PackageRecord } from '../../scripts/licence-gate.mjs';
 import {
     ALLOWED_LICENCES,
     checkDependencies,
-    DATA_ONLY_LICENCES,
     declarationKey,
     DENIED_PACKAGES,
+    devOnlyEntry,
+    extractMdxSpecifiers,
+    extractStyleSpecifiers,
     GateError,
+    hasEePath,
     isDeniedPackage,
     isScannedSourcePath,
     judgePackage,
@@ -29,6 +32,7 @@ import {
     listSourceFiles,
     NOTICE_LICENCES,
     normaliseDeclaration,
+    parseJsonc,
     scanSources,
     scanSourceText,
     validateExemptions,
@@ -39,6 +43,7 @@ const GATE = path.join(REPO_ROOT, 'scripts/licence-gate.mjs');
 const FIXTURES = path.join(REPO_ROOT, 'tests/fixtures/licence-gate');
 const FIXTURE_ROOT = path.join(FIXTURES, 'root');
 const FIXTURE_ADR = 'docs/adr/0099-fixture-exemption.md';
+const UNRELATED_ADR = 'docs/adr/0098-fixture-unrelated.md';
 
 type LockEntry = Record<string, unknown>;
 interface Lock {
@@ -130,9 +135,41 @@ describe('licence declarations', () => {
         expect(normaliseDeclaration({ license: '(MIT OR ISC) AND 0BSD' })).toMatchObject({ expression: '(MIT OR ISC) AND 0BSD' });
     });
 
+    it.each(['0BSD', 'CC0-1.0', 'Unlicense', 'MIT-0', 'BlueOak-1.0.0', 'Python-2.0', 'CC-BY-4.0'])(
+        'fails %s: the allowlist is roadmap 0.3\'s list, and anything else needs an exemption (ADR 0007)',
+        (id) => {
+            expect(judge({ license: id })).toMatchObject({ verdict: 'fail', code: 'NOT_ALLOWED' });
+        },
+    );
+
     it('reads WITH as adding permissions to an allowed licence, never as making one allowed', () => {
         expect(judge({ license: 'Apache-2.0 WITH LLVM-exception' }).verdict).toBe('pass');
+        expect(judge({ license: 'Apache-2.0 WITH llvm-exception' }).verdict).toBe('pass');
         expect(judge({ license: 'GPL-2.0-only WITH Classpath-exception-2.0' })).toMatchObject({ verdict: 'fail', code: 'NOT_ALLOWED' });
+    });
+
+    it('fails "MIT WITH Commons-Clause", task-master\'s declaration, by name (roadmap 2.5)', () => {
+        for (const text of ['MIT WITH Commons-Clause', 'Apache-2.0 WITH commons-clause']) {
+            const result = judge({ license: text });
+            expect(result).toMatchObject({ verdict: 'fail', code: 'UNKNOWN_EXCEPTION' });
+            expect(result.reason).toContain('Commons Clause is not an SPDX exception');
+        }
+    });
+
+    it.each(['MIT WITH No-SaaS-Use', 'MIT WITH LicenseRef-NoHosting', 'ISC WITH Anything-I-Like'])(
+        'fails "%s": only an exception known to add permissions may follow WITH',
+        (text) => {
+            const result = judge({ license: text });
+            expect(result).toMatchObject({ verdict: 'fail', code: 'UNKNOWN_EXCEPTION' });
+            expect(result.reason).toContain('not an SPDX exception that only adds permissions');
+        },
+    );
+
+    it('passes an OR whose other branch is allowed, and fails an AND that needs the refused exception', () => {
+        expect(judge({ license: 'MIT WITH Commons-Clause OR Apache-2.0' })).toMatchObject({ verdict: 'pass', relied: ['Apache-2.0'] });
+        expect(judge({ license: 'ISC AND MIT WITH Commons-Clause' })).toMatchObject({ verdict: 'fail', code: 'UNKNOWN_EXCEPTION' });
+        // A disallowed base licence is reported as that, whatever follows WITH.
+        expect(judge({ license: 'GPL-3.0-only WITH Commons-Clause' })).toMatchObject({ verdict: 'fail', code: 'NOT_ALLOWED' });
     });
 
     it('reads "+" as "or later", allowed only when the base licence is', () => {
@@ -180,7 +217,7 @@ describe('licence declarations', () => {
     it('fails UNLICENSED, and tells it apart from the Unlicense', () => {
         expect(judge({ license: 'UNLICENSED' })).toMatchObject({ verdict: 'fail', code: 'UNLICENSED' });
         expect(judge({ license: 'unlicensed' })).toMatchObject({ verdict: 'fail', code: 'UNLICENSED' });
-        expect(judge({ license: 'Unlicense' }).verdict).toBe('pass');
+        expect(judge({ license: 'Unlicense' })).toMatchObject({ verdict: 'fail', code: 'NOT_ALLOWED' });
     });
 
     it.each([[{}], [{ license: null }], [{ license: '' }], [{ license: '   ' }], [undefined], [null]])(
@@ -204,15 +241,8 @@ describe('licence declarations', () => {
         expect(judge({ license: '(MPL-2.0 OR Apache-2.0)' })).toMatchObject({ verdict: 'pass', relied: ['Apache-2.0'], notices: [] });
     });
 
-    it('passes CC-BY-4.0 only for a listed data-only package', () => {
-        expect(DATA_ONLY_LICENCES['CC-BY-4.0']).toContain('caniuse-lite');
-        const data = judge({ license: 'CC-BY-4.0' }, 'caniuse-lite');
-        expect(data.verdict).toBe('pass');
-        expect(data.notices.map((n) => n.code)).toEqual(['DATA_ONLY_CC-BY-4.0']);
-        const code = judge({ license: 'CC-BY-4.0' }, 'some-code-library');
-        expect(code).toMatchObject({ verdict: 'fail', code: 'NOT_ALLOWED' });
-        expect(code.reason).toContain('data-only');
-        expect(judge({ license: 'MIT OR CC-BY-4.0' }, 'some-code-library').verdict).toBe('pass');
+    it('holds exactly roadmap 0.3\'s licences, with BSD read as the 2- and 3-clause forms', () => {
+        expect([...ALLOWED_LICENCES].sort()).toEqual(['Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MIT', 'MPL-2.0', 'PostgreSQL']);
     });
 
     it('compares expressions by meaning, not spelling', () => {
@@ -379,8 +409,73 @@ describe('the production tree', () => {
         expect(() => listProductionPackages([])).toThrow(GateError);
     });
 
+    describe('the manifests on disk, not the lockfile alone', () => {
+        /** package.json as npm would have written it beside this lockfile. */
+        const honestManifests = (lock: Lock): Record<string, unknown> => ({ '': { ...entry(lock, '') } });
+        const reader = (manifests: Record<string, unknown>) => (location: string) => manifests[location] ?? null;
+
+        it('walks from package.json, and fails when the lockfile root entry was edited to hide a production dependency', () => {
+            const honest = lockfile('planted-gpl');
+            const manifests = honestManifests(honest);
+            // The edit npm ci does not notice: the edge moves to devDependencies
+            // in the lockfile and both packages are flagged dev-only.
+            const tampered = lockfile('planted-gpl');
+            Object.assign(entry(tampered, ''), { dependencies: undefined, devDependencies: { 'fixture-dev-tool': '1.0.0', 'fixture-mit-lib': '1.0.0' } });
+            entry(tampered, 'node_modules/fixture-mit-lib').dev = true;
+            entry(tampered, 'node_modules/fixture-gpl-lib').dev = true;
+
+            expect(checkDependencies(tampered, { root: FIXTURE_ROOT }).failures).toEqual([]);
+            const report = checkDependencies(tampered, { root: FIXTURE_ROOT, readManifest: reader(manifests) });
+            expect(report.failures.map((f) => f.code).sort()).toEqual(['MANIFEST_LOCK_MISMATCH', 'NOT_ALLOWED']);
+            expect(report.failures.find((f) => f.code === 'MANIFEST_LOCK_MISMATCH')?.reason).toContain('dependencies');
+            expect(record(report, 'fixture-gpl-lib')).toMatchObject({ verdict: 'fail', chain: ['fixture-mit-lib', 'fixture-gpl-lib'] });
+            expect(report.notices.map((n) => n.code)).toContain('DEV_FLAG_CONTRADICTED');
+        });
+
+        it('passes when package.json and the lockfile agree', () => {
+            const lock = lockfile('dev-only-gpl');
+            expect(checkDependencies(lock, { root: FIXTURE_ROOT, readManifest: reader(honestManifests(lock)) }).failures).toEqual([]);
+        });
+
+        it("judges a workspace by its own package.json, so a stale lockfile cannot pass a BUSL-1.1 workspace as Islestone's own", () => {
+            const lock = lockfile('tree-shapes');
+            const manifests = {
+                ...honestManifests(lock),
+                'packages/ui': { ...entry(lock, 'packages/ui'), license: 'BUSL-1.1' },
+                'packages/ported': entry(lock, 'packages/ported'),
+            };
+            const report = checkDependencies(lock, { root: FIXTURE_ROOT, readManifest: reader(manifests) });
+            expect(record(report, '@fixture/ui')).toMatchObject({ verdict: 'fail', code: 'NOT_ALLOWED', declared: 'BUSL-1.1', licenceSource: 'workspace' });
+            expect(report.failures).toContainEqual(
+                expect.objectContaining({ code: 'MANIFEST_LOCK_MISMATCH', location: 'packages/ui', reason: expect.stringContaining('license') }),
+            );
+        });
+
+        it('fails a workspace on disk that the lockfile does not describe, and one the lockfile lists that is not on disk', () => {
+            const lock = lockfile('tree-shapes');
+            const manifests = { ...honestManifests(lock), 'packages/ui': entry(lock, 'packages/ui') };
+            const report = checkDependencies(lock, { root: FIXTURE_ROOT, readManifest: reader(manifests), diskWorkspaces: ['packages/ui', 'packages/new'] });
+            expect(report.failures.map((f) => `${f.code} ${f.location}`)).toEqual(
+                expect.arrayContaining(['WORKSPACE_MISSING packages/ported', 'WORKSPACE_NOT_IN_LOCKFILE packages/new']),
+            );
+        });
+
+        it('refuses to run without a root package.json', () => {
+            expect(() => listProductionPackages(lockfile('planted-gpl'), { readManifest: () => null })).toThrow('no package.json');
+        });
+    });
+
+    it('checks a dev-only package that shipped code imports, with the importing file at the head of its chain', () => {
+        const lock = lockfile('dev-only-gpl');
+        const report = checkDependencies(lock, { root: FIXTURE_ROOT, extraRoots: [{ location: 'node_modules/fixture-dev-gpl', from: 'src/app/page.tsx' }] });
+        expect(record(report, 'fixture-dev-gpl')).toMatchObject({ verdict: 'fail', code: 'NOT_ALLOWED', chain: ['src/app/page.tsx', 'fixture-dev-gpl'] });
+        // What it depends on ships with it.
+        expect(record(report, 'fixture-dev-gpl-helper')).toMatchObject({ verdict: 'fail', chain: ['src/app/page.tsx', 'fixture-dev-gpl', 'fixture-dev-gpl-helper'] });
+        expect(report.notices.map((n) => n.code)).toEqual(['DEV_DEPENDENCY_BUNDLED']);
+    });
+
     it('fails a deny-listed package in the tree whatever its licence says, and no exemption lifts it', () => {
-        expect(DENIED_PACKAGES).toEqual(expect.arrayContaining(['n8n', 'hyperformula', '@blocknote/xl-*']));
+        expect(DENIED_PACKAGES).toEqual(expect.arrayContaining(['n8n', 'n8n-*', '@n8n/*', 'hyperformula', '@blocknote/xl-*', 'task-master-ai', 'windmill-components']));
         const lock = lockfile('planted-gpl');
         Object.assign(entry(lock, ''), { dependencies: { hyperformula: '1.0.0', '@blocknote/xl-ai': '1.0.0' } });
         lock.packages['node_modules/hyperformula'] = { version: '1.0.0', license: 'MIT' };
@@ -455,6 +550,7 @@ describe('exemptions', () => {
         ['an adr that does not exist', { ...valid, adr: 'docs/adr/0042-missing.md' }, 'which does not exist'],
         ['an adr outside docs/adr', { ...valid, adr: 'README.md' }, 'must be a repository path'],
         ['an adr path that climbs out', { ...valid, adr: 'docs/adr/../../x.md' }, 'must be a repository path'],
+        ['an adr that does not name the package', { ...valid, adr: UNRELATED_ADR }, 'does not mention fixture-gpl-lib'],
         ['no licence', { reason: valid.reason, adr: FIXTURE_ADR }, '"licence" is required'],
         ['a licence that is not SPDX', { ...valid, licence: 'GPL v3' }, 'not an SPDX expression'],
         ['an unknown field', { ...valid, reviewBy: '2027-01-01' }, 'unknown field "reviewBy"'],
@@ -483,14 +579,37 @@ describe('exemptions', () => {
         expect(upgraded.failures[0]?.reason).toContain('bound to version 0.9.0 and the tree holds 1.0.0');
     });
 
-    it('exempts a "SEE LICENSE IN" package with the licence a person read in the file', () => {
+    it('exempts a "SEE LICENSE IN" package at the version whose file a person read', () => {
         const { entries, errors } = validateExemptions(
-            { 'fixture-lib': { licence: 'MIT', reason: 'Fixture: LICENSE.md holds the MIT text.', adr: FIXTURE_ADR } },
+            { 'fixture-lib': { licence: 'MIT', version: '1.0.0', reason: 'Fixture: LICENSE.md at 1.0.0 holds the MIT text.', adr: FIXTURE_ADR } },
             FIXTURE_ROOT,
         );
         expect(errors).toEqual([]);
         expect(judge({ license: 'SEE LICENSE IN LICENSE.md' }, 'fixture-lib', entries).verdict).toBe('exempt');
         expect(judge({ license: 'SEE LICENSE IN LICENSE.md' }, 'other-lib', entries).verdict).toBe('fail');
+    });
+
+    it.each([
+        ['SEE LICENSE IN NEW-TERMS.txt', 'SEE_LICENCE_IN'],
+        ['UNLICENSED', 'UNLICENSED'],
+        [null, 'MISSING'],
+        ['GPL 3', 'INVALID'],
+    ])('does not apply an unpinned exemption once the package declares %j, which it cannot be bound to', (declared, code) => {
+        const { entries } = validateExemptions(
+            { 'vendor-grid': { licence: 'LicenseRef-VendorGrid-EULA', reason: 'Fixture: EULA read at 2.0.0.', adr: FIXTURE_ADR } },
+            FIXTURE_ROOT,
+        );
+        const result = judgePackage({ name: 'vendor-grid', version: '3.0.0', location: 'node_modules/vendor-grid', declaration: normaliseDeclaration({ license: declared }) }, entries);
+        expect(result).toMatchObject({ verdict: 'fail', code });
+        expect(result.reason).toContain('must name the "version"');
+    });
+
+    it('keeps applying an unpinned exemption while the package declares the SPDX licence it was granted for', () => {
+        const { entries } = validateExemptions({ 'fixture-gpl-lib': valid }, FIXTURE_ROOT);
+        const at = (license: string) =>
+            judgePackage({ name: 'fixture-gpl-lib', version: '9.9.9', location: 'node_modules/fixture-gpl-lib', declaration: normaliseDeclaration({ license }) }, entries).verdict;
+        expect(at('GPL-3.0')).toBe('exempt');
+        expect(at('AGPL-3.0-only')).toBe('fail');
     });
 
     it('reports an exemption for a package the tree does not hold', () => {
@@ -512,7 +631,7 @@ describe('the import scan', () => {
         if (index === -1) throw new Error(`no line holds ${needle}`);
         return index + 1;
     };
-    const result = scanSourceText(violations);
+    const result = scanSourceText(violations, 'violations.ts');
 
     it.each([
         ["'posthog-node/ee/flags'", 'EE_PATH', 'from'],
@@ -527,7 +646,7 @@ describe('the import scan', () => {
         ["require('handsontable')", 'DENIED_PACKAGE', 'require()'],
         ["require.resolve('planby')", 'DENIED_PACKAGE', 'require.resolve()'],
         ['`@liveblocks/server`', 'DENIED_PACKAGE', 'import()'],
-        ['`windmill/', 'DENIED_PACKAGE', 'import()'],
+        ['`windmill-components/', 'DENIED_PACKAGE', 'import()'],
         ['`@blocknote/xl-', 'DENIED_PACKAGE', 'import()'],
     ])('flags %s as %s at its line', (needle, code, kind) => {
         expect(result.failures).toContainEqual(expect.objectContaining({ line: lineOf(needle), code, kind }));
@@ -539,15 +658,133 @@ describe('the import scan', () => {
     });
 
     it('flags nothing in a file of look-alikes: comments, strings, regexes, JSX text, near-miss names', () => {
-        expect(scanSourceText(readFixture('sources/clean.tsx'))).toEqual({ failures: [], notices: [] });
+        const scanned = scanSourceText(readFixture('sources/clean.tsx'), 'clean.tsx');
+        expect({ failures: scanned.failures, notices: scanned.notices }).toEqual({ failures: [], notices: [] });
     });
 
-    it('notices a computed specifier it cannot check, rather than passing it silently', () => {
+    it('notices every computed specifier it cannot check, relative ones included, rather than passing it silently', () => {
         const scanned = scanSourceText(
-            ['const a = await import(name);', 'const b = import(`${base}/x`);', 'const c = require(`./locales/${locale}.json`);'].join('\n'),
+            [
+                'const a = await import(name);',
+                'const b = import(`${base}/x`);',
+                'const c = require(`./locales/${locale}.json`);',
+                "const d = import('./plugins/' + plugin);",
+            ].join('\n'),
         );
         expect(scanned.failures).toEqual([]);
-        expect(scanned.notices.map((n) => `${n.line} ${n.code}`)).toEqual(['1 COMPUTED_SPECIFIER', '2 COMPUTED_SPECIFIER']);
+        expect(scanned.notices.map((n) => `${n.line} ${n.code}`)).toEqual(['1 COMPUTED_SPECIFIER', '2 COMPUTED_SPECIFIER', '3 COMPUTED_SPECIFIER', '4 COMPUTED_SPECIFIER']);
+    });
+
+    // Each of these loads ee code or a deny-listed package when Node or a
+    // bundler runs it, and each once passed the scan silently.
+    it.each<[string, string, string]>([
+        ['a \\x escape', 'import x from "../vendor/\\x65e/feature.mjs";', 'EE_PATH'],
+        ['a \\u escape', 'import x from "../vendor/\\u0065e/feature.mjs";', 'EE_PATH'],
+        ['a \\u{} escape', 'import x from "../vendor/\\u{65}e/feature.mjs";', 'EE_PATH'],
+        ['a percent-encoded segment', 'import x from "./vendor/e%65/feature.mjs";', 'EE_PATH'],
+        ['a concatenation', 'const m = require("hyperform" + "ula");', 'DENIED_PACKAGE'],
+        ['a concatenation that spells /ee/', "const m = import('../e' + 'e/x');", 'EE_PATH'],
+        ['an escape in a package name', 'const m = require("hyperformul\\x61");', 'DENIED_PACKAGE'],
+        ['a line continuation', "const m = require('hyper\\\nformula');", 'DENIED_PACKAGE'],
+        ['a parenthesised argument', 'require(("hyperformula"));', 'DENIED_PACKAGE'],
+        ['optional call', 'const m = require?.("hyperformula");', 'DENIED_PACKAGE'],
+        ['an alias of require', 'const r = require; r("hyperformula");', 'DENIED_PACKAGE'],
+        ['an escaped identifier', '\\u0072equire("hyperformula");', 'DENIED_PACKAGE'],
+        ['module.require', 'module.require("hyperformula");', 'DENIED_PACKAGE'],
+        ['a template whose substitution is a literal', "import(`../e${'e'}/x`);", 'EE_PATH'],
+        ['createRequire, called at once', "import { createRequire } from 'node:module'; createRequire(import.meta.url)('hyperformula');", 'DENIED_PACKAGE'],
+        ['createRequire, bound', "import { createRequire as make } from 'node:module'; const req = make(import.meta.url); req('hyperformula');", 'DENIED_PACKAGE'],
+        ['require.context', "const ctx = require.context('../vendor/posthog/ee', true);", 'EE_PATH'],
+        ['import.meta.webpackContext', "const ctx = import.meta.webpackContext('../vendor/posthog/ee', {});", 'EE_PATH'],
+        ['new URL(…, import.meta.url)', "new Worker(new URL('../vendor/posthog/ee/worker.js', import.meta.url));", 'EE_PATH'],
+        ["n8n's .ee. file convention", "import l from './license.ee.js';", 'EE_PATH'],
+        ["n8n's .ee directory convention", "import s from './sso.ee/index';", 'EE_PATH'],
+    ])('flags %s', (_label, source, code) => {
+        expect(scanSourceText(source, 'x.mjs').failures.map((f) => f.code)).toEqual([code]);
+    });
+
+    it('reads JSX text as text, so a backtick or "/*" in it does not hide the imports after it', () => {
+        for (const file of ['sources/jsx-backtick.tsx', 'sources/jsx-comment.tsx']) {
+            const scanned = scanSourceText(readFixture(file), file);
+            expect(scanned.failures.map((f) => `${f.line} ${f.code}`)).toEqual(['2 EE_PATH', '3 DENIED_PACKAGE']);
+        }
+    });
+
+    it('reads a slash after an object literal as division, so it does not hide the call after it', () => {
+        const scanned = scanSourceText(readFixture('sources/division.js'), 'division.js');
+        expect(scanned.failures.map((f) => `${f.line} ${f.code}`)).toEqual(['2 DENIED_PACKAGE']);
+    });
+
+    it.each([
+        ['a template literal', "const s = `abc;\nimport 'n8n';"],
+        ['a block comment', "const s = 1; /* abc\nimport 'n8n';"],
+        ['a JSX element', "const el = <div>\n<p>Press `</p>\nimport 'n8n';"],
+        ['a brace', "function f() {\n  return 1;\nimport 'n8n';"],
+    ])('fails a file whose %s never closes, rather than skipping the rest of it', (_label, source) => {
+        const codes = scanSourceText(source, 'x.tsx').failures.map((f) => f.code);
+        expect(codes).toContain('UNPARSEABLE');
+    });
+
+    it('reads TypeScript type parameters at the start of an expression, in a .tsx file, without failing', () => {
+        expect(scanSourceText("const id = <T,>(x: T) => x;\ntype F = <T>(x: T) => T;\nimport 'n8n';", 'x.tsx').failures.map((f) => f.code)).toEqual([
+            'DENIED_PACKAGE',
+        ]);
+    });
+
+    it('marks type-only imports, which ship nothing', () => {
+        const { specifiers } = scanSourceText(
+            [
+                "import type { A } from 'a';",
+                "import { type B } from 'b';",
+                "import { type C, d } from 'c';",
+                "export type { E } from 'e';",
+                "import f from 'f';",
+                "import type G from 'g';",
+                "type Q = typeof import('q');",
+                "import type, { h } from 'h';",
+            ].join('\n'),
+            'x.ts',
+        );
+        expect(specifiers.map((s) => `${s.specifier}${s.typeOnly ? ' type' : ''}`)).toEqual(['a type', 'b type', 'c', 'e type', 'f', 'g type', 'q type', 'h']);
+    });
+
+    it('reads stylesheet imports, comments excepted', () => {
+        const { specifiers, problems } = extractStyleSpecifiers(
+            [
+                "@import 'tailwindcss';",
+                '/* @import "hyperformula/styles.css"; */',
+                '@import url("./base.css") layer(base);',
+                '@plugin "@acme/plugin";',
+                '@use "../vendor/\\65 e/mixins";',
+                '@import url(theme.css);',
+            ].join('\n'),
+        );
+        expect(problems).toEqual([]);
+        expect(specifiers.map((s) => `${s.line} ${s.kind} ${s.specifier}`)).toEqual([
+            '1 @import tailwindcss',
+            '3 @import ./base.css',
+            '4 @plugin @acme/plugin',
+            '5 @use ../vendor/ee/mixins',
+            '6 @import theme.css',
+        ]);
+        expect(scanSourceText('/* never closed\n@import "x";', 'x.css').failures.map((f) => f.code)).toEqual(['UNPARSEABLE']);
+    });
+
+    it("reads MDX's import and export blocks, and not code inside a fence", () => {
+        const { specifiers } = extractMdxSpecifiers(
+            [
+                "import Chart from '../components/chart';",
+                '',
+                "Prose that mentions import('hyperformula') is not code.",
+                '',
+                '```js',
+                "import 'n8n';",
+                '```',
+                '',
+                "export { meta } from './meta';",
+            ].join('\n'),
+        );
+        expect(specifiers.map((s) => `${s.line} ${s.specifier}`)).toEqual(['1 ../components/chart', '9 ./meta']);
     });
 
     it('checks the static parts of a computed specifier', () => {
@@ -573,36 +810,86 @@ describe('the import scan', () => {
 
     it('matches deny-list names whole, or by the prefix a pattern names', () => {
         expect(isDeniedPackage('n8n')).toBe(true);
-        expect(isDeniedPackage('n8n-workflow')).toBe(false);
+        // n8n's libraries ship under their own names, under the Sustainable Use licence.
+        for (const name of ['n8n-workflow', 'n8n-core', '@n8n/config', '@n8n/n8n-nodes-langchain']) expect(isDeniedPackage(name)).toBe(true);
+        expect(isDeniedPackage('n8nx')).toBe(false);
+        // Windmill's AGPL UI is denied; the npm package "windmill" is an unrelated BSD blog engine.
+        expect(isDeniedPackage('windmill-components')).toBe(true);
+        expect(isDeniedPackage('windmill')).toBe(false);
+        expect(isDeniedPackage('task-master-ai')).toBe(true);
+        expect(isDeniedPackage('@handsontable/react')).toBe(true);
         expect(isDeniedPackage('@blocknote/xl-ai')).toBe(true);
         expect(isDeniedPackage('@blocknote/core')).toBe(false);
         expect(isDeniedPackage('@liveblocks/server')).toBe(true);
         expect(isDeniedPackage('@liveblocks/client')).toBe(false);
+    });
+
+    it('does not let an exemption lift a deny-listed n8n library', () => {
+        const exemption: Exemption = {
+            name: 'n8n-workflow',
+            licence: 'LicenseRef-n8n-sustainable-use',
+            licenceKey: 'licenseref-n8n-sustainable-use',
+            reason: 'Fixture: an exemption for a deny-listed package.',
+            adr: FIXTURE_ADR,
+            version: '1.0.0',
+        };
+        const result = judge({ license: 'SEE LICENSE IN LICENSE.md' }, 'n8n-workflow', new Map([['n8n-workflow', exemption]]));
+        expect(result).toMatchObject({ verdict: 'fail', code: 'DENY_LISTED' });
+    });
+
+    it('finds an ee folder by segment or by n8n\'s .ee convention, and not in look-alikes', () => {
+        for (const yes of ['posthog-node/ee/flags', '../ee', 'n8n-core/dist/sso.ee/index.js', './License.ee.ts', 'x/ee?raw']) expect(hasEePath(yes)).toBe(true);
+        for (const no of ['./fee/index', 'ee/sub', './tree/ee-utils', './coffee.eex', 'https://cdn.example.ee/x.js', './employee.ts']) expect(hasEePath(no)).toBe(false);
     });
 });
 
 describe('which files the import scan reads', () => {
     it.each<[string, boolean]>([
         ['src/app/page.tsx', true],
+        ['src/app/globals.css', true],
+        ['src/content/guide.mdx', true],
         ['packages/ui/src/button.tsx', true],
         ['scripts/licence-gate.mjs', true],
         ['next.config.ts', true],
         ['eslint.config.mjs', true],
-        ['tests/unit/licence-gate.test.ts', false],
+        ['app/page.tsx', true],
+        ['lib/sheet.ts', true],
+        ['vendor/lib.js', true],
+        ['prisma/seed.ts', true],
+        ['tests/unit/licence-gate.test.ts', true],
         ['tests/fixtures/licence-gate/sources/violations.ts', false],
         ['src/data.json', false],
         ['docs/ROADMAP.md', false],
-        ['vendor/lib.js', false],
+        ['packages/ui/node_modules/x/index.js', false],
     ])('%s: %s', (file, scanned) => {
         expect(isScannedSourcePath(file)).toBe(scanned);
     });
 
-    it("takes the real repository's population from git and leaves the gate's fixtures out", () => {
+    it.each<[string, boolean]>([
+        ['tests/unit/x.test.ts', true],
+        ['tests', true],
+        ['eslint.config.mjs', true],
+        ['playwright.config.ts', true],
+        ['src/tests/x.ts', false],
+        ['testsuite/x.ts', false],
+        ['next.config.ts', false],
+        ['scripts/licence-gate.mjs', false],
+    ])('%s is dev-only: %s', (file, devOnly) => {
+        expect(devOnlyEntry(file) !== null).toBe(devOnly);
+    });
+
+    it("takes the real repository's population from git and leaves only the gate's fixtures out", () => {
         const files = listSourceFiles(REPO_ROOT);
-        expect(files).toEqual(expect.arrayContaining(['scripts/licence-gate.mjs', 'src/env.ts', 'next.config.ts']));
-        expect(files.filter((f) => f.startsWith('tests/'))).toEqual([]);
+        expect(files).toEqual(
+            expect.arrayContaining(['scripts/licence-gate.mjs', 'src/env.ts', 'src/app/globals.css', 'next.config.ts', 'tests/unit/licence-gate.test.ts']),
+        );
+        expect(files.filter((f) => f.startsWith('tests/fixtures/licence-gate/'))).toEqual([]);
         // The fixtures do break the policy, so leaving them out is load-bearing.
         expect(scanSources(REPO_ROOT, ['tests/fixtures/licence-gate/sources/violations.ts']).failures).toHaveLength(14);
+    });
+
+    it('reads tsconfig.json with comments and trailing commas', () => {
+        expect(parseJsonc('{\n  // a comment\n  "a": "//not a comment", /* b */ "c": [1, 2,],\n}')).toEqual({ a: '//not a comment', c: [1, 2] });
     });
 });
 
@@ -612,16 +899,51 @@ describe('the command line', () => {
         for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
     });
 
+    /** The package.json npm would have written beside a lockfile: its root entry's manifest fields. */
+    function manifestOf(lockText: string): string {
+        const rootEntry = (JSON.parse(lockText) as Lock).packages[''] ?? {};
+        const fields = ['name', 'version', 'license', 'workspaces', 'dependencies', 'optionalDependencies', 'peerDependencies', 'peerDependenciesMeta', 'devDependencies'];
+        return JSON.stringify(Object.fromEntries(fields.filter((f) => f in rootEntry).map((f) => [f, rootEntry[f]])), null, 2);
+    }
+
+    /**
+     * A throwaway repository. Unless the files name one, its package.json is
+     * the one its lockfile describes, so the two agree.
+     */
     function plant(files: Record<string, string>, { git = true } = {}): string {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'islestone-licence-gate-'));
         roots.push(root);
         if (git) execFileSync('git', ['init', '-q'], { cwd: root, env: gitEnvFor() });
-        for (const [relative, content] of Object.entries(files)) {
+        const lock = files['npm-shrinkwrap.json'] ?? files['package-lock.json'];
+        const all = lock !== undefined && !('package.json' in files) ? { 'package.json': manifestOf(lock), ...files } : files;
+        for (const [relative, content] of Object.entries(all)) {
             fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
             fs.writeFileSync(path.join(root, relative), content);
         }
         return root;
     }
+
+    function report(root: string): GateReport & { status: number | null } {
+        const result = run(root, '--json');
+        return { ...(JSON.parse(result.stdout) as GateReport), status: result.status };
+    }
+
+    /** A lockfile whose root has the given production and dev dependencies, each a made-up package. */
+    function lockWith(
+        packages: Record<string, { license: string; dev?: boolean; name?: string; version?: string }>,
+        { dependencies = {}, devDependencies = {} }: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> } = {},
+    ): string {
+        const entries: Record<string, LockEntry> = {
+            '': { name: 'fixture-app', version: '1.0.0', license: 'UNLICENSED', dependencies, devDependencies },
+        };
+        for (const [location, p] of Object.entries(packages)) {
+            entries[`node_modules/${location}`] = { ...(p.name ? { name: p.name } : {}), version: p.version ?? '1.0.0', ...(p.dev ? { dev: true } : {}), license: p.license };
+        }
+        return JSON.stringify({ name: 'fixture-app', version: '1.0.0', lockfileVersion: 3, requires: true, packages: entries }, null, 2);
+    }
+
+    const codes = (r: GateReport) =>
+        [...r.dependencies.failures.map((f) => `${f.code} ${f.name ?? (f.location || '(root)')}`), ...r.sources.failures.map((f) => `${f.code} ${f.file}`)].sort();
 
     function run(root: string, ...args: string[]) {
         return spawnSync(process.execPath, [GATE, '--root', root, ...args], { encoding: 'utf8', env: gitEnvFor() });
@@ -716,6 +1038,179 @@ describe('the command line', () => {
         ]);
     });
 
+    it('fails when the lockfile root entry was edited to hide a production dependency that package.json declares', () => {
+        const honest = lockText('planted-gpl');
+        const tampered = JSON.parse(honest) as Lock;
+        Object.assign(entry(tampered, ''), { dependencies: undefined, devDependencies: { 'fixture-dev-tool': '1.0.0', 'fixture-mit-lib': '1.0.0' } });
+        entry(tampered, 'node_modules/fixture-mit-lib').dev = true;
+        entry(tampered, 'node_modules/fixture-gpl-lib').dev = true;
+        const root = plant({ 'package.json': manifestOf(honest), 'package-lock.json': JSON.stringify(tampered), 'src/index.ts': benign });
+        const r = report(root);
+        expect(r.status).toBe(1);
+        expect(codes(r)).toEqual(['MANIFEST_LOCK_MISMATCH (root)', 'NOT_ALLOWED fixture-gpl-lib']);
+    });
+
+    it('reads npm-shrinkwrap.json when it exists, because npm installs from it', () => {
+        const root = plant({
+            'npm-shrinkwrap.json': lockText('planted-gpl'),
+            // A clean but stale package-lock.json beside it is ignored by npm, so by the gate too.
+            'package-lock.json': lockText('dev-only-gpl'),
+            'src/index.ts': benign,
+        });
+        const r = report(root);
+        expect(r.status).toBe(1);
+        expect(r.lockfile).toBe('npm-shrinkwrap.json');
+        expect(codes(r)).toEqual(['NOT_ALLOWED fixture-gpl-lib']);
+        expect(r.dependencies.notices.map((n) => n.code)).toContain('SHRINKWRAP');
+    });
+
+    it('fails "MIT WITH Commons-Clause", and task-master-ai by name', () => {
+        const root = plant({
+            'package-lock.json': lockWith(
+                { 'task-master-ai': { license: 'MIT WITH Commons-Clause' }, 'fixture-clause': { license: 'Apache-2.0 WITH Commons-Clause' } },
+                { dependencies: { 'task-master-ai': '1.0.0', 'fixture-clause': '1.0.0' } },
+            ),
+            'src/index.ts': benign,
+        });
+        const r = report(root);
+        expect(r.status).toBe(1);
+        expect(codes(r)).toEqual(['DENY_LISTED task-master-ai', 'UNKNOWN_EXCEPTION fixture-clause']);
+    });
+
+    it('checks a dev dependency that code which can ship imports, by its real name through an alias, CSS included', () => {
+        const lock = lockWith(
+            {
+                'gpl-grid': { license: 'GPL-3.0-only', dev: true },
+                sheet: { name: 'hyperformula', version: '3.0.0', license: 'GPL-3.0-only', dev: true },
+                'gpl-theme': { license: 'GPL-3.0-only', dev: true },
+                'gpl-types': { license: 'GPL-3.0-only', dev: true },
+                'gpl-test-helper': { license: 'GPL-3.0-only', dev: true },
+                'fixture-mit-lib': { license: 'MIT' },
+            },
+            {
+                dependencies: { 'fixture-mit-lib': '1.0.0' },
+                devDependencies: { 'gpl-grid': '1.0.0', sheet: 'npm:hyperformula@3.0.0', 'gpl-theme': '1.0.0', 'gpl-types': '1.0.0', 'gpl-test-helper': '1.0.0' },
+            },
+        );
+        const root = plant({
+            'package-lock.json': lock,
+            'src/app/page.tsx': "'use client';\nimport { Grid } from 'gpl-grid';\nimport Sheet from 'sheet';\nimport type { T } from 'gpl-types';\nexport const used = [Grid, Sheet] as unknown as T;\n",
+            'src/app/globals.css': "@import 'gpl-theme/base.css';\n",
+            // Test code is dev-only: what it imports does not ship.
+            'tests/unit/grid.test.ts': "import { helper } from 'gpl-test-helper';\nexport const h = helper;\n",
+        });
+        const r = report(root);
+        expect(r.status).toBe(1);
+        expect(codes(r)).toEqual(['DENIED_PACKAGE src/app/page.tsx', 'DENY_LISTED hyperformula', 'NOT_ALLOWED gpl-grid', 'NOT_ALLOWED gpl-theme']);
+        const grid = r.dependencies.failures.find((f) => f.name === 'gpl-grid');
+        expect(grid?.chain).toEqual(['src/app/page.tsx', 'gpl-grid']);
+    });
+
+    it('fails an import of a package the lockfile does not hold, from code that can ship', () => {
+        const root = plant({
+            'package-lock.json': lockText('dev-only-gpl'),
+            'src/index.ts': "import 'server-only';\nimport { x } from 'not-installed';\nimport fs from 'node:fs';\nexport const used = [x, fs];\n",
+        });
+        const r = report(root);
+        expect(codes(r)).toEqual(['UNRESOLVED_IMPORT src/index.ts']);
+    });
+
+    it('scans every directory, and fails code that can ship when it imports test code', () => {
+        const root = plant({
+            'package-lock.json': lockText('dev-only-gpl'),
+            'src/app/page.tsx': "import { sheet } from '../../lib/sheet';\nimport { flags } from '../../tests/support/flags';\nexport const used = [sheet, flags];\n",
+            'lib/sheet.ts': "export { sheet } from '../vendor/posthog/ee/feature-flags';\n",
+            'app/page.tsx': "import HyperFormula from 'hyperformula';\nexport default HyperFormula;\n",
+            'tests/support/flags.ts': "export * from '../../vendor/growthbook/ee/flags';\n",
+            'vendor/posthog/ee/feature-flags.ts': 'export const sheet = 1;\n',
+            'vendor/growthbook/ee/flags.ts': 'export const flags = 1;\n',
+        });
+        const r = report(root);
+        expect(r.status).toBe(1);
+        expect(codes(r)).toEqual([
+            'DENIED_PACKAGE app/page.tsx',
+            'EE_PATH lib/sheet.ts',
+            'EE_PATH tests/support/flags.ts',
+            'IMPORTS_DEV_ONLY_PATH src/app/page.tsx',
+            // Not installed either, so its licence cannot be read.
+            'UNRESOLVED_IMPORT app/page.tsx',
+        ]);
+    });
+
+    it('follows #imports and tsconfig paths to where they point', () => {
+        const manifest = JSON.stringify({
+            name: 'fixture-app',
+            version: '1.0.0',
+            license: 'UNLICENSED',
+            dependencies: { 'fixture-mit-lib': '1.0.0' },
+            devDependencies: { 'fixture-dev-gpl': '1.0.0' },
+            imports: { '#flags': './vendor/posthog/ee/flags.mjs', '#sheet': { node: 'hyperformula', default: './src/sheet.ts' } },
+        });
+        const root = plant({
+            'package.json': manifest,
+            'package-lock.json': lockText('dev-only-gpl'),
+            'tsconfig.json': '{\n  // aliases\n  "compilerOptions": { "paths": { "~ee/*": ["./vendor/ee/*"], "@/*": ["./src/*"], }, },\n}\n',
+            'scripts/worker.mjs': "import { flags } from '#flags';\nimport sheet from '#sheet';\nimport { gone } from '#missing';\nexport const used = [flags, sheet, gone];\n",
+            'src/index.ts': "import { x } from '~ee/x';\nimport { y } from '@/y';\nexport const used = [x, y];\n",
+        });
+        const r = report(root);
+        expect(r.status).toBe(1);
+        expect(codes(r)).toEqual([
+            // #sheet names hyperformula under the "node" condition.
+            'DENIED_PACKAGE scripts/worker.mjs',
+            // #flags points into an ee folder its own name does not mention.
+            'EE_PATH scripts/worker.mjs',
+            // So does the tsconfig alias ~ee/*.
+            'EE_PATH src/index.ts',
+            // #missing matches no "imports" entry.
+            'UNRESOLVED_IMPORT scripts/worker.mjs',
+            // hyperformula, reached through #sheet, is not installed.
+            'UNRESOLVED_IMPORT scripts/worker.mjs',
+        ]);
+    });
+
+    it('fails a file the scanner cannot read to the end', () => {
+        const root = plant({ 'package-lock.json': lockText('dev-only-gpl'), 'src/index.ts': "const s = `never closed;\nimport 'n8n';\n" });
+        const r = report(root);
+        expect(r.status).toBe(1);
+        expect(codes(r)).toEqual(['UNPARSEABLE src/index.ts']);
+    });
+
+    it("judges a workspace by its package.json, not by a stale lockfile's licence", () => {
+        const lock = {
+            name: 'fixture-app',
+            version: '1.0.0',
+            lockfileVersion: 3,
+            requires: true,
+            packages: {
+                '': { name: 'fixture-app', version: '1.0.0', license: 'UNLICENSED', workspaces: ['packages/*'] },
+                'node_modules/@fixture/ui': { resolved: 'packages/ui', link: true },
+                'packages/ui': { name: '@fixture/ui', version: '1.0.0', license: 'UNLICENSED' },
+            },
+        };
+        const root = plant({
+            'package-lock.json': JSON.stringify(lock),
+            // A ported BUSL-1.1 package replaced the workspace; nobody ran npm install.
+            'packages/ui/package.json': JSON.stringify({ name: '@fixture/ui', version: '1.0.0', license: 'BUSL-1.1' }),
+            'packages/ui/index.ts': benign,
+        });
+        const r = report(root);
+        expect(r.status).toBe(1);
+        expect(codes(r)).toEqual(['MANIFEST_LOCK_MISMATCH packages/ui', 'NOT_ALLOWED @fixture/ui']);
+    });
+
+    it('refuses an exemption whose ADR does not name the package', () => {
+        const root = plant({
+            'package-lock.json': lockText('planted-gpl'),
+            'src/index.ts': benign,
+            [UNRELATED_ADR]: fs.readFileSync(path.join(FIXTURE_ROOT, UNRELATED_ADR), 'utf8'),
+            'scripts/licence-exemptions.json': JSON.stringify({ 'fixture-gpl-lib': { licence: 'GPL-3.0', reason: 'Fixture.', adr: UNRELATED_ADR } }),
+        });
+        const r = report(root);
+        expect(r.status).toBe(1);
+        expect(r.dependencies.exemptionProblems).toEqual([{ name: 'fixture-gpl-lib', problem: expect.stringContaining('does not mention fixture-gpl-lib') }]);
+    });
+
     it('exits 2, saying why, when it cannot run', () => {
         const notGit = plant({ 'package-lock.json': lockText('dev-only-gpl') }, { git: false });
         const outsideGit = run(notGit);
@@ -730,6 +1225,12 @@ describe('the command line', () => {
 
         const withLock = plant({ 'package-lock.json': lockText('dev-only-gpl') });
         expect(run(withLock, '--exemptions', 'nowhere.json').stderr).toContain('does not exist');
+
+        const noManifest = plant({ 'package-lock.json': lockText('dev-only-gpl'), 'package.json': '' });
+        fs.rmSync(path.join(noManifest, 'package.json'));
+        const missingManifest = run(noManifest);
+        expect(missingManifest.status).toBe(2);
+        expect(missingManifest.stderr).toContain('no package.json');
 
         const badArgument = run(withLock, '--strict');
         expect(badArgument.status).toBe(2);

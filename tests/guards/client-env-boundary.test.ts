@@ -58,6 +58,12 @@ describe('the client env boundary in this repository', () => {
         expect(report.opaque).toEqual([]);
     });
 
+    it('imports none of its own workspace packages from client code until the walk can follow them', () => {
+        // A workspace package's source is bundled like any local file, but the
+        // walker does not resolve bare specifiers yet (sub-phase 1.2 adds that).
+        expect(report.workspaceImports).toEqual([]);
+    });
+
     it('took its population from git, and that population is this work tree', () => {
         expect(report.population).toEqual(expect.arrayContaining(['src/env.ts', 'src/env-client.ts', THIS_FILE]));
         expect(report.population.filter((p) => /^(node_modules|\.next)\//.test(p))).toEqual([]);
@@ -212,6 +218,44 @@ describe('the detector, against a planted repository', () => {
         expect(report.reached.has('src/env-client.ts')).toBe(true);
         expect(report.unresolved).toEqual([]);
         expect(report.opaque).toEqual([]);
+        expect(report.workspaceImports).toEqual([]);
+    });
+
+    it('also walks from the files Next.js ships to the browser without a directive', () => {
+        plant({
+            // Loaded in the browser by convention, with no 'use client'.
+            'src/instrumentation-client.ts': "import { env } from '@/env';\nexport const e = env;\n",
+            'instrumentation-client.js': "require('./src/components/format');\n",
+            // Pages Router files are client code by default...
+            'src/pages/legacy.tsx': "import { label } from '../components/format';\nexport default () => label;\n",
+            'pages/_app.tsx': "import '@/env';\nexport default () => null;\n",
+            // ...except API routes and _document, which run only on the server.
+            'src/pages/api/report.ts': "import { env } from '@/env';\nexport default () => env;\n",
+            'pages/_document.tsx': "import '@/env';\nexport default () => null;\n",
+            // Tests are never bundled.
+            'tests/unit/env.test.ts': "'use client';\nimport '@/env';\n",
+        });
+
+        const report = checkClientEnvBoundary(root);
+        const chains = Object.fromEntries(report.violations.map((v) => [v.entry, v.chain]));
+        expect(chains['src/instrumentation-client.ts']).toEqual(['src/instrumentation-client.ts', 'src/env.ts']);
+        expect(chains['instrumentation-client.js']).toEqual(['instrumentation-client.js', 'src/components/format.ts', 'src/env.ts']);
+        expect(chains['src/pages/legacy.tsx']).toEqual(['src/pages/legacy.tsx', 'src/components/format.ts', 'src/env.ts']);
+        expect(chains['pages/_app.tsx']).toEqual(['pages/_app.tsx', 'src/env.ts']);
+        expect(report.clientEntries).not.toEqual(expect.arrayContaining(['src/pages/api/report.ts']));
+        expect(report.clientEntries).not.toContain('pages/_document.tsx');
+        expect(report.clientEntries).not.toContain('tests/unit/env.test.ts');
+    });
+
+    it("reports a client import of the repository's own workspace package, which it cannot follow yet", () => {
+        plant({
+            'packages/ui/package.json': JSON.stringify({ name: '@acme/ui', version: '0.0.0' }),
+            'packages/ui/src/button.tsx': "import { env } from '../../../src/env';\nexport const Button = env;\n",
+            'src/components/toolbar.tsx': "'use client';\nimport { Button } from '@acme/ui/button';\nimport React from 'react';\nexport const T = [Button, React];\n",
+        });
+
+        const report = checkClientEnvBoundary(root);
+        expect(report.workspaceImports).toEqual([{ from: 'src/components/toolbar.tsx', specifier: '@acme/ui/button' }]);
     });
 
     it('goes green when the offending edge is fixed, so the verdict follows the source', () => {
