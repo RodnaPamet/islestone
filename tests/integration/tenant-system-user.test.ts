@@ -12,7 +12,11 @@
  *      the database in every table that would grant one;
  *   3. a job context built for it writes the audit trail as that user with
  *      `actorType: 'JOB'`, keeps the chain valid, and touches no other
- *      workspace.
+ *      workspace;
+ *   4. its creation is audited (owner decision, 2026-11-19): exactly one
+ *      `SYSTEM_USER_CREATED` entry, written by the call that inserts the row,
+ *      in the same transaction; a later or concurrent call writes nothing, and
+ *      a workspace that does not exist leaves neither row nor entry.
  *
  * Copied from inflect-compliance `tests/integration/tenant-system-user.test.ts`
  * at 5528464fc54a8681956f3b9ce23ca9c075f0420e: the guarded tables are
@@ -45,6 +49,8 @@ const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const TAG = randomUUID().slice(0, 8);
 const TENANT_A = `t-sysuser-a-${TAG}`;
 const TENANT_B = `t-sysuser-b-${TAG}`;
+const TENANT_C = `t-sysuser-c-${TAG}`;
+const TENANT_D = `t-sysuser-d-${TAG}`;
 const SYS_A = tenantSystemUserId(TENANT_A);
 
 /** Postgres's check_violation, however the driver wraps it. */
@@ -60,7 +66,7 @@ describeFn('the tenant SYSTEM user (#4400)', () => {
     beforeAll(async () => {
         db = prismaTestClient();
         await resetDatabase(db);
-        for (const id of [TENANT_A, TENANT_B]) {
+        for (const id of [TENANT_A, TENANT_B, TENANT_C, TENANT_D]) {
             await db.tenant.create({ data: { id, name: id, slug: id } });
         }
         const mkUser = async (label: string, tenantId: string) => {
@@ -207,6 +213,55 @@ describeFn('the tenant SYSTEM user (#4400)', () => {
             expect(await db.auditLog.count({ where: { tenantId: TENANT_A, userId: ownerA } })).toBe(0);
             expect(await db.auditLog.count({ where: { tenantId: TENANT_B } })).toBe(0);
             expect(await db.user.count({ where: { id: tenantSystemUserId(TENANT_B) } })).toBe(0);
+        });
+    });
+
+    describe('its creation is audited (owner decision, 2026-11-19)', () => {
+        const createdRows = (tenantId: string) =>
+            db.auditLog.findMany({ where: { tenantId, action: 'SYSTEM_USER_CREATED' } });
+
+        it('the first call writes one SYSTEM_USER_CREATED entry as the system user; a second writes nothing', async () => {
+            const sys = tenantSystemUserId(TENANT_C);
+            expect(await db.user.count({ where: { id: sys } })).toBe(0);
+
+            expect(await ensureTenantSystemUser(TENANT_C)).toBe(sys);
+
+            const rows = await createdRows(TENANT_C);
+            expect(rows).toHaveLength(1);
+            expect(rows[0]).toMatchObject({
+                userId: sys,
+                actorType: 'JOB',
+                entity: 'User',
+                entityId: sys,
+            });
+            expect(rows[0]!.detailsJson).toMatchObject({
+                category: 'entity_lifecycle',
+                entityName: 'User',
+                operation: 'created',
+            });
+            expect((await verifyAuditChain(TENANT_C)).valid).toBe(true);
+
+            // The row is there now, so the second call inserts nothing and
+            // records nothing.
+            expect(await ensureTenantSystemUser(TENANT_C)).toBe(sys);
+            expect(await createdRows(TENANT_C)).toHaveLength(1);
+            expect(await db.auditLog.count({ where: { tenantId: TENANT_C } })).toBe(1);
+            expect((await verifyAuditChain(TENANT_C)).valid).toBe(true);
+        });
+
+        it('two concurrent first calls create one row and one entry', async () => {
+            const [a, b] = await Promise.all([ensureTenantSystemUser(TENANT_D), ensureTenantSystemUser(TENANT_D)]);
+            expect(a).toBe(b);
+            expect(await db.user.count({ where: { id: tenantSystemUserId(TENANT_D) } })).toBe(1);
+            expect(await createdRows(TENANT_D)).toHaveLength(1);
+            expect((await verifyAuditChain(TENANT_D)).valid).toBe(true);
+        });
+
+        it('a workspace that does not exist leaves neither the row nor an entry: they commit together', async () => {
+            const missing = `t-sysuser-missing-${TAG}`;
+            await expect(ensureTenantSystemUser(missing)).rejects.toThrow();
+            expect(await db.user.count({ where: { id: tenantSystemUserId(missing) } })).toBe(0);
+            expect(await db.auditLog.count({ where: { tenantId: missing } })).toBe(0);
         });
     });
 });

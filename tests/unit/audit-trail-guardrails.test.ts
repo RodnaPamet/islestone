@@ -131,7 +131,8 @@ const RAW_SQL_ALLOWED_REASONS: Readonly<Record<string, string>> = {
     'src/lib/prisma.ts': 'the audit extension writes the audit itself',
     'src/app-layer/context-system.ts':
         "creates the workspace's system user (sys_<tenantId>) once, idempotently: raw so the PII " +
-        'extension cannot derive its emailHash, and an act of nobody, so nothing to attribute',
+        'extension cannot derive its emailHash; audited by SYSTEM_USER_CREATED in the same ' +
+        'transaction (owner decision, 2026-11-19)',
 };
 const RAW_SQL_ALLOWED = Object.keys(RAW_SQL_ALLOWED_REASONS);
 
