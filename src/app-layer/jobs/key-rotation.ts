@@ -84,11 +84,21 @@ import {
     PII_TENANT_SCOPED_MODELS,
 } from '@/lib/security/pii-middleware';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
+import {
+    resolveRotationActor,
+    rotationActorRecord,
+    type RotationActorRecord,
+} from './rotation-actor';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
 export interface KeyRotationOptions {
     tenantId: string;
+    /**
+     * Who asked. Re-resolved when the job runs (`resolveRotationActor`): the
+     * job acts as them while they still hold `admin.tenant_lifecycle`, and as
+     * the workspace system user otherwise, recording who asked and why.
+     */
     initiatedByUserId: string;
     requestId?: string;
     /** Override SELECT batch size per (model, field). Default 500. */
@@ -105,6 +115,8 @@ export interface KeyRotationPerFieldResult {
 
 export interface KeyRotationResult {
     tenantId: string;
+    /** Whose authority the run carried, who asked, and why if not them. */
+    actor: RotationActorRecord;
     dekRewrapped: boolean;
     dekRewrapError?: string;
     perField: KeyRotationPerFieldResult[];
@@ -363,14 +375,26 @@ export async function runKeyRotation(
             const started = Date.now();
             const batchSize = Math.max(1, options.batchSize ?? DEFAULT_BATCH_SIZE);
 
+            // Who this run acts as: the person who asked, if they still hold
+            // the key, else the workspace system user. Never a stop: see
+            // `rotation-actor.ts` (owner decision, 2026-11-19).
+            const actor = await resolveRotationActor({
+                tenantId: options.tenantId,
+                requestedByUserId: options.initiatedByUserId,
+                job: 'key-rotation',
+                requestId: options.requestId,
+            });
+            const actorRecord = rotationActorRecord(actor);
+
             await appendAuditEntry({
                 tenantId: options.tenantId,
-                userId: options.initiatedByUserId,
-                actorType: 'SYSTEM',
+                userId: actor.ctx.userId,
+                actorType: actor.ctx.actorType ?? 'USER',
                 entity: 'TenantKey',
                 entityId: options.tenantId,
                 action: 'KEY_ROTATION_STARTED',
                 details: null,
+                detailsJson: { category: 'custom', event: 'key_rotation_started', ...actorRecord },
                 metadataJson: { jobRunId },
                 requestId: options.requestId ?? null,
             });
@@ -442,12 +466,13 @@ export async function runKeyRotation(
 
             await appendAuditEntry({
                 tenantId: options.tenantId,
-                userId: options.initiatedByUserId,
-                actorType: 'SYSTEM',
+                userId: actor.ctx.userId,
+                actorType: actor.ctx.actorType ?? 'USER',
                 entity: 'TenantKey',
                 entityId: options.tenantId,
                 action: 'KEY_ROTATION_COMPLETED',
                 details: null,
+                detailsJson: { category: 'custom', event: 'key_rotation_completed', ...actorRecord },
                 metadataJson: {
                     jobRunId,
                     dekRewrapped: dekOutcome.ok,
@@ -473,6 +498,7 @@ export async function runKeyRotation(
 
             return {
                 tenantId: options.tenantId,
+                actor: actorRecord,
                 dekRewrapped: dekOutcome.ok,
                 dekRewrapError: dekOutcome.error,
                 perField,

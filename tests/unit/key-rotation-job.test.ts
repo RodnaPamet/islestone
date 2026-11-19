@@ -66,6 +66,7 @@ const appendAuditEntryMock = jest.fn(
         entityId: string;
         action: string;
         details: string | null;
+        detailsJson?: Record<string, unknown>;
         metadataJson?: Record<string, unknown>;
         requestId?: string | null;
     }) => undefined,
@@ -73,6 +74,23 @@ const appendAuditEntryMock = jest.fn(
 jest.mock('@/lib/audit/audit-writer', () => ({
     appendAuditEntry: (entry: Parameters<typeof appendAuditEntryMock>[0]) => appendAuditEntryMock(entry),
 }));
+
+// Who the run acts as (owner decision, 2026-11-19). The real resolution is
+// proven against a database in tests/integration/key-rotation.test.ts; here
+// the job's use of it is: by default the initiator still holds the key.
+const resolveRotationActorMock = jest.fn(async (input: { tenantId: string; requestedByUserId: string }) => ({
+    authority: 'INITIATOR' as 'INITIATOR' | 'SYSTEM',
+    ctx: { userId: input.requestedByUserId, actorType: 'USER' as 'USER' | 'JOB' },
+    requestedByUserId: input.requestedByUserId,
+    refusal: null as null | { reason: string },
+}));
+jest.mock('@/app-layer/jobs/rotation-actor', () => {
+    const actual = jest.requireActual('@/app-layer/jobs/rotation-actor') as Record<string, unknown>;
+    return {
+        ...actual,
+        resolveRotationActor: (input: { tenantId: string; requestedByUserId: string }) => resolveRotationActorMock(input),
+    };
+});
 
 // Tenant-key-manager cache — verify it's invalidated on re-wrap.
 const clearTenantDekCacheMock = jest.fn();
@@ -376,10 +394,45 @@ describe('runKeyRotation — audit + observability', () => {
         expect(first.action).toBe('KEY_ROTATION_STARTED');
         expect(first.tenantId).toBe('tenant-audit');
         expect(first.userId).toBe('admin-5');
+        expect(first.actorType).toBe('USER');
+        expect(first.detailsJson).toMatchObject({ authority: 'INITIATOR', requestedByUserId: 'admin-5', refusal: null });
 
         expect(second.action).toBe('KEY_ROTATION_COMPLETED');
         expect(second.metadataJson).toHaveProperty('dekRewrapped', true);
         expect(second.metadataJson).toHaveProperty('totalScanned');
+    });
+
+    test('when the initiator is not acted for, the run still completes as the system user and says why', async () => {
+        tenantFindUnique.mockResolvedValueOnce({ encryptedDek: wrapDek(generateDek()) });
+        resolveRotationActorMock.mockResolvedValueOnce({
+            authority: 'SYSTEM',
+            ctx: { userId: 'sys_tenant-audit', actorType: 'JOB' as const },
+            requestedByUserId: 'gone-1',
+            refusal: { reason: 'NOT_A_MEMBER' },
+        });
+
+        const result = await runKeyRotation({ tenantId: 'tenant-audit', initiatedByUserId: 'gone-1' });
+
+        // The rotation was not stopped.
+        expect(result.dekRewrapped).toBe(true);
+        expect(tenantUpdate).toHaveBeenCalledTimes(1);
+        expect(result.actor).toEqual({
+            authority: 'SYSTEM',
+            requestedByUserId: 'gone-1',
+            actorUserId: 'sys_tenant-audit',
+            refusal: { reason: 'NOT_A_MEMBER' },
+        });
+        // Both entries are the system user's, and name the person who asked
+        // only as the requester.
+        for (const [entry] of appendAuditEntryMock.mock.calls) {
+            expect(entry.userId).toBe('sys_tenant-audit');
+            expect(entry.actorType).toBe('JOB');
+            expect((entry as { detailsJson?: unknown }).detailsJson).toMatchObject({
+                authority: 'SYSTEM',
+                requestedByUserId: 'gone-1',
+                refusal: { reason: 'NOT_A_MEMBER' },
+            });
+        }
     });
 });
 

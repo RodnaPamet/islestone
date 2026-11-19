@@ -16,7 +16,8 @@
  *      client and the PII extension.
  *   3. Rotate: `runKeyRotation` for the workspace and `rotateGlobalPiiColumns`
  *      once. Both report zero errors and the workspace's audit chain records
- *      the run.
+ *      the run, as the OWNER who asked (still a member, so the job acts as
+ *      them; the other branch is `rotation-initiator.test.ts`).
  *   4. Retire: `DATA_ENCRYPTION_KEY_PREVIOUS` unset. EVERY ciphertext the
  *      rotation owns was rewritten (none is byte-equal to its pre-rotation
  *      value) and reads under NEW alone; the DEK unwraps; the app reads the
@@ -94,6 +95,10 @@ describeFn('master-key rotation (integration — real DB)', () => {
                 await deleteAuditRowsForTenants(prisma, [tenantId]);
                 await prisma.tenantSecuritySettings.deleteMany({ where: { tenantId } });
                 await prisma.notificationOutbox.deleteMany({ where: { tenantId } });
+                // Soft-delete first: the last-owner trigger admits removing
+                // the only OWNER of a workspace that is being wound down.
+                await prisma.tenant.update({ where: { id: tenantId }, data: { deletedAt: new Date() } });
+                await prisma.tenantMembership.deleteMany({ where: { tenantId } });
                 await prisma.tenant.deleteMany({ where: { id: tenantId } });
             }
             if (userId) {
@@ -117,6 +122,8 @@ describeFn('master-key rotation (integration — real DB)', () => {
         tenantId = tenant.id;
         const user = await prisma.user.create({ data: { email: EMAIL, name: 'Kek Rotation' } });
         userId = user.id;
+        // The OWNER who starts the rotation (the route is OWNER-only).
+        await prisma.tenantMembership.create({ data: { tenantId, userId, role: 'OWNER', status: 'ACTIVE' } });
         // A manifest field holding a GLOBAL-key (v1) ciphertext: what a write
         // with no workspace context, or a bypass source, leaves behind.
         await prisma.tenantSecuritySettings.create({
@@ -156,7 +163,7 @@ describeFn('master-key rotation (integration — real DB)', () => {
         expect(decryptField(before.email)).toBe(EMAIL);
         expect(unwrapDek(before.dek).equals(dekBefore)).toBe(true);
         // Through the app's client, as a request would read it.
-        const ctx = makeRequestContext('ADMIN', { tenantId, userId, requestId: `${RUN}-req` });
+        const ctx = makeRequestContext('OWNER', { tenantId, userId, requestId: `${RUN}-req` });
         const midFlight = await runInTenantContext(ctx, (db) =>
             db.tenantSecuritySettings.findFirst({ where: { tenantId } }),
         );
@@ -214,15 +221,16 @@ describeFn('master-key rotation (integration — real DB)', () => {
         );
         expect(afterRead?.auditStreamSecretEncrypted).toBe(SECRET);
 
-        // The run is on the workspace's chain, attributed to its initiator.
+        // The run is on the workspace's chain, as the OWNER who asked.
+        expect(result.actor).toEqual({ authority: 'INITIATOR', requestedByUserId: userId, actorUserId: userId, refusal: null });
         const audit = await prisma.auditLog.findMany({
             where: { tenantId, entity: 'TenantKey' },
             orderBy: { createdAt: 'asc' },
             select: { action: true, userId: true, actorType: true },
         });
         expect(audit).toEqual([
-            { action: 'KEY_ROTATION_STARTED', userId, actorType: 'SYSTEM' },
-            { action: 'KEY_ROTATION_COMPLETED', userId, actorType: 'SYSTEM' },
+            { action: 'KEY_ROTATION_STARTED', userId, actorType: 'USER' },
+            { action: 'KEY_ROTATION_COMPLETED', userId, actorType: 'USER' },
         ]);
     }, 60_000);
 });

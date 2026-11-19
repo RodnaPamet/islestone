@@ -476,6 +476,8 @@ executorRegistry.register('key-rotation', async (payload) => {
         0,
         {
             tenantId: r.tenantId,
+            // Whose authority the run carried; who asked; why if not them.
+            actor: r.actor,
             dekRewrapped: r.dekRewrapped,
             dekRewrapError: r.dekRewrapError,
             perField: r.perField,
@@ -522,6 +524,7 @@ executorRegistry.register('tenant-dek-rotation', async (payload, ctx) => {
         r.totalSkipped,
         {
             tenantId: r.tenantId,
+            actor: r.actor,
             previousEncryptedDekCleared: r.previousEncryptedDekCleared,
             perField: r.perField,
             totalErrors: r.totalErrors,

@@ -88,6 +88,11 @@ import {
 } from '@/lib/security/tenant-key-manager';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
 import { appendAuditEntry } from '@/lib/audit/audit-writer';
+import {
+    resolveRotationActor,
+    rotationActorRecord,
+    type RotationActorRecord,
+} from './rotation-actor';
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -124,6 +129,11 @@ export interface TenantDekRotationProgress {
 
 export interface TenantDekRotationOptions {
     tenantId: string;
+    /**
+     * Who asked. Re-resolved when the job runs (`resolveRotationActor`): the
+     * job acts as them while they still hold `admin.tenant_lifecycle`, and as
+     * the workspace system user otherwise, recording who asked and why.
+     */
     initiatedByUserId: string;
     requestId?: string;
     /** Override SELECT batch size per (model, field). Default 500. */
@@ -149,6 +159,8 @@ export interface TenantDekRotationPerFieldResult {
 
 export interface TenantDekRotationResult {
     tenantId: string;
+    /** Whose authority the run carried, who asked, and why if not them. */
+    actor: RotationActorRecord;
     previousEncryptedDekCleared: boolean;
     perField: TenantDekRotationPerFieldResult[];
     totalScanned: number;
@@ -463,14 +475,26 @@ export async function runTenantDekRotation(
                 }
             };
 
+            // Who this run acts as: the person who asked, if they still hold
+            // the key, else the workspace system user. Never a stop: see
+            // `rotation-actor.ts` (owner decision, 2026-11-19).
+            const actor = await resolveRotationActor({
+                tenantId,
+                requestedByUserId: options.initiatedByUserId,
+                job: 'tenant-dek-rotation',
+                requestId: options.requestId,
+            });
+            const actorRecord = rotationActorRecord(actor);
+
             await appendAuditEntry({
                 tenantId,
-                userId: options.initiatedByUserId,
-                actorType: 'SYSTEM',
+                userId: actor.ctx.userId,
+                actorType: actor.ctx.actorType ?? 'USER',
                 entity: 'TenantKey',
                 entityId: tenantId,
                 action: 'TENANT_DEK_ROTATION_STARTED',
                 details: null,
+                detailsJson: { category: 'custom', event: 'tenant_dek_rotation_started', ...actorRecord },
                 metadataJson: { jobRunId },
                 requestId: options.requestId ?? null,
             });
@@ -519,6 +543,7 @@ export async function runTenantDekRotation(
                 });
                 return {
                     tenantId,
+                    actor: actorRecord,
                     previousEncryptedDekCleared: false,
                     perField: [],
                     totalScanned: 0,
@@ -656,12 +681,13 @@ export async function runTenantDekRotation(
 
             await appendAuditEntry({
                 tenantId,
-                userId: options.initiatedByUserId,
-                actorType: 'SYSTEM',
+                userId: actor.ctx.userId,
+                actorType: actor.ctx.actorType ?? 'USER',
                 entity: 'TenantKey',
                 entityId: tenantId,
                 action: 'TENANT_DEK_ROTATION_COMPLETED',
                 details: null,
+                detailsJson: { category: 'custom', event: 'tenant_dek_rotation_completed', ...actorRecord },
                 metadataJson: {
                     jobRunId,
                     previousEncryptedDekCleared,
@@ -698,6 +724,7 @@ export async function runTenantDekRotation(
 
             return {
                 tenantId,
+                actor: actorRecord,
                 previousEncryptedDekCleared,
                 perField,
                 totalScanned,
