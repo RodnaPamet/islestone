@@ -1,0 +1,49 @@
+# Docker build context for the Dockerfile (sub-phase 1.8). Keep the context to
+# what the build reads: sources, the lockfile, Prisma, the shared UI package,
+# the build scripts, and the LICENSE and NOTICE files every image carries.
+# Adapted from inflect-compliance `.dockerignore` (PROVENANCE.md).
+
+# Version control and CI
+.git
+.gitignore
+.github
+.husky
+
+# Dependencies and build output: installed and rebuilt in the image
+node_modules
+**/node_modules
+.next
+out
+dist
+
+# Tests and test tooling: the image never runs them
+tests/
+test-results/
+playwright-report/
+blob-report/
+coverage/
+jest.config.*
+jest.setup.*
+playwright.config.*
+__mocks__/
+eslint-rules/
+eslint.config.*
+
+# Documentation and deployment files: not read by the build
+docs/
+README.md
+deploy/
+docker-compose*.yml
+
+# Environment files are secrets; never bake one into an image. The committed
+# template is harmless, but nothing in the build reads it either.
+.env*
+
+# Editor and agent state (.claude/worktrees holds whole checkouts)
+.vscode/
+.idea/
+.claude/
+
+# Logs and scratch
+*.log
+tmp/
