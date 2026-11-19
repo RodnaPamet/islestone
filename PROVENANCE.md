@@ -968,7 +968,7 @@ NextAuth behind one seam, the edge gate, the permission set, roles and custom ro
 | `src/lib/http/public-base-url.ts` | `src/lib/http/public-base-url.ts` | COPY | None. |
 | `src/lib/http/request-origin.ts` | `src/lib/http/request-origin.ts` | COPY+EDIT | `AUTH_URL` fallback removed. |
 | `src/lib/invite-refusals.ts` | `src/lib/invite-refusals.ts` | COPY | None. |
-| `src/lib/mailer.ts` | `src/lib/mailer.ts` | COPY+EDIT | Console sink only; SMTP transport and templates wait for 1.6; `delivered: false`. |
+| `src/lib/mailer.ts` | same | COPY+EDIT | Replaces the 1.4 stub: the console, Nodemailer and stub providers, `sendEmail` with its lazy init, `initMailerFromEnv` reading `SMTP_*` through `@/env` (not raw); the sink logs `hashForLookup` of each recipient and the template, never the address, subject or body (`recipientLogFields`, new; owner decision 2026-11-19). |
 | `src/lib/observability/business-metrics.ts` | `src/lib/observability/business-metrics.ts` | STUB | No-op counters with real signatures (1.6). |
 | `src/lib/observability/edge-logger.ts` | `src/lib/observability/edge-logger.ts` | COPY+EDIT | Reads `@/env`; `EDGE_LOGGER_IN_TEST`. |
 | `src/lib/observability/index.ts` | `src/lib/observability/index.ts` | STUB | Re-exports the logger and request context only (1.6). |
@@ -1386,11 +1386,11 @@ The BullMQ queue, worker and scheduler with two jobs, the notification outbox, d
 - **Licence:** BUSL-1.1, licensor Inflect Ltd. Copying is allowed by [ADR 0001](docs/adr/0001-code-provenance-and-licences.md) decision D1. The source files carry no per-file notice, so none is added, and `NOTICE` takes no entry: no third-party material came with them.
 - **What every port changed:** `inflect` names (queue, meters, tracers, Redis keys and connection names, the sender domain) are Islestone's; compliance jobs, templates, kinds and entities are cut or replaced by work items; `Notification.message` is `body` and `complianceMailbox` is `bccMailbox` (ADR 0006); env reads go through `@/env` / `@/env-client`; `import type` where an import is type-only.
 - **Action** is COPY (byte for byte), COPY+EDIT (the source text, edited as the Changes column says), REWRITE (written fresh to the source's design), PATTERN (pattern only, no code copied), or Islestone-owned (written fresh, no source).
-- **Not taken, by licence (owner decisions):** the SMTP transport (`nodemailer`, MIT-0) and the Sentry SDK (`@sentry/nextjs`, `@sentry/node`, through `sentry`, FSL-1.1-Apache-2.0). Neither licence is on the allowlist; `src/lib/mailer.ts` and `src/lib/observability/sentry.ts` keep the seams.
-- **Not taken, by sub-phase:** the due reminders (2.2), the agent-run automation action (6.3), the key-rotation, DEK-sweep, global-PII and audit-outbox jobs (1.5b), `UserNotificationPreference` (2.7), the flat `/api/notifications*` routes (they used a context 1.3 deleted), the bell UI and the admin notifications page (1.7, 2.7), and `sentry-privacy-posture-pinned` (with the SDK).
+- **Licences:** `nodemailer` is MIT-0 (ADR 0007 E8) and the Sentry SDK brings `sentry`, FSL-1.1-Apache-2.0 (E9), both allowed by owner decision of 2026-11-19. No `NOTICE` entry: neither is copied code.
+- **Not taken, by sub-phase:** the due reminders (2.2), the agent-run automation action (6.3), the key-rotation, DEK-sweep, global-PII and audit-outbox jobs (1.5b), `UserNotificationPreference` (2.7), the flat `/api/notifications*` routes (they used a context 1.3 deleted), the bell UI and the admin notifications page (1.7, 2.7).
 
 <details>
-<summary>All 160 rows</summary>
+<summary>All 164 rows</summary>
 
 | File | Source | Action | Changes |
 |---|---|---|---|
@@ -1455,7 +1455,7 @@ The BullMQ queue, worker and scheduler with two jobs, the notification outbox, d
 | `src/lib/observability/repository-tracing.ts` | `src/lib/observability/repository-tracing.ts` | COPY+EDIT | `import type`; examples. |
 | `src/lib/observability/shutdown.ts` | `src/lib/observability/shutdown.ts` | COPY+EDIT | Three stages (audit streams, OTel, Sentry); the agent-run and stream stages (Phase 6) cut. |
 | `src/lib/observability/shutdown-budget.ts` | `src/lib/observability/shutdown-budget.ts` | COPY+EDIT | No run-pause budget; total seven seconds. |
-| `src/lib/observability/sentry.ts` | `src/lib/observability/sentry.ts` | REWRITE | A no-op stub with the module's exports: the Sentry SDK depends on `sentry` (FSL-1.1-Apache-2.0), not on the allowlist. |
+| `src/lib/observability/sentry.ts` | same | COPY+EDIT | `SENTRY_*` and `NODE_ENV` through `@/env`; the sample rate parsed with `Number`; one comment's product reference. The `dataCollection` pin and `beforeSend` unchanged. |
 | `src/lib/observability/client-telemetry.ts` | `src/lib/observability/client-telemetry.ts` | COPY+EDIT | `@/env-client`; the retry-header name. |
 | `src/lib/observability/web-vitals.ts` | `src/lib/observability/web-vitals.ts` | COPY+EDIT | Meter `islestone-web-vitals`. |
 | `src/lib/observability/vital-route.ts` | `src/lib/observability/vital-route.ts` | COPY+EDIT | Compliance routes out of the capability table; docblocks. |
@@ -1498,6 +1498,10 @@ The BullMQ queue, worker and scheduler with two jobs, the notification outbox, d
 | `tests/integration/notification-tables-isolation.test.ts` | — | Islestone-owned | The two-workspace test for the three tables, on the pattern of Islestone's `audit-tables-isolation.test.ts`. |
 | `tests/integration/processOutbox-usecase.test.ts` | `tests/integration/processOutbox-usecase.test.ts` | COPY+EDIT | The PII test client; `WORK_ITEM_ASSIGNED`; `resetDatabase`; new: the at-rest check, a two-workspace drain, the drain usecase's `AuditLog` row and chain. |
 | `tests/integration/tenant-system-user.test.ts` | `tests/integration/tenant-system-user.test.ts` | COPY+EDIT | Islestone's six guarded tables; part 3 audits through `logEvent` (the policy reminder is compliance). |
+| `tests/unit/observability-sentry.test.ts` | same | COPY+EDIT | An Islestone fixture route; the SDK mock forwards to its mocks when called (TDZ under @swc/jest). |
+| `tests/unit/observability/sentry-redaction.test.ts` | same | COPY+EDIT | Islestone fixture paths; one comment. |
+| `tests/guards/sentry-privacy-posture-pinned.test.ts` | same | COPY+EDIT | One comment's product reference. |
+| `tests/guards/next-auth-email-provider-unused.test.ts` | — | Islestone-owned | ADR 0004 question 7: the `next-auth` → `nodemailer` override holds only while nothing imports next-auth's email provider; population from git, a planted repository. |
 | `tests/rendered/web-vitals-reporter-subscribes-once.test.tsx` | `tests/rendered/web-vitals-reporter-subscribes-once.test.tsx` | COPY | None. |
 | `tests/unit/csp-reporting.test.ts` | `tests/unit/csp-reporting.test.ts` | COPY+EDIT | A `no-require-imports` disable line. |
 | `tests/unit/digest-enum-schema-alignment.test.ts` | `tests/unit/digest-enum-schema-alignment.test.ts` | REWRITE | A type-level check over `DUE_DIGEST`; migrations from git. |
@@ -1512,7 +1516,7 @@ The BullMQ queue, worker and scheduler with two jobs, the notification outbox, d
 | `tests/unit/jobs/job-contract-completeness.test.ts` | `tests/regression/infrastructure-guards.test.ts` | COPY+EDIT | The extract the map names. |
 | `tests/unit/jobs/notification-outbox-flush-wiring.test.ts` | `tests/unit/jobs/notification-outbox-flush-wiring.test.ts` | COPY+EDIT | Paths. |
 | `tests/unit/jobs/register-schedules.test.ts` | `tests/unit/jobs/register-schedules.test.ts` | COPY+EDIT | Planted retired names through a mock. |
-| `tests/unit/mailer.test.ts` | `tests/unit/mailer.test.ts` | COPY+EDIT | No transport: the console sink and `initMailerFromEnv` cases; new: no log line carries an address or the body. |
+| `tests/unit/mailer.test.ts` | same | COPY+EDIT | Islestone's domain; the env through the `@/env` mock; new: the lazy init, the password never logged, and no log line carrying an address or the body. |
 | `tests/unit/notification-eligibility-guardrail.test.ts` | `tests/unit/notification-eligibility-guardrail.test.ts` | COPY | None. |
 | `tests/unit/notification-enqueue.test.ts` | `tests/unit/notification-enqueue.test.ts` | COPY | None. |
 | `tests/unit/notification-outbox.test.ts` | `tests/unit/notification-outbox.test.ts` | COPY | None. |
@@ -1560,13 +1564,15 @@ The BullMQ queue, worker and scheduler with two jobs, the notification outbox, d
 Files from earlier sub-phases edited in 1.6 (their rows are in the sections above):
 
 <details>
-<summary>All 34 files</summary>
+<summary>All 36 files</summary>
 
 | File | Changed in 1.6 |
 |---|---|
-| `.env.example` | `REDIS_URL` (required and authenticated in production), the `OTEL_*` variables, `SMTP_HOST`, `SMTP_FROM`, `NEXT_PUBLIC_TEST_MODE`. |
+| `.env.example` | `REDIS_URL` (required and authenticated in production), the `OTEL_*`, `SMTP_*` and `SENTRY_*` variables, `NEXT_PUBLIC_TEST_MODE`. |
 | `.github/workflows/ci.yml` | A Redis service (noeviction and a password set at run time) in Integration and E2E; `npm run build:worker` in Build. |
 | `.gitignore` | `/dist/`. |
+| `next.config.ts` | `@sentry/nextjs`, `@sentry/node` and `nodemailer` in `serverExternalPackages`. |
+| `tests/unit/licence-gate.test.ts` | The allowlist pin follows ADR 0007 E8 and E9. |
 | `docker-compose.yml` | Redis runs `--maxmemory-policy noeviction`. |
 | `docs/rate-limiting.md` | The CSP sink's read-tier GET. |
 | `docs/security-perimeter.md` | The CSP report endpoint and its section. |
@@ -1578,7 +1584,7 @@ Files from earlier sub-phases edited in 1.6 (their rows are in the sections abov
 | `prisma/schema/tenancy.prisma` | Back-relations from `Tenant` and `User`. |
 | `src/app/api/auth/register/route.ts` | `recordTenantCreated`. |
 | `src/env-client.ts` | `NEXT_PUBLIC_TEST_MODE`. |
-| `src/env.ts` | `REDIS_URL` required and authenticated in production; the `OTEL_*`, `SMTP_*` and `npm_package_version` variables. |
+| `src/env.ts` | `REDIS_URL` required and authenticated in production; the `OTEL_*`, `SMTP_*`, `SENTRY_*` and `npm_package_version` variables. |
 | `src/instrumentation-node.ts` | The `REDIS_URL` refusal; telemetry, Sentry, mailer, shutdown handlers and the eviction check (1.6's half of the source's `src/instrumentation.ts`). |
 | `src/lib/auth/guard.ts` | `MACHINE_CALLER_PREFIXES`: the two CSP report paths and the vitals beacon. |
 | `src/lib/security/csp.ts` | `report-uri` and `report-to`, and the report path and group constants. |

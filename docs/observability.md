@@ -84,12 +84,23 @@ session and authenticates nothing.
 
 ## Errors (Sentry)
 
-Not installed. `@sentry/nextjs` and `@sentry/node` depend on `sentry`,
-licensed FSL-1.1-Apache-2.0, which is not on the licence allowlist; allowing
-it is an owner decision (ADR 0007). `src/lib/observability/sentry.ts` keeps
-the module's exports (`initSentry`, `captureError`, `flushSentry`,
-`shutdownSentry`, …) as no-ops, so callers and the shutdown stage are wired
-and the SDK drops in behind them. Errors reach the logs meanwhile.
+`src/lib/observability/sentry.ts`, on `@sentry/nextjs` 11.11.0 (its `sentry`
+dependency is FSL-1.1-Apache-2.0, allowed by ADR 0007 E9). Server-side only,
+and off unless `SENTRY_DSN` is set; `SENTRY_ENVIRONMENT` defaults to
+`NODE_ENV`, `SENTRY_TRACES_SAMPLE_RATE` to 0 (tracing is OpenTelemetry's).
+
+- **The privacy posture is pinned in `init`**, not inherited: every
+  `dataCollection` category (user info, cookies, headers, bodies, query
+  parameters, database query data, stack-frame variables, …) is off, because
+  the SDK's defaults collect and a major bump can change them silently
+  (`tests/guards/sentry-privacy-posture-pinned.test.ts`).
+- **`beforeSend` scrubs** authorization, cookie and API-key headers, the request
+  body and query string, sensitive URL parameters (in the URL and in
+  breadcrumbs) and `event.user.ip_address`, and drops Next.js navigation errors.
+- **`captureError` reports server errors only** (status 500 and up) with the
+  request id, route, method and the workspace and user ids, never a payload.
+- No browser SDK is initialised: the source never did, and adding one is a new
+  data flow for the sub-processor register.
 
 ## Shutdown
 
@@ -108,7 +119,7 @@ signal falls through to Node's default. The worker runs its own shutdown in
 `src/instrumentation-node.ts`, in production, refuses to start without the
 secrets it needs (the field-encryption key, the rate-limit store, an
 authenticated `REDIS_URL`). Then, in every environment: telemetry, Sentry
-(the stub), the mailer, the shutdown handlers, and the Redis eviction-policy
+(when `SENTRY_DSN` is set), the mailer, the shutdown handlers, and the Redis eviction-policy
 check. The RLS tripwire is not started here: Islestone composes it into the
 Prisma client (`src/lib/prisma.ts`), so every process that loads the client
 has it.

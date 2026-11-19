@@ -153,19 +153,25 @@ default on purpose; `defaultFromName` defaults to `Islestone`
 (`tests/unit/notification-sender-fallback.test.ts`,
 `tests/integration/notification-settings-column-default.test.ts`).
 
-### No SMTP transport yet
+### The transport
 
-inflect-compliance sends through `nodemailer`, which is licensed MIT-0. MIT-0
-is not on the licence allowlist, and allowing it is an owner decision
-(ADR 0007), so Islestone ships no transport. `src/lib/mailer.ts` keeps the
-provider seam (`setEmailProvider`, `sendEmail`) and the console sink: every
-message is logged, `sendEmail` reports `delivered: false`, and the drain
-still claims and settles rows as it will with a transport. In production the
-sink logs each dropped message at WARN, with the lookup hash of each address and
-the template, never the address, subject or body (`recipientLogFields`); `initMailerFromEnv` logs an error
-when `SMTP_HOST` is set, because the deployment asked for a transport it
-does not have. Adding the transport is one provider class and one branch in
-`initMailerFromEnv`.
+`src/lib/mailer.ts`. With `SMTP_HOST` set, `initMailerFromEnv` (run at start by
+`src/instrumentation-node.ts` and the worker, and lazily by the first send of
+a module copy nothing initialised) installs the SMTP transport: `nodemailer`
+(MIT-0, ADR 0007 E8), port `SMTP_PORT` (587 by default, 465 for implicit TLS),
+credentials when both `SMTP_USER` and `SMTP_PASS` are set, and the sender from
+`deploymentSenderAddress()`. Its log line names the host, port and sender and
+whether credentials are set, never the password.
+
+Without `SMTP_HOST`, mail stays on the console sink: each message is logged,
+`sendEmail` reports `delivered: false`, and the drain still claims and settles
+rows. Production says so at WARN at start and for every dropped message.
+
+No log line carries a recipient's address, the subject or the body: the mailer
+logs the lookup hash of each address (`hashForLookup`, the hash `User.emailHash`
+and the dedupe key use) and the template (`recipientLogFields`; owner decision
+2026-11-19). `tests/unit/mailer.test.ts` fails if a plain address reaches a log
+call.
 
 ## Settings
 
