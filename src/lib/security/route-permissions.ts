@@ -189,12 +189,12 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     // ── Master-KEK rotation (sub-phase 1.5b) ─────────────────────────
     {
         path: new RegExp(`^${T}\\/admin\\/key-rotation(\\/.*)?$`),
-        permission: 'admin.manage',
+        permission: 'admin.tenant_lifecycle',
         note:
             'Re-wraps the workspace DEK + re-encrypts v1 ciphertexts ' +
             'after the operator stages a new DATA_ENCRYPTION_KEY. ' +
-            'Operator-driven fleet operation that changes no key a ' +
-            'member can use; ADMIN tier suffices.',
+            'OWNER-only, the same key as the DEK rotation (owner decision, ' +
+            '2026-11-19; inflect-compliance gated it at admin.manage).',
     },
 
     // ── Per-workspace DEK rotation (sub-phase 1.5b) ──────────────────

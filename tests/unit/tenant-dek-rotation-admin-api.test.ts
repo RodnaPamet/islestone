@@ -111,6 +111,11 @@ describe('POST /api/t/:slug/admin/tenant-dek-rotation', () => {
         expect(mockTenant.updateMany).not.toHaveBeenCalled();
         expect(enqueueMock).not.toHaveBeenCalled();
         expect(logEventMock).not.toHaveBeenCalled();
+        expect(appendAuditEntryOrQueue.mock.calls[0]?.[0]).toMatchObject({
+            tenantId: 'tenant-A',
+            userId: 'admin-1',
+            action: 'AUTHZ_DENIED',
+        });
     });
 
     test('an OWNER swaps the key, enqueues the sweep, audits it and gets 202', async () => {

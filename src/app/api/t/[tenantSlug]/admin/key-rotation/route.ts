@@ -10,7 +10,9 @@
  *     Reports the current state of a previously-enqueued job.
  *     Status + progress payload (no key material).
  *
- * Gated by `admin.manage`. Wrapped in the default API wrapper, which also
+ * Gated by `admin.tenant_lifecycle`, OWNER-only, as the DEK rotation is
+ * (owner decision, 2026-11-19; inflect-compliance gated it at `admin.manage`).
+ * Wrapped in the default API wrapper, which also
  * applies the mutation rate limit — overridden to `API_KEY_CREATE_LIMIT`
  * (5/hr) because rotation is a high-privilege operation that should not be
  * hammered.
@@ -20,7 +22,8 @@
  *
  * Copied from inflect-compliance
  * `src/app/api/t/[tenantSlug]/admin/key-rotation/route.ts` at
- * 5528464fc54a8681956f3b9ce23ca9c075f0420e. The enqueue, the audit entry and
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e. The permission key is
+ * `admin.tenant_lifecycle` (above). The enqueue, the audit entry and
  * the job lookup moved into `src/app-layer/usecases/key-rotation.ts`; the
  * `apiKeyId` the source put in the payload returns with API keys in 5.2.
  */
@@ -41,7 +44,7 @@ import { API_KEY_CREATE_LIMIT } from '@/lib/security/rate-limit-middleware';
 // ─── POST — initiate rotation ──────────────────────────────────────
 
 export const POST = withApiErrorHandling(
-    requirePermission('admin.manage', async (_req: NextRequest, _routeArgs, ctx) => {
+    requirePermission('admin.tenant_lifecycle', async (_req: NextRequest, _routeArgs, ctx) => {
         const started = await startKeyRotation(ctx);
         return jsonResponse(started, { status: 202 });
     }),
@@ -59,7 +62,7 @@ export const POST = withApiErrorHandling(
 // ─── GET — poll job status ─────────────────────────────────────────
 
 export const GET = withApiErrorHandling(
-    requirePermission('admin.manage', async (req: NextRequest, _routeArgs, ctx) => {
+    requirePermission('admin.tenant_lifecycle', async (req: NextRequest, _routeArgs, ctx) => {
         const parsed = RotationJobStatusQuery.safeParse({
             jobId: req.nextUrl.searchParams.get('jobId') ?? undefined,
         });

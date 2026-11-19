@@ -10,12 +10,13 @@
  * looked the job up themselves; the logic moved here because Islestone's route
  * handlers parse, call a usecase and respond (CLAUDE.md, "Layer rules").
  *
- * The two rotations, and why their gates differ:
+ * The two rotations (both OWNER-only):
  *
  *   - **Master key.** The operator stages a new `DATA_ENCRYPTION_KEY` with the
  *     old one as `DATA_ENCRYPTION_KEY_PREVIOUS`; this enqueues `key-rotation`
  *     for one workspace, which re-wraps its DEK and re-encrypts its `v1:`
- *     ciphertexts under the new key. `admin.manage` (OWNER and ADMIN).
+ *     ciphertexts under the new key. OWNER-only, `admin.tenant_lifecycle`
+ *     (owner decision, 2026-11-19; inflect-compliance admitted ADMIN).
  *   - **Workspace DEK.** `rotateTenantDek` swaps in a fresh DEK, keeping the
  *     old one in `Tenant.previousEncryptedDek`, and enqueues
  *     `tenant-dek-rotation` to re-encrypt every `v2:` ciphertext. OWNER-only,
@@ -86,7 +87,7 @@ export async function startKeyRotation(ctx: RequestContext): Promise<RotationSta
             action: 'KEY_ROTATION_INITIATED',
             entityType: 'TenantKey',
             entityId: ctx.tenantId,
-            details: `Master-key rotation initiated by admin user ${ctx.userId}`,
+            details: `Master-key rotation initiated by owner ${ctx.userId}`,
             detailsJson: {
                 category: 'custom',
                 event: 'key_rotation_initiated',

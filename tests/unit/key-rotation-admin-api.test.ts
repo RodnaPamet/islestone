@@ -5,7 +5,8 @@
  * rotation logic is covered by `key-rotation-job.test.ts`; here we
  * just prove the endpoint:
  *
- *   - Requires ADMIN (rejected with 403 for non-admins).
+ *   - Requires an OWNER (`admin.tenant_lifecycle`, owner decision 2026-11-19):
+ *     an ADMIN and a viewer are rejected with 403 and an AUTHZ_DENIED entry.
  *   - Enqueues the 'key-rotation' job with payload carrying the
  *     caller's tenantId + userId.
  *   - Returns 202 + jobId on success.
@@ -22,7 +23,9 @@
  * the audit barrel is a strict mock; `runInTenantContext` is stubbed, because
  * the usecase writes its audit entry inside one; the two cases about the
  * requesting API key's id are cut with API keys (5.2), and one case instead
- * pins that the payload carries exactly the three fields the job reads.
+ * pins that the payload carries exactly the three fields the job reads. The
+ * route is OWNER-only in Islestone (owner decision, 2026-11-19), so the
+ * success cases run as an OWNER and an ADMIN is refused.
  */
 
 import { strictMock } from '../helpers/strict-mock';
@@ -40,9 +43,9 @@ afterAll(() => {
 
 // ── Mocks ───────────────────────────────────────────────────────────
 
-// `requirePermission('admin.manage', …)` resolves the context via
+// `requirePermission('admin.tenant_lifecycle', …)` resolves the context via
 // `@/app-layer/context.getTenantCtx`. Mock at the resolver layer: returning a
-// non-admin ctx triggers the 403 path.
+// ctx without the key triggers the 403 path.
 const getTenantCtxMock = jest.fn<Promise<RequestContext>, [unknown, unknown]>();
 jest.mock('@/app-layer/context', () => ({
 
@@ -58,10 +61,7 @@ jest.mock('@/lib/audit', () =>
         // `permission-middleware` records AUTHZ_DENIED through
         // `appendAuditEntryOrQueue`, which falls back to a durable
         // AuditOutbox row instead of swallowing a failed write.
-        appendAuditEntryOrQueue: jest.fn(async () => ({
-            recorded: 'chain' as const,
-            auditId: 'audit-x',
-        })),
+        appendAuditEntryOrQueue: (...a: unknown[]) => appendAuditEntryOrQueueMock(...a),
         appendAuditEntry: jest.fn(async () => ({
             id: 'audit-x',
             entryHash: 'hash-x',
@@ -69,6 +69,11 @@ jest.mock('@/lib/audit', () =>
         })),
     }),
 );
+
+const appendAuditEntryOrQueueMock = jest.fn(async (..._a: unknown[]) => ({
+    recorded: 'chain' as const,
+    auditId: 'audit-x',
+}));
 
 // The usecase writes its audit entry inside a tenant transaction.
 jest.mock('@/lib/db-context', () => ({
@@ -106,20 +111,20 @@ import { makeRequestContext } from '../helpers/make-context';
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
-function adminCtx(overrides: Partial<{
+function ownerCtx(overrides: Partial<{
     tenantId: string;
     userId: string;
     requestId: string;
 }> = {}): RequestContext {
-    return makeRequestContext('ADMIN', {
+    return makeRequestContext('OWNER', {
         requestId: overrides.requestId ?? 'req-1',
-        userId: overrides.userId ?? 'admin-1',
+        userId: overrides.userId ?? 'owner-1',
         tenantId: overrides.tenantId ?? 'tenant-A',
     });
 }
 
 /**
- * A viewer, for the denied-path test: `requirePermission('admin.manage', …)`
+ * A viewer, for the denied-path test: `requirePermission('admin.tenant_lifecycle', …)`
  * denies on the resolved `appPermissions`, so we hand back a non-admin ctx and
  * let the middleware produce the 403.
  */
@@ -151,6 +156,24 @@ describe('POST /api/t/:tenantSlug/admin/key-rotation', () => {
         clearAllRateLimits();
     });
 
+    test('an ADMIN is rejected with 403 and an AUTHZ_DENIED entry, before any queue interaction', async () => {
+        getTenantCtxMock.mockResolvedValueOnce(
+            makeRequestContext('ADMIN', { requestId: 'req-1', userId: 'admin-1', tenantId: 'tenant-A' }),
+        );
+
+        const res = await POST(req('POST'), { params: { tenantSlug: 'acme' } });
+
+        expect(res.status).toBe(403);
+        expect(enqueueMock).not.toHaveBeenCalled();
+        expect(logEventMock).not.toHaveBeenCalled();
+        expect(appendAuditEntryOrQueueMock).toHaveBeenCalledTimes(1);
+        expect(appendAuditEntryOrQueueMock.mock.calls[0]?.[0]).toMatchObject({
+            tenantId: 'tenant-A',
+            userId: 'admin-1',
+            action: 'AUTHZ_DENIED',
+        });
+    });
+
     test('non-admin is rejected with 403 before any queue interaction', async () => {
         getTenantCtxMock.mockResolvedValueOnce(readerCtx());
 
@@ -160,8 +183,8 @@ describe('POST /api/t/:tenantSlug/admin/key-rotation', () => {
         expect(logEventMock).not.toHaveBeenCalled();
     });
 
-    test('admin → enqueues job + writes audit entry + returns 202', async () => {
-        getTenantCtxMock.mockResolvedValueOnce(adminCtx());
+    test('owner → enqueues job + writes audit entry + returns 202', async () => {
+        getTenantCtxMock.mockResolvedValueOnce(ownerCtx());
         enqueueMock.mockResolvedValueOnce({ id: 'bullmq-job-42' });
 
         const res = await POST(req('POST'), { params: { tenantSlug: 'acme' } });
@@ -170,7 +193,7 @@ describe('POST /api/t/:tenantSlug/admin/key-rotation', () => {
         // Job enqueued with the right payload shape.
         expect(enqueueMock).toHaveBeenCalledWith('key-rotation', {
             tenantId: 'tenant-A',
-            initiatedByUserId: 'admin-1',
+            initiatedByUserId: 'owner-1',
             requestId: 'req-1',
         });
 
@@ -198,7 +221,7 @@ describe('POST /api/t/:tenantSlug/admin/key-rotation', () => {
     });
 
     test('applies API_KEY_CREATE_LIMIT (tighter than default)', async () => {
-        getTenantCtxMock.mockImplementation(async () => adminCtx());
+        getTenantCtxMock.mockImplementation(async () => ownerCtx());
         enqueueMock.mockResolvedValue({ id: 'job-x' });
 
         const maxAttempts = API_KEY_CREATE_LIMIT.maxAttempts; // 5
@@ -221,8 +244,8 @@ describe('GET /api/t/:tenantSlug/admin/key-rotation', () => {
         clearAllRateLimits();
     });
 
-    test('admin + valid jobId → returns state + progress + result', async () => {
-        getTenantCtxMock.mockResolvedValueOnce(adminCtx());
+    test('owner + valid jobId → returns state + progress + result', async () => {
+        getTenantCtxMock.mockResolvedValueOnce(ownerCtx());
         const fakeJob = {
             name: 'key-rotation',
             data: { tenantId: 'tenant-A' },
@@ -256,13 +279,13 @@ describe('GET /api/t/:tenantSlug/admin/key-rotation', () => {
     });
 
     test('missing jobId parameter → 400', async () => {
-        getTenantCtxMock.mockResolvedValueOnce(adminCtx());
+        getTenantCtxMock.mockResolvedValueOnce(ownerCtx());
         const res = await GET(req('GET'), { params: { tenantSlug: 'acme' } });
         expect(res.status).toBe(400);
     });
 
     test('job-from-another-tenant → 404 (no cross-tenant leak)', async () => {
-        getTenantCtxMock.mockResolvedValueOnce(adminCtx({ tenantId: 'tenant-A' }));
+        getTenantCtxMock.mockResolvedValueOnce(ownerCtx({ tenantId: 'tenant-A' }));
         getQueueMock.mockReturnValueOnce({
             getJob: jest.fn(async () => ({
                 name: 'key-rotation',
@@ -281,7 +304,7 @@ describe('GET /api/t/:tenantSlug/admin/key-rotation', () => {
         ['another kind of job of the same tenant', { name: 'identity-leaver-pass', data: { tenantId: 'tenant-A' } }],
         ['a platform-wide job with no tenant', { name: 'key-rotation', data: {} }],
     ])('%s → 404', async (_label, job) => {
-        getTenantCtxMock.mockResolvedValueOnce(adminCtx({ tenantId: 'tenant-A' }));
+        getTenantCtxMock.mockResolvedValueOnce(ownerCtx({ tenantId: 'tenant-A' }));
         const getState = jest.fn();
         getQueueMock.mockReturnValueOnce({
             getJob: jest.fn(async () => ({ ...job, getState, returnvalue: { secret: 1 } })),
@@ -295,7 +318,7 @@ describe('GET /api/t/:tenantSlug/admin/key-rotation', () => {
     });
 
     test('non-existent jobId → 404', async () => {
-        getTenantCtxMock.mockResolvedValueOnce(adminCtx());
+        getTenantCtxMock.mockResolvedValueOnce(ownerCtx());
         getQueueMock.mockReturnValueOnce({
             getJob: jest.fn(async () => null),
         });
@@ -326,7 +349,7 @@ describe('GET /api/t/:tenantSlug/admin/key-rotation', () => {
 describe('key rotation — the payload', () => {
     test('names the workspace, the initiator and the request, and nothing else', async () => {
         enqueueMock.mockClear();
-        getTenantCtxMock.mockResolvedValueOnce(adminCtx());
+        getTenantCtxMock.mockResolvedValueOnce(ownerCtx());
         enqueueMock.mockResolvedValueOnce({ id: 'bullmq-job-44' });
 
         await POST(req('POST'), { params: { tenantSlug: 'acme' } });

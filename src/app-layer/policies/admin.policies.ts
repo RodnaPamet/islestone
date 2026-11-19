@@ -133,15 +133,14 @@ export function assertCanViewQuarantinedFiles(ctx: RequestContext): void {
  * rotation for this workspace: re-wrapping its DEK and re-encrypting its `v1:`
  * ciphertexts under the new `DATA_ENCRYPTION_KEY`.
  *
- * `admin.manage` on top of the coarse admin tier, the key the route is gated
- * on: the rotation changes no key a member can use and only finishes work the
- * operator started by staging the new key, so the ADMIN tier suffices
- * (inflect-compliance decision, kept).
+ * OWNER-only, `admin.tenant_lifecycle`, the key its route is gated on and the
+ * same key as the DEK rotation (owner decision, 2026-11-19). inflect-compliance
+ * admitted ADMIN here (`admin.manage`); in Islestone both rotations of a
+ * workspace's keys are the owner's.
  */
 export function assertCanRotateMasterKey(ctx: RequestContext): void {
-    assertCanAdmin(ctx);
-    if (!ctx.appPermissions?.admin?.manage) {
-        throw forbidden('Starting a master-key rotation needs admin.manage.');
+    if (!ctx.appPermissions?.admin?.tenant_lifecycle) {
+        throw forbidden('Starting a master-key rotation is an owner-level action.');
     }
 }
 
