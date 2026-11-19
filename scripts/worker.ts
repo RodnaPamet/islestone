@@ -1,0 +1,420 @@
+/**
+ * BullMQ Worker — Standalone Process Entrypoint
+ *
+ * Processes async jobs from the `islestone-jobs` queue.
+ * Runs independently of the Next.js web server.
+ *
+ * Usage:
+ *   npx tsx scripts/worker.ts
+ *   # or in production:
+ *   node --import tsx scripts/worker.ts
+ *
+ * Architecture:
+ *   - Creates its own Redis connection (not the app singleton)
+ *   - Registers processors for each typed job name
+ *   - Delegates to existing business logic functions (preserving observability)
+ *   - Graceful shutdown on SIGTERM/SIGINT
+ *   - Structured logging via Pino
+ *
+ * Copied from inflect-compliance `scripts/worker.ts` at
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e. Not ported: the agent-run pause
+ * at shutdown (sub-phase 6.1), the automation bus (5.1), the integration
+ * bootstrap and freshness reporting (5.x), the DAU/MAU gauges (8.1), and the
+ * RLS tripwire install (Islestone composes the tripwire into the Prisma
+ * client, `src/lib/prisma.ts`). Added: the audit-stream flush at shutdown, as
+ * the web tier's handler does.
+ *
+ * @module scripts/worker
+ */
+import 'dotenv/config';
+// OTel init + the job-trace seam are imported up front. `initTelemetry`
+// is invoked in `bootstrap()` BEFORE the `new Worker(...)` below — the
+// web tier inits OTel via `src/instrumentation.ts`, but the worker is a
+// separate process that never loads that hook, so without this its job
+// execution would be invisible to Tempo.
+import { initTelemetry, shutdownTelemetry } from '../src/lib/observability/instrumentation';
+import {
+    startQueueDepthReporting,
+    stopQueueDepthReporting,
+} from '../src/lib/observability/metrics';
+import { SHUTDOWN_AUDIT_FLUSH_MS } from '../src/lib/observability/shutdown-budget';
+import {
+    runJobInTraceContext,
+    readTraceCarrier,
+    stripTraceCarrier,
+} from '../src/lib/observability/job-trace';
+import { Worker, Queue, UnrecoverableError } from 'bullmq';
+import type { Job } from 'bullmq';
+import Redis from 'ioredis';
+
+import { beat } from '../src/app-layer/jobs/worker-heartbeat';
+import { createProcessLogger } from '../src/lib/observability/process-logger';
+import { jobPayloadLogFields } from '../src/lib/observability/job-payload-log';
+import {
+    QUEUE_NAME,
+    type JobName,
+} from '../src/app-layer/jobs/types';
+import { registerSchedules } from '../src/app-layer/jobs/register-schedules';
+
+// ─── Standalone logger ───
+
+// Every line carries `requestId`, which a log shipper can key on (inflect
+// #5022; see process-logger.ts).
+const log = createProcessLogger('worker');
+
+// ─── Redis connection ───
+
+const REDIS_URL = process.env.REDIS_URL;
+if (!REDIS_URL) {
+    log.fatal('REDIS_URL is not set. Cannot start worker.');
+    process.exit(1);
+}
+
+// ─── GAP-03: production encryption-key fail-fast ───────────────────
+//
+// The Next.js server runs this check via `src/instrumentation.ts`,
+// but BullMQ workers are a separate process — they bootstrap straight
+// from this file and never load the instrumentation hook. Without a
+// mirror check here, a worker process can boot in production with no
+// encryption key, sit idle, and crash on the FIRST job that touches
+// an encrypted column. Same blast-radius as the lazy-throw
+// failure mode the audit flagged on the web tier, just shifted to
+// background processing.
+//
+// Imports are dynamic so the worker doesn't pull the encryption
+// module unless we're in production.
+if (process.env.NODE_ENV === 'production') {
+    (async () => {
+        const { checkProductionEncryptionKey, runEncryptionSentinel } =
+            await import('../src/lib/security/startup-encryption-check');
+
+        const config = checkProductionEncryptionKey(process.env);
+        if (!config.ok) {
+            log.fatal('[startup] FATAL: ' + config.reason);
+            process.exit(1);
+        }
+
+        const sentinel = await runEncryptionSentinel();
+        if (!sentinel.ok) {
+            log.fatal('[startup] FATAL: ' + sentinel.reason);
+            process.exit(1);
+        }
+
+        log.info('encryption key check passed (presence + sentinel round-trip)');
+    })();
+}
+
+function createWorkerConnection(): Redis {
+    return new Redis(REDIS_URL!, {
+        maxRetriesPerRequest: null,
+        enableReadyCheck: true,
+        connectTimeout: 10000,
+        connectionName: 'islestone-worker',
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Job Processing — Executor Registry Delegation
+//
+// All job dispatch is handled by the executor registry in the
+// app-layer. The worker simply delegates to it. Adding a new job
+// only requires registering it in executor-registry.ts — no
+// worker changes needed.
+//
+// The registry is imported lazily (dynamic import) so that Prisma
+// and other heavy modules are only loaded when the first job runs.
+// ═══════════════════════════════════════════════════════════════════
+
+// ─── Worker Bootstrap ───
+
+log.info({ queueName: QUEUE_NAME, redisUrl: REDIS_URL.replace(/\/\/.*@/, '//***@') }, 'starting worker');
+
+// Swap the mailer to its transport when one is configured — the worker runs
+// the notification outbox and digests, which send email. (No SMTP transport
+// is installed yet; `initMailerFromEnv` says so. See src/lib/mailer.ts.)
+(async () => {
+    const { initMailerFromEnv } = await import('../src/lib/mailer');
+    initMailerFromEnv();
+    log.info('mailer initialised');
+})();
+
+// The Worker and its Redis connection are created inside bootstrap()
+// (below) so OTel is initialised before the first job runs. Declared at
+// module scope so the graceful-shutdown handler can close them.
+let connection: Redis | undefined;
+let worker: Worker | undefined;
+// The queue the `job.queue.depth` gauge reads. See bootstrap().
+let depthQueue: Queue | undefined;
+
+// ─── Boot-time schedule self-registration (inflect item 28) ───
+//
+// A running worker must ALWAYS imply the repeatable cron schedules
+// exist. inflect-compliance's deploy once relied solely on the one-shot
+// `scripts/scheduler.ts` running before the worker
+// (`node scheduler && node worker`); when that step was skipped or the
+// hand-managed compose drifted off it, the repeatable jobs were never
+// registered and the scheduled reminders silently never fired. `upsertJobScheduler` is idempotent, so
+// registering here on every boot is safe and removes that single
+// point of failure. Failure-soft: a registration error is logged but
+// must NOT stop the worker from coming up to drain already-enqueued
+// jobs (the standalone scheduler step is still the explicit path).
+//
+// Since inflect #2497 this also SWEEPS schedulers this app defines but no longer
+// schedules, so every worker boot is a reconciliation and not only an
+// upsert. The sweep never touches an id this codebase does not define, and
+// it fails open — it logs and leaves orphans in place rather than making
+// the registration below look like it failed. See
+// `src/app-layer/jobs/register-schedules.ts`.
+//
+// The registration opens its own Redis connection and must quit it.
+// `schedulerQueue.close()` does not: BullMQ treats an ioredis instance it is
+// handed as shared and leaves it open, so the connection otherwise stayed
+// open, idle, for the life of the worker.
+(async () => {
+    const schedulerConnection = createWorkerConnection();
+    const schedulerQueue = new Queue(QUEUE_NAME, { connection: schedulerConnection });
+    try {
+        const count = await registerSchedules(schedulerQueue, log);
+        log.info({ count }, 'repeatable schedules registered on worker boot');
+    } catch (err) {
+        log.error(
+            { err: err instanceof Error ? err.message : String(err) },
+            'failed to register repeatable schedules on boot — cron jobs may not fire until the scheduler step runs',
+        );
+    } finally {
+        await schedulerQueue.close().catch(() => {});
+        await schedulerConnection.quit().catch(() => {});
+    }
+})();
+
+// ═══════════════════════════════════════════════════════════════════
+// Worker bootstrap.
+//
+// OTel MUST be initialised before the Worker starts processing jobs so
+// the job-execution spans (and the usecase/repository spans nested
+// under them) export to Tempo. `initTelemetry()` is a fast no-op when
+// `OTEL_ENABLED` is unset, so dev/test pay nothing.
+// ═══════════════════════════════════════════════════════════════════
+async function bootstrap(): Promise<void> {
+    await initTelemetry();
+
+    // The DAU/MAU observable gauges (`startActiveUserGauges` in
+    // business-metrics.ts) are registered here once sub-phase 8.1 brings the
+    // `dau-mau-aggregator` job that feeds their snapshot; with no aggregator
+    // they would report zero, which reads as "no active users".
+
+    connection = createWorkerConnection();
+
+    // Queue depth (`job.queue.depth`, exported as `job_queue_depth_ratio`).
+    // This worker is the only long-running process that holds the queue,
+    // and QUEUE_NAME is the only queue it serves, so it is the one read.
+    //
+    // Here rather than earlier because the reader needs `connection`. Order
+    // against initTelemetry() no longer matters: a gauge registered first is
+    // moved onto the real meter provider when telemetry starts
+    // (observable-registry.ts). With OTEL_ENABLED unset the gauge is a no-op
+    // and its callback never runs, so nothing reads Redis.
+    //
+    // The Queue rides on `connection` rather than opening its own: BullMQ
+    // treats a passed ioredis instance as shared and leaves it open on
+    // close(), so the quit in shutdown() still owns it. The cost is one
+    // getJobCounts round trip per metric export (every 30s), each bounded
+    // by QUEUE_DEPTH_READ_TIMEOUT_MS.
+    const queueForDepth = new Queue(QUEUE_NAME, { connection });
+    // A Queue with no 'error' listener prints every connection error to
+    // stderr. The Worker's own 'error' handler below already reports Redis
+    // trouble, so the telemetry reader keeps quiet about it.
+    queueForDepth.on('error', (err) => {
+        log.debug({ err: err instanceof Error ? err.message : String(err) }, 'queue-depth reader: redis error');
+    });
+    depthQueue = queueForDepth;
+    startQueueDepthReporting(() => queueForDepth);
+
+    worker = new Worker(
+        QUEUE_NAME,
+        async (job: Job) => {
+            const jobName = job.name as JobName;
+
+            // Lazy-import the executor registry on first job
+            const { executorRegistry } = await import('../src/app-layer/jobs/executor-registry');
+
+            if (!executorRegistry.has(jobName)) {
+                log.warn({ jobName, jobId: job.id }, 'no executor registered for job — skipping');
+                return { skipped: true, reason: `no executor for "${jobName}"` };
+            }
+
+            // Extract the W3C trace carrier the web tier stashed at enqueue
+            // time and run the job inside a span that is a child of the
+            // originating HTTP-handler span. The carrier is stripped before
+            // the payload reaches the executor (and before it is logged).
+            return runJobInTraceContext(
+                readTraceCarrier(job.data),
+                `execute ${jobName}`,
+                {
+                    'job.name': jobName,
+                    'job.id': job.id ?? 'unknown',
+                    'job.attempts': job.attemptsMade,
+                    'messaging.system': 'bullmq',
+                    'messaging.destination.name': QUEUE_NAME,
+                    'messaging.operation': 'process',
+                    'messaging.message.id': job.id ?? 'unknown',
+                },
+                async () => {
+                    const startTime = performance.now();
+                    const payload = stripTraceCarrier(job.data as Record<string, unknown>);
+
+                    // NOT the whole payload (inflect #5635): logs ship off the
+                    // host, and a payload can carry email addresses and entity
+                    // titles. Flat, so pino's root-level redaction can see what
+                    // does go out.
+                    log.info(
+                        { jobName, jobId: job.id, ...jobPayloadLogFields(payload) },
+                        'processing job',
+                    );
+
+                    // GAP-22: forward the BullMQ Job's progress channel so
+                    // executors that report mid-run progress (sub-phase 1.5b's
+                    // tenant-dek-rotation) surface it via `GET .../?jobId=…`
+                    // without depending on bullmq from the executor side.
+                    const result = await executorRegistry.execute(jobName, payload, {
+                        updateProgress: (p) => job.updateProgress(p as object | number),
+                    });
+                    const durationMs = Math.round(performance.now() - startTime);
+
+                    if (!result.success) {
+                        log.error({
+                            jobName,
+                            jobId: job.id,
+                            attemptsMade: job.attemptsMade,
+                            durationMs,
+                            errorMessage: result.errorMessage,
+                        }, 'job processing failed');
+
+                        // Thrown inside the trace span so it is marked ERROR
+                        // and recorded, then re-thrown for BullMQ's retry.
+                        //
+                        // `noRetry` opts out of that retry. A revoked
+                        // credential and a rate limit both FAIL, but retrying
+                        // either in 5s is worse than not retrying: the first
+                        // delays every other tenant in the fan-out, the second
+                        // answers a throttle with three more full syncs.
+                        // UnrecoverableError makes BullMQ record the failure
+                        // and stop, leaving the next scheduled tick to retry.
+                        const message = result.errorMessage || `Job "${jobName}" failed`;
+                        throw result.noRetry ? new UnrecoverableError(message) : new Error(message);
+                    }
+
+                    log.info({
+                        jobName,
+                        jobId: job.id,
+                        attemptsMade: job.attemptsMade,
+                        durationMs,
+                        itemsScanned: result.itemsScanned,
+                        itemsActioned: result.itemsActioned,
+                    }, 'job processed successfully');
+
+                    return result;
+                },
+            );
+        },
+        {
+            connection,
+            concurrency: 5,
+            limiter: {
+                max: 50,
+                duration: 60000,
+            },
+        },
+    );
+
+    // ─── Worker Events ───
+
+    // The heartbeat, written from `completed` rather than a timer. A
+    // `setInterval` keeps firing through a severed Redis connection and would
+    // report a wedged worker as healthy — the precise gap #2745 is about,
+    // reintroduced one layer down. Reaching here means the worker pulled a job
+    // off the queue, ran it, and came back.
+    worker.on('completed', () => {
+        if (connection) void beat(connection);
+    });
+
+    worker.on('ready', () => {
+        log.info({
+            queueName: QUEUE_NAME,
+            note: 'Dispatch via executor-registry (lazy-loaded on first job)',
+        }, 'worker ready — listening for jobs');
+    });
+
+    worker.on('failed', (job, error) => {
+        log.error({
+            jobName: job?.name,
+            jobId: job?.id,
+            attemptsMade: job?.attemptsMade,
+            err: error instanceof Error ? { name: error.name, message: error.message } : String(error),
+        }, 'job failed (BullMQ event)');
+    });
+
+    worker.on('stalled', (jobId) => {
+        log.warn({ jobId }, 'job stalled — will be retried');
+    });
+
+    worker.on('error', (error) => {
+        log.error({
+            err: error instanceof Error ? { name: error.name, message: error.message } : String(error),
+        }, 'worker error');
+    });
+}
+
+void bootstrap().catch((err) => {
+    log.fatal({ err: err instanceof Error ? err.message : String(err) }, 'worker bootstrap failed');
+    process.exit(1);
+});
+
+// ─── Graceful Shutdown ───
+
+async function shutdown(signal: string) {
+    log.info({ signal }, 'shutdown signal received — closing worker');
+
+    try {
+        // The agent-run pause stage (inflect-compliance pauses its in-flight
+        // agentic runs here, BEFORE `worker.close()`) returns with sub-phase
+        // 6.1.
+        await worker?.close();
+        // Stop the queue-depth reads before the connection they use goes:
+        // shutdownTelemetry() below flushes metrics once more, and that
+        // flush runs the gauge's callback. Closing the reader's Queue leaves
+        // `connection` open (it is shared), so the quit below still owns it.
+        // A failure here is logged, never thrown — it must not cost the
+        // OTel drain.
+        stopQueueDepthReporting();
+        await depthQueue?.close().catch((err) => {
+            log.warn({ err: err instanceof Error ? err.message : String(err) }, 'shutdown: closing the queue-depth reader threw');
+        });
+        await connection?.quit();
+        // Drain this process's audit-stream buffers, as the web tier's
+        // shutdown handler does (src/lib/observability/shutdown.ts): a job's
+        // audit entries are buffered here too, and a buffer dropped at exit
+        // never reaches the SIEM. Bounded, and a failure never costs the OTel
+        // drain below.
+        const { flushAllAuditStreams } = await import('../src/app-layer/events/audit-stream');
+        await Promise.race([
+            flushAllAuditStreams().catch((err) => {
+                log.warn({ err: err instanceof Error ? err.message : String(err) }, 'shutdown: audit flush failed');
+            }),
+            new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_AUDIT_FLUSH_MS)),
+        ]);
+        // Drain in-flight OTel span batches before exit so the final
+        // jobs' execution spans reach Tempo (bounded + never throws).
+        await shutdownTelemetry().catch(() => { /* best-effort */ });
+        log.info('worker shut down gracefully');
+        process.exit(0);
+    } catch (error) {
+        log.error({ err: error }, 'error during shutdown');
+        process.exit(1);
+    }
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+log.info('worker process started — press Ctrl+C to stop');

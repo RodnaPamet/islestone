@@ -1,0 +1,196 @@
+/**
+ * Fan-out idempotency + failure isolation.
+ *
+ * The two defects compound, which is why they are fixed together: an
+ * un-isolated fan-out throws partway through, BullMQ retries the dispatcher,
+ * and without a deterministic id the retry re-queues everything that already
+ * succeeded in order to reach the connections it never got to.
+ *
+ * The assertions that matter most are about the BUCKET, because getting it
+ * wrong fails in the silent direction — an id that outlives its schedule
+ * interval makes the next legitimate run a no-op, and a sync that stops running
+ * looks exactly like a sync with nothing to do.
+ */
+import {
+    dispatchJobId,
+    fanOut,
+    DAILY_BUCKET_MS,
+    FOUR_HOURLY_BUCKET_MS,
+    HOUR_MS,
+} from '@/app-layer/jobs/fan-out';
+
+const T = (iso: string) => Date.parse(iso);
+
+/**
+ * BullMQ's ACTUAL rule, copied from node_modules/bullmq/dist/cjs/classes/job.js:
+ *
+ *     if (jobId.includes(':') && jobId.split(':').length !== 3) throw
+ *
+ * Asserted against the rule rather than against a paraphrase of it: the bug this
+ * covers existed precisely because everyone assumed "no colons", when the real
+ * constraint is "exactly three segments".
+ */
+const bullmqWouldReject = (jobId: string): boolean =>
+    jobId.includes(':') && jobId.split(':').length !== 3;
+
+describe('dispatchJobId — BullMQ will actually accept the id', () => {
+    it('a COMPOSITE key does not produce a fourth segment', async () => {
+        // The defect. `identity-leaver-dispatch` passed `${tenantId}:${provider}`,
+        // producing a four-segment id, so every enqueue threw
+        // `Custom Id cannot contain :` and the dispatch reported
+        // `dispatched: 0, failed: 1` — every night, from the day it was wired.
+        //
+        // Nothing looked wrong from outside: the schedule was registered, the
+        // worker was up, the 03:00 sync (a SINGLE key, three segments) ran fine,
+        // and a manual trigger passes no jobId at all — which is what the field
+        // walkthrough exercised, so it worked.
+        const id = dispatchJobId(
+            'identity-leaver-pass',
+            'cmo94mi360000fvnl1fv9ca9t:entra-id',
+            DAILY_BUCKET_MS,
+            T('2026-08-29T05:00:00Z'),
+        );
+
+        expect(bullmqWouldReject(id)).toBe(false);
+        // NO COLON AT ALL (#3557), which is strictly stronger than the
+        // three-segment form this used to assert. Three segments were valid
+        // only because BullMQ carves out three-segment ids for old repeatable
+        // jobs; its own TODO says the next breaking change rejects any colon,
+        // and an id with none survives that without a migration.
+        expect(id).not.toContain(':');
+        // Both halves of the key survive, so the id still discriminates one
+        // tenant's pass from another's.
+        expect(id).toContain('cmo94mi360000fvnl1fv9ca9t');
+        expect(id).toContain('entra-id');
+    });
+
+    it('two units under one tenant still get DIFFERENT ids', async () => {
+        // Normalising the separator must not collapse distinct units into one
+        // id — that would silently dedupe a second provider's pass away.
+        const a = dispatchJobId('p', 't1:entra-id', DAILY_BUCKET_MS, T('2026-08-29T05:00:00Z'));
+        const b = dispatchJobId('p', 't1:active-directory', DAILY_BUCKET_MS, T('2026-08-29T05:00:00Z'));
+        expect(a).not.toBe(b);
+    });
+
+    it('the single-key form is colon-free and still bucket-stable', async () => {
+        // This asserted `identity-sync:conn-1:<bucket>` and was named "the
+        // single-key form is UNCHANGED", because #2175 only had to stop the
+        // four-segment id. #3557 changed the separator for every form, so the
+        // name was no longer true and is corrected rather than left to mislead.
+        //
+        // What must NOT move is the bucket arithmetic — that is the dedupe
+        // behaviour, and it is pinned below exactly as before.
+        const at = T('2026-08-29T03:00:00Z');
+        const id = dispatchJobId('identity-sync', 'conn-1', DAILY_BUCKET_MS, at);
+        expect(id).toBe(`identity-sync-conn-1-${Math.floor(at / DAILY_BUCKET_MS)}`);
+        expect(id).not.toContain(':');
+        expect(bullmqWouldReject(id)).toBe(false);
+    });
+});
+
+describe('dispatchJobId', () => {
+    it('is stable within one bucket, so a dispatcher retry dedupes', async () => {
+        const a = dispatchJobId('identity-sync', 'conn-1', DAILY_BUCKET_MS, T('2026-08-17T03:00:00Z'));
+        const b = dispatchJobId('identity-sync', 'conn-1', DAILY_BUCKET_MS, T('2026-08-17T23:59:59Z'));
+        expect(a).toBe(b);
+    });
+
+    it('CHANGES at the next bucket, so tomorrow actually runs', async () => {
+        // The failure this prevents is not a duplicate — it is a sync that
+        // silently never runs again, because BullMQ dedupes against jobs still
+        // held in the completed set.
+        const today = dispatchJobId('identity-sync', 'conn-1', DAILY_BUCKET_MS, T('2026-08-17T23:59:59Z'));
+        const tomorrow = dispatchJobId('identity-sync', 'conn-1', DAILY_BUCKET_MS, T('2026-08-18T00:00:00Z'));
+        expect(tomorrow).not.toBe(today);
+    });
+
+    it('rolls the daily bucket at UTC midnight, matching the cron', () => {
+        const before = dispatchJobId('j', 'k', DAILY_BUCKET_MS, T('2026-08-17T23:59:59.999Z'));
+        const after = dispatchJobId('j', 'k', DAILY_BUCKET_MS, T('2026-08-18T00:00:00.000Z'));
+        expect(before).not.toBe(after);
+    });
+
+    it('rolls the 4-hourly bucket on the 4-hour marks', () => {
+        // `0 */4 * * *` fires at 00/04/08/12/16/20 UTC. The bucket must roll on
+        // those same boundaries or a run lands in the previous slot's id.
+        const slot1 = dispatchJobId('sp', 'c', FOUR_HOURLY_BUCKET_MS, T('2026-08-17T03:59:59Z'));
+        const slot2 = dispatchJobId('sp', 'c', FOUR_HOURLY_BUCKET_MS, T('2026-08-17T04:00:00Z'));
+        const slot2b = dispatchJobId('sp', 'c', FOUR_HOURLY_BUCKET_MS, T('2026-08-17T07:59:59Z'));
+        expect(slot1).not.toBe(slot2);
+        expect(slot2).toBe(slot2b);
+    });
+
+    it('a 4-hourly job under a DAILY bucket would collapse six runs into one', () => {
+        // Written as a live demonstration rather than prose, because this is the
+        // exact mistake the SharePoint dispatcher invites.
+        const runs = ['00', '04', '08', '12', '16', '20'].map((h) =>
+            dispatchJobId('sp', 'c', DAILY_BUCKET_MS, T(`2026-08-17T${h}:00:00Z`)),
+        );
+        expect(new Set(runs).size).toBe(1); // ← five silent no-ops
+
+        const correct = ['00', '04', '08', '12', '16', '20'].map((h) =>
+            dispatchJobId('sp', 'c', FOUR_HOURLY_BUCKET_MS, T(`2026-08-17T${h}:00:00Z`)),
+        );
+        expect(new Set(correct).size).toBe(6);
+    });
+
+    it('separates jobs and keys', () => {
+        const now = T('2026-08-17T03:00:00Z');
+        expect(dispatchJobId('a', 'k', DAILY_BUCKET_MS, now)).not.toBe(
+            dispatchJobId('b', 'k', DAILY_BUCKET_MS, now),
+        );
+        expect(dispatchJobId('a', 'k1', DAILY_BUCKET_MS, now)).not.toBe(
+            dispatchJobId('a', 'k2', DAILY_BUCKET_MS, now),
+        );
+    });
+
+    it('rejects a nonsense bucket instead of producing a degenerate id', () => {
+        // Math.floor(now / 0) is Infinity — every call would collide, which is
+        // the "never runs again" failure with no visible cause.
+        expect(() => dispatchJobId('a', 'k', 0)).toThrow(/positive/);
+        expect(() => dispatchJobId('a', 'k', -HOUR_MS)).toThrow(/positive/);
+        expect(() => dispatchJobId('a', 'k', NaN)).toThrow(/positive/);
+    });
+});
+
+describe('fanOut', () => {
+    const describeItem = (i: { id: string }) => ({ connectionId: i.id });
+    const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+    it('keeps going after a failure instead of dropping the rest', async () => {
+        // The old loop aborted here, so every connection after the bad one was
+        // silently never dispatched — and the completion log still read clean.
+        const seen: string[] = [];
+        const r = await fanOut(items, 'test', describeItem, async (i) => {
+            seen.push(i.id);
+            if (i.id === 'a') throw new Error('redis unreachable');
+        });
+
+        expect(seen).toEqual(['a', 'b', 'c']);
+        expect(r).toEqual({ dispatched: 2, failed: 1 });
+    });
+
+    it('counts a clean run', async () => {
+        const r = await fanOut(items, 'test', describeItem, async () => undefined);
+        expect(r).toEqual({ dispatched: 3, failed: 0 });
+    });
+
+    it('reports total failure distinguishably from an empty run', async () => {
+        // The caller fails the job on (failed > 0 && dispatched === 0); an empty
+        // input is a legitimately clean no-op and must not look the same.
+        const allFailed = await fanOut(items, 'test', describeItem, async () => {
+            throw new Error('down');
+        });
+        expect(allFailed).toEqual({ dispatched: 0, failed: 3 });
+
+        const empty = await fanOut([], 'test', describeItem, async () => undefined);
+        expect(empty).toEqual({ dispatched: 0, failed: 0 });
+    });
+
+    it('survives a non-Error throw', async () => {
+        const r = await fanOut([{ id: 'a' }], 'test', describeItem, async () => {
+            throw 'a string';
+        });
+        expect(r).toEqual({ dispatched: 0, failed: 1 });
+    });
+});
