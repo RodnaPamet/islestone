@@ -2,11 +2,10 @@
  * CSP (Content Security Policy) — nonce generation and header builder.
  *
  * Copied from inflect-compliance `src/lib/security/csp.ts` at
- * 5528464fc54a8681956f3b9ce23ca9c075f0420e (sub-phase 1.5). Not taken yet:
- * the violation-report sink (`/api/security/csp-report`,
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e (sub-phase 1.5). Sub-phase 1.6
+ * brought the violation-report sink (`/api/security/csp-report`,
  * `csp-violations.ts`) and the `report-uri`/`report-to` directives that point
- * at it. Until it lands a violation shows in the browser's console only, so
- * report-only mode is for observing a change locally.
+ * at it (owner decision, 2026-11-19).
  *
  * Architecture:
  *   middleware.ts → generateNonce() → buildCspHeader(nonce)
@@ -20,7 +19,8 @@
  *
  * Rollout strategy:
  *   1. Set CSP_REPORT_ONLY=1 → Content-Security-Policy-Report-Only (observe)
- *   2. Watch the browser console for violations
+ *   2. Monitor /api/security/csp-report for violations (the operator GET,
+ *      behind PLATFORM_ADMIN_API_KEY)
  *   3. Unset CSP_REPORT_ONLY → Content-Security-Policy (enforce, the default)
  *
  * unsafe-inline status:
@@ -75,8 +75,30 @@ export interface CspDirectives {
     'form-action': string[];
     'worker-src'?: string[];
     'manifest-src'?: string[];
+    'report-uri'?: string[];
+    'report-to'?: string[];
     'upgrade-insecure-requests'?: true;
 }
+
+/**
+ * CSP report endpoint path within the app.
+ */
+export const CSP_REPORT_PATH = '/api/security/csp-report';
+
+/**
+ * inflect-compliance's pre-hardening report path, kept as an alias of
+ * `CSP_REPORT_PATH` (`src/app/api/csp-report/route.ts`). Islestone's policy
+ * never named it; it is ported with the sink (owner decision, 2026-11-19), and
+ * the edge treats the two paths as one surface (the GET rate limit in
+ * `src/middleware.ts`).
+ */
+export const LEGACY_CSP_REPORT_PATH = '/api/csp-report';
+
+/**
+ * The Reporting API group name the `report-to` directive and the
+ * `Report-To` / `Reporting-Endpoints` response headers share.
+ */
+export const CSP_REPORT_GROUP = 'csp-endpoint';
 
 /**
  * Request header name used to pass the nonce from middleware → server components.
@@ -158,6 +180,9 @@ export function buildCspHeader(nonce: string, isDev = false): string {
         'worker-src': ["'self'", 'blob:'],
         // PWA manifest
         'manifest-src': ["'self'"],
+        // Violation reporting — both legacy and modern endpoints
+        'report-uri': [CSP_REPORT_PATH],
+        'report-to': [CSP_REPORT_GROUP],
     };
 
     // Only add upgrade-insecure-requests in production

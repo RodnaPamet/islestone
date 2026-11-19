@@ -77,6 +77,10 @@ model Tenant {
   auditLogs        AuditLog[]
   auditOutbox      AuditOutbox[]
 
+  notifications        Notification[]
+  notificationOutbox   NotificationOutbox[]
+  notificationSettings TenantNotificationSettings?
+
   @@index([organizationId])
 }
 
@@ -163,4 +167,6 @@ model User {
   auditLogs           AuditLog[]
   orgAuditLogActions  OrgAuditLog[] @relation("OrgAuditLogActor")
   orgAuditLogSubjects OrgAuditLog[] @relation("OrgAuditLogSubject")
+
+  notifications Notification[]
 }

@@ -21,8 +21,11 @@ const nextConfig: NextConfig = {
     // runs in a worker thread, which bundling breaks; keep these three out of
     // the server bundle and load them from node_modules. The OpenTelemetry
     // API keeps its global registry in one module instance, so it stays
-    // external too (sub-phase 1.6 registers the SDK against it).
-    serverExternalPackages: ['pino', 'pino-pretty', 'thread-stream', '@opentelemetry/api'],
+    // external too (sub-phase 1.6 registers the SDK against it). The Sentry
+    // SDK and nodemailer are loaded by Node, as inflect-compliance does
+    // (sub-phase 1.6): Sentry instruments Node itself, and nodemailer reads
+    // optional modules at run time.
+    serverExternalPackages: ['pino', 'pino-pretty', 'thread-stream', '@opentelemetry/api', '@sentry/nextjs', '@sentry/node', 'nodemailer'],
     async headers() {
         return [{ source: '/:path*', headers: securityHeaders({ production: env.NODE_ENV === 'production' }) }];
     },

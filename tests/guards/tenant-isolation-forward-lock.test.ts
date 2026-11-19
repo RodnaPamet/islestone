@@ -34,6 +34,9 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     TenantCustomRole: 'tests/integration/auth-tables-isolation.test.ts',
     AuditLog: 'tests/integration/audit-tables-isolation.test.ts',
     AuditOutbox: 'tests/integration/audit-tables-isolation.test.ts',
+    Notification: 'tests/integration/notification-tables-isolation.test.ts',
+    NotificationOutbox: 'tests/integration/notification-tables-isolation.test.ts',
+    TenantNotificationSettings: 'tests/integration/notification-tables-isolation.test.ts',
 };
 
 /** Models proven only structurally, pending a two-tenant test. Empty, and should stay so. */

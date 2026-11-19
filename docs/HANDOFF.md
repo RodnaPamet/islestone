@@ -41,6 +41,10 @@ porting maps now record them (next step 2); the last column says where.
 | 28 | `src/instrumentation.ts` may read `process.env.NEXT_RUNTIME` and nothing else raw: the Node-only startup checks move to `src/instrumentation-node.ts`, imported behind that literal, so the Edge bundle drops them. Decided 2026-11-19. | "One named exception" | `tests/guards/no-raw-process-env.test.ts`; CLAUDE.md "Rules that apply now" |
 | 29 | `RATE_LIMIT_MODE` defaults to `upstash`, and production refuses to start without both Upstash values (issue #17); per-process limits are an explicit `RATE_LIMIT_MODE=memory`. The 1.5 map's "default to memory" is not taken. Decided 2026-11-19. | "Upstash + refuse" | `src/env.ts`; `docs/rate-limiting.md` |
 | 30 | The CSP violation-report sink comes back with observability in 1.6; until then the policy names no report endpoint. Decided 2026-11-19. | "With 1.6" | `docs/porting/maps/1.6.md`; `docs/security-perimeter.md` |
+| 31 | MIT-0 joins the licence allowlist, so `nodemailer` (10.3.1) and the mailer's SMTP transport are ported; the `next-auth` → `nodemailer` override is kept, with a guard against next-auth's email provider (ADR 0004 open question 7). Decided 2026-11-19; the owner gave the approval to the coordinator directly. Applied. | "Allow MIT-0"; "Add the override" | ADR 0007 E8; ADR 0004 question 7; `scripts/licence-gate.mjs`; `src/lib/mailer.ts` |
+| 32 | FSL-1.1-Apache-2.0 joins the licence allowlist (source-available, Apache-2.0 after two years), accepted for the Sentry SDK; `@sentry/nextjs` 11.11.0 is installed and the real `sentry.ts` ported, off unless `SENTRY_DSN` is set. Decided 2026-11-19, approved as row 31. Applied. | "Allow FSL for Sentry" | ADR 0007 E9; `scripts/licence-gate.mjs`; `src/lib/observability/sentry.ts` |
+| 33 | ADR 0006 gains decided rows for `Notification.body` (a notification's text, replacing the banned "Message") and `TenantNotificationSettings.bccMailbox` (a workspace's copy-to address). Decided 2026-11-19, relayed. | relayed | ADR 0006 "Notification column names — decided" |
+| 34 | The mailer's log lines never carry a recipient's address: they log `hashForLookup` of each address and the template name. Decided 2026-11-19, relayed. | relayed | `src/lib/mailer.ts` (`recipientLogFields`); `tests/unit/mailer.test.ts` |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
@@ -266,3 +270,33 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    `next build` no longer warns; `upstash` stays the default with the production refusal;
    the CSP violation-report sink is ported in 1.6. The 1.4 integration suites now read
    real audit rows and the recorder is gone (issue #18). 1.5b is issue #19. 1.6 is next.
+   **1.6 (jobs, notifications and observability) has landed** on branch `wt/p16`, by
+   `docs/porting/maps/1.6.md` (`PROVENANCE.md`, "Copied: jobs, notifications and
+   observability"):
+   - The BullMQ queue (`islestone-jobs`), the executor registry with two jobs
+     (`health-check` every 2 minutes, `notification-outbox-flush` every 10), the worker,
+     scheduler and healthcheck scripts and their esbuild bundle (`npm run build:worker`),
+     `NonRetryableJobError`, the heartbeat, and the per-workspace system user
+     (`sys_<tenantId>`, refused by CHECKs as a sign-in, membership or session). Production
+     refuses to start without an authenticated `REDIS_URL`; Redis runs `noeviction`.
+     `docs/jobs.md`.
+   - Notifications: `Notification`, `NotificationOutbox` and `TenantNotificationSettings`
+     (RLS, two-workspace test; no DELETE for `app_user` on the last two), the outbox with
+     its claim-before-send lease, the due-digest dispatcher, the two bell writers with
+     in-app mutes, the bell routes and SSE stream, the settings routes and a workspace
+     drain. Mail goes through SMTP when `SMTP_HOST` is set, else to the console sink.
+     `docs/notifications.md`.
+   - Observability: the OpenTelemetry SDK (off unless `OTEL_ENABLED=true`), the metrics
+     and fifteen business KPIs, job trace propagation, web vitals, shutdown handlers with
+     the audit-stream flush, the `observable-gauge-rebinds` lint rule, and Sentry
+     (server-side, off unless `SENTRY_DSN` is set). `docs/observability.md`.
+   - The CSP violation sink (`/api/security/csp-report`, the legacy `/api/csp-report`
+     delegating in-process), `report-uri` and `report-to` in the policy, and the three
+     beacons as `MACHINE_CALLER_PREFIXES` (row 30).
+   - CI: a Redis service in Integration and E2E, and the worker bundle in Build.
+   Owner decisions 31 to 34 (2026-11-19) are applied: MIT-0 and FSL-1.1-Apache-2.0 on the
+   licence allowlist (ADR 0007 E8, E9), the SMTP transport and the Sentry SDK, the
+   `next-auth` override (ADR 0004 question 7), the column names in ADR 0006, and a
+   mailer that logs only address hashes. Open: whether to initialise Sentry in the
+   browser (the source never did; it would be a new data flow for the sub-processor
+   register). 1.5b (issue #19) can now use the queue; 1.7 is next.

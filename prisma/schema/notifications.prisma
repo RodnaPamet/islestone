@@ -1,0 +1,105 @@
+// ─────────────────────────────────────────────────────────────────
+//  Notifications (sub-phase 1.6, docs/notifications.md)
+//
+//  Copied from inflect-compliance `prisma/schema/automation.prisma` at
+//  5528464fc54a8681956f3b9ce23ca9c075f0420e (`Notification`,
+//  `NotificationOutbox`, `TenantNotificationSettings`). Changes: the
+//  workspace and user relations cascade; the bell index carries `createdAt`;
+//  the outbox recipient is encrypted in place (no `toEmailEncrypted`
+//  sibling); the BCC column is `bccMailbox` (was `complianceMailbox`) and the
+//  bell's text is `body` (was `message`, a word ADR 0006 bans here);
+//  `defaultFromName` defaults to "Islestone". `ReminderHistory` is not
+//  ported (compliance evidence), and `UserNotificationPreference` waits for
+//  sub-phase 2.7. Row-level security, grants and the system-user CHECKs are
+//  in migration `20261119150000_notifications_and_system_user`.
+// ─────────────────────────────────────────────────────────────────
+
+/// An in-app notification: one row per recipient, shown by the bell and
+/// pushed over the workspace's SSE stream. Per-USER within a workspace: RLS
+/// scopes it to the workspace, and `NotificationRepository` adds the user
+/// predicate (tests/integration/notification-per-user-scope.test.ts).
+model Notification {
+  id        String           @id @default(cuid())
+  tenantId  String
+  userId    String
+  type      NotificationType @default(GENERAL)
+  /// Stored English at emit time (the bell cannot translate a stored row;
+  /// sub-phase 2.7 decides whether to store keys instead).
+  title     String
+  /// The notification's text (inflect-compliance's `message`; ADR 0006 bans
+  /// "Message" as a name for a Notification).
+  body      String
+  read      Boolean          @default(false)
+  linkUrl   String?
+  /// Optional idempotency key for job-generated notifications. Mirrors
+  /// `NotificationOutbox.dedupeKey` — a unique key shaped
+  /// `{tenantId}:{type}:{entityId}:{userId}:{YYYY-MM-DD}` so a job that
+  /// re-runs (retry, redeploy) within the same UTC day trips the unique index
+  /// instead of creating a duplicate. NULL for interactive writers.
+  dedupeKey String?          @unique
+  createdAt DateTime         @default(now())
+  /// Cascades: a workspace purge (8.3) and a person's erasure take the bell
+  /// rows with them.
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// `listMine` orders by `createdAt desc` within one user's rows.
+  @@index([tenantId, userId, createdAt])
+}
+
+/// One outbound email, written in the transaction of the event that caused
+/// it and sent later by `processOutbox` (claim before send).
+model NotificationOutbox {
+  id        String                @id @default(cuid())
+  tenantId  String
+  type      EmailNotificationType
+  /// The recipient address, ENCRYPTED at rest in place by the PII extension
+  /// (src/lib/security/pii-middleware.ts), like `User.email`.
+  toEmail   String
+  subject   String
+  bodyText  String
+  bodyHtml  String?
+  status    EmailOutboxStatus     @default(PENDING)
+  /// The claim's optimistic-concurrency token as well as the retry count.
+  attempts  Int                   @default(0)
+  lastError String?
+  sendAfter DateTime              @default(now())
+  createdAt DateTime              @default(now())
+  sentAt    DateTime?
+  /// Hashed recipient, never the raw address (`buildDedupeKey`).
+  dedupeKey String                @unique
+  tenant    Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([status, sendAfter])
+  @@index([tenantId])
+}
+
+/// A workspace's notification preferences: whether email is sent at all, the
+/// sender, the BCC copy, and the in-app types it has muted.
+model TenantNotificationSettings {
+  id               String             @id @default(cuid())
+  tenantId         String             @unique
+  /// Governs EMAIL only; the bell has `mutedInAppTypes`.
+  enabled          Boolean            @default(true)
+  defaultFromName  String             @default("Islestone")
+  /// No @default, deliberately. This column is the `From` header processOutbox
+  /// puts on every message for the workspace, so its value is a DEPLOYMENT
+  /// fact and the application is the only thing that may decide it:
+  /// `defaults()` in app-layer/notifications/settings.ts resolves it from
+  /// SMTP_FROM via lib/email/sender-identity. Requiring the caller to supply
+  /// it means an omission fails loudly instead of sending from a domain
+  /// nobody verified. `defaultFromName` keeps its default because a product
+  /// name is not a deployment fact and cannot be rejected by a relay.
+  defaultFromEmail String
+  /// The workspace's BCC copy of every message (inflect-compliance's
+  /// `complianceMailbox`).
+  bccMailbox       String?
+  /// IN-APP (bell + SSE) mutes. A MUTE list rather than an enable list,
+  /// because an absent member must mean "notify": adding a `NotificationType`
+  /// never silently suppresses it for a workspace that saved its preferences
+  /// before the member existed.
+  mutedInAppTypes  NotificationType[] @default([])
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  tenant           Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}

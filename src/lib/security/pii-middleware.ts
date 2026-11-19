@@ -110,7 +110,7 @@ interface PiiFieldSpec {
  * by design, which is why `User` and `Account` need the global sweep.
  */
 export const PII_ENCRYPTED_COLUMNS: Record<string, readonly string[]> = {};
-export const PII_TENANT_SCOPED_MODELS: readonly string[] = [];
+export const PII_TENANT_SCOPED_MODELS: readonly string[] = ['NotificationOutbox'];
 export const PII_GLOBAL_MODELS: readonly string[] = ['User', 'Account'];
 
 const PII_FIELD_MAP: Record<string, PiiFieldSpec[]> = {
@@ -129,8 +129,15 @@ const PII_FIELD_MAP: Record<string, PiiFieldSpec[]> = {
         { plain: 'access_token', encrypted: 'accessTokenEncrypted', mapped: false },
         { plain: 'refresh_token', encrypted: 'refreshTokenEncrypted', mapped: false },
     ],
-    // 1.6's `NotificationOutbox` recipient and 8.3's `UserIdentityLink` join
-    // here, each with its rotation-list entry.
+    // The outbox recipient (sub-phase 1.6). Encrypted in place, like
+    // `User.email` (inflect-compliance dual-writes a `toEmailEncrypted`
+    // sibling; ADR 0006 rule 3 and a new table make the sibling unnecessary).
+    // No lookup hash: the outbox is read by status and tenant, never by
+    // address, and its `dedupeKey` carries `hashForLookup` of the address.
+    NotificationOutbox: [
+        { plain: 'toEmail', encrypted: 'toEmail', mapped: true },
+    ],
+    // 8.3's `UserIdentityLink` joins here, with its rotation-list entry.
 };
 
 // Populated from the map above, so the two cannot disagree.

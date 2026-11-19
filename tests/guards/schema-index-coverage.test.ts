@@ -78,6 +78,12 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         '@@index([tenantId]) narrows to one workspace, whose invites are few.',
     TenantCustomRole:
         "A workspace's custom roles, filtered by tenantId and isActive: @@index([tenantId, isActive]).",
+    // Sub-phase 1.6.
+    Notification:
+        "The bell: one user's rows in one workspace, newest first, capped at 50: @@index([tenantId, userId, createdAt]).",
+    NotificationOutbox:
+        'The drain reads PENDING rows due now (@@index([status, sendAfter])), narrowed to one workspace ' +
+        'by @@index([tenantId]) for the manual drain; capped by the pass limit.',
 };
 
 const isTenantModel = (m: SchemaModel) => m.scalarFieldNames.includes('tenantId');
@@ -144,7 +150,7 @@ describe('schema-index-coverage — parser sanity', () => {
     it('parses the tenancy models, their indexes and their relation FK groups', () => {
         const membership = MODELS.find((m) => m.name === 'TenantMembership');
         expect(MODELS.map((m) => m.name).sort()).toEqual([
-            'Account', 'AuditLog', 'AuditOutbox', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken',
+            'Account', 'AuditLog', 'AuditOutbox', 'Notification', 'NotificationOutbox', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken',
         ]);
         expect(membership?.fieldIdName).toBe('id');
         expect(membership?.blockIndexes).toContainEqual(['tenantId', 'status']);

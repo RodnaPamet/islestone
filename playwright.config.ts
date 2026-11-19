@@ -99,6 +99,11 @@ export default defineConfig({
             // In-memory counters, said explicitly: production refuses the
             // Upstash default without Upstash credentials (issue #17).
             RATE_LIMIT_MODE: 'memory',
+            // Sub-phase 1.6: a production start refuses to run without an
+            // authenticated REDIS_URL (src/env.ts and src/instrumentation-node.ts),
+            // and checks its eviction policy at boot. The local compose Redis
+            // by default; CI's E2E job runs a Redis service with this password.
+            REDIS_URL: process.env.REDIS_URL ?? 'redis://:islestone_dev@127.0.0.1:6379', // pragma: allowlist secret
             NEXT_TELEMETRY_DISABLED: '1',
         },
     },

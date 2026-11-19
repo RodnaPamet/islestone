@@ -1,12 +1,63 @@
 /**
- * Observability barrel — SUB-PHASE 1.4 STUB at the final module path.
+ * Observability — barrel export.
  *
- * Sub-phase 1.6 brings inflect-compliance's full barrel (tracing, metrics,
- * Sentry) and replaces this file. Until then it re-exports the logger and
- * the request context that 1.3 pulled forward, which is all the 1.4 code
- * imports from it (docs/porting/maps/1.4.md, "Import closure", 1.6 rows).
- * Tests that `jest.mock('@/lib/observability')` need the path to exist.
+ * Public API:
+ *   Context:  runWithRequestContext, getRequestContext, getRequestId, mergeRequestContext
+ *   Logger:   logger, log, extractErrorMeta, createChildLogger, pinoInstance
+ *   Tracing:  getTracer, traceUsecase, traceOperation, traceRepository
+ *   Metrics:  recordRequestMetrics, recordRequestError
+ *   Sentry:   initSentry, captureError, setSentryContext
+ *   Bootstrap: initTelemetry, isTelemetryInitialized
  */
-export { logger, log, createChildLogger, extractErrorMeta } from './logger';
+
+export {
+    runWithRequestContext,
+    getRequestContext,
+    getRequestId,
+    mergeRequestContext,
+} from './context';
+export type { RequestContextData } from './context';
+
+export {
+    logger,
+    log,
+    extractErrorMeta,
+    createChildLogger,
+    pinoInstance,
+} from './logger';
 export type { LogLevel, LogFields } from './logger';
-export * from './context';
+
+export {
+    getTracer,
+    traceUsecase,
+    traceOperation,
+} from './tracing';
+
+export {
+    traceRepository,
+    detectResultCount,
+} from './repository-tracing';
+
+export {
+    recordRequestMetrics,
+    recordRequestError,
+    recordJobMetrics,
+    startQueueDepthReporting,
+    stopQueueDepthReporting,
+    normalizeRoute,
+} from './metrics';
+
+export {
+    initSentry,
+    captureError,
+    setSentryContext,
+} from './sentry';
+
+export {
+    initTelemetry,
+    isTelemetryInitialized,
+} from './instrumentation';
+
+export {
+    runJob,
+} from './job-runner';

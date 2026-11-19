@@ -1,0 +1,681 @@
+/**
+ * What the metrics module actually EMITS.
+ *
+ * The existing `observability-metrics.test.ts` runs against the OTel noop
+ * meter, so every assertion in it is `not.toThrow()`. That executes the code
+ * but cannot see a wrong decision: swap the success and failure counters in
+ * `recordAuditStreamDelivery`, put `tenantId` on a metric label, or observe a
+ * BullMQ state the cardinality rules exclude, and every one of those tests
+ * still passes.
+ *
+ * This file installs a RECORDING meter in place of the noop one, so the
+ * assertions can be about the instrument each call reaches, the value, and the
+ * exact label set. It also drives the two observable gauges' scrape callbacks,
+ * which the noop meter never invokes at all — that is where the
+ * reportable-state filter and both swallow-everything catch blocks live.
+ *
+ * Copied from inflect-compliance at 5528464fc54a8681956f3b9ce23ca9c075f0420e,
+ * without the Entra, AI risk and AI decision-log sections (their recorders are
+ * not ported), with the two job-queue counters added and the queue renamed.
+ */
+
+interface Emission {
+    instrument: string;
+    value: number;
+    attrs: Record<string, unknown> | undefined;
+}
+
+const adds: Emission[] = [];
+const records: Emission[] = [];
+type ObserveResult = { observe: (value: number, attrs?: Record<string, unknown>) => void };
+type GaugeCallback = (result: ObserveResult) => void | Promise<void>;
+const gaugeCallbacks = new Map<string, GaugeCallback>();
+/**
+ * One entry per instrument CONSTRUCTION. `adds`/`records` are keyed by
+ * instrument name, so a module that rebuilt its counter on every call would be
+ * indistinguishable there — this is the only place that difference is visible.
+ * Deliberately NOT cleared per test: the lazy getters cache at module scope,
+ * so the invariant is one construction for the whole file.
+ */
+const instrumentCreations: string[] = [];
+
+jest.mock('@opentelemetry/api', () => ({
+    metrics: {
+        // The observable registry asks which provider a gauge bound to.
+        getMeterProvider() {
+            return this;
+        },
+        getMeter: () => ({
+            createCounter: (name: string) => (instrumentCreations.push(name), {
+                add: (value: number, attrs?: Record<string, unknown>) => {
+                    adds.push({ instrument: name, value, attrs });
+                },
+            }),
+            createHistogram: (name: string) => (instrumentCreations.push(name), {
+                record: (value: number, attrs?: Record<string, unknown>) => {
+                    records.push({ instrument: name, value, attrs });
+                },
+            }),
+            createObservableGauge: (name: string) => ({
+                addCallback: (cb: GaugeCallback) => {
+                    gaugeCallbacks.set(name, cb);
+                },
+            }),
+        }),
+    },
+}));
+
+import {
+    recordAggregationCacheHit,
+    recordAggregationCacheMiss,
+    recordSsrCacheHit,
+    recordSsrCacheMiss,
+    recordRequestMetrics,
+    recordRequestError,
+    recordJobMetrics,
+    recordAuditStreamDelivery,
+    recordAuditStreamBufferOverflow,
+    recordFieldDecryptFailure,
+    recordTenantContextMismatch,
+    recordSessionPolicyResolution,
+    recordVerificationEmailDelivery,
+    recordSlowQuery,
+    recordQueueRetryBypass,
+    recordDispatchEnqueueFailed,
+    startQueueDepthReporting,
+    startAuditStreamBufferReporting,
+    stopQueueDepthReporting,
+    QUEUE_DEPTH_READ_TIMEOUT_MS,
+    _resetQueueDepthForTesting,
+    _resetAuditStreamBufferGaugeForTesting,
+} from '@/lib/observability/metrics';
+
+/** Every counter `add` that landed on `instrument`. */
+function addsTo(instrument: string): Emission[] {
+    return adds.filter((e) => e.instrument === instrument);
+}
+
+/** Every histogram `record` that landed on `instrument`. */
+function recordsTo(instrument: string): Emission[] {
+    return records.filter((e) => e.instrument === instrument);
+}
+
+beforeEach(() => {
+    adds.length = 0;
+    records.length = 0;
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// Request / job / audit-stream — which instrument, which labels
+// ══════════════════════════════════════════════════════════════════════
+
+describe('recordRequestMetrics', () => {
+    it('labels count and duration with the NORMALISED route, never the raw one', () => {
+        recordRequestMetrics({
+            method: 'GET',
+            route: '/api/t/acme/work-items/550e8400-e29b-41d4-a716-446655440000',
+            status: 200,
+            durationMs: 12,
+        });
+
+        const expected = {
+            'http.method': 'GET',
+            'http.route': '/api/t/:tenantSlug/work-items/:id',
+            'http.status_code': 200,
+        };
+        expect(addsTo('api.request.count')).toEqual([
+            { instrument: 'api.request.count', value: 1, attrs: expected },
+        ]);
+        expect(recordsTo('api.request.duration')).toEqual([
+            { instrument: 'api.request.duration', value: 12, attrs: expected },
+        ]);
+    });
+});
+
+describe('recordRequestError', () => {
+    it('emits one error count carrying the error code and the normalised route', () => {
+        recordRequestError({
+            method: 'DELETE',
+            route: '/t/acme-corp/projects',
+            errorCode: 'NOT_FOUND',
+        });
+
+        expect(addsTo('api.request.errors')).toEqual([
+            {
+                instrument: 'api.request.errors',
+                value: 1,
+                attrs: {
+                    'http.method': 'DELETE',
+                    'http.route': '/t/:tenantSlug/projects',
+                    'error.code': 'NOT_FOUND',
+                },
+            },
+        ]);
+    });
+});
+
+describe('recordJobMetrics', () => {
+    it('maps the success boolean onto the job.status label, both ways', () => {
+        recordJobMetrics({ jobName: 'key-rotation', success: true, durationMs: 100 });
+        recordJobMetrics({ jobName: 'key-rotation', success: false, durationMs: 200 });
+
+        expect(addsTo('job.execution.count').map((e) => e.attrs)).toEqual([
+            { 'job.name': 'key-rotation', 'job.status': 'success' },
+            { 'job.name': 'key-rotation', 'job.status': 'failure' },
+        ]);
+        expect(recordsTo('job.execution.duration').map((e) => e.value)).toEqual([100, 200]);
+    });
+});
+
+describe('job-queue counters (moved from integration-metrics)', () => {
+    it('counts a retry bypass on job.queue.retry_bypassed with the job and the reason', () => {
+        recordQueueRetryBypass({ jobName: 'notification-outbox-flush', reason: 'terminal' });
+        recordQueueRetryBypass({ jobName: 'health-check', reason: 'rate_limited' });
+
+        expect(addsTo('job.queue.retry_bypassed')).toEqual([
+            { instrument: 'job.queue.retry_bypassed', value: 1, attrs: { job_name: 'notification-outbox-flush', reason: 'terminal' } },
+            { instrument: 'job.queue.retry_bypassed', value: 1, attrs: { job_name: 'health-check', reason: 'rate_limited' } },
+        ]);
+    });
+
+    it('counts a skipped fan-out enqueue on job.fanout.enqueue_failed, labelled by component only', () => {
+        recordDispatchEnqueueFailed({ component: 'example-dispatch' });
+
+        expect(addsTo('job.fanout.enqueue_failed')).toEqual([
+            { instrument: 'job.fanout.enqueue_failed', value: 1, attrs: { component: 'example-dispatch' } },
+        ]);
+    });
+});
+
+describe('recordAuditStreamDelivery', () => {
+    it('counts a success on the success instrument only, labelled by status', () => {
+        recordAuditStreamDelivery({ outcome: 'success', status: 200, attempts: 1, durationMs: 50 });
+
+        expect(addsTo('audit_stream.delivery.success')).toEqual([
+            {
+                instrument: 'audit_stream.delivery.success',
+                value: 1,
+                attrs: { 'http.status_code': 200 },
+            },
+        ]);
+        expect(addsTo('audit_stream.delivery.failures')).toHaveLength(0);
+    });
+
+    it('counts a failure on the failures instrument only', () => {
+        recordAuditStreamDelivery({ outcome: 'failure', status: 0, attempts: 3, durationMs: 5_000 });
+
+        expect(addsTo('audit_stream.delivery.failures')).toEqual([
+            {
+                instrument: 'audit_stream.delivery.failures',
+                value: 1,
+                attrs: { 'http.status_code': 0 },
+            },
+        ]);
+        expect(addsTo('audit_stream.delivery.success')).toHaveLength(0);
+    });
+
+    it('records attempts and duration once per batch, labelled by outcome not status', () => {
+        // The retry-pressure histogram is what tells an operator the SIEM is
+        // flaky; labelling it by status instead of outcome would split the
+        // series across every HTTP code the downstream returns.
+        recordAuditStreamDelivery({ outcome: 'failure', status: 503, attempts: 3, durationMs: 4_200 });
+
+        expect(recordsTo('audit_stream.delivery.attempts')).toEqual([
+            {
+                instrument: 'audit_stream.delivery.attempts',
+                value: 3,
+                attrs: { outcome: 'failure' },
+            },
+        ]);
+        expect(recordsTo('audit_stream.delivery.duration')).toEqual([
+            {
+                instrument: 'audit_stream.delivery.duration',
+                value: 4_200,
+                attrs: { outcome: 'failure' },
+            },
+        ]);
+    });
+
+    it('overflow is an unlabelled count of one dropped event', () => {
+        recordAuditStreamBufferOverflow();
+        expect(addsTo('audit_stream.buffer.overflow_dropped')).toEqual([
+            {
+                instrument: 'audit_stream.buffer.overflow_dropped',
+                value: 1,
+                attrs: undefined,
+            },
+        ]);
+    });
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// Encryption signals — the labels the Epic B read/write paths rely on
+// ══════════════════════════════════════════════════════════════════════
+
+describe('recordFieldDecryptFailure', () => {
+    it('carries model, field, ciphertext version and the failure CLASS', () => {
+        // The three outcomes have opposite correct responses. Before the
+        // outcome label they were one undifferentiated number, and a genuine
+        // key mismatch was invisible inside routine no-DEK noise.
+        recordFieldDecryptFailure({
+            model: 'Finding',
+            field: 'description',
+            version: 'v2',
+            outcome: 'decrypt_failed',
+        });
+
+        expect(addsTo('encryption.field.decrypt_failed')).toEqual([
+            {
+                instrument: 'encryption.field.decrypt_failed',
+                value: 1,
+                attrs: {
+                    model: 'Finding',
+                    field: 'description',
+                    'ciphertext.version': 'v2',
+                    outcome: 'decrypt_failed',
+                },
+            },
+        ]);
+    });
+
+    it('keeps the by-design class on its own label value', () => {
+        recordFieldDecryptFailure({
+            model: '*',
+            field: 'body',
+            version: 'unknown',
+            outcome: 'no_dek_by_design',
+        });
+        expect(addsTo('encryption.field.decrypt_failed')[0].attrs).toMatchObject({
+            outcome: 'no_dek_by_design',
+        });
+    });
+});
+
+describe('recordTenantContextMismatch', () => {
+    it('separates the corrupting `mismatch` from the merely `unscoped` write', () => {
+        recordTenantContextMismatch({ model: 'Task', operation: 'update', outcome: 'mismatch' });
+        recordTenantContextMismatch({ model: 'Finding', operation: 'create', outcome: 'unscoped' });
+
+        expect(addsTo('encryption.write.tenant_context_mismatch').map((e) => e.attrs)).toEqual([
+            { model: 'Task', operation: 'update', outcome: 'mismatch' },
+            { model: 'Finding', operation: 'create', outcome: 'unscoped' },
+        ]);
+    });
+});
+
+describe('recordSlowQuery', () => {
+    it('labels by model ONLY — raw SQL and bound params never reach a label', () => {
+        recordSlowQuery('Evidence');
+        expect(addsTo('db.slow_query.count')).toEqual([
+            { instrument: 'db.slow_query.count', value: 1, attrs: { model: 'Evidence' } },
+        ]);
+    });
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// Auth-adjacent counters
+// ══════════════════════════════════════════════════════════════════════
+
+describe('recordSessionPolicyResolution', () => {
+    it('records the failed outcome — the signal that the session caps did not apply', () => {
+        recordSessionPolicyResolution({ outcome: 'failed' });
+        expect(addsTo('session.policy.resolution')).toEqual([
+            {
+                instrument: 'session.policy.resolution',
+                value: 1,
+                attrs: { outcome: 'failed' },
+            },
+        ]);
+    });
+
+    it('records the ok outcome on the same instrument, so a ratio is derivable', () => {
+        recordSessionPolicyResolution({ outcome: 'ok' });
+        expect(addsTo('session.policy.resolution')[0].attrs).toEqual({ outcome: 'ok' });
+    });
+});
+
+describe('recordVerificationEmailDelivery', () => {
+    it('routes a sent outcome to the sent counter, labelled by flow only', () => {
+        recordVerificationEmailDelivery({ outcome: 'sent', flow: 'register' });
+
+        expect(addsTo('auth.verification_email.sent')).toEqual([
+            {
+                instrument: 'auth.verification_email.sent',
+                value: 1,
+                attrs: { flow: 'register' },
+            },
+        ]);
+        expect(addsTo('auth.verification_email.failed')).toHaveLength(0);
+    });
+
+    it('routes a failed outcome to the failed counter', () => {
+        recordVerificationEmailDelivery({ outcome: 'failed', flow: 'resend' });
+
+        expect(addsTo('auth.verification_email.failed')).toEqual([
+            {
+                instrument: 'auth.verification_email.failed',
+                value: 1,
+                attrs: { flow: 'resend' },
+            },
+        ]);
+        expect(addsTo('auth.verification_email.sent')).toHaveLength(0);
+    });
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// AI metrics — every conditional emission
+// ══════════════════════════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════════════════════════
+// Observable gauges — the scrape callbacks the noop meter never runs
+// ══════════════════════════════════════════════════════════════════════
+
+describe('job.queue.depth gauge callback', () => {
+    beforeEach(() => {
+        gaugeCallbacks.delete('job.queue.depth');
+        _resetQueueDepthForTesting();
+    });
+
+    afterEach(() => {
+        _resetQueueDepthForTesting();
+        jest.useRealTimers();
+    });
+
+    /** Drive one scrape of the registered gauge and collect what it observed. */
+    async function scrape(): Promise<Array<{ value: number; attrs: Record<string, unknown> | undefined }>> {
+        const cb = gaugeCallbacks.get('job.queue.depth');
+        if (!cb) throw new Error('queue-depth gauge was never registered');
+        const observed: Array<{ value: number; attrs: Record<string, unknown> | undefined }> = [];
+        await cb({
+            observe: (value: number, attrs?: Record<string, unknown>) => {
+                observed.push({ value, attrs });
+            },
+        });
+        return observed;
+    }
+
+    it('observes exactly the reportable states, each labelled with the queue it read', async () => {
+        startQueueDepthReporting(() => ({
+            name: 'islestone-jobs',
+            getJobCounts: async () => ({ waiting: 5, prioritized: 4, active: 2, delayed: 1, failed: 0 }),
+        }));
+
+        expect(await scrape()).toEqual([
+            { value: 5, attrs: { 'queue.name': 'islestone-jobs', 'queue.state': 'waiting' } },
+            { value: 4, attrs: { 'queue.name': 'islestone-jobs', 'queue.state': 'prioritized' } },
+            { value: 2, attrs: { 'queue.name': 'islestone-jobs', 'queue.state': 'active' } },
+            { value: 1, attrs: { 'queue.name': 'islestone-jobs', 'queue.state': 'delayed' } },
+            { value: 0, attrs: { 'queue.name': 'islestone-jobs', 'queue.state': 'failed' } },
+        ]);
+    });
+
+    it('takes the queue.name label from the queue it read, not from a literal', async () => {
+        startQueueDepthReporting(() => ({
+            name: 'some-other-queue',
+            getJobCounts: async () => ({ waiting: 1 }),
+        }));
+
+        expect(await scrape()).toEqual([
+            { value: 1, attrs: { 'queue.name': 'some-other-queue', 'queue.state': 'waiting' } },
+        ]);
+    });
+
+    it('asks Redis for the reportable states only, not every state BullMQ keeps', async () => {
+        // With no argument BullMQ counts `completed` and `waiting-children`
+        // too — work done for a label set the gauge then throws away.
+        const getJobCounts = jest.fn(async (..._states: string[]) => ({}));
+        startQueueDepthReporting(() => ({ name: 'islestone-jobs', getJobCounts }));
+
+        await scrape();
+        expect(getJobCounts.mock.calls).toEqual([['waiting', 'prioritized', 'active', 'delayed', 'failed']]);
+    });
+
+    it('ignores BullMQ states outside the reportable list — cardinality discipline', async () => {
+        startQueueDepthReporting(() => ({
+            name: 'islestone-jobs',
+            getJobCounts: async () => ({
+                waiting: 1,
+                paused: 99,
+                completed: 12_345,
+                'waiting-children': 7,
+            }),
+        }));
+
+        const observed = await scrape();
+        expect(observed.map((o) => o.attrs?.['queue.state'])).toEqual(['waiting']);
+    });
+
+    it('skips a state the queue did not report rather than observing undefined', async () => {
+        // `counts[state] !== undefined` is the guard. Without it the gauge
+        // observes `undefined` for every absent state, which OTel turns into
+        // NaN data points.
+        startQueueDepthReporting(() => ({
+            name: 'islestone-jobs',
+            getJobCounts: async () => ({ waiting: 3, failed: 4 }),
+        }));
+
+        const observed = await scrape();
+        expect(observed).toStrictEqual([
+            { value: 3, attrs: { 'queue.name': 'islestone-jobs', 'queue.state': 'waiting' } },
+            { value: 4, attrs: { 'queue.name': 'islestone-jobs', 'queue.state': 'failed' } },
+        ]);
+    });
+
+    it('swallows a queue that is not available and observes nothing', async () => {
+        // A worker whose Redis connection is down must degrade to a silent
+        // gauge, never to a rejected scrape that takes the exporter with it.
+        startQueueDepthReporting(() => {
+            throw new Error('redis down');
+        });
+
+        await expect(scrape()).resolves.toStrictEqual([]);
+    });
+
+    it('swallows a rejected getJobCounts too', async () => {
+        startQueueDepthReporting(() => ({
+            name: 'islestone-jobs',
+            getJobCounts: async () => {
+                throw new Error('ECONNRESET');
+            },
+        }));
+
+        await expect(scrape()).resolves.toStrictEqual([]);
+    });
+
+    it('gives up on a read that hangs, so one stuck Redis call cannot hold back the export', async () => {
+        // The worker's connection has `maxRetriesPerRequest: null`: while
+        // Redis is unreachable a command waits for the reconnect, however
+        // long that takes. The metric reader awaits every callback before it
+        // exports, so without the bound this read would delay every metric.
+        jest.useFakeTimers();
+        startQueueDepthReporting(() => ({
+            name: 'islestone-jobs',
+            getJobCounts: () => new Promise<Record<string, number>>(() => { /* never settles */ }),
+        }));
+
+        const pending = scrape();
+        let settled = false;
+        void pending.then(() => { settled = true; });
+
+        await jest.advanceTimersByTimeAsync(QUEUE_DEPTH_READ_TIMEOUT_MS - 1);
+        expect(settled).toBe(false);
+        await jest.advanceTimersByTimeAsync(1);
+        await expect(pending).resolves.toStrictEqual([]);
+    });
+
+    it('reads nothing once stopped, so the queue can be closed under it', async () => {
+        const getQueue = jest.fn(() => ({
+            name: 'islestone-jobs',
+            getJobCounts: async () => ({ waiting: 1 }),
+        }));
+        startQueueDepthReporting(getQueue);
+        await scrape();
+        expect(getQueue).toHaveBeenCalledTimes(1);
+
+        stopQueueDepthReporting();
+
+        await expect(scrape()).resolves.toStrictEqual([]);
+        expect(getQueue).toHaveBeenCalledTimes(1);
+    });
+
+    it('resumes on the same gauge when started again after a stop', async () => {
+        startQueueDepthReporting(() => ({ name: 'islestone-jobs', getJobCounts: async () => ({ waiting: 1 }) }));
+        const registered = gaugeCallbacks.get('job.queue.depth');
+        stopQueueDepthReporting();
+
+        startQueueDepthReporting(() => ({ name: 'islestone-jobs', getJobCounts: async () => ({ waiting: 2 }) }));
+
+        // No second instrument: the OTel SDK would warn about a duplicate.
+        expect(gaugeCallbacks.get('job.queue.depth')).toBe(registered);
+        expect(await scrape()).toEqual([
+            { value: 2, attrs: { 'queue.name': 'islestone-jobs', 'queue.state': 'waiting' } },
+        ]);
+    });
+});
+
+describe('audit_stream.buffer.depth gauge callback', () => {
+    beforeEach(() => {
+        gaugeCallbacks.delete('audit_stream.buffer.depth');
+        _resetAuditStreamBufferGaugeForTesting();
+    });
+
+    afterEach(() => {
+        _resetAuditStreamBufferGaugeForTesting();
+    });
+
+    async function scrape(): Promise<number[]> {
+        const cb = gaugeCallbacks.get('audit_stream.buffer.depth');
+        if (!cb) throw new Error('buffer-depth gauge was never registered');
+        const observed: number[] = [];
+        await cb({ observe: (value: number) => { observed.push(value); } });
+        return observed;
+    }
+
+    it('observes the current total buffered depth at scrape time', async () => {
+        let depth = 7;
+        startAuditStreamBufferReporting(() => depth);
+
+        expect(await scrape()).toEqual([7]);
+        depth = 41;
+        expect(await scrape()).toEqual([41]);
+    });
+
+    it('swallows a throwing depth reader and observes nothing', async () => {
+        startAuditStreamBufferReporting(() => {
+            throw new Error('buffer module not loaded');
+        });
+
+        await expect(scrape()).resolves.toStrictEqual([]);
+    });
+
+    it('keeps the FIRST registration when called twice — the flag is not a re-bind', async () => {
+        startAuditStreamBufferReporting(() => 1);
+        startAuditStreamBufferReporting(() => 2);
+
+        expect(await scrape()).toEqual([1]);
+    });
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// Cache counters — the two pairs nothing calls today
+// ══════════════════════════════════════════════════════════════════════
+
+describe('aggregation cache counters', () => {
+    it('counts a hit on the hit instrument and records NO compute duration', () => {
+        // A hit that also recorded a compute duration would inflate the
+        // miss-latency series with near-zero cache reads and hide a genuinely
+        // slow aggregation behind a healthy-looking median.
+        recordAggregationCacheHit('risk-heatmap');
+
+        expect(addsTo('cache.aggregation.hit')).toEqual([
+            { instrument: 'cache.aggregation.hit', value: 1, attrs: { aggregation: 'risk-heatmap' } },
+        ]);
+        expect(addsTo('cache.aggregation.miss')).toHaveLength(0);
+        expect(recordsTo('cache.aggregation.compute_duration_ms')).toHaveLength(0);
+    });
+
+    it('counts a miss AND the compute it paid for, both keyed by aggregation', () => {
+        recordAggregationCacheMiss('control-coverage', 412);
+
+        expect(addsTo('cache.aggregation.miss')).toEqual([
+            {
+                instrument: 'cache.aggregation.miss',
+                value: 1,
+                attrs: { aggregation: 'control-coverage' },
+            },
+        ]);
+        expect(recordsTo('cache.aggregation.compute_duration_ms')).toEqual([
+            {
+                instrument: 'cache.aggregation.compute_duration_ms',
+                value: 412,
+                attrs: { aggregation: 'control-coverage' },
+            },
+        ]);
+        expect(addsTo('cache.aggregation.hit')).toHaveLength(0);
+    });
+
+    it('reuses one instrument across calls rather than creating a second', () => {
+        // The lazy `if (!_instrument)` guard. Re-creating a counter per call
+        // resets its accumulation and produces a sawtooth in the exported
+        // series that reads as traffic falling off a cliff.
+        recordAggregationCacheHit('a');
+        recordAggregationCacheHit('b');
+
+        expect(addsTo('cache.aggregation.hit').map((e) => e.attrs)).toEqual([
+            { aggregation: 'a' },
+            { aggregation: 'b' },
+        ]);
+        // The load-bearing half: two `add` calls, ONE construction. Without
+        // this the assertion above passes with the lazy guard deleted.
+        expect(
+            instrumentCreations.filter((n) => n === 'cache.aggregation.hit'),
+        ).toHaveLength(1);
+    });
+});
+
+describe('SSR payload cache counters', () => {
+    it('labels the shared duration histogram outcome=hit on a hit', () => {
+        // Hit and miss share ONE duration histogram, separated only by the
+        // `outcome` label. Swapping the two labels is invisible in the code
+        // and inverts every SSR cache dashboard.
+        recordSsrCacheHit('/t/:tenantSlug/projects', 3);
+
+        expect(addsTo('cache.ssr.hit')).toEqual([
+            { instrument: 'cache.ssr.hit', value: 1, attrs: { route: '/t/:tenantSlug/projects' } },
+        ]);
+        expect(recordsTo('cache.ssr.duration')).toEqual([
+            {
+                instrument: 'cache.ssr.duration',
+                value: 3,
+                attrs: { route: '/t/:tenantSlug/projects', outcome: 'hit' },
+            },
+        ]);
+        expect(addsTo('cache.ssr.miss')).toHaveLength(0);
+    });
+
+    it('labels the same histogram outcome=miss on a miss', () => {
+        recordSsrCacheMiss('/t/:tenantSlug/work-items', 280);
+
+        expect(addsTo('cache.ssr.miss')).toEqual([
+            { instrument: 'cache.ssr.miss', value: 1, attrs: { route: '/t/:tenantSlug/work-items' } },
+        ]);
+        expect(recordsTo('cache.ssr.duration')).toEqual([
+            {
+                instrument: 'cache.ssr.duration',
+                value: 280,
+                attrs: { route: '/t/:tenantSlug/work-items', outcome: 'miss' },
+            },
+        ]);
+        expect(addsTo('cache.ssr.hit')).toHaveLength(0);
+    });
+
+    it('keeps both outcomes on ONE histogram so the hit ratio is derivable', () => {
+        recordSsrCacheHit('/t/:tenantSlug/projects', 2);
+        recordSsrCacheMiss('/t/:tenantSlug/projects', 300);
+
+        expect(recordsTo('cache.ssr.duration').map((e) => e.attrs?.outcome)).toEqual([
+            'hit',
+            'miss',
+        ]);
+    });
+});

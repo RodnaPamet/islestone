@@ -95,12 +95,11 @@ describe('CSP Module', () => {
             expect(csp).toContain('blob:');
         });
 
-        it('names no report endpoint until the violation-report sink lands', () => {
-            // A report-uri pointing at a route that does not exist would send
-            // every violation to a 401 at the edge.
+        it('includes report-uri for violation reporting (sub-phase 1.6)', () => {
             const csp = buildCspHeader(nonce);
-            expect(csp).not.toContain('report-uri');
-            expect(csp).not.toContain('report-to');
+            expect(csp).toContain('report-uri');
+            expect(csp).toContain('/api/security/csp-report');
+            expect(csp).toContain('report-to csp-endpoint');
         });
 
         it('includes upgrade-insecure-requests in production', () => {

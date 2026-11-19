@@ -1,0 +1,234 @@
+/**
+ * Fan-out: enqueue one job per unit of work (a connection, a tenant),
+ * idempotently and without letting one bad enqueue cancel the rest.
+ *
+ * Copied from inflect-compliance `src/app-layer/jobs/fan-out.ts` at
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e; its failure counter now lives in
+ * `metrics.ts`. Islestone has no dispatcher yet (1.5b's key rotation is the
+ * first), so the bucket constants wait for one.
+ *
+ * ## Two defects, and they compound
+ *
+ * In inflect-compliance every dispatcher looked like this:
+ *
+ *     for (const unit of page) {
+ *         await enqueue(job, { tenantId: unit.tenantId, unitId: unit.id });
+ *     }
+ *
+ * **No `jobId`.** BullMQ therefore treats every enqueue as new work, so any
+ * re-run of the dispatcher — a retry, a redeploy replaying a schedule, an
+ * operator kicking it manually — queues a second full run for every
+ * unit.
+ *
+ * **No failure isolation.** A single `enqueue` throw (Redis blip, connection
+ * refused) aborts the whole loop. Every unit after it is silently never
+ * dispatched, and the completion log still reads like a clean run because the
+ * counters only count what got as far as being enqueued.
+ *
+ * Together they are worse than apart: the aborted dispatcher throws, BullMQ
+ * retries it, and the retry re-enqueues everything that already succeeded —
+ * duplicating the first half of the fan-out in order to reach the second.
+ *
+ * ## The bucket is the sharp edge
+ *
+ * A deterministic id is only safe if it CHANGES each scheduling period. BullMQ
+ * dedupes against jobs still held in the completed/failed sets, so an id that
+ * outlives its schedule interval does not merely dedupe a duplicate — it makes
+ * the next legitimate run a silent no-op. A sync that stops running looks
+ * exactly like a sync with nothing to do.
+ *
+ * So the id carries a time bucket, and the bucket MUST match the dispatcher's
+ * cron period: daily jobs get a 24 h bucket, a 4-hourly dispatcher a 4 h one.
+ * inflect-compliance's `fan-out-bucket-matches-schedule` guard derives the
+ * period from `SCHEDULED_JOBS` and fails if the two drift apart; it comes to
+ * Islestone with the first dispatcher (sub-phase 5.3), since over zero
+ * dispatchers it would check nothing.
+ *
+ * Erring the other way is safe: a bucket SHORTER than the cadence just means
+ * fewer duplicates are caught, which is where we started.
+ *
+ * @see tests/unit/jobs-fan-out.test.ts
+ */
+import { logger } from '@/lib/observability/logger';
+import { recordDispatchEnqueueFailed } from '@/lib/observability/metrics';
+
+/** One minute, in ms. Used by manual-trigger routes to collapse double-clicks. */
+export const MINUTE_MS = 60_000;
+
+/** One hour, in ms. Bucket sizes are expressed against this for readability. */
+export const HOUR_MS = 3_600_000;
+
+/** Daily dispatchers. */
+export const DAILY_BUCKET_MS = 24 * HOUR_MS;
+
+/** 4-hourly dispatchers. */
+export const FOUR_HOURLY_BUCKET_MS = 4 * HOUR_MS;
+
+/**
+ * A stable job id for one (job, key) within one scheduling window.
+ *
+ * Flooring epoch-ms by the bucket aligns to UTC boundaries, which is what the
+ * cron patterns use — a 24 h bucket rolls at 00:00 UTC, a 4 h bucket at
+ * 00:00/04:00/08:00/… — so the bucket boundary and the schedule agree.
+ *
+ * The bucket is emitted as the raw floored epoch rather than a formatted date:
+ * it is an opaque discriminator, and formatting invites someone to "improve" it
+ * to a local-time string, which would shift the boundary by the server's offset.
+ */
+/**
+ * Does BullMQ accept this custom job id?
+ *
+ * MIRRORS THE LIBRARY'S OWN CHECK, which is narrower than its error message
+ * suggests. Colons ARE allowed — but only when the id splits into exactly three
+ * parts, a back-compat carve-out for old repeatable ids:
+ *
+ *     if (jobId.includes(':') && jobId.split(':').length !== 3) throw
+ *
+ * `tests/guards/bullmq-job-id-rule.test.ts` reads the condition out of the
+ * INSTALLED BullMQ and fails if this predicate and the library disagree. A
+ * predicate that mirrors a dependency by hand goes stale with nothing failing,
+ * and this one has a seven-day production outage behind it (#3554).
+ *
+ * Deliberately NOT tightened to "no colons at all", much as the error message
+ * invites it: `dispatchJobId` emits exactly two colons and is load-bearing at
+ * eight call sites. Tightening belongs with a change to that format, not here.
+ */
+export function isValidBullMqJobId(jobId: string): boolean {
+    return !jobId.includes(':') || jobId.split(':').length === 3;
+}
+
+/**
+ * A stable job id for one (prefix, key) at one EXACT instant.
+ *
+ * The sibling of `dispatchJobId`, for schedulers that are not fan-outs. A cron
+ * plan can legitimately be due more than once inside any bucket a dispatcher
+ * would use, so bucketing here would collapse two real runs into one. The
+ * instant IS the identity.
+ *
+ * COLON-FREE, deliberately, and this is the whole point of the function.
+ * #3554 was `ctr:{planId}:{scheduledForIso}`: the template's two colons were
+ * fine, but the ISO timestamp contributed two more, the id reached five
+ * segments, and BullMQ rejected every enqueue for seven days. Epoch ms carries
+ * the same instant at the same millisecond precision with no separator of its
+ * own, and hyphens keep the id valid even if BullMQ later bans colons outright
+ * — which its error message reads like it intends to.
+ */
+export function scheduledJobId(prefix: string, key: string, instantMs: number): string {
+    if (!Number.isFinite(instantMs)) {
+        throw new Error(`scheduledJobId: instantMs must be finite, got ${instantMs}`);
+    }
+    const id = `${prefix}-${key}-${instantMs}`;
+    // A caller passing a colon-bearing prefix or key would reintroduce #3554
+    // exactly. Cheap to check, and the message names the cause rather than
+    // leaving BullMQ's "Custom Id cannot contain :" to be decoded again.
+    if (!isValidBullMqJobId(id)) {
+        throw new Error(
+            `scheduledJobId: "${id}" is not a valid BullMQ job id — the prefix or key contains a colon`,
+        );
+    }
+    return id;
+}
+
+export function dispatchJobId(
+    jobName: string,
+    key: string,
+    bucketMs: number,
+    now: number = Date.now(),
+): string {
+    if (!Number.isFinite(bucketMs) || bucketMs <= 0) {
+        throw new Error(`dispatchJobId: bucketMs must be a positive number, got ${bucketMs}`);
+    }
+    // COLON-FREE, which is why this no longer depends on a carve-out (#3557).
+    //
+    // This emitted `${jobName}:${key}:${bucket}` — exactly two colons, exactly
+    // three segments — and was valid only because BullMQ carves out
+    // three-segment ids for old repeatable jobs:
+    //
+    //     if (jobId.includes(':') && jobId.split(':').length !== 3) throw
+    //
+    // The library's own TODO beside that line says the next breaking change
+    // replaces it with `include(':')`, which rejects ANY colon. Every id this
+    // function produced would have become invalid on that upgrade, across all
+    // twelve dispatchers at once — and the symptom is the one below: a
+    // dispatcher reporting `dispatched: 0, failed: N` while everything around
+    // it looks healthy.
+    //
+    // So the format moved to `-`, matching `scheduledJobId` above, and the
+    // question stops being "do we still fit the carve-out".
+    //
+    // THE KEY STILL HAS ITS COLONS REPLACED, and that matters MORE now, not
+    // less. A colon reaching the id from a composite key would be the only
+    // colon in it — fine today, rejected outright by the stricter check this
+    // change exists to survive.
+    //
+    // That is not hypothetical. inflect-compliance's leaver dispatch passed `${tenantId}:${provider}`,
+    // so from the day it was wired it reported `dispatched: 0, failed: 1` every
+    // night and the scheduled leaver path never ran once. It looked healthy
+    // from the outside: the schedule was registered, the worker was up, and a
+    // MANUAL trigger — which passes no jobId — worked perfectly, which is what
+    // the field walkthrough exercised.
+    //
+    // Normalised rather than rejected, deliberately. Throwing here converts a
+    // silent nightly no-op into a loud nightly crash, which is better but still
+    // broken; substituting a separator keeps the id stable, deterministic and
+    // dedupe-correct, which is what the caller actually wanted.
+    //
+    // THE CHANGEOVER COSTS ONE BUCKET, measured. The id is an idempotency key,
+    // so ids under the old format do not dedupe against the new ones: for one
+    // DAILY_BUCKET_MS window each (job, key) could be enqueued twice. Every
+    // executor behind these twelve sites is either lock-and-lease protected
+    // (`identity-sync`, `hris-sync`, `sharepoint-delta-sync`) or idempotent at
+    // the domain level — the joiner returns `ACCOUNT_OBSERVED` for a link a
+    // COMPLETE sync already re-observed — so the duplicate is a no-op run
+    // rather than a double action.
+    const safeKey = key.replace(/:/g, '_');
+    return `${jobName}-${safeKey}-${Math.floor(now / bucketMs)}`;
+}
+
+export interface FanOutResult {
+    /** Enqueued without throwing. Includes ones BullMQ deduped as already queued. */
+    dispatched: number;
+    /** Enqueues that threw. The fan-out continued past each of these. */
+    failed: number;
+}
+
+/**
+ * Enqueue one job per item, isolating failures.
+ *
+ * A throw from `enqueueOne` is logged and counted, and the loop continues — one
+ * unreachable Redis moment or one malformed row must not silently drop every
+ * connection behind it in the list.
+ *
+ * The caller decides what a partial failure means. `failed > 0 && dispatched
+ * === 0` is the case worth failing the job over: nothing was dispatched, so
+ * treating it as success would report a clean run that did nothing at all.
+ */
+export async function fanOut<T>(
+    items: readonly T[],
+    component: string,
+    describe: (item: T) => Record<string, unknown>,
+    enqueueOne: (item: T) => Promise<unknown>,
+): Promise<FanOutResult> {
+    let dispatched = 0;
+    let failed = 0;
+
+    for (const item of items) {
+        try {
+            await enqueueOne(item);
+            dispatched++;
+        } catch (err) {
+            failed++;
+            // Continuing past the failure is right, but it makes the loss
+            // silent unless it is counted. A non-zero rate here means
+            // connections that did not get a sync this cycle.
+            recordDispatchEnqueueFailed({ component });
+            logger.error('fan-out enqueue failed — continuing with the rest', {
+                component,
+                ...describe(item),
+                error: err instanceof Error ? err.message : String(err),
+            });
+        }
+    }
+
+    return { dispatched, failed };
+}

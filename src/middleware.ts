@@ -23,7 +23,23 @@ import {
 } from '@/lib/auth/guard';
 import { shouldBlockAdminRequest } from '@/lib/security/admin-session-guard';
 import { applyCorsHeaders, CORS_PREFLIGHT_HEADERS, isOriginAllowed, resolveCorsConfig } from '@/lib/security/cors';
-import { buildCspHeader, CSP_NONCE_HEADER, generateNonce, getCspHeaderName, isCspReportOnly } from '@/lib/security/csp';
+import {
+    buildCspHeader,
+    CSP_NONCE_HEADER,
+    CSP_REPORT_GROUP,
+    CSP_REPORT_PATH,
+    generateNonce,
+    getCspHeaderName,
+    isCspReportOnly,
+    LEGACY_CSP_REPORT_PATH,
+} from '@/lib/security/csp';
+import { edgeLogger } from '@/lib/observability/edge-logger';
+import {
+    documentLoadRoute,
+    DOCUMENT_LOAD_MSG,
+    softNavigationRoute,
+    SOFT_NAVIGATION_MSG,
+} from '@/lib/observability/vital-route';
 
 /**
  * Edge middleware: the centralized auth guard for ALL routes.
@@ -40,8 +56,11 @@ import { buildCspHeader, CSP_NONCE_HEADER, generateNonce, getCspHeaderName, isCs
  * per-request CSP nonce, CORS (fail-closed in production), the auth-tier
  * rate limit on `/api/auth/**`, the read-tier rate limit on tenant GETs, and
  * the baseline security headers on every response the middleware answers
- * itself. Later: the `iflk_` API-key fall-through (5.2), the web-vitals
- * beacons (1.6) and the CSP violation-report sink. The parent's trust-centre,
+ * itself. Sub-phase 1.6 adds the web-vitals denominator (one `document_load`
+ * line per served page and one `soft_navigation` line per client navigation)
+ * and the CSP violation-report sink (the reporting headers, and an edge rate
+ * limit on the sink's operator GET). Later: the `iflk_` API-key fall-through
+ * (5.2). The parent's trust-centre,
  * device and vendor-assessment paths are cut.
  *
  * CSP flow:
@@ -65,6 +84,40 @@ import { buildCspHeader, CSP_NONCE_HEADER, generateNonce, getCspHeaderName, isCs
 
 async function authMiddleware(req: NextRequest): Promise<NextResponse> {
     const { pathname } = req.nextUrl;
+
+    // ── 0e. CSP violation report — meter the operator GET, leave the
+    // browser POST alone (inflect-compliance's block 0e, sub-phase 1.6).
+    //
+    // The report paths sit in MACHINE_CALLER_PREFIXES so a browser can POST a
+    // report with no cookie, and that allowlist matches a PATH — so the
+    // operator GET, which returns the process-wide violation buffer behind
+    // PLATFORM_ADMIN_API_KEY, would be reachable from the internet at any rate
+    // at all (inflect measured 500 wrong-key GETs, 500 × 401, zero 429). The
+    // key is compared in constant time, so guessing it is not the threat; the
+    // threat is that each attempt is free to the caller and not to us.
+    //
+    // GET (and the HEAD Next.js derives from it) — deliberately not POST. The
+    // POST is a credential-less browser beacon, and a limiter it shares with
+    // an attacker silently drops real reports. It keeps its own per-IP limiter
+    // (30/min) and 16 KB body cap inside the handler.
+    //
+    // Keyed by IP alone (`checkApiReadRateLimit` folds the client IP in; no
+    // JWT has been read here). NOT keyed by the presented credential: that is
+    // the thing an attacker varies, and keying by it would hand every guess a
+    // fresh budget. Budget: API_READ_LIMIT (120/min).
+    if (
+        (req.method === 'GET' || req.method === 'HEAD') &&
+        (pathname === CSP_REPORT_PATH || pathname === LEGACY_CSP_REPORT_PATH)
+    ) {
+        const rl = await checkApiReadRateLimit(req, null, 'cspreport');
+        if (!rl.ok && rl.response) {
+            return rl.response;
+        }
+        // Falls THROUGH to the allowlist rather than returning
+        // `NextResponse.next()`: MACHINE_CALLER_PREFIXES stays the only thing
+        // making this path public at the edge, which is what `guard.ts`
+        // claims of it.
+    }
 
     // ── 1. Allow public paths (login, auth callbacks, static, etc.) ──
     if (isPublicPath(pathname)) {
@@ -373,9 +426,59 @@ export default async function middleware(
     res.headers.set(cspHeaderName, cspHeader);
     res.headers.set('x-request-id', requestId);
 
+    // ── Where the browser sends violation reports (sub-phase 1.6) ──
+    // `Report-To` for the Reporting API the policy's `report-to` names, and
+    // `Reporting-Endpoints`, its newer replacement (Chrome 96+). The policy's
+    // `report-uri` covers browsers that support neither.
+    res.headers.set('Report-To', JSON.stringify({
+        group: CSP_REPORT_GROUP,
+        max_age: 86400,
+        endpoints: [{ url: CSP_REPORT_PATH }],
+    }));
+    res.headers.set('Reporting-Endpoints', `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"`);
+
     // ── CORS headers on API responses (environment-locked) ──
     if (pathname.startsWith('/api/') && isAllowedOrigin && origin) {
         applyCorsHeaders(res.headers, origin);
+    }
+
+    // ── THE WEB-VITALS DENOMINATOR (inflect #3547) ──
+    //
+    // inflect-compliance's production had 12 `web_vital` beacons in 30 days
+    // and nothing to divide them by: the app logged no HTTP requests at all,
+    // so "12 beacons" could not be read as "almost no traffic" OR as "beacons
+    // are being dropped", and those two have completely different responses.
+    //
+    // One line per SERVED DOCUMENT, labelled by the same `normalizeVitalRoute`
+    // the beacons use — the decision and the label both live in
+    // `documentLoadRoute`, which is pure and unit-tested, because this file can
+    // only be tested by grepping its own source.
+    //
+    // Bounded on purpose: one line per page load, route only. No tenant, no
+    // user, no IP — the route label is already collapsed to fixed cardinality,
+    // and anything per-identity would turn an access log into a PII store.
+    const documentRoute = documentLoadRoute({
+        fetchDest: req.headers.get('sec-fetch-dest'),
+        pathname,
+        passedThrough: isPassThrough,
+    });
+    if (documentRoute !== null) {
+        edgeLogger.info(DOCUMENT_LOAD_MSG, { route: documentRoute, requestId });
+    }
+
+    // AND ONE PER CLIENT-SIDE NAVIGATION (inflect #4195), which is what four
+    // of the five web-vitals fire on. Counted separately rather than folded
+    // into the line above: `document_load` answers "is anyone using the app",
+    // the two together answer "are beacons being dropped". Same bounded shape
+    // — route only, nothing per-identity.
+    const softNavRoute = softNavigationRoute({
+        rsc: req.headers.get('rsc'),
+        routerPrefetch: req.headers.get('next-router-prefetch'),
+        pathname,
+        passedThrough: isPassThrough,
+    });
+    if (softNavRoute !== null) {
+        edgeLogger.info(SOFT_NAVIGATION_MSG, { route: softNavRoute, requestId });
     }
 
     return res;

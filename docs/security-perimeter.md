@@ -65,13 +65,44 @@ Decisions in the policy:
   one of them.
 - **No third-party host.** Islestone serves its own fonts, so the source's
   Google Fonts entries are gone.
-- **No report endpoint yet.** inflect-compliance's violation sink
-  (`/api/security/csp-report`) arrives with the observability work; a
-  `report-uri` pointing at a route that does not exist would send every
-  report to a 401.
+- **Violations are reported** (sub-phase 1.6) to `/api/security/csp-report`:
+  the policy names it in `report-uri` (older browsers) and `report-to
+  csp-endpoint`, and every response carries the matching `Report-To` and
+  `Reporting-Endpoints` headers. See "CSP violation reports" below.
 - **`CSP_REPORT_ONLY=1`** sends the same policy as
   `Content-Security-Policy-Report-Only`, for trying a tighter policy on a
   live deployment.
+
+## CSP violation reports
+
+Sub-phase 1.6. Copied from inflect-compliance's sink (`PROVENANCE.md`).
+
+- **`POST /api/security/csp-report`** takes a browser's report in either
+  format (`application/csp-report`, `application/reports+json`), keeps it in
+  an in-process ring buffer of the last 500 (`src/lib/security/csp-violations.ts`)
+  and answers 204 whatever it receives, so a malformed report teaches the
+  sender nothing. The body is capped at 16 KB (413 above it) and each client
+  IP at 30 reports a minute (429), inside the handler: the beacon carries no
+  credential, and a limiter shared with an attacker would drop real reports.
+  Each stored report is also logged once at WARN (document and blocked URI,
+  directive, source file and line; not the client IP or user agent), for the
+  log pipeline; the buffer itself is memory only and never written to the
+  database. A document URI is a path in the app, so it can carry an id.
+- **`GET /api/security/csp-report`** returns the summary (counts by
+  directive and blocked URI, the recent entries) to the platform operator
+  only: it requires `PLATFORM_ADMIN_API_KEY` (`verifyPlatformApiKey`,
+  compared in constant time). The edge rate-limits GET and HEAD on both
+  report paths at the read tier, keyed by IP, before the handler checks the
+  key, so the key cannot be guessed at speed (`tests/unit/security/csp-report-get-rate-limit.test.ts`).
+- **`/api/csp-report`** is the legacy path some browsers and older policies
+  use. It hands the request to the same handler in the same process; it does
+  not forward it over the network (inflect-compliance re-fetched its own
+  origin, which made the route a request to a URL built from the request's
+  host header).
+- Both paths are machine callers (`MACHINE_CALLER_PREFIXES` in
+  `src/lib/auth/guard.ts`): the edge lets them through without a session,
+  and `tests/guards/machine-caller-paths-self-authenticate.test.ts` holds
+  each method to its own check (the POST's limits, the GET's key).
 
 ## CORS
 

@@ -968,7 +968,7 @@ NextAuth behind one seam, the edge gate, the permission set, roles and custom ro
 | `src/lib/http/public-base-url.ts` | `src/lib/http/public-base-url.ts` | COPY | None. |
 | `src/lib/http/request-origin.ts` | `src/lib/http/request-origin.ts` | COPY+EDIT | `AUTH_URL` fallback removed. |
 | `src/lib/invite-refusals.ts` | `src/lib/invite-refusals.ts` | COPY | None. |
-| `src/lib/mailer.ts` | `src/lib/mailer.ts` | COPY+EDIT | Console sink only; SMTP transport and templates wait for 1.6; `delivered: false`. |
+| `src/lib/mailer.ts` | same | COPY+EDIT | Replaces the 1.4 stub: the console, Nodemailer and stub providers, `sendEmail` with its lazy init, `initMailerFromEnv` reading `SMTP_*` through `@/env` (not raw); the sink logs `hashForLookup` of each recipient and the template, never the address, subject or body (`recipientLogFields`, new; owner decision 2026-11-19). |
 | `src/lib/observability/business-metrics.ts` | `src/lib/observability/business-metrics.ts` | STUB | No-op counters with real signatures (1.6). |
 | `src/lib/observability/edge-logger.ts` | `src/lib/observability/edge-logger.ts` | COPY+EDIT | Reads `@/env`; `EDGE_LOGGER_IN_TEST`. |
 | `src/lib/observability/index.ts` | `src/lib/observability/index.ts` | STUB | Re-exports the logger and request context only (1.6). |
@@ -1375,6 +1375,235 @@ Files from earlier sub-phases edited in 1.5 (their rows are in the sections abov
 | `tests/unit/register-refusal-codes.test.ts` | A production encryption key for the production cases; the `emailHash` unique violation; a case for the DEK written with the workspace. |
 | `tests/unit/security-headers.test.ts` | No static CSP; `applySecurityHeaders`. |
 | `tests/unit/totp-crypto.test.ts` | `issuer=Islestone`. |
+
+</details>
+
+## Copied: jobs, notifications and observability (sub-phase 1.6)
+
+The BullMQ queue, worker and scheduler with two jobs, the notification outbox, digest dispatcher and in-app bell, the observability layer (OpenTelemetry, metrics, business KPIs, job tracing, web vitals, shutdown), the per-workspace system user, and the CSP violation sink, ported by [`docs/porting/maps/1.6.md`](docs/porting/maps/1.6.md). These facts hold for every row below:
+
+- **Source:** inflect-compliance at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`, at the path in the row's Source column (`same` means the same path).
+- **Licence:** BUSL-1.1, licensor Inflect Ltd. Copying is allowed by [ADR 0001](docs/adr/0001-code-provenance-and-licences.md) decision D1. The source files carry no per-file notice, so none is added, and `NOTICE` takes no entry: no third-party material came with them.
+- **What every port changed:** `inflect` names (queue, meters, tracers, Redis keys and connection names, the sender domain) are Islestone's; compliance jobs, templates, kinds and entities are cut or replaced by work items; `Notification.message` is `body` and `complianceMailbox` is `bccMailbox` (ADR 0006); env reads go through `@/env` / `@/env-client`; `import type` where an import is type-only.
+- **Action** is COPY (byte for byte), COPY+EDIT (the source text, edited as the Changes column says), REWRITE (written fresh to the source's design), PATTERN (pattern only, no code copied), or Islestone-owned (written fresh, no source).
+- **Licences:** `nodemailer` is MIT-0 (ADR 0007 E8) and the Sentry SDK brings `sentry`, FSL-1.1-Apache-2.0 (E9), both allowed by owner decision of 2026-11-19. No `NOTICE` entry: neither is copied code.
+- **Not taken, by sub-phase:** the due reminders (2.2), the agent-run automation action (6.3), the key-rotation, DEK-sweep, global-PII and audit-outbox jobs (1.5b), `UserNotificationPreference` (2.7), the flat `/api/notifications*` routes (they used a context 1.3 deleted), the bell UI and the admin notifications page (1.7, 2.7).
+
+<details>
+<summary>All 164 rows</summary>
+
+| File | Source | Action | Changes |
+|---|---|---|---|
+| `docs/jobs.md` | `docs/worker-autoscaling.md`; the job-layer docblocks | COPY+EDIT | Written for Islestone around the two jobs: the pieces, adding a job, running it, Redis. |
+| `docs/notifications.md` | `docs/scheduled-notification-system.md`; the notification-module docblocks | COPY+EDIT | Islestone's two bell kinds and two email types, the outbox lease, the sender fallback, the missing SMTP transport. |
+| `docs/observability.md` | `docs/observability/` (job tracing, business KPIs); the module docblocks | COPY+EDIT | Logs, traces, metrics, KPIs, web vitals, the Sentry stub, shutdown and startup, as Islestone wires them. |
+| `eslint-rules/rules/observable-gauge-rebinds.js` | `eslint-rules/rules/observable-gauge-rebinds.js` | COPY | None. |
+| `eslint-rules/__tests__/observable-gauge-rebinds.test.ts` | `eslint-rules/__tests__/observable-gauge-rebinds.test.ts` | COPY+EDIT | One `no-require-imports` disable line. |
+| `prisma/schema/notifications.prisma` | `prisma/schema/automation.prisma` (Notification, NotificationOutbox, TenantNotificationSettings) | COPY+EDIT | `Notification.message` is `body` (ADR 0006 bans "Message"); `complianceMailbox` is `bccMailbox`; `toEmail` encrypted in place (no `toEmailEncrypted`, ADR 0006 bans `@map`); `defaultFromName` "Islestone"; cascades from `Tenant` and `User`; `UserNotificationPreference` (2.7) and `ReminderHistory` (compliance) not taken. |
+| `prisma/migrations/20261119150000_notifications_and_system_user/migration.sql` | the notification migrations; `20261029200000_tenant_system_user` | REWRITE | One fresh migration: the three tables and three enums from `prisma migrate diff`; grants (no DELETE or TRUNCATE on the outbox and settings); canonical RLS; the system user's row-shape CHECK and the six `*_not_system_user` CHECKs on Islestone's tables. |
+| `scripts/worker.ts` | `scripts/worker.ts` | COPY+EDIT | The agent-run pause, automation bus, integration bootstrap and freshness reporting, DAU/MAU gauges and tripwire call cut; `islestone-worker`; the mailer is initialised in an IIFE; audit-stream buffers flushed at shutdown within `SHUTDOWN_AUDIT_FLUSH_MS`; `import type { Job }`. |
+| `scripts/scheduler.ts` | `scripts/scheduler.ts` | COPY+EDIT | Comments only. |
+| `scripts/worker-healthcheck.ts` | `scripts/worker-healthcheck.ts` | COPY+EDIT | Key and connection names. |
+| `scripts/build-worker.mjs` | `scripts/build-worker.mjs` | COPY+EDIT | Three entry points (worker, scheduler, healthcheck); the ten seeders cut; the CJS-shim banner code kept, its comment reworded; the `@dub/*` alias dropped. |
+| `src/app-layer/jobs/types.ts` | `src/app-layer/jobs/types.ts` | REWRITE | Two payload keys (`health-check`, `notification-outbox-flush`) and their defaults; `MonitoredEntityType` is `WORK_ITEM`; `NamesEveryField` and `JobRunResult` kept; `QUEUE_NAME` `islestone-jobs`. |
+| `src/app-layer/jobs/queue.ts` | `src/app-layer/jobs/queue.ts` | COPY+EDIT | Tracer `islestone.jobs`; comments; `closeQueue` also quits the queue's Redis connection (Islestone fix: BullMQ leaves a passed connection open). |
+| `src/app-layer/jobs/executor-registry.ts` | `src/app-layer/jobs/executor-registry.ts` | COPY+EDIT | Two registrations; `NonRetryableJobError` replaces the integration errors; `recordQueueRetryBypass` from `metrics.ts`; header redrawn; the outbox flush names its payload fields (`NamesEveryField`). |
+| `src/app-layer/jobs/non-retryable.ts` | — | Islestone-owned | `NonRetryableJobError` and its guard (map: new), so the registry imports no integration code. |
+| `src/app-layer/jobs/schedules.ts` | `src/app-layer/jobs/schedules.ts` | COPY+EDIT | Two schedules; `RETIRED_SCHEDULER_NAMES` empty. |
+| `src/app-layer/jobs/register-schedules.ts` | `src/app-layer/jobs/register-schedules.ts` | COPY+EDIT | Comments: compliance job names and history. |
+| `src/app-layer/jobs/fan-out.ts` | `src/app-layer/jobs/fan-out.ts` | COPY+EDIT | `recordDispatchEnqueueFailed` from `metrics.ts`. |
+| `src/app-layer/jobs/drain-pages.ts` | `src/app-layer/jobs/drain-pages.ts` | COPY | None. |
+| `src/app-layer/jobs/tenant-job-lookup.ts` | `src/app-layer/jobs/tenant-job-lookup.ts` | COPY | None. |
+| `src/app-layer/jobs/worker-heartbeat.ts` | `src/app-layer/jobs/worker-heartbeat.ts` | COPY+EDIT | Key `islestone:worker:heartbeat`. |
+| `src/app-layer/jobs/notification-outbox-flush.ts` | `src/app-layer/jobs/notification-outbox-flush.ts` | COPY+EDIT | Comments. |
+| `src/app-layer/context-system.ts` | `src/app-layer/context-system.ts` | COPY+EDIT | `buildDelegatedJobContext`, the borrowed-actor picker and `resolveKeyInitiatorContext` cut; no `canAudit`; `grantsJson`; the system user's INSERT names Islestone's `User` columns. |
+| `src/lib/tenant-system-user.ts` | `src/lib/tenant-system-user.ts` | COPY+EDIT | Replaces the 1.4 stub: `@islestone.invalid`, "Islestone automation", `tenantSystemUserEmailHash` kept. |
+| `src/app-layer/notifications/app-link.ts` | `src/app-layer/notifications/app-link.ts` | COPY+EDIT | Reads `NEXT_PUBLIC_APP_URL` from `@/env-client`, not the server `APP_URL`. |
+| `src/app-layer/notifications/tenant-link.ts` | `src/app-layer/notifications/tenant-link.ts` | COPY | None. |
+| `src/app-layer/notifications/settings.ts` | `src/app-layer/notifications/settings.ts` | COPY+EDIT | `bccMailbox`; "Islestone"; `sanitizePlainText` on the sender name; `logEvent` from 1.5; comments name Islestone's callers. |
+| `src/app-layer/notifications/templates.ts` | `src/app-layer/notifications/templates.ts` | REWRITE | Two react-email templates (`WORK_ITEM_ASSIGNED`, `DUE_DIGEST`), async, every link through `appLink`; the compliance templates not taken. |
+| `src/app-layer/notifications/email/layout.tsx` | — | Islestone-owned | The shared react-email layout. |
+| `src/app-layer/notifications/email/work-item-assigned.tsx` | — | Islestone-owned | The assignment template. |
+| `src/app-layer/notifications/email/due-digest.tsx` | `src/app-layer/notifications/digest-templates.ts` (`buildDeadlineDigestEmail`) | REWRITE | The digest as a react-email component; the two audiences' copy (#3651) kept, singular and plural. |
+| `src/app-layer/notifications/enqueue.ts` | `src/app-layer/notifications/enqueue.ts` | COPY+EDIT | A discriminated payload per `EmailNotificationType`, exhaustive; async build. |
+| `src/app-layer/notifications/processOutbox.ts` | `src/app-layer/notifications/processOutbox.ts` | COPY+EDIT | Comments; the row's type passed to the mailer as the template name for its log line. |
+| `src/app-layer/notifications/digest-dispatcher.ts` | `src/app-layer/notifications/digest-dispatcher.ts` | COPY+EDIT | `DUE_DIGEST` only; the dedupe key hashes the address (`hashForLookup`); `createMany({ skipDuplicates })`; async build; docblocks re-pointed at work items. |
+| `src/app-layer/notifications/assignment.ts` | `src/app-layer/notifications/assignment.ts` | COPY+EDIT | One kind, `WORK_ITEM_ASSIGNED`; the link is the caller's; the in-app mute is asked before the write (new, map); `body`. |
+| `src/app-layer/notifications/watcher.ts` | `src/app-layer/notifications/watcher.ts` | COPY+EDIT | Work-item fields; the link is the caller's; the mute check (new); `body`. |
+| `src/app-layer/notifications/in-app-types.ts` | `src/app-layer/notifications/agentic.ts` (`listInAppNotificationTypes`) | REWRITE | Built from the two writers' copy tables. |
+| `src/app-layer/notifications/inserted-ids.ts` | `src/app-layer/notifications/inserted-ids.ts` | COPY | None. |
+| `src/app-layer/notifications/index.ts` | `src/app-layer/notifications/index.ts` | REWRITE | The barrel over the modules ported. |
+| `src/lib/notifications/notification-bus.ts` | `src/lib/notifications/notification-bus.ts` | COPY+EDIT | The event's `body`. |
+| `src/lib/notifications/notification-sse.ts` | `src/lib/notifications/notification-sse.ts` | COPY+EDIT | Docblock: one stream route. |
+| `src/lib/notifications/mark-read.ts` | `src/lib/notifications/mark-read.ts` | COPY | None. |
+| `src/lib/email/sender-identity.ts` | `src/lib/email/sender-identity.ts` | COPY+EDIT | Islestone's `.invalid` placeholder (`UNCONFIGURED_SENDER`); `SMTP_FROM` through `@/env`. |
+| `src/lib/mailer.ts` | `src/lib/mailer.ts` | COPY+EDIT | Replaces the 1.4 stub, WITHOUT the SMTP transport (`nodemailer` is MIT-0, not on the allowlist): the console sink, `delivered: false`, and an `initMailerFromEnv` that says so; the sink logs `hashForLookup` of each recipient and the template, never the address, subject or body (`recipientLogFields`, new; owner decision 2026-11-19). |
+| `src/app-layer/repositories/NotificationRepository.ts` | `src/app-layer/repositories/NotificationRepository.ts` | COPY+EDIT | `import type`; `body`. |
+| `src/app-layer/schemas/notification-settings.schemas.ts` | `src/app-layer/schemas/notification-settings.schemas.ts` | COPY+EDIT | `bccMailbox`; `z.enum` over the mutable types. |
+| `src/app-layer/usecases/notification.ts` | `src/app-layer/usecases/notification.ts` | COPY+EDIT | Imports. |
+| `src/app-layer/usecases/notification-settings.ts` | `src/app/api/t/[tenantSlug]/notification-settings/route.ts`; `src/app/api/t/[tenantSlug]/notification-settings/run-job/route.ts` (their handler bodies) | REWRITE | The two routes' logic moved into usecases (Islestone's layer rule); the manual drain is scoped to the workspace and audited (`NOTIFICATION_OUTBOX_PROCESSED`). |
+| `src/app/api/t/[tenantSlug]/notifications/route.ts` | `src/app/api/t/[tenantSlug]/notifications/route.ts` | COPY | None. |
+| `src/app/api/t/[tenantSlug]/notifications/[id]/route.ts` | `src/app/api/t/[tenantSlug]/notifications/[id]/route.ts` | COPY+EDIT | The empty-body schema inline. |
+| `src/app/api/t/[tenantSlug]/notifications/stream/route.ts` | `src/app/api/t/[tenantSlug]/notifications/stream/route.ts` | COPY+EDIT | Docblock carries the flat route's SSE rationale. |
+| `src/app/api/t/[tenantSlug]/notification-settings/route.ts` | `src/app/api/t/[tenantSlug]/notification-settings/route.ts` | COPY+EDIT | Calls the usecases; `in-app-types`. |
+| `src/app/api/t/[tenantSlug]/notification-settings/run-job/route.ts` | `src/app/api/t/[tenantSlug]/notification-settings/run-job/route.ts` | COPY+EDIT | Calls `drainWorkspaceOutbox`; `z.enum(['processOutbox'])`. |
+| `src/lib/observability/instrumentation.ts` | `src/lib/observability/instrumentation.ts` | COPY+EDIT | Env through `@/env`; service name `islestone`; the logger imported lazily. |
+| `src/lib/observability/job-runner.ts` | `src/lib/observability/job-runner.ts` | COPY | None. |
+| `src/lib/observability/job-trace.ts` | `src/lib/observability/job-trace.ts` | COPY+EDIT | Tracer `islestone.worker`. |
+| `src/lib/observability/job-payload-log.ts` | `src/lib/observability/job-payload-log.ts` | COPY | None. |
+| `src/lib/observability/process-logger.ts` | `src/lib/observability/process-logger.ts` | COPY+EDIT | Env through `@/env`. |
+| `src/lib/observability/repository-tracing.ts` | `src/lib/observability/repository-tracing.ts` | COPY+EDIT | `import type`; examples. |
+| `src/lib/observability/shutdown.ts` | `src/lib/observability/shutdown.ts` | COPY+EDIT | Three stages (audit streams, OTel, Sentry); the agent-run and stream stages (Phase 6) cut. |
+| `src/lib/observability/shutdown-budget.ts` | `src/lib/observability/shutdown-budget.ts` | COPY+EDIT | No run-pause budget; total seven seconds. |
+| `src/lib/observability/sentry.ts` | same | COPY+EDIT | `SENTRY_*` and `NODE_ENV` through `@/env`; the sample rate parsed with `Number`; one comment's product reference. The `dataCollection` pin and `beforeSend` unchanged. |
+| `src/lib/observability/client-telemetry.ts` | `src/lib/observability/client-telemetry.ts` | COPY+EDIT | `@/env-client`; the retry-header name. |
+| `src/lib/observability/web-vitals.ts` | `src/lib/observability/web-vitals.ts` | COPY+EDIT | Meter `islestone-web-vitals`. |
+| `src/lib/observability/vital-route.ts` | `src/lib/observability/vital-route.ts` | COPY+EDIT | Compliance routes out of the capability table; docblocks. |
+| `src/lib/observability/metrics.ts` | `src/lib/observability/metrics.ts` | COPY+EDIT | Replaces the 1.5 partial: meter `islestone`; the request, cache, repository, job, decrypt, context, session, verification-email, SCIM, queue-depth, slow-query and SSR metrics; the Entra and Phase 6 metrics cut; `recordQueueRetryBypass` and `recordDispatchEnqueueFailed` moved in from `integration-metrics.ts` and renamed `job.queue.retry_bypassed` / `job.fanout.enqueue_failed`. |
+| `src/lib/observability/business-metrics.ts` | `src/lib/observability/business-metrics.ts` | COPY+EDIT | Fifteen metrics; meter `islestone`; compliance KPIs cut. |
+| `src/lib/observability/index.ts` | `src/lib/observability/index.ts` | COPY | The full barrel (replaces the 1.4 stub). |
+| `src/lib/redis.ts` | `src/lib/redis.ts` | COPY+EDIT | Env through `@/env`; connection names. |
+| `src/components/observability/WebVitalsReporter.tsx` | `src/components/observability/WebVitalsReporter.tsx` | COPY | None. |
+| `src/app/api/telemetry/vitals/route.ts` | `src/app/api/telemetry/vitals/route.ts` | COPY+EDIT | An index guard on the forwarded IP. |
+| `src/lib/security/csp-violations.ts` | `src/lib/security/csp-violations.ts` | COPY | None. |
+| `src/app/api/security/csp-report/route.ts` | `src/app/api/security/csp-report/route.ts` | COPY+EDIT | Docblock. |
+| `src/app/api/csp-report/route.ts` | `src/app/api/csp-report/route.ts` | REWRITE | Delegates to the sink's handler in-process instead of re-fetching the request's own origin (a request built from the Host header). |
+| `tests/guards/bullmq-job-id-rule.test.ts` | `tests/guards/bullmq-job-id-rule.test.ts` | COPY+EDIT | Population from git. |
+| `tests/guards/business-metrics-coverage.test.ts` | `tests/guardrails/business-metrics-coverage.test.ts` | COPY+EDIT | Fifteen metrics; Islestone's wiring points. |
+| `tests/guards/cross-tenant-recipient-liveness.test.ts` | `tests/guards/cross-tenant-recipient-liveness.test.ts` | COPY+EDIT | Islestone's one-member census, no exemption; population from git; a planted repository. |
+| `tests/guards/eslint-skips-build-output.test.ts` | `tests/guards/eslint-skips-build-output.test.ts` | COPY | None. |
+| `tests/guards/executor-payload-forwarding.test.ts` | — | Islestone-owned | Map "new tests": no executor takes `_payload` or no parameter; planted registrations. |
+| `tests/guards/job-trace-propagation.test.ts` | `tests/guardrails/job-trace-propagation.test.ts` | COPY+EDIT | The docs pointer. |
+| `tests/guards/logging-import-hygiene.test.ts` | `tests/guardrails/logging-import-hygiene.test.ts` | COPY+EDIT | Population from git; Islestone's allowlist. |
+| `tests/guards/mailer-init-wiring.test.ts` | `tests/guards/mailer-init-wiring.test.ts` | COPY+EDIT | `src/instrumentation-node.ts`. |
+| `tests/guards/notif-sse-streaming-wiring.test.ts` | `tests/guards/notif-sse-streaming-wiring.test.ts` | COPY+EDIT | One stream route; the two bell writers in place of `task-due.ts`; the bell client (1.7) cut. |
+| `tests/guards/redis-eviction-policy.test.ts` | `tests/guards/redis-eviction-policy.test.ts` | COPY+EDIT | Islestone's compose file; a planted positive control; `instrumentation-node.ts`. |
+| `tests/guards/redis-prod-required.test.ts` | `tests/guardrails/redis-prod-required.test.ts` | REWRITE | Behavioural: the schema and the startup refusal, each failing without the other. |
+| `tests/guards/redis-production-auth.test.ts` | `tests/guards/redis-production-auth.test.ts` | REWRITE | Behavioural over `src/env.ts` and the startup check. |
+| `tests/guards/runtime-wiring-coverage.test.ts` | `tests/guardrails/runtime-wiring-coverage.test.ts` | COPY+EDIT | Part (2) only; empty on-demand list; planted miswiring. |
+| `tests/guards/scheduler-orphan-reconciliation.test.ts` | `tests/guards/scheduler-orphan-reconciliation.test.ts` | COPY+EDIT | A planted retired name; Islestone's empty list. |
+| `tests/guards/shutdown-budget-sanity.test.ts` | `tests/guardrails/shutdown-budget-sanity.test.ts` | COPY+EDIT | Three stages. |
+| `tests/guards/system-principal-is-what-the-builder-writes.test.ts` | `tests/guards/system-principal-is-what-the-builder-writes.test.ts` | COPY | None. |
+| `tests/guards/worker-bundle-defines-its-cjs-shims.test.ts` | `tests/guards/worker-bundle-defines-its-cjs-shims.test.ts` | COPY+EDIT | Population from git; a planted bundle source. |
+| `tests/guards/worker-heartbeat-wiring.test.ts` | `tests/guards/worker-heartbeat-wiring.test.ts` | COPY+EDIT | Parts 4a/4b (compliance jobs) cut. |
+| `tests/guards/worker-import-graph.test.ts` | `tests/guards/worker-import-graph.test.ts`; `tests/guards/worker-safe-imports.test.ts` | REWRITE | One walk from the three worker scripts on `tests/helpers/import-graph.ts`, every edge for the NextAuth seam, static edges for `next/headers`; a planted repository. |
+| `tests/helpers/outbox-double.ts` | `tests/helpers/outbox-double.ts` | COPY | None. |
+| `tests/integration/digest-recipient-membership.test.ts` | `tests/integration/digest-recipient-membership.test.ts` | COPY+EDIT | `DUE_DIGEST`, `WORK_ITEM`, MEMBER; the PII test client; `resetDatabase`. |
+| `tests/integration/initiator-context-deleted-tenant.test.ts` | `tests/integration/initiator-context-deleted-tenant.test.ts` | COPY+EDIT | DB-gated; MEMBER; `resetDatabase`. |
+| `tests/integration/jobs-queue-roundtrip.test.ts` | — | Islestone-owned | Enqueue to a real Redis, a Worker on the registry, both jobs, and `closeQueue` quitting its connection. |
+| `tests/integration/notification-enqueue-duplicate-in-transaction.test.ts` | `tests/integration/notification-enqueue-duplicate-in-transaction.test.ts` | COPY+EDIT | The `WORK_ITEM_ASSIGNED` payload; `resetDatabase`. |
+| `tests/integration/notification-per-user-scope.test.ts` | `tests/integration/notification-per-user-scope.test.ts` | COPY+EDIT | Islestone roles; `body`; the PII test client; `resetDatabase`. |
+| `tests/integration/notification-push-carries-row-id.test.ts` | `tests/integration/notification-push-carries-row-id.test.ts` | COPY+EDIT | DB-gated; the two bell writers (the due reminder is 2.2); the caller's link. |
+| `tests/integration/notification-settings-column-default.test.ts` | `tests/integration/notification-settings-column-default.test.ts` | COPY+EDIT | "Islestone"; the `mutedInAppTypes` default. |
+| `tests/integration/notification-tables-isolation.test.ts` | — | Islestone-owned | The two-workspace test for the three tables, on the pattern of Islestone's `audit-tables-isolation.test.ts`. |
+| `tests/integration/processOutbox-usecase.test.ts` | `tests/integration/processOutbox-usecase.test.ts` | COPY+EDIT | The PII test client; `WORK_ITEM_ASSIGNED`; `resetDatabase`; new: the at-rest check, a two-workspace drain, the drain usecase's `AuditLog` row and chain. |
+| `tests/integration/tenant-system-user.test.ts` | `tests/integration/tenant-system-user.test.ts` | COPY+EDIT | Islestone's six guarded tables; part 3 audits through `logEvent` (the policy reminder is compliance). |
+| `tests/unit/observability-sentry.test.ts` | same | COPY+EDIT | An Islestone fixture route; the SDK mock forwards to its mocks when called (TDZ under @swc/jest). |
+| `tests/unit/observability/sentry-redaction.test.ts` | same | COPY+EDIT | Islestone fixture paths; one comment. |
+| `tests/guards/sentry-privacy-posture-pinned.test.ts` | same | COPY+EDIT | One comment's product reference. |
+| `tests/guards/next-auth-email-provider-unused.test.ts` | — | Islestone-owned | ADR 0004 question 7: the `next-auth` → `nodemailer` override holds only while nothing imports next-auth's email provider; population from git, a planted repository. |
+| `tests/rendered/web-vitals-reporter-subscribes-once.test.tsx` | `tests/rendered/web-vitals-reporter-subscribes-once.test.tsx` | COPY | None. |
+| `tests/unit/csp-reporting.test.ts` | `tests/unit/csp-reporting.test.ts` | COPY+EDIT | A `no-require-imports` disable line. |
+| `tests/unit/digest-enum-schema-alignment.test.ts` | `tests/unit/digest-enum-schema-alignment.test.ts` | REWRITE | A type-level check over `DUE_DIGEST`; migrations from git. |
+| `tests/unit/digest-tenant-eligibility.test.ts` | `tests/unit/digest-tenant-eligibility.test.ts` | COPY+EDIT | `DUE_DIGEST`, `WORK_ITEM`; the `createMany` mock; Islestone copy. |
+| `tests/unit/drain-pages.test.ts` | `tests/unit/drain-pages.test.ts` | COPY | None. |
+| `tests/unit/executor-registry.test.ts` | `tests/unit/executor-registry.test.ts` | COPY+EDIT | Two registrations; `NonRetryableJobError` cases; the integration mocks cut. |
+| `tests/unit/initiator-context.test.ts` | `tests/unit/initiator-context.test.ts` | COPY+EDIT | Five roles and `grantsJson`; the pre-#4362 projections and `buildDelegatedJobContext` blocks cut. |
+| `tests/unit/jobs-enqueue-job-id.test.ts` | `tests/unit/jobs-enqueue-job-id.test.ts` | COPY+EDIT | Islestone job names. |
+| `tests/unit/jobs-fan-out.test.ts` | `tests/unit/jobs-fan-out.test.ts` | COPY+EDIT | The metric's module. |
+| `tests/unit/jobs/bullmq-queue.test.ts` | `tests/integration/bullmq-queue.test.ts` | COPY+EDIT | Moved to the unit project (no Redis); two jobs; getters in the mock factories. |
+| `tests/unit/jobs/bullmq-scheduler.test.ts` | `tests/integration/bullmq-scheduler.test.ts` | COPY+EDIT | Moved to the unit project; two schedules. |
+| `tests/unit/jobs/job-contract-completeness.test.ts` | `tests/regression/infrastructure-guards.test.ts` | COPY+EDIT | The extract the map names. |
+| `tests/unit/jobs/notification-outbox-flush-wiring.test.ts` | `tests/unit/jobs/notification-outbox-flush-wiring.test.ts` | COPY+EDIT | Paths. |
+| `tests/unit/jobs/register-schedules.test.ts` | `tests/unit/jobs/register-schedules.test.ts` | COPY+EDIT | Planted retired names through a mock. |
+| `tests/unit/mailer.test.ts` | same | COPY+EDIT | Islestone's domain; the env through the `@/env` mock; new: the lazy init, the password never logged, and no log line carrying an address or the body. |
+| `tests/unit/notification-eligibility-guardrail.test.ts` | `tests/unit/notification-eligibility-guardrail.test.ts` | COPY | None. |
+| `tests/unit/notification-enqueue.test.ts` | `tests/unit/notification-enqueue.test.ts` | COPY | None. |
+| `tests/unit/notification-outbox.test.ts` | `tests/unit/notification-outbox.test.ts` | COPY | None. |
+| `tests/unit/notification-sender-fallback.test.ts` | `tests/unit/notification-sender-fallback.test.ts` | COPY+EDIT | The Islestone placeholder; `bccMailbox`; the single-owner scan over Islestone's files. |
+| `tests/unit/notification-settings-audit.test.ts` | `tests/unit/notification-settings-audit.test.ts` | COPY+EDIT | `bccMailbox`; the audit mock; the work-item types. |
+| `tests/unit/notification-settings-route-authz.test.ts` | `tests/unit/notification-settings-route-authz.test.ts` | COPY+EDIT | The usecase layer. |
+| `tests/unit/notification-settings.test.ts` | `tests/unit/notification-settings.test.ts` | COPY+EDIT | `bccMailbox`; the work-item types in the mute cases. |
+| `tests/unit/notification-templates.test.ts` | `tests/unit/notification-templates.test.ts`; `tests/unit/notification-email-links-absolute.test.ts` | REWRITE | The two templates' copy, absolute links and escaping. |
+| `tests/unit/notifications-mark-read-route.test.ts` | `tests/unit/notifications-mark-read-route.test.ts` | COPY | None. |
+| `tests/unit/notifications/assignment.test.ts` | `tests/unit/notifications/assignment.test.ts` | COPY+EDIT | One kind; the caller's link; the muted case (new). |
+| `tests/unit/notifications/in-app-types.test.ts` | — | Islestone-owned | Map "new tests": the catalogue is the writers' copy, and each writer mutes before it writes. |
+| `tests/unit/notifications/notification-bus.test.ts` | `tests/unit/notifications/notification-bus.test.ts` | COPY+EDIT | The event's `body` and type. |
+| `tests/unit/notifications/notification-sse-teardown.test.ts` | `tests/unit/notifications/notification-sse-teardown.test.ts` | COPY+EDIT | The event's `body` and type. |
+| `tests/unit/notifications/watcher.test.ts` | `tests/unit/notifications/watcher.test.ts` | COPY+EDIT | Field renames; the muted case (new). |
+| `tests/unit/observability-foundation.test.ts` | `tests/unit/observability-foundation.test.ts` | COPY+EDIT | Islestone names. |
+| `tests/unit/observability-guards.test.ts` | `tests/unit/observability-guards.test.ts` | COPY+EDIT | Population from git; the exempt list. |
+| `tests/unit/observability-instrumentation.test.ts` | `tests/unit/observability-instrumentation.test.ts` | COPY+EDIT | Env mock; service name. |
+| `tests/unit/observability-metrics.test.ts` | `tests/unit/observability-metrics.test.ts` | COPY+EDIT | The metrics kept. |
+| `tests/unit/observability-tracing.test.ts` | `tests/unit/observability-tracing.test.ts` | COPY+EDIT | No `canAudit`; work-item span names. |
+| `tests/unit/observability/client-telemetry.test.ts` | `tests/unit/observability/client-telemetry.test.ts` | COPY | None. |
+| `tests/unit/observability/document-load-denominator.test.ts` | `tests/unit/observability/document-load-denominator.test.ts` | COPY+EDIT | Islestone's middleware. |
+| `tests/unit/observability/instrumentation-enabled.test.ts` | `tests/unit/observability/instrumentation-enabled.test.ts` | COPY+EDIT | Service name. |
+| `tests/unit/observability/instrumentation-rebinds-gauges.test.ts` | `tests/unit/observability/instrumentation-rebinds-gauges.test.ts` | COPY | None. |
+| `tests/unit/observability/job-execution-with-trace.test.ts` | `tests/integration/job-execution-with-trace.test.ts` | COPY+EDIT | Moved to the unit project; Islestone jobs. |
+| `tests/unit/observability/job-payload-log.test.ts` | `tests/unit/observability/job-payload-log.test.ts` | COPY | None. |
+| `tests/unit/observability/metrics-emission.test.ts` | `tests/unit/observability/metrics-emission.test.ts` | COPY+EDIT | The metrics kept. |
+| `tests/unit/observability/observable-registry.test.ts` | `tests/unit/observability/observable-registry.test.ts` | COPY+EDIT | The gauges kept. |
+| `tests/unit/observability/process-logger.test.ts` | `tests/unit/observability/process-logger.test.ts` | COPY+EDIT | Env. |
+| `tests/unit/observability/shutdown-helpers.test.ts` | `tests/unit/observability/shutdown-helpers.test.ts` | COPY | None. |
+| `tests/unit/observability/shutdown.test.ts` | `tests/unit/observability/shutdown.test.ts` | REWRITE | Three stages, their order and budgets. |
+| `tests/unit/observability/vital-route-never-logs-a-capability.test.ts` | `tests/unit/observability/vital-route-never-logs-a-capability.test.ts` | COPY+EDIT | Islestone routes. |
+| `tests/unit/observability/web-vitals.test.ts` | `tests/unit/observability/web-vitals.test.ts` | COPY+EDIT | Meter name. |
+| `tests/unit/outbox-claim-before-send.test.ts` | `tests/unit/outbox-claim-before-send.test.ts` | COPY+EDIT | Islestone types; a typed call shape in place of `any`. |
+| `tests/unit/redis-connection.test.ts` | `tests/integration/redis-connection.test.ts` | COPY+EDIT | Moved to the unit project (ioredis-mock); a `no-require-imports` disable line. |
+| `tests/unit/redis-eviction-policy.test.ts` | `tests/unit/redis-eviction-policy.test.ts` | COPY | None. |
+| `tests/unit/repository-tracing.test.ts` | `tests/unit/repository-tracing.test.ts` | COPY+EDIT | The mock without `@jest/globals` (hoisting); examples. |
+| `tests/unit/scheduled-job-retry-policy.test.ts` | `tests/unit/scheduled-job-retry-policy.test.ts` | COPY | None. |
+| `tests/unit/security/csp-report-get-rate-limit.test.ts` | `tests/unit/security/csp-report-get-rate-limit.test.ts` | COPY+EDIT | Lint: an `import type` in place of an `import()` type, a `no-require-imports` disable line. |
+| `tests/unit/tenant-job-lookup.test.ts` | `tests/unit/tenant-job-lookup.test.ts` | COPY+EDIT | Islestone job names. |
+| `tests/unit/worker-queue-depth-reporting.test.ts` | `tests/unit/worker-queue-depth-reporting.test.ts` | COPY+EDIT | The worker script. |
+| `tests/unit/workspace-email-envelope.test.ts` | `tests/unit/workspace-email-envelope.test.ts` | COPY+EDIT | The envelope half; `bccMailbox`. |
+
+</details>
+
+Files from earlier sub-phases edited in 1.6 (their rows are in the sections above):
+
+<details>
+<summary>All 36 files</summary>
+
+| File | Changed in 1.6 |
+|---|---|
+| `.env.example` | `REDIS_URL` (required and authenticated in production), the `OTEL_*`, `SMTP_*` and `SENTRY_*` variables, `NEXT_PUBLIC_TEST_MODE`. |
+| `.github/workflows/ci.yml` | A Redis service (noeviction and a password set at run time) in Integration and E2E; `npm run build:worker` in Build. |
+| `.gitignore` | `/dist/`. |
+| `next.config.ts` | `@sentry/nextjs`, `@sentry/node` and `nodemailer` in `serverExternalPackages`. |
+| `tests/unit/licence-gate.test.ts` | The allowlist pin follows ADR 0007 E8 and E9. |
+| `docker-compose.yml` | Redis runs `--maxmemory-policy noeviction`. |
+| `docs/rate-limiting.md` | The CSP sink's read-tier GET. |
+| `docs/security-perimeter.md` | The CSP report endpoint and its section. |
+| `eslint-rules/index.js` | Registers `observable-gauge-rebinds`. |
+| `eslint.config.mjs` | The rule for `src/` and tests; `dist/**` ignored. |
+| `jest.config.mjs` | `@react-email/render` compiled for Jest. |
+| `playwright.config.ts` | `REDIS_URL` for the production server. |
+| `prisma/schema/enums.prisma` | `NotificationType`, `EmailNotificationType`, `EmailOutboxStatus`. |
+| `prisma/schema/tenancy.prisma` | Back-relations from `Tenant` and `User`. |
+| `src/app/api/auth/register/route.ts` | `recordTenantCreated`. |
+| `src/env-client.ts` | `NEXT_PUBLIC_TEST_MODE`. |
+| `src/env.ts` | `REDIS_URL` required and authenticated in production; the `OTEL_*`, `SMTP_*`, `SENTRY_*` and `npm_package_version` variables. |
+| `src/instrumentation-node.ts` | The `REDIS_URL` refusal; telemetry, Sentry, mailer, shutdown handlers and the eviction check (1.6's half of the source's `src/instrumentation.ts`). |
+| `src/lib/auth/guard.ts` | `MACHINE_CALLER_PREFIXES`: the two CSP report paths and the vitals beacon. |
+| `src/lib/security/csp.ts` | `report-uri` and `report-to`, and the report path and group constants. |
+| `src/lib/security/pii-middleware.ts` | `NotificationOutbox.toEmail`. |
+| `src/lib/security/route-permissions.ts` | The two notification-settings rules. |
+| `src/middleware.ts` | The CSP sink's read-tier limit, `Report-To` and `Reporting-Endpoints`, the web-vitals denominator lines. |
+| `tests/guards/encryption-manifest-coverage.test.ts` | The new free-text columns classified. |
+| `tests/guards/enum-member-order-matches-migrations.test.ts` | Ten enums. |
+| `tests/guards/machine-caller-paths-self-authenticate.test.ts` | Contracts for the three beacons; a planted ungated GET. |
+| `tests/guards/schema-index-coverage.test.ts` | The three models. |
+| `tests/guards/schema-vocabulary.test.ts` | The new models and enums. |
+| `tests/guards/tenant-isolation-forward-lock.test.ts` | The three tables and their test. |
+| `tests/guards/tenant-isolation-structural.test.ts` | `security`, `csp-report` and `telemetry` in `ALLOWED_API_DIRS`, with reasons. |
+| `tests/helpers/run-env-script.ts` | An authenticated `REDIS_URL` in the valid production env. |
+| `tests/integration/prisma-enum-values-exist-in-pg.test.ts` | Ten enums, 36 values. |
+| `tests/integration/rls-coverage.test.ts` | The three tables; the no-DELETE privileges. |
+| `tests/unit/auth-flow/middleware-mfa-gate.test.ts` | The beacons pass untouched. |
+| `tests/unit/csp-refinement.test.ts` | The report directives. |
+| `tests/unit/csp.test.ts` | The report directives. |
 
 </details>
 

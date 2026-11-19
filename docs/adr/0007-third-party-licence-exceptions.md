@@ -126,9 +126,29 @@ Options were: add BlueOak-1.0.0 to the allowlist and exempt the other two; exemp
 - `elkjs` is exempted as `EPL-2.0`, pinned to 0.11.1. Any image that contains it (sub-phase 1.8) carries its EPL-2.0 notice, and `NOTICE` gains an entry in that change; it is never modified in place.
 - The `@visx/vendor` exemption (E6) now lists both versions, `4.0.0` and `4.0.0-alpha.0`. The gate accepts a list of exact versions for one package, and reports a listed version the tree no longer holds as stale.
 
+### E8 — MIT-0, for the mailer's SMTP transport (sub-phase 1.6)
+
+Sub-phase 1.6 ports inflect-compliance's mailer, which sends through `nodemailer`.
+
+**Verified** on 2026-11-19 in the installed tree: `nodemailer` 10.3.1 (published 2026-10-29) declares `MIT-0`, and its `LICENSE` is the MIT No Attribution licence: the MIT grant without the condition that the notice be kept. It imposes strictly fewer conditions than MIT, which is already allowed. Nothing else in the tree declares MIT-0.
+
+Options were: add `MIT-0` to `ALLOWED_LICENCES` (the E4 path); exempt `nodemailer` alone; or ship no SMTP transport, leaving mail on the console sink.
+
+**Decision: add `MIT-0` to `ALLOWED_LICENCES`.** Owner decision, 2026-11-19 (HANDOFF row 31). `nodemailer` is pinned to 10.3.1, the newest release at least 14 days old on the day it was installed. Installing it needs a `package.json` override of next-auth's optional `nodemailer@^7.0.7` peer, decided in ADR 0004 (open question 7).
+
+### E9 — FSL-1.1-Apache-2.0, for the Sentry SDK (sub-phase 1.6)
+
+Sub-phase 1.6 ports inflect-compliance's Sentry integration (`src/lib/observability/sentry.ts`), which needs `@sentry/nextjs`.
+
+**Verified** on 2026-11-19 in the installed tree: `@sentry/nextjs` 11.11.0 (published 2026-11-05), `@sentry/node` 11.11.0 and `@sentry/bundler-plugins` 11.11.0 declare `MIT`. `@sentry/bundler-plugins` depends on `sentry` 0.45.0, which declares `FSL-1.1-Apache-2.0`: the Functional Source License 1.1 with the Apache-2.0 future licence. It is source-available, not open source. It grants every use except a competing product or service that substitutes for the licensed software, and each release converts to Apache-2.0 two years after it is made available. Islestone uses it only as the Sentry SDK's build-time dependency and offers no competing error-tracking product.
+
+Options were: add `FSL-1.1-Apache-2.0` to `ALLOWED_LICENCES`; exempt `sentry` alone, pinned; or leave Sentry as a no-op stub and choose another error tracker.
+
+**Decision: add `FSL-1.1-Apache-2.0` to `ALLOWED_LICENCES`.** Owner decision, 2026-11-19 (HANDOFF row 32); the owner accepts it for the Sentry SDK. `@sentry/nextjs` is pinned to 11.11.0: inflect-compliance's 11.12.0 was under 14 days old on the day of install. The SDK is initialised only when `SENTRY_DSN` is set, server-side only, with its data collection pinned off (`tests/guards/sentry-privacy-posture-pinned.test.ts`).
+
 ## Consequences
 
-- The state of the gate: `ALLOWED_LICENCES` holds roadmap 0.3's list plus `0BSD` (E2b), `Unlicense` (E6) and `BlueOak-1.0.0` (E7). `scripts/licence-exemptions.json` holds 18 entries: 17 cite this ADR (the 14 sharp packages, E1a; `caniuse-lite`, E3a; `@visx/vendor` at two versions, E6 and E7; `elkjs`, E7) and one cites ADR 0001 (`@inflect/ui`, the BUSL-1.1 mirror). There is no `tslib` entry (E2b).
+- The state of the gate: `ALLOWED_LICENCES` holds roadmap 0.3's list plus `0BSD` (E2b), `Unlicense` (E6), `BlueOak-1.0.0` (E7), `MIT-0` (E8) and `FSL-1.1-Apache-2.0` (E9). `scripts/licence-exemptions.json` holds 18 entries: 17 cite this ADR (the 14 sharp packages, E1a; `caniuse-lite`, E3a; `@visx/vendor` at two versions, E6 and E7; `elkjs`, E7) and one cites ADR 0001 (`@inflect/ui`, the BUSL-1.1 mirror). There is no `tslib` entry (E2b).
 - The gate accepts an exemption only when the ADR it cites exists, names the package, and has an Accepted status line. An exemption that cites a Proposed ADR fails the gate.
 - The LGPL entries are pinned to versions, so a `next` or `sharp` upgrade that moves them fails the gate until a person re-reads the new versions.
 - The `caniuse-lite` entry is bound to its declared licence. A licence change fails the gate; a version change does not.

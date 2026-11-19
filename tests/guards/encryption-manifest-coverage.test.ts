@@ -71,6 +71,13 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    // ── The notification outbox (sub-phase 1.6) ───────────────────────
+    'NotificationOutbox.bodyText':
+        'Rendered email body from a template over a work item title and a name; the recipient is the PII column, encrypted by the PII extension. Purged by the retention job (8.3).',
+    'NotificationOutbox.bodyHtml':
+        'Rendered HTML email body, the same content as bodyText; purged by the retention job (8.3).',
+    'Notification.body':
+        'Bell text built from a template at emit time (a work item title and an actor name), shown only to its recipient.',
     // ── Append-only audit trail — encrypting breaks hash-chain
     //    integrity; investigation needs plaintext (encrypted-fields.ts). ─
     'AuditLog.details':
