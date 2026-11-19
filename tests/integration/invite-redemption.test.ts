@@ -14,6 +14,7 @@ jest.mock('@/lib/audit', () => jest.requireActual('../helpers/audit-recorder').a
 import { DB_AVAILABLE } from './db-helper';
 import { auditEntries } from '../helpers/audit-recorder';
 import { prismaTestClient } from '../helpers/db';
+import { deleteAuditRowsForTenants, deleteAuditRowsForUsers } from '../helpers/audit-cleanup';
 import { makeRequestContext } from '../helpers/make-context';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { PrismaClient } from '@prisma/client';
@@ -25,7 +26,7 @@ import {
     redeemPendingInvitesByEmail,
 } from '@/app-layer/usecases/tenant-invites';
 import { createTenantWithOwner } from '../helpers/tenant-fixture';
-import { lookupEmail } from '@/lib/auth/email-lookup';
+import { hashForLookup } from '@/lib/security/encryption';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -49,6 +50,9 @@ describeFn('invite-redemption usecases', () => {
                 select: { id: true },
             });
             const ids = tenants.map((t) => t.id);
+            // Audit rows block the tenant delete (AuditLog_tenantId_fkey is
+            // RESTRICT) and outlive their users; clear them first (sub-phase 1.5).
+            await deleteAuditRowsForTenants(prisma, ids);
             if (ids.length > 0) {
                 await prisma.tenantInvite.deleteMany({ where: { tenantId: { in: ids } } });
                 await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: ids } } });
@@ -58,6 +62,8 @@ describeFn('invite-redemption usecases', () => {
             await prisma.tenant.deleteMany({ where: { slug: { in: tenantSlugs } } });
         } catch { /* best effort */ }
         try {
+            const users = await prisma.user.findMany({ where: { email: { in: userEmails } }, select: { id: true } });
+            await deleteAuditRowsForUsers(prisma, users.map((u) => u.id));
             await prisma.user.deleteMany({ where: { email: { in: userEmails } } });
         } catch { /* best effort */ }
         await prisma.$disconnect();
@@ -101,7 +107,7 @@ describeFn('invite-redemption usecases', () => {
     /** Create a User row with just an email (mirrors OAuth first-sign-in placeholder). */
     async function createUser(email: string) {
         return prisma.user.upsert({
-            where: { email: lookupEmail(email) },
+            where: { emailHash: hashForLookup(email) },
             create: { email, name: email.split('@')[0] },
             update: {},
         });

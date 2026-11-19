@@ -1,24 +1,28 @@
 /**
  * The shared route-handler wrapper: error shaping, request id, request
- * context, lifecycle logs and the mutation-tier rate limit.
+ * context, lifecycle logs, the OpenTelemetry root span, request metrics and
+ * the mutation-tier rate limit.
  *
  * Copied from inflect-compliance `src/lib/errors/api.ts` at
- * 5528464fc54a8681956f3b9ce23ca9c075f0420e. Sub-phase 1.4 is the first with
- * routes that need it. The OpenTelemetry root span, the request metrics and
- * the Sentry capture are not here yet: sub-phase 1.6 brings tracing, metrics
- * and Sentry and puts them back around the same body.
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e. Sub-phase 1.4 landed it without
+ * the span and metrics; 1.5 restores them (the tracer and meter are the
+ * OpenTelemetry API's no-ops until 1.6 registers the SDK). The Sentry
+ * capture is not here: 1.6 brings Sentry and puts it back.
  */
+import { SpanStatusCode } from '@opentelemetry/api';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-import { API_VERSION, API_VERSION_HEADER } from '@/lib/api-version';
 import { runWithRequestContext } from '@/lib/observability/context';
 import { extractErrorMeta, logger } from '@/lib/observability/logger';
+import { recordRequestError, recordRequestMetrics } from '@/lib/observability/metrics';
+import { getTracer } from '@/lib/observability/tracing';
 import type { RateLimitConfig } from '@/lib/security/rate-limit';
 import type { RateLimitScope } from '@/lib/security/rate-limit-middleware';
 import { API_MUTATION_LIMIT, enforceRateLimit, isRateLimitBypassed } from '@/lib/security/rate-limit-middleware';
 
 import { toApiErrorResponse } from './types';
+import { API_VERSION, API_VERSION_HEADER } from '@/lib/api-version';
 
 // Depending on the Node.js / Edge runtime version, crypto.randomUUID() is natively available globally.
 // If it fails (e.g. extremely old runtimes), fallback to a simple Math.random() based ID.
@@ -127,7 +131,8 @@ interface ApiRouteHandler<Context> {
  * - x-request-id for correlation tracking
  * - Observability request context (AsyncLocalStorage)
  * - Structured request lifecycle logs (start/end/error) via Pino
- * - (from sub-phase 1.6) an OpenTelemetry root span and request metrics
+ * - OpenTelemetry root span (api.request) with HTTP attributes
+ * - Request metrics (count, duration, errors)
  * - **Rate limiting (Epic A.2):** POST/PUT/DELETE/PATCH default to
  *   API_MUTATION_LIMIT. Pass `{ rateLimit: { config, scope } }` for
  *   stricter presets (LOGIN_LIMIT, API_KEY_CREATE_LIMIT), or
@@ -161,7 +166,15 @@ export function withApiErrorHandling<Context = unknown>(
         return runWithRequestContext(
             { requestId, route, startTime },
             async () => {
-                {
+                // ── OTel root span ──
+                const tracer = getTracer();
+                return tracer.startActiveSpan('api.request', async (span) => {
+                    span.setAttributes({
+                        'http.method': method,
+                        'http.route': route,
+                        'app.requestId': requestId,
+                    });
+
                     // ── Request started ──
                     logger.info('request started', { component: 'api', method });
 
@@ -177,6 +190,17 @@ export function withApiErrorHandling<Context = unknown>(
                                 const durationMs = Math.round(
                                     performance.now() - startTime,
                                 );
+                                span.setAttributes({
+                                    'http.status_code': 429,
+                                    'rate_limit.scope': rateScope.scope,
+                                });
+                                span.setStatus({ code: SpanStatusCode.OK });
+                                recordRequestMetrics({
+                                    method,
+                                    route,
+                                    status: 429,
+                                    durationMs,
+                                });
                                 logger.warn('request rate-limited', {
                                     component: 'api',
                                     method,
@@ -194,6 +218,11 @@ export function withApiErrorHandling<Context = unknown>(
 
                         const status = response.status;
                         const durationMs = Math.round(performance.now() - startTime);
+
+                        // ── Span + metrics ──
+                        span.setAttributes({ 'http.status_code': status });
+                        span.setStatus({ code: SpanStatusCode.OK });
+                        recordRequestMetrics({ method, route, status, durationMs });
 
                         // ── Request completed ──
                         logger.info('request completed', {
@@ -228,12 +257,31 @@ export function withApiErrorHandling<Context = unknown>(
                         const { payload, status } = toApiErrorResponse(error, requestId);
                         const durationMs = Math.round(performance.now() - startTime);
 
+                        // ── Span error ──
+                        span.setAttributes({ 'http.status_code': status });
+                        span.setStatus({
+                            code: SpanStatusCode.ERROR,
+                            message: error instanceof Error ? error.message : String(error),
+                        });
+                        if (error instanceof Error) {
+                            span.recordException(error);
+                        }
+
+                        // ── Metrics ──
+                        recordRequestMetrics({ method, route, status, durationMs });
+                        recordRequestError({ method, route, errorCode: payload.error.code });
+
+                        // Sub-phase 1.6 adds the Sentry capture (5xx only) here.
+
                         // ── Request failed ──
                         // A 4xx is the API refusing a request it was right to
                         // refuse (bad input, no session, no permission, absent
                         // row), so it is a warning. Only a 5xx is the server
                         // failing, and only that is an error. Logging both as
-                        // errors buries real 500s among routine refusals. A
+                        // errors buried real 500s among routine refusals: on
+                        // 2026-11-10, five of production's six error lines in a
+                        // day were correct 401/403/404s. The request-error
+                        // metric above still counts every failure, and a
                         // denial still writes its AUTHZ_DENIED audit row.
                         const logFailure = status >= 500 ? logger.error : logger.warn;
                         logFailure(`request failed ${status} ${method} ${route}`, {
@@ -253,8 +301,10 @@ export function withApiErrorHandling<Context = unknown>(
                                 'Cache-Control': 'no-store, max-age=0'
                             }
                         });
+                    } finally {
+                        span.end();
                     }
-                }
+                });
             },
         );
     };

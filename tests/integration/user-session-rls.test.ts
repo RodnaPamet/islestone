@@ -39,6 +39,7 @@ import type { RequestContext } from '@/app-layer/types';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 
 import { prismaTestClient } from '../helpers/db';
+import { deleteAuditRowsForTenants, deleteAuditRowsForUsers } from '../helpers/audit-cleanup';
 import { makeRequestContext } from '../helpers/make-context';
 
 import { DB_AVAILABLE } from './db-helper';
@@ -102,6 +103,9 @@ describeFn('Epic D.1 — UserSession RLS', () => {
 
     afterAll(async () => {
         await cleanup();
+        // Audit rows block the tenant delete (RESTRICT); clear them first.
+        await deleteAuditRowsForTenants(globalPrisma, [TENANT_A, TENANT_B]);
+        await deleteAuditRowsForUsers(globalPrisma, [USER_ID]);
         await globalPrisma.user.delete({ where: { id: USER_ID } });
         await globalPrisma.tenant.deleteMany({ where: { id: { in: [TENANT_A, TENANT_B] } } });
     });

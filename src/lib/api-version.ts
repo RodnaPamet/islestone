@@ -2,12 +2,15 @@
  * Epic E.3 — explicit API contract versioning.
  *
  * `X-API-Version` is set on every response that flows through
- * `withApiErrorHandling` — i.e. the 253 wrapped routes that share
- * the canonical ApiErrorResponse contract. Bare/exempt routes
- * (k8s probes, redirect-only flows, anti-enumeration uniform-200
- * responses, CSP report sinks, external webhook receivers, SCIM,
- * NextAuth catch-all, staging seed) intentionally don't carry
- * this header — they have their own contracts and consumers.
+ * `withApiErrorHandling` — i.e. every wrapped route that shares the
+ * canonical ApiErrorResponse contract. Bare/exempt routes (the health
+ * probes, redirect-only flows, anti-enumeration uniform-200 responses, the
+ * CSP report sink, the NextAuth catch-all) intentionally don't carry this
+ * header — they have their own contracts and consumers.
+ *
+ * Copied from inflect-compliance `src/lib/api-version.ts` at
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e; the version is Islestone's own
+ * first contract date (sub-phase 1.5).
  *
  * **Bumping the version.** When a future change is breaking
  * (rename a field on a hot DTO, change an HTTP status mapping,
@@ -28,9 +31,9 @@
  * received, log it for telemetry, or alert when it changes
  * unexpectedly. When we DO want server-side branching, the
  * mechanism extends naturally: read a request header
- * (`Accept-Version: 2026-04-29`), match against a registry of
+ * (`Accept-Version: 2026-11-19`), match against a registry of
  * supported versions, dispatch.
  */
 
-export const API_VERSION = '2026-04-29';
+export const API_VERSION = '2026-11-19';
 export const API_VERSION_HEADER = 'X-API-Version';

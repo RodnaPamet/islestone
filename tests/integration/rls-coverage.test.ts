@@ -41,6 +41,9 @@ import { DB_AVAILABLE } from './db-helper';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
+/** Tenant tables app_user may only read and append to (sub-phase 1.5). */
+const APPEND_ONLY_TABLES: readonly string[] = ['AuditLog'];
+
 describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
     let prisma: PrismaClient;
     let policies: Array<{
@@ -248,6 +251,8 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
         // enumeration broke, every check above would pass over nothing).
         // An exact list, ratcheted up as tenant tables land.
         expect([...TENANT_SCOPED_MODELS].sort()).toEqual([
+            'AuditLog',
+            'AuditOutbox',
             'TenantCustomRole',
             'TenantInvite',
             'TenantMembership',
@@ -261,8 +266,11 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
         // RLS on a table app_user cannot read is a 500, not isolation.
         // ALTER DEFAULT PRIVILEGES covers only tables later created by the
         // role that ran it, so every migration that creates a table grants
-        // it explicitly; this is the check that it did.
-        const tables = [...TENANT_SCOPED_MODELS, ...ORG_SCOPED_MODELS.keys()];
+        // it explicitly; this is the check that it did. The append-only audit
+        // trail is the exception: SELECT and INSERT, asserted in the next test.
+        const tables = [...TENANT_SCOPED_MODELS, ...ORG_SCOPED_MODELS.keys()].filter(
+            (t) => !APPEND_ONLY_TABLES.includes(t),
+        );
         const missing: string[] = [];
         for (const table of tables) {
             for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'DELETE']) {
@@ -275,6 +283,26 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             }
         }
         expect(missing).toEqual([]);
+    });
+
+    test('app_user holds SELECT and INSERT, and nothing more, on the append-only audit trails', async () => {
+        // Sub-phase 1.5: the trails are append-only by privilege as well as
+        // by trigger. A GRANT of UPDATE, DELETE or TRUNCATE would let a tenant
+        // request reach a row the trigger is the only thing refusing.
+        const held: string[] = [];
+        for (const table of [...APPEND_ONLY_TABLES, 'OrgAuditLog']) {
+            for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) {
+                const [row] = await prisma.$queryRawUnsafe<Array<{ ok: boolean }>>(
+                    `SELECT has_table_privilege('app_user', $1, $2) AS ok`,
+                    `"${table}"`,
+                    privilege,
+                );
+                if (row?.ok) held.push(`${privilege} ON "${table}"`);
+            }
+        }
+        expect(held.sort()).toEqual(
+            ['INSERT ON "AuditLog"', 'INSERT ON "OrgAuditLog"', 'SELECT ON "AuditLog"', 'SELECT ON "OrgAuditLog"'],
+        );
     });
 
     test('no tenant-scoped table carries the deprecated allow_all policy', () => {
