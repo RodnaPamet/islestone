@@ -1,1 +1,9 @@
 packages/ui/** -text
+# The generic UI files copied byte for byte from inflect-compliance (ui-mirror.json):
+# never let a checkout rewrite their line endings.
+src/components/ui/** -text
+src/lib/hooks/** -text
+src/lib/format-bytes.ts -text
+src/lib/text-utils.ts -text
+src/lib/filters/filter-presets.ts -text
+src/types/tanstack-table.d.ts -text

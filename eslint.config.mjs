@@ -5,9 +5,18 @@
 // typescript-eslint is also a direct devDependency, pinned, so its version is
 // ours (npm dedupes it with the copy eslint-config-next asks for). The blocks
 // after the presets are Islestone's own rules.
+import { readFileSync } from 'node:fs';
+
 import { defineConfig, globalIgnores } from 'eslint/config';
 import nextVitals from 'eslint-config-next/core-web-vitals';
 import nextTs from 'eslint-config-next/typescript';
+
+// The generic UI files copied byte for byte from inflect-compliance into src/
+// (sub-phase 1.2, part B). ui-mirror.json lists them under "files"; they are
+// linted upstream under upstream's rules and may not be edited here, so this
+// config skips exactly those paths. Islestone's own files beside them (the
+// manifest's "owned" entries, the gallery) are linted as usual.
+const mirroredUiFiles = Object.keys(JSON.parse(readFileSync(new URL('./ui-mirror.json', import.meta.url), 'utf8')).files);
 
 export default defineConfig([
     ...nextVitals,
@@ -29,6 +38,7 @@ export default defineConfig([
         // linted upstream and may not be edited here; `npm run typecheck:ui`
         // and `node scripts/ui-drift.mjs verify` check it instead.
         'packages/ui/**',
+        ...mirroredUiFiles,
     ]),
 
     // Everything TypeScript, application and tests alike.
