@@ -25,6 +25,7 @@ import {
     assertCanManageWorkConfig,
     assertCanReadWorkConfig,
 } from '@/app-layer/policies/work-config.policies';
+import { commentDeleteBasis, mayEditComment } from '@/app-layer/policies/comment.policies';
 import {
     JOB_PROJECT_VISIBILITY_WHERE,
     projectRowVisibilityWhere,
@@ -140,5 +141,21 @@ describe('project visibility', () => {
         });
         expect(projectRowVisibilityWhere({ kind: 'GRANTED', projectIds: [] })).toEqual({ deletedAt: null, archivedAt: null, id: { in: [] } });
         expect(JOB_PROJECT_VISIBILITY_WHERE).toEqual({ project: { deletedAt: null, archivedAt: null } });
+    });
+});
+
+describe('comments (owner decision, 2026-11-19)', () => {
+    const author = { authorUserId: 'author-1' };
+
+    it('only the author edits; an admin never rewrites someone else\'s words', () => {
+        expect(mayEditComment(makeRequestContext('MEMBER', { userId: 'author-1' }), author)).toBe(true);
+        expect(mayEditComment(makeRequestContext('OWNER', { userId: 'admin-1' }), author)).toBe(false);
+        expect(mayEditComment(makeRequestContext('ADMIN', { userId: 'admin-1' }), author)).toBe(false);
+    });
+
+    it('the author deletes as the author; an admin deletes as moderation; anyone else may not', () => {
+        expect(commentDeleteBasis(makeRequestContext('MEMBER', { userId: 'author-1' }), author)).toBe('author');
+        expect(commentDeleteBasis(makeRequestContext('ADMIN', { userId: 'admin-1' }), author)).toBe('moderation');
+        expect(commentDeleteBasis(makeRequestContext('MEMBER', { userId: 'other-1' }), author)).toBeNull();
     });
 });

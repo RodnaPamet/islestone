@@ -8,7 +8,8 @@
  *   - every write first checks the item is live and visible (the source's
  *     watcher removal did not), and refuses an archived project's item;
  *   - comment bodies are sanitised and stored encrypted; edits and deletes
- *     are new (author, or a workspace admin), deletes are soft;
+ *     are new: the author edits, the author or a workspace admin deletes
+ *     (moderation, audited as such; `comment.policies.ts`), deletes are soft;
  *   - watching and unwatching are mutations and are audited
  *     (`WORK_ITEM_WATCHER_ADDED` / `_REMOVED`, the source wrote nothing); the
  *     self/other split lives in the routes, so "watch someone else" without
@@ -19,6 +20,7 @@
  *   - attaching or detaching a label increases the item's version (ADR 0002 §9).
  */
 import { logEvent } from '../events/audit';
+import { commentDeleteBasis, mayEditComment } from '../policies/comment.policies';
 import { LabelRepository } from '../repositories/LabelRepository';
 import { MembershipRepository } from '../repositories/MembershipRepository';
 import {
@@ -36,6 +38,7 @@ import { visibleProjects } from '../policies/project-visibility';
 import { assertLabelsUsable } from './work-item';
 import { emitWatcherActivity, keyOf, loadVisibleItem, loadWritableItem } from './work-item-shared';
 import type { RequestContext } from '../types';
+import { appendAuditEntryOrQueue } from '@/lib/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, forbidden, notFound } from '@/lib/errors/types';
 import { clampLimit, computeKeysetPage, decodeCursor, InvalidCursorError, type KeysetOrder } from '@/lib/pagination';
@@ -93,11 +96,31 @@ export async function addComment(ctx: RequestContext, workItemId: string, input:
     return comment;
 }
 
-/** The comment's author, or a workspace admin (`canAdmin`), may edit or delete it. */
-function assertMayChangeComment(ctx: RequestContext, comment: { authorUserId: string }) {
-    if (comment.authorUserId !== ctx.userId && !ctx.permissions.canAdmin) {
-        throw forbidden('Only the comment\'s author or a workspace admin can change it.');
-    }
+/**
+ * A refusal decided here, after the route's key admitted the caller, writes
+ * the same hash-chained `AUTHZ_DENIED` entry a `requirePermission` denial
+ * writes (in a transaction of its own, so the request's rollback keeps it),
+ * then answers 403.
+ */
+async function refuseComment(ctx: RequestContext, commentId: string, verb: 'edit' | 'delete', message: string): Promise<never> {
+    await appendAuditEntryOrQueue({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
+        entity: 'Comment',
+        entityId: commentId,
+        action: 'AUTHZ_DENIED',
+        details: `Comment ${verb} refused`,
+        detailsJson: {
+            category: 'access',
+            event: 'authz_denied',
+            reason: verb === 'edit' ? 'COMMENT_EDIT_AUTHOR_ONLY' : 'COMMENT_DELETE_AUTHOR_OR_ADMIN',
+            role: ctx.role,
+        },
+        requestId: ctx.requestId,
+        metadataJson: { role: ctx.role, verb },
+    });
+    throw forbidden(message);
 }
 
 export async function editComment(ctx: RequestContext, workItemId: string, commentId: string, input: { body: string }) {
@@ -107,7 +130,9 @@ export async function editComment(ctx: RequestContext, workItemId: string, comme
         await loadWritableItem(db, ctx, await visibleProjects(ctx, db), workItemId);
         const comment = await CommentRepository.get(db, ctx, workItemId, commentId);
         if (!comment) throw notFound('Comment not found');
-        assertMayChangeComment(ctx, comment);
+        if (!mayEditComment(ctx, comment)) {
+            await refuseComment(ctx, commentId, 'edit', 'Only the comment\'s author can edit it.');
+        }
         await CommentRepository.edit(db, ctx, commentId, body);
         await logEvent(db, ctx, {
             action: 'COMMENT_EDITED',
@@ -115,7 +140,7 @@ export async function editComment(ctx: RequestContext, workItemId: string, comme
             entityId: commentId,
             details: 'Edited a comment',
             detailsJson: { category: 'entity_lifecycle', entityName: 'Comment', operation: 'updated', changedFields: ['body'] },
-            metadata: { workItemId, byAuthor: comment.authorUserId === ctx.userId },
+            metadata: { workItemId },
         });
         return { id: commentId, edited: true };
     });
@@ -127,17 +152,28 @@ export async function deleteComment(ctx: RequestContext, workItemId: string, com
         await loadWritableItem(db, ctx, await visibleProjects(ctx, db), workItemId);
         const comment = await CommentRepository.get(db, ctx, workItemId, commentId);
         if (!comment) throw notFound('Comment not found');
-        assertMayChangeComment(ctx, comment);
+        const basis = commentDeleteBasis(ctx, comment);
+        if (!basis) {
+            await refuseComment(ctx, commentId, 'delete', 'Only the comment\'s author or a workspace admin can delete it.');
+        }
         await CommentRepository.softDelete(db, ctx, commentId);
+        // An admin removing someone else's comment is moderation, and the
+        // trail says so: its own action, and the author it acted on.
+        const moderation = basis === 'moderation';
         await logEvent(db, ctx, {
-            action: 'COMMENT_DELETED',
+            action: moderation ? 'COMMENT_MODERATED' : 'COMMENT_DELETED',
             entityType: 'Comment',
             entityId: commentId,
-            details: 'Deleted a comment',
-            detailsJson: { category: 'entity_lifecycle', entityName: 'Comment', operation: 'deleted' },
-            metadata: { workItemId, byAuthor: comment.authorUserId === ctx.userId },
+            details: moderation ? 'Deleted another member\'s comment (moderation)' : 'Deleted a comment',
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'Comment',
+                operation: 'deleted',
+                summary: moderation ? 'moderation' : 'author',
+            },
+            metadata: { workItemId, basis, authorUserId: comment.authorUserId },
         });
-        return { deleted: true };
+        return { deleted: true, basis };
     });
 }
 

@@ -294,6 +294,55 @@ describeFn('the work-item API', () => {
         expect(rows.some((r) => (r.metadataJson as { self?: boolean } | null)?.self === true)).toBe(true);
     });
 
+    describe('comments (owner decision, 2026-11-19): the author edits; the author or an admin deletes', () => {
+        const commentCall = (method: 'PATCH' | 'DELETE', commentId: string): Call => ({
+            file: `${W}/[workItemId]/comments/[commentId]/route.ts`,
+            method,
+            path: (i) => `/work-items/${i.item}/comments/${commentId}`,
+            params: (i) => P(i, { workItemId: i.item, commentId }),
+            body: method === 'PATCH' ? () => ({ body: 'rewritten' }) : undefined,
+            write: true,
+            key: 'work_items.comment',
+        });
+        const membersComment = async () => (await addComment(ctxFor('MEMBER'), ids.item, { body: 'the member wrote this' })).id;
+
+        it('an admin edit of another person\'s comment is a 403 with an AUTHZ_DENIED row, and the words stand', async () => {
+            const commentId = await membersComment();
+            const before = await prisma.auditLog.count({ where: { tenantId, action: 'AUTHZ_DENIED', entity: 'Comment', entityId: commentId } });
+            const res = await call('OWNER', commentCall('PATCH', commentId));
+            expect(res.status).toBe(403);
+            expect(await prisma.auditLog.count({ where: { tenantId, action: 'AUTHZ_DENIED', entity: 'Comment', entityId: commentId } })).toBe(before + 1);
+            const row = await prisma.comment.findUniqueOrThrow({ where: { id: commentId } });
+            expect(row.editedAt).toBeNull();
+        });
+
+        it('an admin deleting someone else\'s comment is audited as moderation, naming the author', async () => {
+            const commentId = await membersComment();
+            const res = await call('OWNER', commentCall('DELETE', commentId));
+            expect(res).toMatchObject({ status: 200, body: { deleted: true, basis: 'moderation' } });
+            const audit = await prisma.auditLog.findFirst({ where: { tenantId, entityId: commentId, action: 'COMMENT_MODERATED' } });
+            expect(audit?.metadataJson).toMatchObject({ basis: 'moderation', authorUserId: users.MEMBER });
+            expect(audit?.userId).toBe(users.OWNER);
+        });
+
+        it('the author edits and deletes their own comment', async () => {
+            const commentId = await membersComment();
+            expect((await call('MEMBER', commentCall('PATCH', commentId))).status).toBe(200);
+            expect((await prisma.comment.findUniqueOrThrow({ where: { id: commentId } })).editedAt).not.toBeNull();
+            const del = await call('MEMBER', commentCall('DELETE', commentId));
+            expect(del).toMatchObject({ status: 200, body: { basis: 'author' } });
+            expect(await prisma.auditLog.count({ where: { tenantId, entityId: commentId, action: 'COMMENT_EDITED' } })).toBe(1);
+            expect(await prisma.auditLog.count({ where: { tenantId, entityId: commentId, action: 'COMMENT_DELETED' } })).toBe(1);
+        });
+
+        it('a member who is not the author may not delete it (403, AUTHZ_DENIED)', async () => {
+            const commentId = (await addComment(ctxFor('OWNER'), ids.item, { body: 'the owner wrote this' })).id;
+            const res = await call('MEMBER', commentCall('DELETE', commentId));
+            expect(res.status).toBe(403);
+            expect(await prisma.auditLog.count({ where: { tenantId, action: 'AUTHZ_DENIED', entity: 'Comment', entityId: commentId } })).toBe(1);
+        });
+    });
+
     it('the audit chain verifies', async () => {
         expect((await verifyAuditChain(tenantId)).valid).toBe(true);
     });

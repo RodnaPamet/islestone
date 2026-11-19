@@ -1,6 +1,7 @@
 /**
- * Edit or delete a comment (its author, or a workspace admin). A delete is
- * soft.
+ * Edit a comment (its author only) or delete it (its author, or a workspace
+ * admin as moderation; owner decision 2026-11-19). A refusal past the route
+ * key writes an `AUTHZ_DENIED` row from the usecase. A delete is soft.
  */
 import type { NextRequest } from 'next/server';
 
