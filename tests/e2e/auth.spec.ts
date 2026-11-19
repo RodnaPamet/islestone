@@ -5,7 +5,7 @@
  * 5528464fc54a8681956f3b9ce23ca9c075f0420e. The parent signed in as the
  * seeded `admin@acme.com`; Islestone has no seed, so each signed-in case uses
  * the `isolatedTenant` fixture (a workspace registered for that test). It
- * lands on the workspace page `/t/<slug>` rather than a dashboard, and the
+ * lands on the workspace's My Work (`/t/<slug>/my-work`, sub-phase 1.7) rather than a dashboard, and the
  * protected paths it probes are Islestone's (`/t/<slug>`, the admin members
  * API) rather than the compliance pages. The OAuth buttons render only for a
  * provider whose client id is configured; the Playwright server sets none.
@@ -25,7 +25,7 @@ test.describe('Authentication flow', () => {
         await expect(page.getByText('Continue with Microsoft')).toHaveCount(0);
     });
 
-    test('credentials sign-in lands on the workspace page, which names the workspace and the role', async ({
+    test('credentials sign-in lands on My Work, in the shell that names the workspace and the role', async ({
         page,
         isolatedTenant,
     }) => {
@@ -33,10 +33,10 @@ test.describe('Authentication flow', () => {
         await submitCredentials(page, isolatedTenant.ownerEmail, isolatedTenant.ownerPassword);
         await page.waitForURL(LANDING_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
 
-        expect(new URL(page.url()).pathname).toBe(`/t/${isolatedTenant.tenantSlug}`);
-        const main = page.getByRole('main');
-        await expect(main.getByRole('heading', { level: 1 })).toHaveText(isolatedTenant.tenantName);
-        await expect(main.getByText('You are signed in as Owner.')).toBeVisible();
+        expect(new URL(page.url()).pathname).toBe(`/t/${isolatedTenant.tenantSlug}/my-work`);
+        await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toHaveText('My Work');
+        await expect(page.getByTestId('top-chrome-tenant-switcher')).toContainText(isolatedTenant.tenantName);
+        await expect(page.locator('aside').getByText('Owner', { exact: true })).toBeVisible();
     });
 
     test('a wrong password stays on the login page and signs nobody in', async ({ page, isolatedTenant }) => {

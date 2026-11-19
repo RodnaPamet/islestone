@@ -14,12 +14,14 @@ function expectSecurityHeaders(headers: Record<string, string>) {
 
 const headersOf = (response: Response | APIResponse | null) => response?.headers() ?? {};
 
-test('the home page loads and names the product', async ({ page }) => {
+// Sub-phase 1.7: the home page is no longer a placeholder; it sends a
+// visitor to sign in (and a signed-in person to the workspace picker).
+test('the home page sends a visitor to sign in, under the product name', async ({ page }) => {
     const response = await page.goto('/');
 
     expect(response?.status()).toBe(200);
+    expect(new URL(page.url()).pathname).toBe('/login');
     await expect(page).toHaveTitle('Islestone');
-    await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toHaveText('Islestone');
     expectSecurityHeaders(headersOf(response));
 });
 
