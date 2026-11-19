@@ -30,6 +30,9 @@ const ALLOWED_ROOT_PAGES = new Set([
     'not-found.tsx', // 404 page
     'error.tsx', // Error boundary
     'global-error.tsx', // Global error boundary
+    // The shared-UI gallery (sub-phase 1.2): static primitives with sample
+    // data, no tenant data and no data access, so it needs no workspace.
+    'gallery',
 ]);
 
 /** Top-level directories of src/app/api that may hold routes outside /api/t/. */

@@ -91,13 +91,22 @@
   },
   "@visx/vendor": {
     "licence": "MIT AND ISC",
-    "version": "4.0.0",
-    "reason": "Reached through @inflect/ui's charts: @visx/scale, @visx/shape and @visx/axis 4.0.0 depend on it. It declares \"MIT and ISC\", which is not valid SPDX (lower-case operator), so the gate reads it as INVALID. The package bundles d3 modules (ISC) beside visx code; its LICENSE is MIT, \"Copyright (c) 2017-2018 Harrison Shoff\". Both licences are on the allowlist, so this entry only reads the declaration as SPDX. Pinned because the declaration is not SPDX. Verified 2026-11-19.",
+    "version": [
+      "4.0.0",
+      "4.0.0-alpha.0"
+    ],
+    "reason": "Reached through @inflect/ui's charts: @visx/scale, @visx/shape and @visx/axis 4.0.0 depend on it. It declares \"MIT and ISC\", which is not valid SPDX (lower-case operator), so the gate reads it as INVALID. The package bundles d3 modules (ISC) beside visx code; its LICENSE is MIT, \"Copyright (c) 2017-2018 Harrison Shoff\". Both licences are on the allowlist, so this entry only reads the declaration as SPDX. Pinned because the declaration is not SPDX. Verified 2026-11-19. 4.0.0-alpha.0 arrives with the Prisma CLI (prisma > @prisma/studio-core > @visx/grid) with the same declaration; verified 2026-11-19 (ADR 0007 E7).",
     "adr": "docs/adr/0007-third-party-licence-exceptions.md"
   },
   "caniuse-lite": {
     "licence": "CC-BY-4.0",
     "reason": "Reached through next > caniuse-lite (browserslist build targets). The package is the caniuse.com browser-support database (data/) with a small decoder (dist/); its LICENSE at 1.0.30001826 is Creative Commons Attribution 4.0 International, which asks for attribution and has no copyleft. Exempted by name under owner decision of 2026-11-18 (ADR 0007 E3a): not pinned to a version, because the database is republished about weekly; the entry is bound to the declared licence, so a licence change fails the gate. Verified 2026-11-18.",
+    "adr": "docs/adr/0007-third-party-licence-exceptions.md"
+  },
+  "elkjs": {
+    "licence": "EPL-2.0",
+    "version": "0.11.1",
+    "reason": "Reached through prisma > @prisma/studio-core (Prisma Studio's graph layout); the prisma CLI is an optional peer of @prisma/client, so npm installs its tree in production. Its LICENSE.md is the Eclipse Public License 2.0, a file-level copyleft: used unmodified and never imported by Islestone, it imposes nothing on Islestone's code; an image that contains it carries the EPL-2.0 notice (sub-phase 1.8). Pinned to the version read. Verified 2026-11-19.",
     "adr": "docs/adr/0007-third-party-licence-exceptions.md"
   }
 }
