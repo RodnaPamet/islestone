@@ -16,7 +16,8 @@
  * (That was inflect-compliance.) Islestone's compose redis runs
  * `--maxmemory-policy noeviction` explicitly. This guardrail fails CI if a
  * "tune the compose files" PR reverts it to an eviction policy; sub-phase
- * 1.8's production and staging compose files join its list.
+ * 1.8's production compose file is on its list (there is no staging one,
+ * owner decision 43).
  *
  * Copied from inflect-compliance `tests/guards/redis-eviction-policy.test.ts`
  * at 5528464fc54a8681956f3b9ce23ca9c075f0420e (Islestone's compose file,
@@ -77,14 +78,15 @@ function extractServiceBlock(src: string, service: string): string {
  * "NOT allkeys-lru") never trips the eviction-token check.
  */
 function redisCommandLine(block: string): string {
-    return block.split('\n').find((l) => l.includes('redis-server')) ?? '';
+    // A YAML comment can name redis-server too (the production file explains
+    // its stdin configuration); only a content line is the command.
+    return block.split('\n').find((l) => l.includes('redis-server') && !/^\s*#/.test(l)) ?? '';
 }
 
 /** Every Compose file whose `redis` service runs BullMQ-bearing Redis. */
 const COMPOSE_WITH_REDIS = [
     'docker-compose.yml', // local dev — also runs the app + BullMQ
-    // The production and staging compose files come with sub-phase 1.8,
-    // and join this list then.
+    'deploy/docker-compose.prod.yml', // production (sub-phase 1.8)
 ];
 
 describe('Redis eviction-policy ratchet — Compose redis is BullMQ-safe', () => {

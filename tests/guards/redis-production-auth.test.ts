@@ -11,9 +11,12 @@
  * at 5528464fc54a8681956f3b9ce23ca9c075f0420e, the `src/env.ts` half only,
  * and made behavioural: the real schema runs in a child process
  * (`scripts/print-env-ok.ts`) instead of a regex over the source. The compose
- * half (`--requirepass` on every production-like compose file) comes with
- * sub-phase 1.8's compose files.
+ * half (sub-phase 1.8) is at the end: the production Redis requires a
+ * password from a `:?`-guarded variable, and the URL the app gets carries it.
  */
+import * as path from 'node:path';
+
+import { environmentOf, loadCompose } from '../helpers/compose-file';
 import { runEnvScript } from '../helpers/run-env-script';
 
 const PRODUCTION = {
@@ -36,5 +39,21 @@ describe('Redis production-auth ratchet — env schema enforces an authenticated
 
     it('does not ask for a password outside production', () => {
         expect(runEnvScript({ NODE_ENV: 'development', REDIS_URL: 'redis://localhost:6379' }).success).toBe(true);
+    });
+});
+
+describe('Redis production-auth ratchet — the production compose file', () => {
+    const compose = loadCompose(path.resolve(__dirname, '../../deploy/docker-compose.prod.yml'));
+
+    it('starts Redis with requirepass from a required variable', () => {
+        const redis = compose.services.redis;
+        expect(([] as string[]).concat(redis?.command ?? []).join(' ')).toMatch(/requirepass %s.*\$\$REDIS_PASSWORD/);
+        expect(environmentOf(redis ?? {}).REDIS_PASSWORD).toMatch(/^\$\{REDIS_PASSWORD:\?/);
+    });
+
+    it('hands the app and the worker a password-bearing REDIS_URL', () => {
+        for (const name of ['app', 'worker']) {
+            expect(environmentOf(compose.services[name] ?? {}).REDIS_URL).toMatch(/^redis:\/\/:\$\{REDIS_PASSWORD:\?[^}]+\}@/);
+        }
     });
 });

@@ -29,9 +29,9 @@ import * as path from 'path';
 import { codeOf } from '../helpers/source-blocks';
 
 // Copied from inflect-compliance `tests/guards/worker-heartbeat-wiring.test.ts`
-// at 5528464fc54a8681956f3b9ce23ca9c075f0420e. Link 4 (the compose
-// healthcheck) is sub-phase 1.8's; links 1-3, the TTL margin and the
-// read-only probe are checked here.
+// at 5528464fc54a8681956f3b9ce23ca9c075f0420e. Links 1-3, link 4 (the
+// production compose healthcheck and the worker image's, sub-phase 1.8), the
+// TTL margin and the read-only probe are checked here.
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -67,8 +67,18 @@ describe('worker heartbeat — the four links', () => {
         expect(src).toMatch(/scripts\/worker-healthcheck\.ts/);
         expect(src).toMatch(/dist\/worker-healthcheck\.mjs/);
     });
-    // 4a/4b, the production compose `healthcheck:` blocks that probe
-    // `node dist/worker-healthcheck.mjs`, come with sub-phase 1.8's compose files.
+
+    it('4a. deploy/docker-compose.prod.yml probes that exact bundled file', () => {
+        const src = fs.readFileSync(path.join(ROOT, 'deploy/docker-compose.prod.yml'), 'utf-8');
+        const worker = src.slice(src.indexOf('\n  worker:'), src.indexOf('\n  watchtower:'));
+        expect(worker).toMatch(/test: \["CMD", "node", "dist\/worker-healthcheck\.mjs"\]/);
+    });
+
+    it('4b. the worker image declares the same probe', () => {
+        const src = fs.readFileSync(path.join(ROOT, 'Dockerfile'), 'utf-8');
+        const worker = src.slice(src.indexOf('FROM runtime AS worker'));
+        expect(worker).toMatch(/CMD \["node", "dist\/worker-healthcheck\.mjs"\]/);
+    });
 
 });
 

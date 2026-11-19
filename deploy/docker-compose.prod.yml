@@ -1,0 +1,394 @@
+#
+# Islestone production stack (sub-phase 1.8; owner decisions 42 to 46,
+# 2026-11-19, docs/HANDOFF.md).
+#
+# ── WHERE IT RUNS ──────────────────────────────────────────────────────
+# The GCP VM `agrent` (project hazel-design-419410, europe-west1-b), shared
+# with Agrent and Playerz. Each product is its own Compose project under
+# /opt/<name>; this one is project `islestone` in /opt/islestone. There is no
+# staging environment and there are no preview deployments (decision 43).
+#
+# ── THIS FILE IS CANONICAL ────────────────────────────────────────────
+# It reaches the VM at /opt/islestone/docker-compose.prod.yml through
+# `deploy/apply.sh` (preflight by default, CONFIRM=1 applies), never by
+# hand-editing the host copy; `deploy/check-drift.sh` reports divergence.
+# Watchtower moves the app, worker and migrate IMAGES; it never rewrites this
+# file. The pattern, and the reason for it, is inflect-compliance's #2849.
+#
+# ── SECRETS ARE NEVER INLINED HERE ────────────────────────────────────
+# Every credential is a `${VAR:?message}` (required) or `${VAR:-}` (optional)
+# reference, resolved from /opt/islestone/.env.prod, which apply.sh passes with
+# `--env-file` and nothing else reads. A missing required value aborts
+# `docker compose up` before any container is created. The file is never
+# `env_file:` for a service: each service's `environment:` names exactly the
+# variables it gets, so the app never receives the database superuser's
+# password and the database never receives the encryption key.
+# `deploy/.env.prod.example` lists every name.
+#
+# ── NETWORKS AND NAMES ───────────────────────────────────────────────
+# Every service is on `islestone_internal`, a plain bridge with no published
+# port (it keeps outbound access: the worker sends mail). Only `app` also
+# joins `agrent_internal`, the external network of the shared Caddy
+# (`agrent-caddy`), which proxies islestone.cloud to `islestone-app:3000`
+# (deploy/caddy/islestone.caddy). Every container has an `islestone-` name and
+# the app reaches its dependencies by those names, never by a bare service
+# name: on `agrent_internal` a bare `redis` or `postgres` could resolve to
+# another product's container.
+#
+# ── MIGRATIONS ───────────────────────────────────────────────────────
+# `migrate` runs `prisma migrate deploy` once, as the database superuser, on
+# a direct connection (PgBouncer's transaction pooling breaks Prisma's session
+# advisory lock). `app` and `worker` wait for it to complete successfully.
+# Migrations only go forward; a bad one is fixed by a new one
+# (docs/change-management-policy.md). Watchtower ignores `depends_on`, so when
+# it rolls a new image it revives `migrate` (labelled, included while stopped)
+# and both long-running images hold their start in
+# scripts/wait-for-migrations.mjs until the migrations they were built with are
+# applied (docs/deployment.md, "How an image reaches production").
+#
+# ── ROLLBACK ─────────────────────────────────────────────────────────
+# The app, worker and migrate images follow `:latest` unless
+# ISLESTONE_IMAGE_TAG in .env.prod names another tag (`sha-<short>` or a
+# release version). Setting it and running apply.sh pins all three to that
+# build, and Watchtower, which follows the tag a container runs, leaves them
+# there; emptying it returns them to `:latest`. A rollback never reverses a
+# migration (docs/change-management-policy.md, "Rollback").
+#
+# ── RESOURCES ────────────────────────────────────────────────────────
+# The VM has 16 GB and about 11 GB free beside Agrent and Playerz. Every
+# service states `mem_limit` and `cpus`; the long-running services sum to
+# 4 GB (`tests/unit/deploy/compose-prod.test.ts` holds the ceiling), so this
+# stack can never take more than a quarter of the host. Node's heap ceiling is
+# stated beside each Node service's limit, below it, because Node sizes its
+# default heap from the cgroup limit and a heap abort (exit 134) is recorded
+# nowhere an OOM kill would be.
+
+name: islestone
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# What every Node process of the app reads through src/env.ts. Listed by name
+# so nothing reaches a container by accident.
+x-runtime-env: &runtime-env
+  NODE_ENV: production
+  # The runtime role (deploy/postgres/init-runtime-role.sh): not a superuser,
+  # cannot bypass row-level security, a member of app_user. Through PgBouncer.
+  DATABASE_URL: "postgresql://islestone_app:${APP_DB_PASSWORD:?APP_DB_PASSWORD is required (openssl rand -hex 32). It lives in /opt/islestone/.env.prod.}@islestone-pgbouncer:5432/islestone"
+  REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required (openssl rand -hex 32). Redis never runs unauthenticated in production.}@islestone-redis:6379"
+  AUTH_SECRET: "${AUTH_SECRET:?AUTH_SECRET is required (openssl rand -base64 32).}"
+  DATA_ENCRYPTION_KEY: "${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required for production. Generate with: openssl rand -base64 48}"
+  # Set at first deploy and never changed: an index derived from a key that
+  # moves stops matching (docs/encryption.md, "Rotating keys safely").
+  LOOKUP_HASH_KEY: "${LOOKUP_HASH_KEY:?LOOKUP_HASH_KEY is required: set it at first deploy (openssl rand -base64 48) and never change it.}"
+  DERIVED_SUBKEY_KEY: "${DERIVED_SUBKEY_KEY:?DERIVED_SUBKEY_KEY is required: set it at first deploy (openssl rand -base64 48).}"
+  # `upstash` needs both UPSTASH values; `memory` limits per process. Said
+  # explicitly: production refuses the upstash default without its store
+  # (issue #17), and Compose cannot express "this pair, or memory".
+  RATE_LIMIT_MODE: "${RATE_LIMIT_MODE:?RATE_LIMIT_MODE is required: upstash (with both UPSTASH_REDIS_REST values) or memory.}"
+  UPSTASH_REDIS_REST_URL: "${UPSTASH_REDIS_REST_URL:-}"
+  UPSTASH_REDIS_REST_TOKEN: "${UPSTASH_REDIS_REST_TOKEN:-}"
+  NEXTAUTH_URL: https://islestone.cloud
+  APP_URL: https://islestone.cloud
+  NEXT_PUBLIC_APP_URL: https://islestone.cloud
+  AUTH_PUBLIC_SIGNUP: "${AUTH_PUBLIC_SIGNUP:-}"
+  GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"
+  GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}" # pragma: allowlist secret (a reference, resolved from .env.prod)
+  MICROSOFT_CLIENT_ID: "${MICROSOFT_CLIENT_ID:-}"
+  MICROSOFT_CLIENT_SECRET: "${MICROSOFT_CLIENT_SECRET:-}" # pragma: allowlist secret (a reference, resolved from .env.prod)
+  MICROSOFT_TENANT_ID: "${MICROSOFT_TENANT_ID:-common}"
+  SMTP_HOST: "${SMTP_HOST:-}"
+  SMTP_PORT: "${SMTP_PORT:-}"
+  SMTP_USER: "${SMTP_USER:-}"
+  SMTP_PASS: "${SMTP_PASS:-}"
+  SMTP_FROM: "${SMTP_FROM:-}"
+  SENTRY_DSN: "${SENTRY_DSN:-}"
+  SENTRY_ENVIRONMENT: production
+  LOG_LEVEL: "${LOG_LEVEL:-}"
+  CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS:-}"
+  PLATFORM_ADMIN_API_KEY: "${PLATFORM_ADMIN_API_KEY:-}" # pragma: allowlist secret (a reference, resolved from .env.prod)
+
+# Watchtower follows the images that carry both labels; no other Watchtower
+# on the host may touch them (each product runs its own, scoped).
+x-watched: &watched
+  com.centurylinklabs.watchtower.enable: "true"
+  com.centurylinklabs.watchtower.scope: islestone
+
+# Stateful services are never rolled by any Watchtower; they change through
+# this file and apply.sh. `enable=false` is honoured even by a Watchtower that
+# runs without --label-enable.
+x-pinned: &pinned
+  com.centurylinklabs.watchtower.enable: "false"
+  com.centurylinklabs.watchtower.scope: islestone
+
+services:
+  # ── PostgreSQL (pgvector) ─────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg17-trixie
+    container_name: islestone-postgres
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 1536m
+    cpus: 1.0
+    # Sized for the 1.5 GB limit: shared_buffers at a quarter, and few
+    # connections, because PgBouncer multiplexes the app's onto a pool of 20.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=384MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=60
+    environment:
+      POSTGRES_USER: islestone
+      POSTGRES_DB: islestone
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required (openssl rand -hex 32). It lives in /opt/islestone/.env.prod.}"
+      # Read only by 02-runtime-role.sh, on a fresh volume.
+      APP_DB_USER: islestone_app
+      APP_DB_PASSWORD: "${APP_DB_PASSWORD:?APP_DB_PASSWORD is required (openssl rand -hex 32). It lives in /opt/islestone/.env.prod.}"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Both run on the first start of a fresh volume, in name order:
+      # app_user and the superuser's membership, then the runtime role.
+      - ./init-roles.sh:/docker-entrypoint-initdb.d/01-init-roles.sh:ro
+      - ./init-runtime-role.sh:/docker-entrypoint-initdb.d/02-runtime-role.sh:ro
+    networks:
+      - islestone_internal
+    labels: *pinned
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U islestone -d islestone"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # ── PgBouncer (transaction pooling) ───────────────────────────────────
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.26.1-p0
+    container_name: islestone-pgbouncer
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 128m
+    cpus: 0.5
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: islestone-postgres
+      DB_PORT: "5432"
+      DB_NAME: islestone
+      # The only user PgBouncer knows is the runtime role: the superuser can
+      # never connect through the pool.
+      DB_USER: islestone_app
+      DB_PASSWORD: "${APP_DB_PASSWORD:?APP_DB_PASSWORD is required (openssl rand -hex 32). It lives in /opt/islestone/.env.prod.}"
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "200"
+      DEFAULT_POOL_SIZE: "20"
+      MAX_DB_CONNECTIONS: "40"
+      # Protocol-level prepared statements survive transaction pooling.
+      MAX_PREPARED_STATEMENTS: "100"
+      # The healthcheck opens a connection every few seconds; logging each
+      # one would fill the log with nothing (inflect-compliance #3263).
+      LOG_CONNECTIONS: "0"
+      LOG_DISCONNECTIONS: "0"
+    networks:
+      - islestone_internal
+    labels: *pinned
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # ── Redis (BullMQ, the worker heartbeat) ──────────────────────────────
+  redis:
+    image: redis:7.4.12-alpine3.22
+    container_name: islestone-redis
+    restart: unless-stopped
+    logging: *default-logging
+    # maxmemory 256mb bounds the data; an AOF rewrite forks, and copy-on-write
+    # can briefly double it.
+    mem_limit: 512m
+    cpus: 0.5
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?REDIS_PASSWORD is required (openssl rand -hex 32). Redis never runs unauthenticated in production.}"
+      # redis-cli reads REDISCLI_AUTH, so the healthcheck's argv carries no password.
+      REDISCLI_AUTH: "${REDIS_PASSWORD:?REDIS_PASSWORD is required (openssl rand -hex 32). Redis never runs unauthenticated in production.}"
+    # The password reaches redis-server on its standard input (`-` reads the
+    # configuration from stdin), so it never appears in a process list.
+    # noeviction: BullMQ job state lives here, and an evicting policy drops
+    # queued jobs under memory pressure (tests/guards/redis-eviction-policy.test.ts).
+    command: ["sh", "-c", "printf 'requirepass %s\\n' \"$$REDIS_PASSWORD\" | exec redis-server - --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction"]
+    volumes:
+      - redisdata:/data
+    networks:
+      - islestone_internal
+    labels: *pinned
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # ── migrate (one-shot) ────────────────────────────────────────────────
+  migrate:
+    image: "ghcr.io/rodnapamet/islestone-worker:${ISLESTONE_IMAGE_TAG:-latest}"
+    container_name: islestone-migrate
+    pull_policy: always
+    restart: "no"
+    logging: *default-logging
+    mem_limit: 512m
+    cpus: 1.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["node_modules/.bin/prisma", "migrate", "deploy"]
+    environment:
+      # The superuser, directly: migrations own the tables and need DDL and a
+      # session advisory lock, which PgBouncer's transaction mode breaks.
+      DIRECT_DATABASE_URL: "postgresql://islestone:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required (openssl rand -hex 32). It lives in /opt/islestone/.env.prod.}@islestone-postgres:5432/islestone"
+    networks:
+      - islestone_internal
+    labels:
+      <<: *watched
+    # The worker image's heartbeat probe means nothing for a one-shot run.
+    healthcheck:
+      disable: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # ── app (Next.js, standalone) ─────────────────────────────────────────
+  app:
+    image: "ghcr.io/rodnapamet/islestone:${ISLESTONE_IMAGE_TAG:-latest}"
+    container_name: islestone-app
+    pull_policy: always
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    mem_limit: 1024m
+    cpus: 1.0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *runtime-env
+      # The heap ceiling, stated, and below mem_limit (change one, change both).
+      NODE_OPTIONS: "--max-old-space-size=640"
+    networks:
+      - islestone_internal
+      - agrent_internal
+    labels:
+      <<: *watched
+      com.centurylinklabs.watchtower.depends-on: islestone-migrate
+    # Readiness, not liveness: `docker ps` shows a replica that cannot reach
+    # its database or Redis as unhealthy (src/lib/health/readiness.ts).
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/readyz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # ── worker (BullMQ worker + scheduler) ────────────────────────────────
+  worker:
+    image: "ghcr.io/rodnapamet/islestone-worker:${ISLESTONE_IMAGE_TAG:-latest}"
+    container_name: islestone-worker
+    pull_policy: always
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    mem_limit: 768m
+    # Batch-shaped: capped, and half the weight under contention, so a heavy
+    # job slows itself and not the request path.
+    cpus: 0.5
+    cpu_shares: 512
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *runtime-env
+      NODE_OPTIONS: "--max-old-space-size=512"
+    networks:
+      - islestone_internal
+    labels:
+      <<: *watched
+      com.centurylinklabs.watchtower.depends-on: islestone-migrate
+    # Reads the heartbeat the worker refreshes after each completed job; a
+    # process-existence check would call a wedged worker healthy.
+    healthcheck:
+      test: ["CMD", "node", "dist/worker-healthcheck.mjs"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # ── Watchtower (scoped to this project) ───────────────────────────────
+  watchtower:
+    image: containrrr/watchtower:1.7.1
+    container_name: islestone-watchtower
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 128m
+    cpus: 0.25
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # GHCR credentials: `docker login ghcr.io` on the host as root
+      # (docs/deployment.md, "First deploy").
+      - /root/.docker/config.json:/config.json:ro
+    environment:
+      # Watchtower 1.7.1's Docker client pins an API version modern daemons
+      # refuse; state a current one (inflect-compliance measured it).
+      DOCKER_API_VERSION: "1.45"
+      # Only containers labelled scope=islestone AND enable=true. Agrent's
+      # Watchtower is scoped to its own project the same way.
+      WATCHTOWER_SCOPE: islestone
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_POLL_INTERVAL: "120"
+      WATCHTOWER_CLEANUP: "true"
+      # `migrate` has exited by design; these two make Watchtower update it
+      # with the others and start it again, so a new image's migrations run.
+      WATCHTOWER_INCLUDE_STOPPED: "true"
+      WATCHTOWER_REVIVE_STOPPED: "true"
+    networks:
+      - islestone_internal
+    labels: *pinned
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  islestone_internal:
+    name: islestone_internal
+  # Owned by Agrent's stack; this project only joins it (app only).
+  agrent_internal:
+    external: true
