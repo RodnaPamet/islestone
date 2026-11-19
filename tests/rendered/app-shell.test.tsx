@@ -11,7 +11,8 @@
  *     Projects, Views) as workspace links, marks the current page, and shows
  *     Settings only to a member who may open it;
  *   - the command palette opens from the keyboard (Ctrl+K) and from the
- *     sidebar's search row, and lists the same destinations;
+ *     sidebar's search row, and lists the same destinations, Settings only
+ *     for a member who may open it;
  *   - sign-out goes through the auth seam to /login;
  *   - jest-axe finds no violation in the shell, or in the open palette.
  */
@@ -169,6 +170,16 @@ describe('the application shell', () => {
 
         fireEvent.click(within(dialog).getByText('Go to Projects'));
         expect(mockPush).toHaveBeenCalledWith('/t/acme/projects');
+    });
+
+    it("lists Settings in the palette only for a member who may open it", async () => {
+        renderShell('VIEWER');
+        await settle();
+        fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+        const dialog = await screen.findByRole('dialog', { name: 'Command palette' });
+        expect(within(dialog).getByText('Go to Projects')).toBeInTheDocument();
+        expect(within(dialog).queryByText('Go to Settings')).toBeNull();
+        expect(screen.queryByRole('link', { name: 'Settings' })).toBeNull();
     });
 
     it("opens the palette from the sidebar's search row", async () => {

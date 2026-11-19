@@ -8,6 +8,7 @@ import { AppShellFrame } from '@/components/layout/AppShellFrame';
 import { SidebarCollapseProvider } from '@/components/layout/sidebar-collapse-context';
 import { BreadcrumbsProvider } from './breadcrumbs-store';
 import { TopChrome } from './TopChrome';
+import { RegisterPaletteWorkspaceAccess } from '@/components/command-palette/workspace-access';
 
 // ─── Types ───
 
@@ -162,6 +163,9 @@ export function AppShell({
             // rather than the frame knowing the provider's name.
             mainProvider={(node) => <BreadcrumbsProvider>{node}</BreadcrumbsProvider>}
         >
+            {/* Tells the command palette, which sits above the workspace
+                provider, what this member may reach (Settings). */}
+            <RegisterPaletteWorkspaceAccess />
             {children}
         </AppShellFrame>
     );

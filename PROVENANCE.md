@@ -1691,7 +1691,7 @@ The authenticated application shell (sidebar, top chrome, mobile drawer), the th
 - **CISO-Assistant:** `EntityListPage.tsx` credited CISO-Assistant's `ModelTable.svelte` as the inspiration for one shell across every list. No CISO-Assistant code reaches Islestone: pattern only, no code copied (inherited through inflect-compliance). Its licence was re-read at `github.com/intuitem/ciso-assistant-community` commit `cbd830894001dd0e90eec8d287207c86b3f5cd41` (`LICENSE.md`, 2026-11-19): AGPL-3.0 outside the `enterprise` directory, which is under the intuitem Commercial License. The roadmap lists it as inspiration only; the credit line was removed from the copied comment.
 
 <details>
-<summary>All 126 rows</summary>
+<summary>All 128 rows</summary>
 
 | File | Source | Action | Changes |
 |---|---|---|---|
@@ -1734,9 +1734,9 @@ The authenticated application shell (sidebar, top chrome, mobile drawer), the th
 | `src/lib/search/types.ts` | same | REWRITE | `SearchHitType` is `workItem` and `project`, with their icon keys and defaults; the shapes and tunables kept; the header. |
 | `src/lib/tenant-context-provider.tsx` | same | COPY+EDIT | Replaces the 1.4 stub, keeping its hooks: no currency or module bag; Islestone's coarse `Permissions`; the URL builders fall back to the route's slug outside the provider (the MFA pages). |
 | `src/lib/org-context-provider.tsx` | same | COPY | None. |
-| `src/components/theme/ThemeProvider.tsx` | same | COPY+EDIT | Light default (`DEFAULT_THEME`); the OS colour scheme is not read (owner decision pending); the header. |
+| `src/components/theme/ThemeProvider.tsx` | same | COPY+EDIT | Follows the OS until a choice, as the source does, with a light server baseline (`DEFAULT_THEME`) and the dark query (`SYSTEM_DARK_QUERY`); the header. |
 | `src/components/theme/ThemeToggle.tsx` | same | COPY+EDIT | The shim import. |
-| `src/lib/theme-constants.ts` | same | COPY+EDIT | `DEFAULT_THEME`; the pre-paint script falls back to light, not to the OS; `?? x` in the escaper; comments. |
+| `src/lib/theme-constants.ts` | same | COPY+EDIT | `DEFAULT_THEME` and `SYSTEM_DARK_QUERY`; the pre-paint script asks the OS for dark (light otherwise); `?? x` in the escaper; comments. |
 | `src/lib/telemetry/form-telemetry.ts` | same | COPY+EDIT | The debug global is `__ISLESTONE_FORM_TELEMETRY__`; an example name. |
 | `src/lib/zod-jitless.ts` | same | COPY | None. |
 | `src/lib/locale-constants.ts` | same | COPY+EDIT | English only; `LOCALE_COOKIE = uiCookieName('locale')`; comments. |
@@ -1761,6 +1761,8 @@ The authenticated application shell (sidebar, top chrome, mobile drawer), the th
 | `src/app/t/[tenantSlug]/(app)/page.tsx` | — | Islestone-owned | Redirects to My Work. |
 | `src/app/t/[tenantSlug]/(app)/{my-work,inbox,views,projects,settings}/page.tsx` | — | Islestone-owned | Placeholder pages; Settings asserts `mayOpenSettings` on the server. |
 | `src/lib/auth/client-sign-out.ts` | — | Islestone-owned | The shell's sign-out, in the auth seam. |
+| `src/components/command-palette/workspace-access.tsx` | — | Islestone-owned | The shell registers the member's `mayOpenSettings` for the palette, which sits above the workspace provider (owner decision row 40). |
+| `src/app/icon.svg`; `tests/unit/app-icon.test.ts` | — | Islestone-owned | A generated `IS` letter favicon on the brand colours, a placeholder until a logo exists (owner decision row 39), and the test holding its colours to `tokens.css`. |
 | `src/styles/tokens.css`, `src/app/globals.css (the 1.7 additions)` | `src/styles/tokens.css`, `tailwind.config.js`, `src/app/globals.css` | COPY+EDIT | The nav band and brand-mark tokens, built from the brand tokens; the nav and dashboard keyframes as `@theme` animations; `.icon-btn`; the reduced-motion rule. |
 | `tests/rendered/app-shell-frame-landmarks.test.tsx` | same | COPY+EDIT | Fixture routes. |
 | `tests/rendered/app-shell-shortcuts.test.tsx` | same | COPY+EDIT | A fixture description. |
@@ -1799,7 +1801,7 @@ The authenticated application shell (sidebar, top chrome, mobile drawer), the th
 | `tests/rendered/notifications-open-workspace.test.tsx` | same | COPY+EDIT | The bell cases only; Inbox; nothing outside a workspace. |
 | `tests/rendered/session-expired-notice.test.tsx` | same | COPY+EDIT | Comments; JSON imports. |
 | `tests/rendered/session-expiry-swr-seam.test.tsx` | same | COPY+EDIT | Fixture keys. |
-| `tests/rendered/theme-storage-on-choice.test.tsx` | same | COPY+EDIT | The light default; the OS is not followed. |
+| `tests/rendered/theme-storage-on-choice.test.tsx` | same | COPY+EDIT | A dark and a light system, live following and a choice overriding the system, for the provider and the script; the matchMedia double answers per query. |
 | `tests/rendered/locale-switcher.test.tsx` | same | COPY+EDIT | A mocked second locale. |
 | `tests/rendered/i18n-kept-primitives.test.tsx` | same | COPY+EDIT | The shell's primitives only, English only. |
 | `tests/rendered/root-error-pages-go-to-the-picker.test.tsx` | same | COPY+EDIT | The 404 case; a root error-page case; no `/dashboard` shim. |

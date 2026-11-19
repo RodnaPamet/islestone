@@ -30,6 +30,8 @@ import { useTranslations } from 'next-intl';
 
 import { useKeyboardShortcut } from '@/lib/hooks/use-keyboard-shortcut';
 
+import { PaletteWorkspaceAccessProvider } from './workspace-access';
+
 export interface CommandPaletteApi {
     isOpen: boolean;
     open: () => void;
@@ -65,7 +67,9 @@ export function CommandPaletteProvider({ children }: { children: ReactNode }) {
 
     return (
         <CommandPaletteContext.Provider value={api}>
-            {children}
+            {/* What the open workspace lets the member reach, registered by
+                the shell (`./workspace-access`). */}
+            <PaletteWorkspaceAccessProvider>{children}</PaletteWorkspaceAccessProvider>
         </CommandPaletteContext.Provider>
     );
 }

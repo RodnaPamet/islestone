@@ -86,6 +86,32 @@ import {
     usePaletteCommands,
     type PaletteCommand,
 } from '@/components/command-palette/use-palette-commands';
+import { RegisterPaletteWorkspaceAccess } from '@/components/command-palette/workspace-access';
+import { getPermissionsForRole } from '@/lib/permissions';
+import { TenantProvider } from '@/lib/tenant-context-provider';
+import type { Role } from '@prisma/client';
+
+import { makeRequestContext } from '../helpers/make-context';
+
+/** The shell's registration of the member's access, for a workspace and role. */
+function MemberAccess({ role, slug = 'acme-corp' }: { role: Role; slug?: string }) {
+    return (
+        <TenantProvider
+            value={{
+                userId: 'u1',
+                tenantId: 't1',
+                tenantSlug: slug,
+                tenantName: 'Acme',
+                role,
+                membershipRole: role,
+                permissions: makeRequestContext(role).permissions,
+                appPermissions: getPermissionsForRole(role),
+            }}
+        >
+            <RegisterPaletteWorkspaceAccess />
+        </TenantProvider>
+    );
+}
 
 // Render an auto-opened palette for each test.
 function Shell({ children }: { children?: React.ReactNode }) {
@@ -131,7 +157,8 @@ afterEach(() => {
 
 // ─── Navigation ───────────────────────────────────────────────────────
 
-const NAV_IDS = ['nav:my-work', 'nav:inbox', 'nav:projects', 'nav:views', 'nav:settings'];
+/** The rows every member gets; Settings follows `mayOpenSettings` (below). */
+const NAV_IDS = ['nav:my-work', 'nav:inbox', 'nav:projects', 'nav:views'];
 
 describe('Command Palette — navigation commands', () => {
     it('renders one row per shell destination, in sidebar order', () => {
@@ -152,7 +179,6 @@ describe('Command Palette — navigation commands', () => {
             '/t/acme-corp/inbox',
             '/t/acme-corp/projects',
             '/t/acme-corp/views',
-            '/t/acme-corp/settings',
         ]);
     });
 
@@ -181,6 +207,59 @@ describe('Command Palette — navigation commands', () => {
             expect(document.querySelector('[data-testid="command-palette-nav-nav:inbox"]')).not.toBeNull();
         });
         expect(document.querySelector('[data-testid="command-palette-nav-nav:projects"]')).toBeNull();
+    });
+});
+
+// ─── Settings: only for a member who may open it (owner decision) ───────
+
+describe('Command Palette — the Settings row', () => {
+    const settingsRow = () => document.querySelector('[data-testid="command-palette-nav-nav:settings"]');
+
+    it('lists Settings for an OWNER, from the shell-registered answer', async () => {
+        render(
+            <Shell>
+                <MemberAccess role="OWNER" />
+            </Shell>,
+        );
+        await waitFor(() => expect(settingsRow()).not.toBeNull());
+        expect(settingsRow()!.getAttribute('data-href')).toBe('/t/acme-corp/settings');
+    });
+
+    it('lists Settings for an ADMIN', async () => {
+        render(
+            <Shell>
+                <MemberAccess role="ADMIN" />
+            </Shell>,
+        );
+        await waitFor(() => expect(settingsRow()).not.toBeNull());
+    });
+
+    it.each(['VIEWER', 'MEMBER', 'GUEST'] as Role[])('does not list Settings for a %s', async (role) => {
+        render(
+            <Shell>
+                <MemberAccess role={role} />
+            </Shell>,
+        );
+        // The other destinations are there, so the palette did render.
+        await waitFor(() =>
+            expect(document.querySelector('[data-testid="command-palette-nav-nav:projects"]')).not.toBeNull(),
+        );
+        expect(settingsRow()).toBeNull();
+    });
+
+    it('does not list Settings when no shell has registered (fail closed)', () => {
+        render(<Shell />);
+        expect(document.querySelector('[data-testid="command-palette-nav-nav:my-work"]')).not.toBeNull();
+        expect(settingsRow()).toBeNull();
+    });
+
+    it("ignores an OWNER's answer registered for another workspace", () => {
+        render(
+            <Shell>
+                <MemberAccess role="OWNER" slug="globex" />
+            </Shell>,
+        );
+        expect(settingsRow()).toBeNull();
     });
 });
 

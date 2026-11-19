@@ -26,6 +26,10 @@ src/app/t/[tenantSlug]/(mfa)/      the MFA challenge and enrolment, outside
                                    the shell
 ```
 
+The MFA challenge and enrolment pages stay outside the shell for everyone,
+including a member who has already passed the challenge (owner decision,
+2026-11-19; `docs/HANDOFF.md` row 41).
+
 The `(app)` layout is the security boundary. It resolves the workspace through
 `getTenantServerContext`, the page-side gate 1.4 wrote: an active membership,
 and the workspace MFA check. A slug the person is not in, or one that names no
@@ -62,6 +66,13 @@ A new route is added in four places: `NAV_PATHS`, `MAIN_PAGES` in
 entry), `common.sections` (the back affordance's label) and the catalogue.
 `tests/guards/page-segregation-coverage.test.ts` fails on an unclassified page.
 
+The command palette lists Settings only to a member who may open it. It sits
+above the workspace provider, so the shell registers the member's answer
+(`RegisterPaletteWorkspaceAccess` in
+`src/components/command-palette/workspace-access.tsx`), computed by the same
+`mayOpenSettings`; with no answer for the workspace in the URL there is no row
+(owner decision, 2026-11-19; row 40).
+
 ## Page shells
 
 | Shell | For | Brings |
@@ -91,12 +102,16 @@ which WCAG 2.1.4 forbids as a single-key shortcut).
 
 ## Theme
 
-The palette is `data-theme` on `<html>`, light by default. The root layout
-renders it from the theme cookie, so a member who chose a theme gets it on the
-first byte; a pre-paint script applies a choice kept only in localStorage. A
-theme is written only when a member picks one. Islestone does not follow the
-operating system's colour scheme, which the parent does: that is an owner
-decision (`docs/HANDOFF.md`). The constants live in
+The palette is `data-theme` on `<html>`. Until a person picks light or dark,
+the theme follows the operating system's `prefers-color-scheme`, live (owner
+decision, 2026-11-19; `docs/HANDOFF.md` row 38); the toggle stores the choice,
+which then wins. The root layout renders `data-theme` from the theme cookie,
+so a person who chose gets their theme on the first byte; with no cookie it
+renders light, and a pre-paint script in `<head>` (with the CSP nonce)
+resolves cookie, then localStorage, then the OS, and sets the attribute before
+the browser paints, so there is no flash. Nothing is written until a person
+chooses. The toggle offers light and dark, as the parent's does; there is no
+"system" option. The constants live in
 `src/lib/theme-constants.ts`, which must never be a client module: the server
 layout imports them, and a value from a `'use client'` module is a proxy on
 the server.
@@ -108,3 +123,13 @@ ships; the switcher, the locale cookie (`islestone_locale`) and the request
 config are ready for a second. `tests/guards/i18n-keys-resolve.test.ts`
 resolves every literal key, and `tests/guards/i18n-adoption.test.ts` refuses
 hard-coded copy in `src/components`.
+
+## Brand mark
+
+The top chrome and the sidebar show the initials `IS` on the brand gradient,
+and the browser tab shows `src/app/icon.svg` (Next.js's `icon` file
+convention), the same initials on the light theme's brand ramp. Both are
+placeholders until Islestone has a logo (owner decision, 2026-11-19; row 39).
+The SVG cannot read CSS variables, so it spells the brand colours;
+`tests/unit/app-icon.test.ts` holds them equal to `tokens.css`.
+

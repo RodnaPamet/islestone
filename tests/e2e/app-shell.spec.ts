@@ -60,6 +60,45 @@ test.describe('Application shell', () => {
         expect(violations).toEqual([]);
     });
 
+    test('the theme follows the OS before first paint, until the person chooses', async ({ authedPage, browser, isolatedTenant }) => {
+        // A dark system, nothing stored: the pre-paint script sets dark before
+        // the page's scripts hydrate, so the light server baseline never shows.
+        const dark = await browser.newContext({ colorScheme: 'dark', storageState: await authedPage.context().storageState() });
+        try {
+            const page = await dark.newPage();
+            await page.goto(`/t/${isolatedTenant.tenantSlug}/my-work`, { waitUntil: 'commit' });
+            await page.waitForSelector('html[data-theme]', { state: 'attached' });
+            await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+            // The person picks light in the account menu; it is stored and wins.
+            await waitForHydration(page, 'aside');
+            await page.getByTestId('top-chrome-user-menu').click();
+            await page.getByRole('button', { name: 'Switch to light theme' }).click();
+            await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+            await page.reload();
+            await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+        } finally {
+            await dark.close();
+        }
+
+        // A light system: light.
+        const light = await browser.newContext({ colorScheme: 'light', storageState: await authedPage.context().storageState() });
+        try {
+            const page = await light.newPage();
+            await page.goto(`/t/${isolatedTenant.tenantSlug}/my-work`);
+            await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+        } finally {
+            await light.close();
+        }
+    });
+
+    test('the browser tab carries the placeholder letter icon', async ({ request }) => {
+        const res = await request.get('/icon.svg');
+        expect(res.status()).toBe(200);
+        expect(res.headers()['content-type']).toContain('image/svg+xml');
+        expect(await res.text()).toContain('>IS</text>');
+    });
+
     test('every sidebar destination renders', async ({ authedPage, isolatedTenant }) => {
         const page = authedPage;
         await waitForHydration(page, 'aside');
@@ -88,6 +127,8 @@ test.describe('Application shell', () => {
         const palette = page.getByRole('dialog', { name: 'Command palette' });
         await expect(palette).toBeVisible();
         await expect(palette.getByText('Go to Projects')).toBeVisible();
+        // An owner may open Settings, so the palette lists it.
+        await expect(palette.getByText('Go to Settings')).toBeVisible();
 
         await page.keyboard.type('inbox');
         await expect(palette.getByText('Go to Inbox')).toBeVisible();

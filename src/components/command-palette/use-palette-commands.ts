@@ -28,9 +28,11 @@
  * group.
  *
  * Permissions: the palette sits above the workspace's context provider, so
- * it lists Settings for every member and relies on the page's own
- * server-side gate. This matches the sidebar's defence-in-depth posture — a
- * client-side filter is a suggestion, never a security boundary.
+ * the shell registers what the member may reach (`./workspace-access`), and
+ * the Settings row is listed only when that says `mayOpenSettings` for the
+ * workspace in the URL (owner decision, 2026-11-19). The page keeps its own
+ * server-side gate: a client-side filter is a convenience, never a security
+ * boundary.
  */
 
 import {
@@ -50,6 +52,8 @@ import { useCallback, useMemo, type ComponentType, type SVGProps } from 'react';
 import { useAssistantOpen } from '@/components/assistant/assistant-open-context';
 import { NAV_PATHS } from '@/components/layout/nav-config';
 import { useTheme } from '@/components/theme/ThemeProvider';
+
+import { usePaletteWorkspaceAccess } from './workspace-access';
 import { signOutToLogin } from '@/lib/auth/client-sign-out';
 
 export type PaletteCommandGroup = 'Navigation' | 'Actions';
@@ -104,6 +108,8 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
     const openAssistant = useCallback(() => {
         setAssistantOpen(true);
     }, [setAssistantOpen]);
+    // Fail closed: no registered answer for this workspace, no Settings row.
+    const mayOpenSettings = usePaletteWorkspaceAccess(tenantSlug)?.mayOpenSettings === true;
     const doSignOut = useCallback(() => {
         void signOutToLogin();
     }, []);
@@ -147,7 +153,9 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 icon: LayoutList,
                 href: href(NAV_PATHS.views),
             },
-            {
+        ];
+        if (mayOpenSettings) {
+            commands.push({
                 id: 'nav:settings',
                 group: 'Navigation',
                 label: t('goToSettings'),
@@ -155,8 +163,8 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 icon: Settings,
                 href: href(NAV_PATHS.settings),
                 keywords: ['admin', 'members'],
-            },
-        ];
+            });
+        }
         // ─── Actions ──────────────────────────────────────────────────
         if (assistantAvailable) {
             commands.push({
@@ -188,7 +196,7 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
             },
         );
         return commands;
-    }, [t, tenantSlug, toggleTheme, doSignOut, assistantAvailable, openAssistant]);
+    }, [t, tenantSlug, mayOpenSettings, toggleTheme, doSignOut, assistantAvailable, openAssistant]);
 }
 
 /**

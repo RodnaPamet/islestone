@@ -48,6 +48,10 @@ porting maps now record them (next step 2); the last column says where.
 | 35 | A key rotation (master key or workspace DEK) re-resolves the person who started it when the job runs. Still an ACTIVE member holding the route's key: it acts as them. Otherwise it still finishes, as the workspace system user, and its audit entries and result record who asked (`requestedByUserId`), `authority: 'SYSTEM'` and the refusal; a departed person is never named as the actor. The owner-decided exception to the job-identity rule. Decided 2026-11-19, relayed. | relayed | `src/app-layer/jobs/rotation-actor.ts`; CLAUDE.md ("Job identity"); `docs/encryption.md` ("Who a rotation acts as") |
 | 36 | The master-key rotation is OWNER-only: its route, rule and policy use `admin.tenant_lifecycle`, as the DEK rotation does (inflect-compliance admitted ADMIN). Decided 2026-11-19, relayed. | relayed | `src/lib/security/route-permissions.ts`; `src/app-layer/policies/admin.policies.ts`; `docs/encryption.md` |
 | 37 | Creating the workspace system user is audited: one `SYSTEM_USER_CREATED` entry, as the system actor, in the same transaction as the insert; a later call that finds the row writes nothing. Decided 2026-11-19, relayed. | relayed | `src/app-layer/context-system.ts` (`ensureTenantSystemUser`); `docs/audit-trail.md` |
+| 38 | The theme follows the operating system's colour scheme until the person picks light or dark; the toggle stores the choice, which wins. The pre-paint script applies the effective theme before first paint; the `data-theme` contract and the token blocks are unchanged. (Rows 35 to 37 are reserved for 1.5b.) Decided 2026-11-19, relayed. Applied: the toggle offers light and dark only, as the ported one does. | relayed | `src/components/theme/ThemeProvider.tsx`; `src/lib/theme-constants.ts`; `tests/rendered/theme-storage-on-choice.test.tsx`; `docs/app-shell.md` |
+| 39 | The `IS` initials stay as the brand mark for now, with a generated letter favicon (`src/app/icon.svg`) on the brand colours; both are placeholders until a logo exists. Decided 2026-11-19, relayed. Applied. | relayed | `src/app/icon.svg`; `tests/unit/app-icon.test.ts`; `docs/app-shell.md` |
+| 40 | The command palette lists Settings only to a person who can open it, from `nav-config.ts`'s `mayOpenSettings`, not a restated rule. Decided 2026-11-19, relayed. Applied: the shell registers the answer for the palette. | relayed | `src/components/command-palette/workspace-access.tsx`; `tests/rendered/palette-commands.test.tsx` |
+| 41 | The MFA challenge and enrolment pages stay outside the shell for everyone. Decided 2026-11-19, relayed. No change. | relayed | `src/app/t/[tenantSlug]/(mfa)/`; `docs/app-shell.md` |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
@@ -350,20 +354,10 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      `/login`.
    - `swr` 2.5.1 (MIT) for the session seam's `SWRConfig`. The nav tokens, keyframes,
      `.icon-btn` and a reduced-motion rule joined `tokens.css` / `globals.css`.
-   Owner decisions this step did not take, listed for the owner:
-   - **Following the OS colour scheme.** inflect-compliance follows `prefers-color-scheme`
-     until a member chooses, with a dark default. Islestone keeps light as the default and
-     does not read the OS (`ThemeProvider`, `THEME_INIT_SCRIPT`); turning it on is the
-     `matchMedia` read and its listener, both noted in the provider's header.
-   - **Islestone's brand mark.** No `src/app/icon.svg` or favicon ships (the source's are
-     Inflect's); the top chrome and sidebar use the initials `IS` on the placeholder
-     brand gradient.
-   - **The palette's Settings row** shows for every member (the palette sits above the
-     workspace provider); the page answers a 404 to a member who may not open it. Whether
-     to hide the row is open.
-   - **The MFA enrolment page outside the shell.** `/t/<slug>/security/mfa` renders
-     without the sidebar, as in 1.4, because it must also serve a session that owes a
-     code. Whether an enrolled member should reach it inside the shell is open.
+   The owner decided the four points 1.7 left open on 2026-11-19 (rows 38 to 41): the
+   theme follows the OS until a choice; the `IS` initials and a generated letter favicon
+   stay as placeholders until a logo; the palette's Settings row follows `mayOpenSettings`;
+   the MFA pages stay outside the shell. All four are applied.
    Not ported now: `back-affordance-no-cycles` (no subpages yet, so it would check
    nothing; 2.3 brings it with the first detail page), `docs/keyboard-shortcuts.md`,
    `docs/i18n.md` and `docs/epic-52-list-page-shell.md` (distilled into
