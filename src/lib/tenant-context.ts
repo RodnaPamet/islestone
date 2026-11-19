@@ -5,18 +5,19 @@
  * using TenantMembership as the authoritative source of truth.
  *
  * Design decisions:
- *   - Permissions are computed from the tenant membership role. Custom
- *     roles arrive in sub-phase 1.4.
+ *   - Permissions are computed from the tenant membership role, or from its
+ *     custom role (the base role's coarse tier and the stored grants) when
+ *     the membership carries one.
  *   - The lookups run before any tenant context exists (they are what
  *     establishes it), so they go through `runWithoutRls` with the
  *     `auth-tenant-discovery` reason rather than the bare global client.
  */
-import type { Role, Tenant, TenantMembership } from '@prisma/client';
+import type { Role, Tenant, TenantCustomRole, TenantMembership } from '@prisma/client';
 
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { forbidden, notFound } from '@/lib/errors/types';
 import type { PermissionSet } from '@/lib/permissions';
-import { getPermissionsForRole } from '@/lib/permissions';
+import { getPermissionsForRole, parsePermissionsJson } from '@/lib/permissions';
 
 // ─── Permission shape ───
 
@@ -31,6 +32,8 @@ export interface TenantContext {
     tenant: Tenant;
     membership: TenantMembership;
     role: Role;
+    /** The membership's custom role, when it carries one. */
+    customRole: TenantCustomRole | null;
     permissions: Permissions;
     appPermissions: PermissionSet;
 }
@@ -39,10 +42,14 @@ export interface TenantContext {
 
 /**
  * The coarse ladder for Islestone's five roles (ADR 0006: Owner > Admin >
- * Member > Viewer > Guest). PROVISIONAL until sub-phase 1.4 writes the
- * permission set; the rungs keep inflect-compliance's thresholds (write at
- * 3, admin at 4, export at 2), with MEMBER on the write rung and VIEWER on
- * the export rung. GUEST reads only.
+ * Member > Viewer > Guest; docs/porting/maps/1.4.md, "Permission set").
+ * canRead: every role. canWrite: OWNER, ADMIN, MEMBER. canAdmin and
+ * canExport: OWNER and ADMIN (matching `workspace.export`).
+ *
+ * GUEST's coarse `canWrite` is false although its granular
+ * `work_items.create` and `comment` are true, so a usecase gated on the
+ * coarse tier alone refuses a guest. That is harmless while GUEST is not
+ * assignable; sub-phase 8.4 gates those usecases on the granular key.
  */
 const ROLE_ORDER: Record<Role, number> = {
     OWNER: 5,
@@ -67,7 +74,7 @@ export function computePermissions(role: Role): Permissions {
         canRead: level >= 1,
         canWrite: level >= 3,
         canAdmin: level >= 4,
-        canExport: level >= 2,
+        canExport: level >= 4,
     };
 }
 
@@ -110,6 +117,7 @@ export async function resolveTenantContext(
                     userId,
                 },
             },
+            include: { customRole: true },
         }),
     );
 
@@ -126,14 +134,21 @@ export async function resolveTenantContext(
         throw forbidden('You are no longer a member of this tenant.');
     }
 
-    // Sub-phase 1.4 adds custom roles: a custom role's base then becomes the
-    // effective role, and its permissions replace the enum defaults.
+    // Resolve permissions: a custom role overrides the enum-based defaults
+    // when present, and its base becomes the effective (coarse) role.
+    const { customRole, ...membershipRow } = membership;
+    const effectiveRole = customRole?.baseRole ?? membership.role;
+    const appPermissions = customRole
+        ? parsePermissionsJson(customRole.grantsJson, customRole.baseRole)
+        : getPermissionsForRole(membership.role);
+
     return {
         tenant,
-        membership,
-        role: membership.role,
-        permissions: computePermissions(membership.role),
-        appPermissions: getPermissionsForRole(membership.role),
+        membership: membershipRow,
+        role: effectiveRole,
+        customRole,
+        permissions: computePermissions(effectiveRole),
+        appPermissions,
     };
 }
 

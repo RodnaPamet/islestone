@@ -1,0 +1,106 @@
+/**
+ * Epic D — org invite admin API.
+ *
+ *   POST /api/org/[orgSlug]/invites
+ *     Create or refresh an invite. ORG_ADMIN-only via canManageMembers.
+ *     Body: { email, role }. Returns { invite, url }.
+ *
+ *   GET /api/org/[orgSlug]/invites
+ *     List pending invites (non-expired, non-revoked, non-accepted).
+ *     ORG_ADMIN-only.
+ */
+import type { NextRequest} from 'next/server';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+
+import { getOrgCtx } from '@/app-layer/context';
+import { withApiErrorHandling } from '@/lib/errors/api';
+import { requireOrgPermission } from '@/lib/security/org-permission-middleware';
+import { parseJsonBody } from '@/lib/validation/route';
+import {
+    createOrgInviteToken,
+    listPendingOrgInvites,
+} from '@/app-layer/usecases/org-invites';
+import { forbidden } from '@/lib/errors/types';
+import { publicBaseUrl } from '@/lib/http/public-base-url';
+import { sendInviteEmail } from '@/lib/email/invite-email';
+
+interface RouteContext {
+    params: Promise<{ orgSlug: string }>;
+}
+
+const ORG_ROLE_LABEL: Record<string, string> = {
+    ORG_ADMIN: 'Org admin',
+    ORG_READER: 'Org reader',
+};
+
+const CreateOrgInviteInput = z.object({
+    email: z.string().email('Valid email required'),
+    role: z.enum(['ORG_ADMIN', 'ORG_READER'] as const),
+});
+
+export const POST = withApiErrorHandling(
+    requireOrgPermission<{ orgSlug: string }>('canManageMembers', async (req, _args, ctx) => {
+        const body = await parseJsonBody(req, CreateOrgInviteInput);
+        const result = await createOrgInviteToken(ctx, {
+            email: body.email,
+            role: body.role,
+        });
+
+        // Email the acceptance link to the recipient. Best-effort:
+        // the invite is already committed, so a mailer failure never
+        // fails creation — the `url` below is the copy-paste fallback
+        // and `emailSent` tells the admin whether it went out.
+        const { sent } = await sendInviteEmail({
+            to: result.invite.email,
+            // The link leaves this request in an email from our own sender,
+            // so its host is the configured one, never X-Forwarded-Host
+            // (#5316): a caller who reaches the app without the proxy
+            // controls that header.
+            acceptUrl: publicBaseUrl(req) + result.url,
+            kind: 'organization',
+            spaceName: ctx.orgSlug,
+            roleLabel: ORG_ROLE_LABEL[body.role] ?? body.role,
+            expiresAt: result.invite.expiresAt,
+        });
+
+        return NextResponse.json(
+            {
+                invite: {
+                    id: result.invite.id,
+                    email: result.invite.email,
+                    role: result.invite.role,
+                    expiresAt: result.invite.expiresAt.toISOString(),
+                    createdAt: result.invite.createdAt.toISOString(),
+                },
+                url: result.url,
+                emailSent: sent,
+            },
+            { status: 201 },
+        );
+    }),
+);
+
+export const GET = withApiErrorHandling(
+    async (req: NextRequest, routeCtx: RouteContext) => {
+        const ctx = await getOrgCtx((await routeCtx.params), req);
+        if (!ctx.permissions.canManageMembers) {
+            throw forbidden(
+                'You do not have permission to view invites for this organization',
+            );
+        }
+        const rows = await listPendingOrgInvites(ctx);
+        return NextResponse.json({
+            invites: rows.map((r) => ({
+                id: r.id,
+                email: r.email,
+                role: r.role,
+                expiresAt: r.expiresAt.toISOString(),
+                createdAt: r.createdAt.toISOString(),
+                invitedBy: r.invitedBy
+                    ? { id: r.invitedBy.id, name: r.invitedBy.name, email: r.invitedBy.email }
+                    : null,
+            })),
+        });
+    },
+);

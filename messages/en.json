@@ -140,7 +140,8 @@
             "noDataForRange": "No data for this range",
             "scaleAria": "{label}: {min} to {max}",
             "scaleAriaUnlabelled": "Scale: {min} to {max}"
-        }
+        },
+        "loading": "Loading..."
     },
     "ui": {
         "combobox": {
@@ -151,5 +152,308 @@
             "createLabelEmpty": "Create new option…",
             "triggerLabel": "Select"
         }
+    },
+    "account": {
+        "backToWorkspaces": "Back to your workspaces",
+        "profile": {
+            "profileTitle": "Your profile",
+            "avatarNote": "Upload a square image — it is resized to 256×256 and stored as WebP. Photo metadata, including location, is stripped in your browser before upload.",
+            "uploadPhoto": "Upload photo",
+            "changePhoto": "Change photo",
+            "working": "Working…",
+            "remove": "Remove",
+            "notReadableImage": "That file is not a readable image.",
+            "imageProcessingUnavailable": "Image processing is unavailable in this browser.",
+            "webpEncodeFailed": "This browser could not encode the image as WebP.",
+            "uploadFailed": "Upload failed.",
+            "couldNotRemovePhoto": "Could not remove the photo.",
+            "nameTitle": "Your name",
+            "nameSaved": "Saved — your name now shows on owner and assignee columns.",
+            "firstName": "First name",
+            "lastName": "Last name",
+            "saveName": "Save name",
+            "saving": "Saving…",
+            "enterAName": "Enter at least a first or last name.",
+            "couldNotSaveName": "Could not save your name."
+        },
+        "security": {
+            "securityTitle": "Account security",
+            "changePasswordTitle": "Change password",
+            "currentPassword": "Current password",
+            "currentPasswordPlaceholder": "Your current password",
+            "newPassword": "New password",
+            "newPasswordPlaceholder": "At least 8 characters",
+            "confirmPassword": "Confirm new password",
+            "confirmPasswordPlaceholder": "Re-enter your new password",
+            "changePassword": "Change password",
+            "changing": "Changing…",
+            "passwordChangedRedirect": "Your password has been changed. Redirecting to sign in…",
+            "fillAllThree": "Please fill in all three password fields.",
+            "newPasswordsNoMatch": "The two new passwords do not match.",
+            "tooShort": "Your new password must be at least 8 characters long.",
+            "mustDiffer": "Your new password must be different from your current password.",
+            "couldNotChange": "Could not change your password.",
+            "tooLong": "Your new password must be at most 128 characters long.",
+            "breached": "This password appears in known data breaches. Choose a different one.",
+            "withoutPassword": "This account signs in with Google, Microsoft or single sign-on, so it has no password to change.",
+            "currentIncorrect": "Your current password is incorrect.",
+            "passwordlessNotice": "You sign in with Google, Microsoft or single sign-on, so this account has no password to change here. Your sign-in is managed by that provider."
+        }
+    },
+    "invite": {
+        "notAvailableTitle": "Invite not available",
+        "notAvailableBody": "This invite link has expired, been revoked, or already been used. Ask your admin to send a new invite.",
+        "invitedTitle": "You have been invited",
+        "joinAs": "Join <b>{tenant}</b> as a <b>{role}</b>.",
+        "joinOrgAs": "Join the <b>{org}</b> organization as a <b>{role}</b>.",
+        "expires": "Expires {date}",
+        "signInToAccept": "Sign in to accept",
+        "switchAccount": "Sign out and use another account",
+        "acceptInvitation": "Accept invitation",
+        "acceptFailed": "Could not accept the invitation. Please try again.",
+        "wrongAccount": "You are signed in as <b>{email}</b>, but this invitation was sent to a different email address. Sign out, then sign in with the address it was sent to. Signing in again with this account would use up the invitation.",
+        "refused": {
+            "INVITE_NOT_FOUND": "This invitation does not exist. Check the link, or ask your admin to send a new invite.",
+            "INVITE_REVOKED": "This invitation has been withdrawn. Ask your admin to send a new invite.",
+            "INVITE_EXPIRED": "This invitation has expired. Ask your admin to send a new invite.",
+            "INVITE_ALREADY_REDEEMED": "This invitation has already been used. If it was not you, ask your admin to send a new invite.",
+            "INVITE_EMAIL_MISMATCH": "This invitation was sent to a different email address from the account you signed in with, so it can no longer be used. Ask your admin to send a new invite to the address you sign in with.",
+            "INVITE_NOT_COMPLETED": "This invitation was claimed, but joining the workspace did not finish. Ask your admin to send a new invite."
+        },
+        "orgRefused": {
+            "INVITE_NOT_FOUND": "This invitation does not exist. Check the link, or ask the organization's admin to send a new invitation.",
+            "INVITE_REVOKED": "This invitation has been withdrawn. Ask the organization's admin to send a new invitation.",
+            "INVITE_EXPIRED": "This invitation has expired. Ask the organization's admin to send a new invitation.",
+            "INVITE_ALREADY_REDEEMED": "This invitation has already been used. If it was not you, ask the organization's admin to send a new invitation.",
+            "INVITE_EMAIL_MISMATCH": "This invitation was sent to a different email address from the account you signed in with, so it can no longer be used. Ask the organization's admin to send a new invitation to the address you sign in with.",
+            "INVITE_NOT_COMPLETED": "This invitation was claimed, but joining the organization did not finish. Ask the organization's admin to send a new invitation."
+        },
+        "result": {
+            "title": "Invitation not accepted",
+            "signedInAs": "You are signed in as <b>{email}</b>.",
+            "toWorkspaces": "Go to your workspaces",
+            "noWorkspaceHelp": "You don't belong to any workspace yet. Once your admin sends you a new invitation, follow the link in it.",
+            "switchAccount": "Sign in with a different account"
+        }
+    },
+    "noTenant": {
+        "refreshAccess": "I was just given access — check again",
+        "refreshingAccess": "Checking…",
+        "refreshStale": "Your session was opened before this access was granted, so it is not visible yet. Check again to pick it up without signing out.",
+        "title": "No access yet",
+        "titleOtherWorkspace": "You don't have access to this workspace",
+        "signedInAs": "You are signed in as <b>{email}</b>.",
+        "helpText": "You do not have access to any workspace yet. Ask your admin to invite you, then follow the link in the invitation email.",
+        "signOut": "Sign out",
+        "yourAccount": "your account",
+        "otherWorkspaceText": "You do not have access to that workspace. Choose one of yours instead.",
+        "organizationsOnly": "You are not a member of any workspace, but you can open your organization.",
+        "deactivated": "Your access to {workspaces} was deactivated. Ask an admin of that workspace to reactivate you.",
+        "whereToGo": "Where you can go",
+        "goToWorkspaces": "Go to your workspaces",
+        "goToOrganization": "Open {name}"
+    },
+    "tenants": {
+        "chooseWorkspace": "Choose a workspace",
+        "multipleWorkspaces": "You are a member of multiple workspaces. Select one to continue.",
+        "signOut": "Sign out",
+        "chooseOrganization": "Choose an organization",
+        "multipleOrganizations": "You are a member of more than one organization. Select one to continue.",
+        "workspacesHeading": "Workspaces",
+        "organizationsHeading": "Organizations"
+    },
+    "auth": {
+        "forgot": {
+            "resetTitle": "Reset your password",
+            "resetIntro": "Enter the email address for your account and we'll send you a link to reset your password.",
+            "emailLabel": "Email",
+            "emailPlaceholder": "you@company.com",
+            "sendResetLink": "Send reset link",
+            "sending": "Sending…",
+            "backToSignIn": "Back to sign in",
+            "resetSent": "If an account exists for that email, we've sent a password reset link. The link expires in 1 hour.",
+            "tooManyRequests": "Too many reset requests from this network. Wait an hour, then try again."
+        },
+        "reset": {
+            "chooseNewTitle": "Choose a new password",
+            "invalidLink": "This password reset link is invalid. Request a new one from the sign-in page.",
+            "requestNewLink": "Request a new reset link",
+            "newPasswordLabel": "New password",
+            "newPasswordPlaceholder": "At least 8 characters",
+            "confirmLabel": "Confirm new password",
+            "confirmPlaceholder": "Re-enter your new password",
+            "resetPassword": "Reset password",
+            "resetting": "Resetting…",
+            "fillBoth": "Please fill in both password fields.",
+            "passwordsNoMatch": "The two passwords do not match.",
+            "tooShort": "Your new password must be at least 8 characters long.",
+            "couldNotReset": "Could not reset your password.",
+            "backToSignIn": "Back to sign in",
+            "tooLong": "Your new password can be at most 128 characters long.",
+            "tooManyAttempts": "Too many attempts from this network. Wait 15 minutes, then try again.",
+            "refused": {
+                "PASSWORD_EMPTY": "Enter a new password.",
+                "PASSWORD_TOO_SHORT": "Your new password must be at least 8 characters long.",
+                "PASSWORD_TOO_LONG": "Your new password can be at most 128 characters long.",
+                "PASSWORD_BREACHED": "This password appears in known data breaches. Choose a different one.",
+                "RESET_LINK_EXPIRED": "This reset link has expired. Request a new one.",
+                "RESET_LINK_INVALID": "This reset link is invalid or has already been used. Request a new one."
+            }
+        }
+    },
+    "login": {
+        "title": "Islestone",
+        "subtitle": "Plan and track your team's work",
+        "signIn": "Sign in to your account",
+        "register": "Create your workspace",
+        "email": "Email",
+        "password": "Password",
+        "name": "Your Name",
+        "orgName": "Workspace name",
+        "submitLogin": "Sign In",
+        "submitRegister": "Create Account",
+        "pleaseWait": "Please wait...",
+        "noAccount": "No account?",
+        "registerLink": "Register",
+        "hasAccount": "Already registered?",
+        "signInLink": "Sign in",
+        "namePlaceholder": "Jane Smith",
+        "orgPlaceholder": "Acme Corp",
+        "emailPlaceholder": "you@company.com",
+        "passwordPlaceholder": "••••••••",
+        "continueWithGoogle": "Continue with Google",
+        "continueWithMicrosoft": "Continue with Microsoft",
+        "orContinueWithEmail": "or continue with email",
+        "forgotPassword": "Forgot your password?",
+        "emailVerified": "Email verified — you can sign in now.",
+        "linkExpired": "That verification link has expired. Request a new one below.",
+        "linkInvalid": "That verification link is not valid. Request a new one below.",
+        "resetSuccess": "Your password has been reset — sign in with your new password.",
+        "passwordChanged": "Your password has been changed — please sign in again.",
+        "resendPlaceholder": "Didn't get a verification email?",
+        "resendAria": "Email for verification resend",
+        "resend": "Resend",
+        "sending": "Sending…",
+        "resendSent": "If that email is registered and not yet verified, a new link is on its way.",
+        "registrationFailed": "Registration failed",
+        "loginFailed": "Login failed",
+        "invalidCredentials": "Invalid credentials",
+        "errors": {
+            "signInFailed": "Sign-in didn't complete. Try again.",
+            "accountNotLinked": "This email address already signs in a different way. Sign in the way you did before.",
+            "ssoIncomplete": "Single sign-on didn't complete. Try again, or ask your workspace administrator for help.",
+            "ssoNoAccount": "There's no account for you in this workspace yet. Ask your workspace administrator to add you.",
+            "ssoDomainNotAllowed": "Your email address isn't allowed by this workspace's single sign-on settings. Ask your workspace administrator.",
+            "ssoUnavailable": "Single sign-on isn't available for this workspace right now. Ask your workspace administrator.",
+            "ssoStartFromSignIn": "For your security, single sign-on has to be started from this sign-in page.",
+            "ssoRequired": "Your workspace requires single sign-on. Continue with single sign-on below."
+        },
+        "registerAccount": "Create your account",
+        "inviteAccountOnly": "You are creating an account to accept your invitation. No new workspace is created.",
+        "emailNotVerified": "Confirm your email address first: open the link in the email we sent you. If it has expired, send a new one below.",
+        "tooManyRegistrations": "Too many sign-ups from this network. Wait an hour, then try again.",
+        "refused": {
+            "REGISTER_FIELDS_MISSING": "Fill in every field.",
+            "PASSWORD_EMPTY": "Enter a password.",
+            "PASSWORD_TOO_SHORT": "Your password must be at least 8 characters long.",
+            "PASSWORD_TOO_LONG": "Your password can be at most 128 characters long.",
+            "PASSWORD_BREACHED": "This password appears in known data breaches. Choose a different one.",
+            "EMAIL_ALREADY_REGISTERED": "An account with this email already exists. Sign in instead, or reset your password.",
+            "WORKSPACE_NAME_REQUIRED": "Enter a name for your workspace.",
+            "INVITE_UNAVAILABLE": "Your invitation is no longer available. Ask your admin to send a new one.",
+            "INVITE_EMAIL_MISMATCH": "Register with the email address your invitation was sent to.",
+            "PUBLIC_SIGNUP_CLOSED": "Sign-up is closed on this site. Ask a workspace administrator for an invitation."
+        }
+    },
+    "mfa": {
+        "invalidCodeFormat": "Enter the 6-digit code from your authenticator app.",
+        "tooManyAttempts": "Too many failed attempts. Please wait a moment and try again.",
+        "invalidCode": "Invalid code. Please check your authenticator app and try again.",
+        "verifyFailed": "Verification failed. Please try again.",
+        "enrollRequiredTitle": "Set up multi-factor authentication",
+        "enrollRequiredBody": "This workspace requires multi-factor authentication. Set up an authenticator app to continue.",
+        "setUpMfa": "Set up MFA",
+        "verifyTitle": "Verify it's you",
+        "verifyBody": "Enter the 6-digit code from your authenticator app to continue.",
+        "verifying": "Verifying…",
+        "continueBtn": "Continue",
+        "cantAccess": "Can't use your authenticator? Ask an Owner or Admin of this workspace to reset your MFA, then sign in again to set it up. Only an Owner can reset an Owner's MFA.",
+        "loadFailed": "Failed to load MFA status",
+        "startFailed": "Failed to start enrollment",
+        "enrollFailed": "Enrollment failed",
+        "enrolledSuccess": "MFA enrolled successfully! Your account is now protected.",
+        "invalidCodeRetry": "Invalid code. Please try again.",
+        "verifyFailed2": "Verification failed",
+        "removedSuccess": "MFA removed.",
+        "removeFailed": "Failed to remove MFA",
+        "keyCopied": "Setup key copied — paste it into your authenticator app.",
+        "copyFailed": "Copy failed — select the key and copy manually.",
+        "loadingTitle": "Loading Multi-Factor Authentication…",
+        "pageTitle": "Multi-Factor Authentication",
+        "statusTitle": "MFA Status",
+        "tenantPolicy": "Workspace policy:",
+        "enrolled": "Enrolled",
+        "notEnrolled": "Not Enrolled",
+        "enrolledSince": "Enrolled since {date}",
+        "orgRequires": "Your workspace requires MFA. You must enroll to continue using the application.",
+        "starting": "Starting...",
+        "removeMfa": "Remove MFA",
+        "setUpAuthTitle": "Set Up Authenticator App",
+        "step1": "1. Open your authenticator app (Google Authenticator, Authy, 1Password, etc.)",
+        "step2": "2. Scan this QR code or manually enter the setup key",
+        "cannotScan": "If you cannot scan, use the setup key below",
+        "qrCodeAlt": "QR code for adding this account to your authenticator app",
+        "setupKey": "Setup Key",
+        "copied": "Copied!",
+        "copy": "Copy",
+        "step3": "3. Enter the 6-digit code from your authenticator app",
+        "verifyEnable": "Verify & Enable",
+        "cancelEnrollment": "Cancel enrollment",
+        "removeConfirmTitle": "Remove multi-factor authentication?",
+        "removeConfirmDesc": "Your account will be less secure. You can re-enroll at any time.",
+        "codeLabel": "Authentication code",
+        "lockedOut": "Too many attempts. Try again in {seconds, plural, one {# second} other {# seconds}}.",
+        "switchAccount": "Sign in with a different account",
+        "checking": "Checking your MFA status",
+        "checkFailed": "We couldn't check whether you have set up MFA. If you have, enter your code below. If you haven't, <link>set it up first</link>."
+    },
+    "roles": {
+        "OWNER": "Owner",
+        "ADMIN": "Admin",
+        "MEMBER": "Member",
+        "VIEWER": "Viewer",
+        "GUEST": "Guest"
+    },
+    "orgRoles": {
+        "ORG_ADMIN": "Org admin",
+        "ORG_READER": "Org reader",
+        "ORG_OWNER": "Org owner"
+    },
+    "admin": {
+        "security": {
+            "policy": {
+                "DISABLED": {
+                    "label": "Disabled",
+                    "description": "MFA is not checked at sign-in, even for users who have enrolled. Users can still set up an authenticator app, and existing enrollments are kept."
+                },
+                "OPTIONAL": {
+                    "label": "Optional",
+                    "description": "Users can choose to enable MFA. Enrolled users will be challenged at login."
+                },
+                "REQUIRED": {
+                    "label": "Required",
+                    "description": "All users must enroll in MFA. Users without MFA will be redirected to enrollment on login."
+                }
+            }
+        }
+    },
+    "workspaceHome": {
+        "signedInAs": "You are signed in as {role}.",
+        "placeholder": "Projects, work items and views arrive with the next releases.",
+        "linksLabel": "Account and security",
+        "mfaLink": "Multi-factor authentication",
+        "accountSecurityLink": "Change your password",
+        "accountProfileLink": "Your profile",
+        "workspacesLink": "Your workspaces"
     }
 }

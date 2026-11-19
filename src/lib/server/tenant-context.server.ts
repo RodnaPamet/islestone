@@ -11,14 +11,17 @@
  *   - Reuses the authoritative resolveTenantContext() for membership/permission checks
  *   - Separate lightweight resolveTenantBySlug() for cases where auth isn't established
  *
- * SUB-PHASE 1.3: gate-free, like its API-side twin `getTenantCtx`
- * (`src/app-layer/context.ts`). Sub-phase 1.4 restores the SSO-scope,
- * Entra-gate and "Enforce SSO" checks in BOTH, together.
+ * Its API-side twin is `getTenantCtx` (`src/app-layer/context.ts`); the two
+ * change together. Sub-phase 1.4 restored the workspace MFA check in both
+ * (`assertWorkspaceMfaSatisfied`); sub-phase 8.3 adds the SSO-scope,
+ * Entra-gate and "Enforce SSO" checks to both.
  *
  * @module server/tenant-context.server
  */
 import type { Role } from '@prisma/client';
 
+import type { WorkspaceMfaSession } from '@/lib/auth/workspace-mfa-gate';
+import { assertWorkspaceMfaSatisfied } from '@/lib/auth/workspace-mfa-gate';
 import { notFound } from '@/lib/errors/types';
 import type { PermissionSet } from '@/lib/permissions';
 import prisma from '@/lib/prisma';
@@ -113,6 +116,13 @@ export async function resolveTenantBySlug(slug: string): Promise<TenantRecord> {
 export async function getTenantServerContext(params: {
     tenantSlug: string;
     userId: string;
+    /**
+     * The session's MFA facts (`membershipTenantIds`, `mfaPendingTenantIds`
+     * from `getSession()`). Required so no page can forget the workspace
+     * MFA gate; a workspace that still wants this session's code sends the
+     * page to its challenge.
+     */
+    session: Pick<WorkspaceMfaSession, 'membershipTenantIds' | 'mfaPendingTenantIds'>;
 }): Promise<TenantServerContext> {
     // Delegate to the authoritative resolver which handles:
     // - Tenant lookup
@@ -120,6 +130,14 @@ export async function getTenantServerContext(params: {
     // - Deactivation/removal checks
     // - Permission computation
     const ctx = await resolveTenantContext({ tenantSlug: params.tenantSlug }, params.userId);
+    // A workspace that still wants this session's MFA code: the same gate as
+    // `getTenantCtx`. A page is sent to the workspace's challenge.
+    await assertWorkspaceMfaSatisfied(
+        { userId: params.userId, ...params.session },
+        ctx.tenant.id,
+        ctx.tenant.slug,
+        undefined,
+    );
 
     // Map to a plain serializable shape (strip Prisma model internals)
     return {

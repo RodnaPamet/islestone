@@ -67,7 +67,18 @@ interface CompositeIndex {
 const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [];
 
 /** Tenant models whose list queries are fully served by Layers A + B, with the reason. */
-const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {};
+const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // Sub-phase 1.4. Every list is a small per-workspace set read whole (or
+    // capped), filtered by tenantId and at most a status or an equality.
+    TenantMembership:
+        'The members list (tenantId, status) and the custom-role carrier lookups (customRoleId): ' +
+        '@@index([tenantId, status]) and @@index([customRoleId]) serve both; a workspace roster is small.',
+    TenantInvite:
+        'Pending invites per workspace, filtered by tenantId and acceptedAt/revokedAt/expiresAt: ' +
+        '@@index([tenantId]) narrows to one workspace, whose invites are few.',
+    TenantCustomRole:
+        "A workspace's custom roles, filtered by tenantId and isActive: @@index([tenantId, isActive]).",
+};
 
 const isTenantModel = (m: SchemaModel) => m.scalarFieldNames.includes('tenantId');
 
@@ -132,7 +143,9 @@ describe('schema-index-coverage — parser sanity', () => {
     // If the parser silently broke, every layer below would pass vacuously.
     it('parses the tenancy models, their indexes and their relation FK groups', () => {
         const membership = MODELS.find((m) => m.name === 'TenantMembership');
-        expect(MODELS.map((m) => m.name).sort()).toEqual(['OrgMembership', 'Organization', 'Tenant', 'TenantMembership', 'User']);
+        expect(MODELS.map((m) => m.name).sort()).toEqual([
+            'Account', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken',
+        ]);
         expect(membership?.fieldIdName).toBe('id');
         expect(membership?.blockIndexes).toContainEqual(['tenantId', 'status']);
         expect(membership?.relationFkFieldGroups).toContainEqual(['tenantId']);

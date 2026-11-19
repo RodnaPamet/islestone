@@ -1,0 +1,493 @@
+/**
+ * Unit tests for `authenticateWithPassword` — the single chokepoint
+ * every email+password login flows through.
+ *
+ * Covers the contract the provider + legacy route rely on:
+ *   - Success returns { ok: true } + the right user fields
+ *   - Unknown email, missing password hash, wrong password all collapse
+ *     into the same { ok: false, reason: 'credentials_invalid' } shape
+ *     (account-enumeration safety)
+ *   - DB errors during lookup also collapse to credentials_invalid
+ *     (doesn't leak DB-is-down to the client)
+ *   - When AUTH_REQUIRE_EMAIL_VERIFICATION=1, unverified accounts get
+ *     the distinct `email_not_verified` reason (for future verification-
+ *     flow UX)
+ *   - Silent rehash-on-verify fires when the stored hash is weaker than
+ *     the current BCRYPT_COST
+ *
+ * prisma is mocked; bcryptjs runs for real so we're also end-to-end
+ * exercising the hash module.
+ *
+ * Per-test timeout bump: bcrypt is CPU-heavy; under the full-suite
+ * parallel run a single hash + verify can push past Jest's 5s default.
+ * Isolated runs land in <1s/test; full-suite pressure pushes some tests
+ * to 10-30s. 60s gives headroom without masking real regressions.
+ */
+jest.setTimeout(60_000);
+
+import bcrypt from 'bcryptjs';
+
+// Hoisted mocks: jest.mock() MUST run before `authenticateWithPassword` is
+// imported or the real prisma client wins. We hand-roll a minimal mock that
+// exposes just the two methods the chokepoint reaches for.
+const mockFindUnique = jest.fn();
+const mockUpdate = jest.fn();
+jest.mock('@/lib/prisma', () => ({
+    __esModule: true,
+    default: {
+        user: {
+            findUnique: (...args: unknown[]) => mockFindUnique(...args),
+            update: (...args: unknown[]) => mockUpdate(...args),
+        },
+    },
+}));
+
+// Env mock: the chokepoint reads `env.AUTH_REQUIRE_EMAIL_VERIFICATION`.
+// We drive this per-test via a mutable object so we can flip the flag.
+const mockEnv = { AUTH_REQUIRE_EMAIL_VERIFICATION: undefined as string | undefined };
+jest.mock('@/env', () => ({
+    __esModule: true,
+    // Read lazily: @swc/jest hoists this factory above `mockEnv`.
+    env: new Proxy({}, {
+        get: (_target, prop: string) => mockEnv[prop as keyof typeof mockEnv],
+    }),
+}));
+
+// Rate-limit + security-events: stubbed wholesale so the chokepoint's
+// integration with them is exercised in their own dedicated test files.
+// The ok/not-ok knob is a jest.fn so specific test cases can flip it.
+// `(...args: unknown[]) => unknown` signatures keep mock.calls typed as
+// `unknown[][]` so we can cast individual call[0] payloads per-assertion
+// without TS complaining about spread into a zero-arg mock.
+const mockCheckCredentialsAttempt: jest.Mock<Promise<unknown>, unknown[]> =
+    jest.fn(async () => ({ ok: true as const }));
+const mockResetCredentialsBackoff: jest.Mock<Promise<void>, unknown[]> =
+    jest.fn(async () => undefined);
+jest.mock('@/lib/auth/credential-rate-limit', () => ({
+    __esModule: true,
+    checkCredentialsAttempt: (...a: unknown[]) => mockCheckCredentialsAttempt(...a),
+    resetCredentialsBackoff: (...a: unknown[]) => mockResetCredentialsBackoff(...a),
+}));
+
+const mockRecordLoginSuccess: jest.Mock<Promise<void>, unknown[]> =
+    jest.fn(async () => undefined);
+const mockRecordLoginFailure: jest.Mock<Promise<void>, unknown[]> =
+    jest.fn(async () => undefined);
+jest.mock('@/lib/auth/security-events', () => ({
+    __esModule: true,
+    recordLoginSuccess: (...a: unknown[]) => mockRecordLoginSuccess(...a),
+    recordLoginFailure: (...a: unknown[]) => mockRecordLoginFailure(...a),
+    hashEmailForLog: (s: string) => s,
+    AUTH_ACTIONS: {},
+}));
+
+import { authenticateWithPassword } from '@/lib/auth/credentials';
+import { BCRYPT_COST, prehashForBcrypt } from '@/lib/auth/passwords';
+import { lookupEmail } from '@/lib/auth/email-lookup';
+
+beforeEach(() => {
+    mockFindUnique.mockReset();
+    mockUpdate.mockReset();
+    // Reset + reinstall async-returning defaults. mockReset() wipes the
+    // implementation, so without these the next call returns undefined
+    // and `.catch(...)` inside the chokepoint throws.
+    mockCheckCredentialsAttempt.mockReset();
+    mockCheckCredentialsAttempt.mockResolvedValue({ ok: true });
+    mockResetCredentialsBackoff.mockReset();
+    mockResetCredentialsBackoff.mockResolvedValue(undefined);
+    mockRecordLoginSuccess.mockReset();
+    mockRecordLoginSuccess.mockResolvedValue(undefined);
+    mockRecordLoginFailure.mockReset();
+    mockRecordLoginFailure.mockResolvedValue(undefined);
+    mockEnv.AUTH_REQUIRE_EMAIL_VERIFICATION = undefined;
+});
+
+// ── Fixtures ────────────────────────────────────────────────────────────
+
+async function makeUser(
+    opts: {
+        id?: string;
+        email?: string;
+        name?: string | null;
+        password?: string | null;
+        emailVerified?: Date | null;
+        hashCost?: number;
+        /**
+         * Which SCHEME the stored hash is in (#5592 deploy 2).
+         *
+         * `'legacy'` is the default because it is what every row written
+         * before the flip holds: bcrypt over the raw plaintext. `'current'`
+         * is the pre-hashed form `hashPassword` writes now. The distinction
+         * matters to `rehash on verify`, which migrates a legacy row on the
+         * next sign-in — so a fixture that did not express it could only test
+         * one side of that.
+         */
+        scheme?: 'legacy' | 'current';
+    } = {},
+) {
+    const password = opts.password ?? 'Tr0ub4dor&3!';
+    const bcryptInput = opts.scheme === 'current' ? prehashForBcrypt(password) : password;
+    const passwordHash = opts.password === null
+        ? null
+        : await bcrypt.hash(bcryptInput, opts.hashCost ?? BCRYPT_COST);
+    return {
+        id: opts.id ?? 'usr_1',
+        email: opts.email ?? 'alice@example.com',
+        name: opts.name ?? 'Alice',
+        passwordHash,
+        emailVerified: opts.emailVerified ?? null,
+        _plaintext: password,
+    };
+}
+
+// ── Success path ────────────────────────────────────────────────────────
+
+describe('authenticateWithPassword — success', () => {
+    it('returns { ok: true } with userId/email/name on correct credentials', async () => {
+        const u = await makeUser();
+        mockFindUnique.mockResolvedValue(u);
+
+        const result = await authenticateWithPassword({
+            email: u.email,
+            password: u._plaintext,
+        });
+
+        expect(result).toEqual({
+            ok: true,
+            userId: u.id,
+            email: u.email,
+            name: u.name,
+        });
+    });
+
+    it('lowercases and trims the input email before hashed lookup', async () => {
+        const u = await makeUser({ email: 'alice@example.com' });
+        mockFindUnique.mockResolvedValue(u);
+
+        await authenticateWithPassword({
+            email: '  ALICE@Example.com  ',
+            password: u._plaintext,
+        });
+
+        // GAP-21: lookup is now anchored on emailHash. The expected
+        // hash is computed from the normalised (lowercased + trimmed)
+        // form — proving both that normalisation happens AND that
+        // the call site no longer references the plaintext column.
+        expect(mockFindUnique).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { email: lookupEmail('alice@example.com') },
+            }),
+        );
+    });
+});
+
+// ── Failure path: account-enumeration-safe collapse ─────────────────────
+
+describe('authenticateWithPassword — failure modes collapse to credentials_invalid', () => {
+    it('returns credentials_invalid when the email is not in the DB', async () => {
+        mockFindUnique.mockResolvedValue(null);
+        const result = await authenticateWithPassword({
+            email: 'unknown@example.com',
+            password: 'whatever',
+        });
+        expect(result).toEqual({ ok: false, reason: 'credentials_invalid' });
+    });
+
+    it('returns credentials_invalid when the user exists but has no passwordHash (OAuth-only user)', async () => {
+        const u = await makeUser({ password: null });
+        mockFindUnique.mockResolvedValue(u);
+        const result = await authenticateWithPassword({
+            email: u.email,
+            password: 'whatever',
+        });
+        expect(result).toEqual({ ok: false, reason: 'credentials_invalid' });
+    });
+
+    it('returns credentials_invalid when the password is wrong', async () => {
+        const u = await makeUser();
+        mockFindUnique.mockResolvedValue(u);
+        const result = await authenticateWithPassword({
+            email: u.email,
+            password: 'definitely-not-the-right-one', // pragma: allowlist secret -- test fixture
+        });
+        expect(result).toEqual({ ok: false, reason: 'credentials_invalid' });
+    });
+
+    it('returns credentials_invalid when email is empty', async () => {
+        const result = await authenticateWithPassword({ email: '', password: 'anything' });
+        expect(result).toEqual({ ok: false, reason: 'credentials_invalid' });
+        // No DB hit for empty input
+        expect(mockFindUnique).not.toHaveBeenCalled();
+    });
+
+    it('returns credentials_invalid when password is empty', async () => {
+        const result = await authenticateWithPassword({ email: 'a@b.co', password: '' });
+        expect(result).toEqual({ ok: false, reason: 'credentials_invalid' });
+        expect(mockFindUnique).not.toHaveBeenCalled();
+    });
+
+    it('returns credentials_invalid (does not throw) when prisma lookup errors', async () => {
+        mockFindUnique.mockRejectedValue(new Error('db down'));
+        const result = await authenticateWithPassword({
+            email: 'a@b.co',
+            password: 'x',
+        });
+        expect(result).toEqual({ ok: false, reason: 'credentials_invalid' });
+    });
+});
+
+// ── Email-verification gate (off-by-default, flip on via env) ───────────
+
+describe('authenticateWithPassword — email verification gate', () => {
+    it('succeeds when AUTH_REQUIRE_EMAIL_VERIFICATION is unset even if emailVerified is null', async () => {
+        const u = await makeUser({ emailVerified: null });
+        mockFindUnique.mockResolvedValue(u);
+        const result = await authenticateWithPassword({
+            email: u.email,
+            password: u._plaintext,
+        });
+        expect(result.ok).toBe(true);
+    });
+
+    it('returns email_not_verified when gate is on and emailVerified is null', async () => {
+        mockEnv.AUTH_REQUIRE_EMAIL_VERIFICATION = '1';
+        const u = await makeUser({ emailVerified: null });
+        mockFindUnique.mockResolvedValue(u);
+        const result = await authenticateWithPassword({
+            email: u.email,
+            password: u._plaintext,
+        });
+        expect(result).toEqual({ ok: false, reason: 'email_not_verified' });
+    });
+
+    it('succeeds when gate is on and emailVerified is a Date', async () => {
+        mockEnv.AUTH_REQUIRE_EMAIL_VERIFICATION = '1';
+        const u = await makeUser({ emailVerified: new Date('2026-01-01') });
+        mockFindUnique.mockResolvedValue(u);
+        const result = await authenticateWithPassword({
+            email: u.email,
+            password: u._plaintext,
+        });
+        expect(result.ok).toBe(true);
+    });
+});
+
+// ── Silent rehash-on-verify ─────────────────────────────────────────────
+
+describe('authenticateWithPassword — rehash on verify', () => {
+    it('rehashes and persists a stale-cost hash after successful verification', async () => {
+        const u = await makeUser({ hashCost: Math.max(BCRYPT_COST - 2, 4) });
+        mockFindUnique.mockResolvedValue(u);
+        mockUpdate.mockResolvedValue(u);
+
+        const result = await authenticateWithPassword({
+            email: u.email,
+            password: u._plaintext,
+        });
+        expect(result.ok).toBe(true);
+        expect(mockUpdate).toHaveBeenCalledTimes(1);
+        const args = mockUpdate.mock.calls[0][0] as {
+            where: { id: string };
+            data: { passwordHash: string };
+        };
+        expect(args.where.id).toBe(u.id);
+        expect(args.data.passwordHash).toMatch(new RegExp(`^\\$2[aby]\\$${BCRYPT_COST}\\$`));
+    });
+
+    it('does NOT rehash a CURRENT-scheme hash already at BCRYPT_COST', async () => {
+        // Nothing to do: right cost, right scheme. This is the steady state
+        // after #5592 deploy 2, and the case that must stay quiet — were it
+        // not, every sign-in would rewrite the row for ever.
+        const u = await makeUser({ hashCost: BCRYPT_COST, scheme: 'current' });
+        mockFindUnique.mockResolvedValue(u);
+
+        await authenticateWithPassword({ email: u.email, password: u._plaintext });
+        expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it('DOES rehash a legacy-scheme hash at the current cost — the #5592 migration', async () => {
+        // The deploy-2 behaviour. The cost is already right, so `needsRehash`
+        // alone says nothing to do; only `legacyScheme` catches it. Before the
+        // flip this user kept a hash built from input bcrypt had truncated at
+        // 72 bytes, for ever, because nothing else can convert a stored hash —
+        // the plaintext is in hand only at sign-in.
+        const u = await makeUser({ hashCost: BCRYPT_COST, scheme: 'legacy' });
+        mockFindUnique.mockResolvedValue(u);
+        mockUpdate.mockResolvedValue(u);
+
+        const result = await authenticateWithPassword({
+            email: u.email,
+            password: u._plaintext,
+        });
+
+        expect(result.ok).toBe(true);
+        expect(mockUpdate).toHaveBeenCalledTimes(1);
+        const args = mockUpdate.mock.calls[0][0] as {
+            where: { id: string };
+            data: { passwordHash: string };
+        };
+        expect(args.where.id).toBe(u.id);
+        expect(args.data.passwordHash).not.toBe(u.passwordHash);
+    });
+
+    it('the migrated hash is the CURRENT scheme, so the next sign-in is quiet', async () => {
+        // Otherwise the migration would re-fire on every login — the failure
+        // deploy 1 deliberately avoided by not consulting the flag at all.
+        const u = await makeUser({ hashCost: BCRYPT_COST, scheme: 'legacy' });
+        mockFindUnique.mockResolvedValue(u);
+        mockUpdate.mockResolvedValue(u);
+        await authenticateWithPassword({ email: u.email, password: u._plaintext });
+
+        const written = (mockUpdate.mock.calls[0][0] as { data: { passwordHash: string } })
+            .data.passwordHash;
+
+        mockUpdate.mockClear();
+        mockFindUnique.mockResolvedValue({ ...u, passwordHash: written });
+        await authenticateWithPassword({ email: u.email, password: u._plaintext });
+        expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it('does NOT fail the login if the rehash write itself errors', async () => {
+        const u = await makeUser({ hashCost: Math.max(BCRYPT_COST - 2, 4) });
+        mockFindUnique.mockResolvedValue(u);
+        mockUpdate.mockRejectedValue(new Error('transient db error'));
+
+        const result = await authenticateWithPassword({
+            email: u.email,
+            password: u._plaintext,
+        });
+        // Caller already proved knowledge of the password — housekeeping
+        // failure must not invalidate that.
+        expect(result.ok).toBe(true);
+    });
+});
+
+// ── Rate limit + audit integration ─────────────────────────────────────
+
+describe('authenticateWithPassword — rate limiting', () => {
+    it('short-circuits with rate_limited before bcrypt when the gate trips', async () => {
+        mockCheckCredentialsAttempt.mockResolvedValue({ ok: false, retryAfterSeconds: 120 });
+        mockFindUnique.mockResolvedValue(null); // only hit for the audit attribution lookup
+
+        const result = await authenticateWithPassword({
+            email: 'alice@example.com',
+            password: 'any',
+        });
+
+        expect(result).toEqual({
+            ok: false,
+            reason: 'rate_limited',
+            retryAfterSeconds: 120,
+        });
+        // Audit / security-event hook fires with the rate_limited reason
+        expect(mockRecordLoginFailure).toHaveBeenCalledTimes(1);
+        expect(mockRecordLoginFailure.mock.calls[0][0]).toEqual(
+            expect.objectContaining({ reason: 'rate_limited' }),
+        );
+        // Login-success hook did NOT fire
+        expect(mockRecordLoginSuccess).not.toHaveBeenCalled();
+    });
+
+    it('calls resetCredentialsBackoff on successful auth', async () => {
+        const u = await makeUser();
+        mockFindUnique.mockResolvedValue(u);
+
+        await authenticateWithPassword({ email: u.email, password: u._plaintext });
+
+        expect(mockResetCredentialsBackoff).toHaveBeenCalledTimes(1);
+        expect(mockResetCredentialsBackoff.mock.calls[0][0]).toBe(u.email);
+    });
+
+    it('does NOT reset the backoff counter on a failed auth', async () => {
+        const u = await makeUser();
+        mockFindUnique.mockResolvedValue(u);
+
+        await authenticateWithPassword({ email: u.email, password: 'wrong' });
+
+        expect(mockResetCredentialsBackoff).not.toHaveBeenCalled();
+    });
+});
+
+describe('authenticateWithPassword — security-event emission', () => {
+    it('fires recordLoginSuccess with userId + method on success', async () => {
+        const u = await makeUser();
+        mockFindUnique.mockResolvedValue(u);
+
+        await authenticateWithPassword({
+            email: u.email,
+            password: u._plaintext,
+            requestId: 'req-1',
+        });
+
+        expect(mockRecordLoginSuccess).toHaveBeenCalledTimes(1);
+        expect(mockRecordLoginSuccess.mock.calls[0][0]).toEqual(
+            expect.objectContaining({
+                email: u.email,
+                userId: u.id,
+                method: 'credentials',
+                requestId: 'req-1',
+            }),
+        );
+    });
+
+    it('fires recordLoginFailure with reason=unknown_email for unknown address', async () => {
+        mockFindUnique.mockResolvedValue(null);
+
+        await authenticateWithPassword({ email: 'nobody@example.com', password: 'x' });
+
+        expect(mockRecordLoginFailure).toHaveBeenCalledTimes(1);
+        expect(mockRecordLoginFailure.mock.calls[0][0]).toEqual(
+            expect.objectContaining({
+                reason: 'unknown_email',
+                userId: null,
+            }),
+        );
+    });
+
+    it('fires recordLoginFailure with reason=credentials_invalid for wrong password', async () => {
+        const u = await makeUser();
+        mockFindUnique.mockResolvedValue(u);
+
+        await authenticateWithPassword({ email: u.email, password: 'WRONG' });
+
+        expect(mockRecordLoginFailure).toHaveBeenCalledTimes(1);
+        expect(mockRecordLoginFailure.mock.calls[0][0]).toEqual(
+            expect.objectContaining({
+                reason: 'credentials_invalid',
+                userId: u.id,
+            }),
+        );
+    });
+
+    it('fires recordLoginFailure with reason=email_not_verified when gate is on', async () => {
+        mockEnv.AUTH_REQUIRE_EMAIL_VERIFICATION = '1';
+        const u = await makeUser({ emailVerified: null });
+        mockFindUnique.mockResolvedValue(u);
+
+        await authenticateWithPassword({ email: u.email, password: u._plaintext });
+
+        expect(mockRecordLoginFailure).toHaveBeenCalledTimes(1);
+        expect(mockRecordLoginFailure.mock.calls[0][0]).toEqual(
+            expect.objectContaining({
+                reason: 'email_not_verified',
+                userId: u.id,
+            }),
+        );
+    });
+
+    it('never logs the plaintext password in any security event payload', async () => {
+        const u = await makeUser();
+        mockFindUnique.mockResolvedValue(u);
+
+        await authenticateWithPassword({ email: u.email, password: u._plaintext });
+
+        const allCalls = [
+            ...mockRecordLoginSuccess.mock.calls,
+            ...mockRecordLoginFailure.mock.calls,
+        ];
+        for (const [payload] of allCalls) {
+            const serialised = JSON.stringify(payload);
+            expect(serialised).not.toContain(u._plaintext);
+        }
+    });
+});

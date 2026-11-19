@@ -13,10 +13,10 @@
  *   or `requireRole(` directly: data access belongs in usecases, auditing in
  *   usecases/events, authorisation in policies.
  *
- * All four allowlists are EMPTY. Each entry comes back, with its written
- * reason, in the sub-phase that ports the file that needs it (for example
- * `tenant-invites.ts` and `org-members.ts`, which run pre-membership or on
- * the org axis, in 1.4).
+ * Each allowlist entry carries its written reason, and comes back in the
+ * sub-phase that ports the file that needs it (sub-phase 1.4 brought the
+ * sign-in, MFA, invite and org-invite usecases and the `/api/auth/*`
+ * routes, which run before any tenant context exists).
  *
  * The last block plants a repository with one violation of each kind and
  * shows each is reported, so the guard cannot pass by checking nothing.
@@ -31,11 +31,39 @@ import { gitEnvFor, gitFiles, REPO_ROOT } from '../helpers/git-files';
 /** Repositories that may import the global client. */
 const REPO_ALLOWLIST: readonly string[] = [];
 /** Usecases that may import the global client. */
-const USECASE_ALLOWLIST: readonly string[] = [];
+const USECASE_ALLOWLIST: readonly string[] = [
+    // Sub-phase 1.4 (docs/porting/maps/1.4.md, "RLS", item 3; the parent's
+    // list in `tests/unit/no-direct-prisma.test.ts`). Each reads or writes
+    // outside a tenant context, as inflect-compliance does:
+    //  - the MFA usecases: the challenge runs while the session is still
+    //    MFA-pending, before `getTenantCtx` admits it, and the enrolment
+    //    reads the person's own rows across workspaces;
+    'mfa.ts',
+    'mfa-enrollment.ts',
+    'mfa-challenge.ts',
+    //  - session revocation: `UserSession` rows are the person's, across
+    //    workspaces (tenantId is nullable), and revoke-all stamps every one;
+    'session-security.ts',
+    //  - invite redemption and preview: the redeemer is not yet a member of
+    //    the tenant, so there is no tenant context to run in;
+    'tenant-invites.ts',
+    //  - org invites and provisioning: Organization, OrgMembership and
+    //    OrgInvite are org-scoped, not tenant-scoped, and the provisioning
+    //    fans ADMIN rows out to every tenant under the org by design.
+    'org-invites.ts',
+    'org-provisioning.ts',
+];
 /** Usecases that may call `withTenantDb(` (a job with a raw tenantId, a cross-tenant fan-out). */
 const WITH_TENANT_DB_ALLOWLIST: readonly string[] = [];
 /** Route directories (path segments under src/app/api) exempt from the route rules. */
-const ROUTE_DIR_ALLOWLIST: readonly string[] = [];
+const ROUTE_DIR_ALLOWLIST: readonly string[] = [
+    // `/api/auth/*` (sub-phase 1.4): register, me and verify-email/resend read
+    // the user and create the first workspace before any tenant context or
+    // usecase layer applies, as inflect-compliance's do (its list names
+    // 'auth' too). A later sub-phase that moves them into usecases removes
+    // this entry.
+    'auth',
+];
 
 const GLOBAL_PRISMA_IMPORT = /(?:\bfrom\s+|\brequire\(\s*|\bimport\(\s*)['"](?:@\/lib\/prisma|(?:\.\.?\/)+(?:[\w-]+\/)*lib\/prisma)['"]/;
 

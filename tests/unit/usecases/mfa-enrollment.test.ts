@@ -1,0 +1,510 @@
+/**
+ * Unit tests for src/app-layer/usecases/mfa-enrollment.ts
+ *
+ * Closes the second-tier MFA coverage gap (challenge is one half;
+ * enrollment is the other). The enrollment usecase generates the
+ * TOTP secret a user pairs into their authenticator app — bugs here
+ * are weak-secret / leaked-secret / forgotten-cleanup risks.
+ *
+ * Behaviours protected:
+ *   1. start: encrypted-at-rest secret, plaintext returned ONLY once,
+ *      idempotent re-start replaces an unverified row but cannot
+ *      replace a verified one (the verify step is the gate)
+ *   2. verify: rejects when no enrollment exists; rejects when already
+ *      verified (defends against re-verify bypass); marks isVerified=true
+ *      and stamps verifiedAt on success
+ *   3. remove: self-service for own enrollment; admin-only for others;
+ *      tenant-scoped deleteMany prevents cross-tenant erasure
+ */
+
+jest.mock('@/lib/prisma', () => ({
+    prisma: {
+        user: { findUniqueOrThrow: jest.fn(), findUnique: jest.fn() },
+        tenant: { findUnique: jest.fn() },
+        tenantMembership: { findUnique: jest.fn() },
+        userMfaEnrollment: {
+            findUnique: jest.fn(),
+            upsert: jest.fn(),
+            update: jest.fn(),
+            deleteMany: jest.fn(),
+        },
+    },
+}));
+
+jest.mock('@/lib/security/totp-crypto', () => ({
+    generateTotpSecret: jest.fn(),
+    generateTotpUri: jest.fn(),
+    encryptTotpSecret: jest.fn(),
+    decryptTotpSecret: jest.fn(),
+    matchTotpStep: jest.fn(),
+}));
+
+const mockSendEmail = jest.fn();
+jest.mock('@/lib/mailer', () => ({ sendEmail: (...a: unknown[]) => mockSendEmail(...a) }));
+
+const mockAppendAuditEntry = jest.fn();
+const mockAuth = jest.fn<Promise<unknown>, []>();
+jest.mock('@/auth', () => ({ auth: () => mockAuth() }));
+
+jest.mock('@/lib/audit', () => ({
+    appendAuditEntry: (...a: unknown[]) => mockAppendAuditEntry(...a),
+}));
+
+jest.mock('@/lib/observability', () => ({
+    logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+}));
+
+jest.mock('@/env', () => ({
+    env: { AUTH_SECRET: 'test-auth-secret-32-chars-or-more-xx' }, // pragma: allowlist secret — placeholder so totp encryption module loads under test
+}));
+
+import {
+    startMfaEnrollment,
+    verifyMfaEnrollment,
+    removeMfaEnrollment,
+} from '@/app-layer/usecases/mfa-enrollment';
+import { prisma } from '@/lib/prisma';
+import {
+    generateTotpSecret,
+    generateTotpUri,
+    encryptTotpSecret,
+    decryptTotpSecret,
+    matchTotpStep,
+} from '@/lib/security/totp-crypto';
+import { makeRequestContext } from '../../helpers/make-context';
+
+const mockUserFind = prisma.user.findUniqueOrThrow as jest.MockedFunction<
+    typeof prisma.user.findUniqueOrThrow
+>;
+const mockEnrollFind = prisma.userMfaEnrollment.findUnique as jest.MockedFunction<
+    typeof prisma.userMfaEnrollment.findUnique
+>;
+const mockEnrollUpsert = prisma.userMfaEnrollment.upsert as jest.MockedFunction<
+    typeof prisma.userMfaEnrollment.upsert
+>;
+const mockEnrollUpdate = prisma.userMfaEnrollment.update as jest.MockedFunction<
+    typeof prisma.userMfaEnrollment.update
+>;
+const mockEnrollDelete = prisma.userMfaEnrollment.deleteMany as jest.MockedFunction<
+    typeof prisma.userMfaEnrollment.deleteMany
+>;
+const mockGenSecret = generateTotpSecret as jest.MockedFunction<typeof generateTotpSecret>;
+const mockGenUri = generateTotpUri as jest.MockedFunction<typeof generateTotpUri>;
+const mockEncrypt = encryptTotpSecret as jest.MockedFunction<typeof encryptTotpSecret>;
+const mockDecrypt = decryptTotpSecret as jest.MockedFunction<typeof decryptTotpSecret>;
+const mockVerify = matchTotpStep as jest.MockedFunction<typeof matchTotpStep>;
+
+beforeEach(() => {
+    jest.clearAllMocks();
+    // A case below makes the audit write reject; `clearAllMocks` keeps that
+    // implementation, and a successful enrolment change now writes a row.
+    mockAppendAuditEntry.mockReset();
+    mockGenSecret.mockReturnValue('JBSWY3DPEHPK3PXP');
+    mockGenUri.mockReturnValue('otpauth://totp/Inflect:user@example.com?secret=...');
+    mockEncrypt.mockReturnValue('encrypted-blob');
+    mockUserFind.mockResolvedValue({ email: 'user@example.com' } as never);
+    mockEnrollUpsert.mockResolvedValue({ id: 'enr-1' } as never);
+    mockEnrollUpdate.mockResolvedValue({ id: 'enr-1' } as never);
+    mockEnrollDelete.mockResolvedValue({ count: 1 } as never);
+    mockSendEmail.mockReset().mockResolvedValue({ sent: true });
+    (prisma.tenantMembership.findUnique as jest.Mock).mockResolvedValue({ role: 'MEMBER' });
+    (prisma.user.findUnique as jest.Mock).mockImplementation(async ({ where }: { where: { id: string } }) =>
+        where.id === 'admin-u' ? { name: 'Ada Admin', email: 'ada@example.com' } : { email: 'victim@example.com' },
+    );
+    (prisma.tenant.findUnique as jest.Mock).mockResolvedValue({ name: 'Acme Bank' });
+});
+
+const userCtx = makeRequestContext('MEMBER', { userId: 'u1', tenantId: 't1' });
+const adminCtx = makeRequestContext('ADMIN', { userId: 'admin-u', tenantId: 't1' });
+/** The signed-in session that is making the request: the caller's own. */
+const signedIn = (ctx: { userId: string }, extra: Record<string, unknown> = {}) =>
+    mockAuth.mockResolvedValue({ user: { id: ctx.userId, mfaPending: false, ...extra } });
+
+describe('startMfaEnrollment', () => {
+    it('returns plaintext secret + otpauth URI exactly once and persists encrypted blob', async () => {
+        const result = await startMfaEnrollment(userCtx);
+
+        expect(result.secret).toBe('JBSWY3DPEHPK3PXP');
+        expect(result.uri).toContain('otpauth://');
+        expect(result.enrollmentId).toBe('enr-1');
+
+        // Persisted row carries the ENCRYPTED blob — never the plaintext.
+        const upsertArgs = mockEnrollUpsert.mock.calls[0][0];
+        expect(upsertArgs.create.secretEncrypted).toBe('encrypted-blob');
+        expect(upsertArgs.update.secretEncrypted).toBe('encrypted-blob');
+        // Regression: a refactor that accidentally persists the raw secret
+        // would change the create payload's secretEncrypted to match the
+        // plaintext. Defence-in-depth: assert it does NOT equal the plain.
+        expect(upsertArgs.create.secretEncrypted).not.toBe(result.secret);
+    });
+
+    it('upsert resets isVerified=false on re-enrollment to force re-verify', async () => {
+        await startMfaEnrollment(userCtx);
+        const upsertArgs = mockEnrollUpsert.mock.calls[0][0];
+        expect(upsertArgs.create.isVerified).toBe(false);
+        expect(upsertArgs.update.isVerified).toBe(false);
+        // Regression: a bug that left isVerified=true on update would
+        // skip the second-step verify and let a new (possibly wrong)
+        // secret silently become trusted.
+        expect(upsertArgs.update.verifiedAt).toBeNull();
+    });
+
+    it('scopes upsert by (userId, tenantId, type=TOTP)', async () => {
+        await startMfaEnrollment(userCtx);
+        const upsertArgs = mockEnrollUpsert.mock.calls[0][0];
+        expect(upsertArgs.where.userId_tenantId_type).toEqual({
+            userId: 'u1',
+            tenantId: 't1',
+            type: 'TOTP',
+        });
+    });
+});
+
+describe('verifyMfaEnrollment', () => {
+    const enrolled = {
+        id: 'enr-1',
+        userId: 'u1',
+        tenantId: 't1',
+        type: 'TOTP' as const,
+        secretEncrypted: 'enc',
+        isVerified: false,
+        verifiedAt: null,
+    };
+
+    it('throws badRequest when no enrollment row exists', async () => {
+        mockEnrollFind.mockResolvedValue(null);
+        await expect(
+            verifyMfaEnrollment(userCtx, { code: '123456' }),
+        ).rejects.toThrow(/No MFA enrollment found/);
+        expect(mockVerify).not.toHaveBeenCalled();
+    });
+
+    it('throws badRequest when enrollment is already verified (re-verify defence)', async () => {
+        mockEnrollFind.mockResolvedValue({ ...enrolled, isVerified: true } as never);
+        await expect(
+            verifyMfaEnrollment(userCtx, { code: '123456' }),
+        ).rejects.toThrow(/already verified/);
+        // Regression: a "second verify" path could overwrite the
+        // verified flag with a stale code from an attacker who saw a
+        // valid one. Reject categorically.
+        expect(mockVerify).not.toHaveBeenCalled();
+    });
+
+    it('returns success:false WITHOUT marking verified when the code is wrong', async () => {
+        mockEnrollFind.mockResolvedValue(enrolled as never);
+        mockDecrypt.mockReturnValue('JBSWY3DPEHPK3PXP');
+        mockVerify.mockReturnValue(null);
+
+        const r = await verifyMfaEnrollment(userCtx, { code: '000000' });
+
+        expect(r.success).toBe(false);
+        // Regression: a bug that called update() unconditionally would
+        // mark the enrollment verified on the first wrong code.
+        expect(mockEnrollUpdate).not.toHaveBeenCalled();
+    });
+
+    it('marks isVerified=true + stamps verifiedAt on a correct code', async () => {
+        mockEnrollFind.mockResolvedValue(enrolled as never);
+        mockDecrypt.mockReturnValue('JBSWY3DPEHPK3PXP');
+        mockVerify.mockReturnValue(1000);
+
+        const r = await verifyMfaEnrollment(userCtx, { code: '654321' });
+
+        expect(r.success).toBe(true);
+        expect(mockEnrollUpdate).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { id: 'enr-1' },
+                data: expect.objectContaining({
+                    isVerified: true,
+                    verifiedAt: expect.any(Date),
+                }),
+            }),
+        );
+    });
+});
+
+describe('removeMfaEnrollment', () => {
+    beforeEach(() => {
+        // Default: the caller has completed their challenge. Set explicitly
+        // rather than relying on an unstubbed mock returning undefined, which
+        // would read as "not pending" and let the write through — a fail-OPEN
+        // default is exactly what this gate must not have.
+        mockAuth.mockResolvedValue({ user: { id: 'u1', mfaPending: false } });
+    });
+
+    it('REFUSES a caller whose own MFA challenge is still pending', async () => {
+        // The bypass this closes: a password alone defeats the second factor
+        // entirely through the UI. Sign in under a REQUIRED policy -> the
+        // session is mfaPending -> reach the enrolment page (which must be
+        // reachable, or an unenrolled user could never enrol) -> Remove ->
+        // enrol the attacker's own authenticator -> `lastChallengeAt >=
+        // token.iat` -> auth.ts clears mfaPending. No crafted requests.
+        mockAuth.mockResolvedValue({ user: { id: 'u1', mfaPending: true } });
+
+        await expect(removeMfaEnrollment(userCtx)).rejects.toThrow(
+            /Complete the MFA challenge/i,
+        );
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+    });
+
+    it('REFUSES an ADMIN who is themselves mid-challenge, removing someone else', async () => {
+        // Deliberately not exempted. An administrator who has not completed
+        // their own challenge should not be removing anybody's second factor.
+        mockAuth.mockResolvedValue({ user: { id: 'admin-u', mfaPending: true } });
+
+        await expect(removeMfaEnrollment(adminCtx, 'u2')).rejects.toThrow(
+            /Complete the MFA challenge/i,
+        );
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+    });
+
+    it('lets a user remove their own enrollment without admin rights', async () => {
+        await removeMfaEnrollment(userCtx); // targetUserId omitted → self
+        expect(mockEnrollDelete).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { userId: 'u1', tenantId: 't1', type: 'TOTP' },
+            }),
+        );
+    });
+
+    it('lets a user remove their own enrollment when explicitly named', async () => {
+        await removeMfaEnrollment(userCtx, 'u1');
+        expect(mockEnrollDelete).toHaveBeenCalled();
+    });
+
+    it('rejects a non-admin caller trying to remove someone else', async () => {
+        await expect(
+            removeMfaEnrollment(userCtx, 'someone-else'),
+        ).rejects.toThrow(/Only admins/);
+        // Regression: privilege-escalation route — a buggy permission
+        // check would let any user wipe another user's MFA, leaving
+        // them in an MFA-required-but-unenrolled lockout AND opening
+        // a re-enrolment window the attacker controls.
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+    });
+
+    it('RECORDS that refusal, naming who was targeted', async () => {
+        // The half the test above cannot cover. Throwing is not recording, and
+        // this route cannot carry `requirePermission` — it is dual-mode, so a
+        // route-level key would either break self-service or admit everyone.
+        // Until #2117 that combination meant the single most attack-relevant
+        // refusal in the product left no trace at all.
+        mockAppendAuditEntry.mockResolvedValue({ id: 'a1' });
+
+        await expect(removeMfaEnrollment(userCtx, 'victim-id')).rejects.toThrow();
+
+        expect(mockAppendAuditEntry).toHaveBeenCalledTimes(1);
+        const entry = mockAppendAuditEntry.mock.calls[0][0];
+        expect(entry).toEqual(
+            expect.objectContaining({
+                tenantId: userCtx.tenantId,
+                userId: userCtx.userId,
+                entity: 'Permission',
+                action: 'AUTHZ_DENIED',
+            }),
+        );
+        // WHO was targeted is the point of the row — a denial that does not say
+        // whose second factor somebody tried to strip is not usable evidence.
+        expect(entry.detailsJson).toEqual(
+            expect.objectContaining({ category: 'access', targetUserId: 'victim-id' }),
+        );
+    });
+
+    it('still refuses when the audit write fails', async () => {
+        // The refusal must reach the caller even if audit storage is down —
+        // same contract as auditPermissionDenied. Inverting this would turn an
+        // audit outage into an authorization bypass, which is the one way a
+        // logging change can make a system LESS safe than logging nothing.
+        mockAppendAuditEntry.mockRejectedValue(new Error('audit storage down'));
+
+        await expect(
+            removeMfaEnrollment(userCtx, 'victim-id'),
+        ).rejects.toThrow(/Only admins/);
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+    });
+
+    it('writes NO denial row when an admin is allowed through', async () => {
+        signedIn(adminCtx);
+        // Without this, a helper that recorded unconditionally would satisfy
+        // every assertion above while filling the trail with denials that never
+        // happened — the failure direction that misleads an auditor rather than
+        // leaving them short. The removal itself is recorded (#4646), as its own
+        // action.
+        await removeMfaEnrollment(adminCtx, 'victim-id');
+        const actions = mockAppendAuditEntry.mock.calls.map(([e]) => (e as { action: string }).action);
+        expect(actions).not.toContain('AUTHZ_DENIED');
+        expect(actions).toEqual(['MFA_REMOVED']);
+    });
+
+    it('lets ADMIN force-remove another user in the same tenant', async () => {
+        signedIn(adminCtx);
+        await removeMfaEnrollment(adminCtx, 'victim-id');
+        expect(mockEnrollDelete).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { userId: 'victim-id', tenantId: 't1', type: 'TOTP' },
+            }),
+        );
+    });
+
+    it('scopes the deleteMany to ctx.tenantId — never cross-tenant', async () => {
+        signedIn(adminCtx);
+        await removeMfaEnrollment(adminCtx, 'victim-id');
+        const args = mockEnrollDelete.mock.calls[0][0];
+        // The tenantId in the WHERE comes from ctx, not the target's.
+        // Regression: an admin in tenant A whose request is forged to
+        // target a user in tenant B would, without this scope, reach
+        // cross-tenant. The check ensures the deleteMany is bounded.
+        expect(args?.where).toHaveProperty('tenantId', 't1');
+    });
+
+    it('returns removed:false when nothing matched', async () => {
+        mockEnrollDelete.mockResolvedValue({ count: 0 } as never);
+        const r = await removeMfaEnrollment(userCtx);
+        expect(r.removed).toBe(false);
+    });
+});
+
+// ─── #4646: the enrolment changes are recorded ─────────────────────────
+
+describe('resetting an Owner-managed member’s MFA takes an Owner (#4926)', () => {
+    beforeEach(() => signedIn(adminCtx));
+    const ownerCtx = makeRequestContext('OWNER', { userId: 'owner-u', tenantId: 't1' });
+
+    it.each(['OWNER'])('refuses an ADMIN resetting an %s, writing nothing and recording the refusal', async (role) => {
+        (prisma.tenantMembership.findUnique as jest.Mock).mockResolvedValue({ role });
+        await expect(removeMfaEnrollment(adminCtx, 'victim-id')).rejects.toMatchObject({
+            status: 403,
+            details: { reason: 'RESETTING_OWNER_MANAGED_MFA_IS_OWNER_TIER' },
+        });
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+        expect(mockAppendAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ action: 'AUTHZ_DENIED' }));
+        expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
+    it('lets an OWNER reset another Owner’s MFA', async () => {
+        signedIn(ownerCtx);
+        (prisma.tenantMembership.findUnique as jest.Mock).mockResolvedValue({ role: 'OWNER' });
+        await expect(removeMfaEnrollment(ownerCtx, 'victim-id')).resolves.toEqual({ removed: true });
+        expect(mockEnrollDelete).toHaveBeenCalled();
+    });
+
+    it('emails the person when somebody else resets their MFA, naming who and where', async () => {
+        await removeMfaEnrollment(adminCtx, 'victim-id');
+        expect(mockSendEmail).toHaveBeenCalledTimes(1);
+        const msg = mockSendEmail.mock.calls[0][0] as { to: string; subject: string; text: string };
+        expect(msg.to).toBe('victim@example.com');
+        expect(msg.subject).toContain('Acme Bank');
+        expect(msg.text).toContain('Ada Admin');
+    });
+
+    it('sends nothing when a person removes their own MFA', async () => {
+        mockAuth.mockResolvedValue({ user: { id: 'u1', mfaPending: false } });
+        await removeMfaEnrollment(userCtx);
+        expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
+    it('keeps the reset when the email fails', async () => {
+        mockSendEmail.mockRejectedValue(new Error('smtp down'));
+        await expect(removeMfaEnrollment(adminCtx, 'victim-id')).resolves.toEqual({ removed: true });
+    });
+});
+
+describe('MFA enrolment changes are in the audit trail (#4646)', () => {
+    const rows = () => mockAppendAuditEntry.mock.calls.map(([e]) => e as Record<string, unknown>);
+
+    it('records a started enrolment', async () => {
+        await startMfaEnrollment(userCtx);
+        expect(rows()).toEqual([
+            expect.objectContaining({
+                action: 'MFA_ENROLLMENT_STARTED',
+                tenantId: 't1',
+                detailsJson: { category: 'access', operation: 'permission_changed', targetUserId: 'u1', detail: 'mfa_enrollment_started' },
+            }),
+        ]);
+    });
+
+    it('records a verified enrolment, and nothing for a wrong code', async () => {
+        mockEnrollFind.mockResolvedValue({ id: 'enr-1', isVerified: false, secretEncrypted: 'blob' } as never);
+        mockDecrypt.mockReturnValue('JBSWY3DPEHPK3PXP');
+
+        mockVerify.mockReturnValueOnce(null);
+        await verifyMfaEnrollment(userCtx, { code: '000000' });
+        expect(rows()).toEqual([]);
+
+        mockVerify.mockReturnValueOnce(1000);
+        await verifyMfaEnrollment(userCtx, { code: '123456' });
+        expect(rows()).toEqual([
+            expect.objectContaining({
+                action: 'MFA_ENROLLED',
+                detailsJson: expect.objectContaining({ targetUserId: 'u1', detail: 'mfa_enrolled' }),
+            }),
+        ]);
+    });
+
+    it('records a removal, naming whose factor it was and whether an admin did it', async () => {
+        signedIn(userCtx);
+        await removeMfaEnrollment(userCtx);
+        signedIn(adminCtx);
+        await removeMfaEnrollment(adminCtx, 'victim-id');
+        expect(rows()).toEqual([
+            expect.objectContaining({
+                action: 'MFA_REMOVED',
+                userId: 'u1',
+                detailsJson: expect.objectContaining({ targetUserId: 'u1', detail: 'mfa_removed' }),
+            }),
+            expect.objectContaining({
+                action: 'MFA_REMOVED',
+                userId: 'admin-u',
+                detailsJson: expect.objectContaining({ targetUserId: 'victim-id', detail: 'mfa_removed_by_admin' }),
+            }),
+        ]);
+    });
+
+    it('records nothing when there was nothing to remove', async () => {
+        signedIn(userCtx);
+        mockEnrollDelete.mockResolvedValue({ count: 0 } as never);
+        await removeMfaEnrollment(userCtx);
+        expect(rows()).toEqual([]);
+    });
+});
+
+// ─── Acts on a person's own second factor take that person ───────────────
+
+describe('only the signed-in person changes their second factor', () => {
+    const keyCtx = makeRequestContext('ADMIN', { userId: 'admin-u', tenantId: 't1', apiKeyId: 'key-1' });
+
+    it.each([['an API key', keyCtx]])('refuses %s removing a factor, and records it', async (_l, ctx) => {
+        mockAuth.mockResolvedValue(null);
+        await expect(removeMfaEnrollment(ctx)).rejects.toMatchObject({ status: 403, details: { reason: 'NOT_A_PERSON' } });
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+        expect(mockAppendAuditEntry).toHaveBeenCalledWith(expect.objectContaining({ action: 'AUTHZ_DENIED' }));
+    });
+
+    it.each([['an API key', keyCtx]])('refuses %s starting or verifying an enrolment', async (_l, ctx) => {
+        await expect(startMfaEnrollment(ctx)).rejects.toMatchObject({ details: { reason: 'NOT_A_PERSON' } });
+        await expect(verifyMfaEnrollment(ctx, { code: '123456' })).rejects.toMatchObject({ details: { reason: 'NOT_A_PERSON' } });
+    });
+
+    it('refuses a removal with no signed-in session', async () => {
+        mockAuth.mockResolvedValue(null);
+        await expect(removeMfaEnrollment(userCtx)).rejects.toThrow(/signed-in session/);
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+    });
+
+    it('refuses a removal when the session is somebody else\'s', async () => {
+        mockAuth.mockResolvedValue({ user: { id: 'someone-else', mfaPending: false } });
+        await expect(removeMfaEnrollment(userCtx)).rejects.toThrow(/signed-in session/);
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+    });
+
+    it('refuses a removal while THIS workspace\'s challenge is pending, though the primary\'s is passed', async () => {
+        signedIn(userCtx, { mfaPendingTenantIds: ['t1'] });
+        await expect(removeMfaEnrollment(userCtx)).rejects.toThrow(/Complete the MFA challenge/i);
+        expect(mockEnrollDelete).not.toHaveBeenCalled();
+    });
+
+    it('allows the removal when only ANOTHER workspace is pending', async () => {
+        signedIn(userCtx, { mfaPendingTenantIds: ['t-other'] });
+        await expect(removeMfaEnrollment(userCtx)).resolves.toEqual({ removed: true });
+    });
+});

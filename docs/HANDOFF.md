@@ -206,5 +206,32 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    items came out of it: ADR 0006 W1 (`Tenant`/`tenantId` in code) is applied but not
    signed, and the `prisma` CLI's dependency tree fails `npm run licence:check`
    (`elkjs` EPL-2.0 and `@visx/vendor` 4.0.0-alpha.0 through Prisma Studio, `graceful-fs`
-   4.2.12 BlueOak-1.0.0), which needs an ADR 0007 decision; no exemption was added.
-   1.4 is next.
+   4.2.12 BlueOak-1.0.0), which needs an ADR 0007 decision; no exemption was added (decision 27 since
+   settled it).
+   **1.4 (auth, members, invites, permission set) has landed** on branch `wt/p14` (not
+   pushed), by `docs/porting/maps/1.4.md` (`PROVENANCE.md`, "Copied: auth, members and
+   permissions"):
+   - NextAuth v4.24.15 behind one seam (ADR 0004 A3): only the files in
+     `NEXT_AUTH_SEAM` (`eslint.config.mjs`) load `next-auth`, enforced by
+     `local/next-auth-single-seam` and held equal to the real importers by
+     `tests/guards/auth-stack-pinning.test.ts`. Credentials, Google and Microsoft (each
+     OAuth provider only when configured), `UserSession` rows with revocation, the
+     fail-open session check (contract item 6), per-workspace MFA, the password policy
+     and breach check, invites (tenant and organization), custom roles, and the edge
+     tenant-access gate. SSO, "Enforce SSO", SCIM and the Entra rules wait for 8.3.
+   - The new `PermissionSet` (twelve PM domains) and the five roles; GUEST is not
+     assignable yet. `TenantCustomRole` stores `grantsJson` (ADR 0006 bans
+     "Permissions" in identifiers).
+   - `requirePermission` with audited denials; `getTenantCtx` and
+     `getTenantServerContext` restore the MFA gate through one module. The audit log,
+     observability and mailer are stubs at their final paths until 1.5 and 1.6 (an
+     audit entry is a log line).
+   - Public sign-up behind `AUTH_PUBLIC_SIGNUP` (ADR 0006): closed in production by
+     default, open in development; the invite path of the register route stays open.
+   - The auth migration adds six tenant tables with RLS, tenant-leading indexes and
+     two-tenant tests; the login, invite, password, MFA, account and picker pages, and a
+     placeholder workspace page at `/t/<slug>` that 1.7 replaces.
+   Open for the owner: whether `/` and `/gallery` stay public (they are, as before 1.4);
+   a seed tenant for E2E (roadmap 1.8 or H1); ADR 0004 open question 7 (the `next-auth`
+   overrides entry for nodemailer) is still open, and no override was added. 1.5 is
+   next.

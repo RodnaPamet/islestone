@@ -1,0 +1,209 @@
+/**
+ * Session and MFA-policy route enforcement tests.
+ *
+ * Copied from inflect-compliance `tests/unit/security/migrated-route-enforcement.test.ts`
+ * (5528464fc54a8681956f3b9ce23ca9c075f0420e); its billing (8.1) and SSO
+ * (8.3) rows wait for those sub-phases. Picks one representative route per
+ * cluster (security/sessions/revoke-all, security/sessions/revoke-user,
+ * security/mfa/policy PUT) and drives it through the full
+ * `withApiErrorHandling` + `requirePermission` chain. Verifies:
+ *
+ *   - an ADMIN context reaches the inner handler (success path)
+ *   - a VIEWER context is rejected with a 403 JSON envelope
+ *   - the inner handler is NOT invoked on denial
+ *   - an `AUTHZ_DENIED` audit entry is recorded with the right key
+ *
+ * The companion `admin-route-enforcement.test.ts` covers the original
+ * Epic C.1 admin routes; this suite is the equivalent ratchet for the
+ * Epic D.3 migrations so a copy-paste typo or accidental revert
+ * (back to `requireAdminCtx`) trips a deterministic test.
+ */
+
+// ─── Mocks ─────────────────────────────────────────────────────────
+
+const mockGetTenantCtx = jest.fn();
+const mockAppendAuditEntry = jest.fn();
+
+jest.mock('@/app-layer/context', () => ({
+    getTenantCtx: (...args: unknown[]) => mockGetTenantCtx(...args),
+}));
+
+jest.mock('@/lib/audit', () => ({
+    // #2657 — `permission-middleware` now records AUTHZ_DENIED through
+    // `appendAuditEntryOrQueue`, which falls back to a durable AuditOutbox
+    // row instead of swallowing a failed write. Routed to the SAME spy as
+    // `appendAuditEntry` on purpose: these tests assert the ENTRY'S SHAPE,
+    // which the change does not alter, so they keep testing what they tested.
+    appendAuditEntryOrQueue: (...args: unknown[]) => mockAppendAuditEntry(...args),
+    appendAuditEntry: (...args: unknown[]) => mockAppendAuditEntry(...args),
+}));
+
+// Billing — stub Stripe + entitlements lookups.
+const mockListBillingEvents = jest.fn();
+const mockFindOrCreateCustomer = jest.fn();
+const mockCreatePortalSession = jest.fn();
+const mockCreateCheckoutSession = jest.fn();
+
+// Security session usecases.
+const mockRevokeAllTenantSessions = jest.fn();
+const mockRevokeUserSessions = jest.fn();
+jest.mock('@/app-layer/usecases/session-security', () => ({
+    revokeAllTenantSessions: (...a: unknown[]) => mockRevokeAllTenantSessions(...a),
+    revokeUserSessions: (...a: unknown[]) => mockRevokeUserSessions(...a),
+    revokeCurrentSession: jest.fn(),
+}));
+
+// MFA usecases.
+const mockUpdateTenantMfaPolicy = jest.fn();
+jest.mock('@/app-layer/usecases/mfa', () => ({
+    updateTenantMfaPolicy: (...a: unknown[]) => mockUpdateTenantMfaPolicy(...a),
+    getTenantSecuritySettings: jest.fn(),
+}));
+
+// SSO usecases.
+const mockGetTenantSsoConfig = jest.fn();
+const mockUpsertTenantSsoConfig = jest.fn();
+
+// ── Imports (after mocks) ──
+
+import type { NextRequest } from 'next/server';
+import { POST as revokeAllPOST } from '@/app/api/t/[tenantSlug]/security/sessions/revoke-all/route';
+import { POST as revokeUserPOST } from '@/app/api/t/[tenantSlug]/security/sessions/revoke-user/route';
+import { PUT as mfaPolicyPUT } from '@/app/api/t/[tenantSlug]/security/mfa/policy/route';
+
+import type { RequestContext } from '@/app-layer/types';
+import { getPermissionsForRole } from '@/lib/permissions';
+
+// ── Fixtures ──
+
+function makeCtx(role: 'ADMIN' | 'MEMBER' | 'VIEWER'): RequestContext {
+    return {
+        requestId: 'req-test',
+        userId: 'user-1',
+        tenantId: 'tenant-1',
+        tenantSlug: 'acme',
+        role,
+        permissions: {
+            canRead: true,
+            canWrite: role === 'ADMIN' || role === 'MEMBER',
+            canAdmin: role === 'ADMIN',
+                        canExport: role === 'ADMIN',
+        },
+        appPermissions: getPermissionsForRole(role),
+    };
+}
+
+function makeReq(method: string, path: string, body?: unknown) {
+    return {
+        method,
+        url: `https://app.example.com${path}`,
+        headers: new Headers(),
+        nextUrl: {
+            pathname: path,
+            protocol: 'https:',
+            host: 'app.example.com',
+            searchParams: new URLSearchParams(),
+        },
+        json: async () => body ?? {},
+    } as unknown as NextRequest;
+}
+
+beforeEach(() => {
+    [
+        mockGetTenantCtx, mockAppendAuditEntry,
+        mockListBillingEvents, mockFindOrCreateCustomer,
+        mockCreatePortalSession, mockCreateCheckoutSession,
+        mockRevokeAllTenantSessions, mockRevokeUserSessions,
+        mockUpdateTenantMfaPolicy,
+        mockGetTenantSsoConfig, mockUpsertTenantSsoConfig,
+    ].forEach((m) => m.mockReset());
+});
+
+// ─── Billing — admin.manage ────────────────────────────────────────
+
+describe('POST /api/t/:slug/security/sessions/revoke-all — admin.members', () => {
+    const params = { params: { tenantSlug: 'acme' } };
+    const path = '/api/t/acme/security/sessions/revoke-all';
+
+    it('revokes for an ADMIN', async () => {
+        mockGetTenantCtx.mockResolvedValue(makeCtx('ADMIN'));
+        mockRevokeAllTenantSessions.mockResolvedValue({ usersAffected: 7 });
+        const res = await revokeAllPOST(makeReq('POST', path), params);
+        expect(res.status).toBe(200);
+        const body = await res.json() as { usersAffected: number };
+        expect(body.usersAffected).toBe(7);
+    });
+
+    it('returns 403 + audit for a READER', async () => {
+        mockGetTenantCtx.mockResolvedValue(makeCtx('VIEWER'));
+        mockAppendAuditEntry.mockResolvedValue({ id: 'a1', entryHash: 'h', previousHash: null });
+        const res = await revokeAllPOST(makeReq('POST', path), params);
+        expect(res.status).toBe(403);
+        expect(mockRevokeAllTenantSessions).not.toHaveBeenCalled();
+        const audit = mockAppendAuditEntry.mock.calls[0][0];
+        expect(audit.entityId).toBe('admin.members');
+    });
+});
+
+// ─── security/sessions/revoke-user — admin.members ─────────────────
+
+describe('POST /api/t/:slug/security/sessions/revoke-user — admin.members', () => {
+    const params = { params: { tenantSlug: 'acme' } };
+    const path = '/api/t/acme/security/sessions/revoke-user';
+
+    // The schema requires `targetUserId` to be a cuid.
+    const TARGET_CUID = 'cmo8ae4ax0001k23vjcj6sdn2';
+
+    it('forwards target user id for an ADMIN', async () => {
+        mockGetTenantCtx.mockResolvedValue(makeCtx('ADMIN'));
+        mockRevokeUserSessions.mockResolvedValue({ userId: TARGET_CUID, newSessionVersion: 7 });
+        const res = await revokeUserPOST(
+            makeReq('POST', path, { targetUserId: TARGET_CUID }),
+            params,
+        );
+        expect(res.status).toBe(200);
+        expect(mockRevokeUserSessions).toHaveBeenCalledWith(expect.anything(), TARGET_CUID);
+    });
+
+    it('returns 403 + audit for a READER', async () => {
+        mockGetTenantCtx.mockResolvedValue(makeCtx('VIEWER'));
+        mockAppendAuditEntry.mockResolvedValue({ id: 'a1', entryHash: 'h', previousHash: null });
+        const res = await revokeUserPOST(
+            makeReq('POST', path, { targetUserId: TARGET_CUID }),
+            params,
+        );
+        expect(res.status).toBe(403);
+        expect(mockRevokeUserSessions).not.toHaveBeenCalled();
+    });
+});
+
+// ─── security/mfa/policy PUT — admin.manage ────────────────────────
+
+describe('PUT /api/t/:slug/security/mfa/policy — admin.manage', () => {
+    const params = { params: { tenantSlug: 'acme' } };
+    const path = '/api/t/acme/security/mfa/policy';
+
+    it('updates policy for an ADMIN', async () => {
+        mockGetTenantCtx.mockResolvedValue(makeCtx('ADMIN'));
+        mockUpdateTenantMfaPolicy.mockResolvedValue({ ok: true });
+        const res = await mfaPolicyPUT(
+            makeReq('PUT', path, { mfaPolicy: 'REQUIRED' }),
+            params,
+        );
+        expect(res.status).toBe(200);
+        expect(mockUpdateTenantMfaPolicy).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns 403 + audit for a READER (PUT only — GET is open)', async () => {
+        mockGetTenantCtx.mockResolvedValue(makeCtx('VIEWER'));
+        mockAppendAuditEntry.mockResolvedValue({ id: 'a1', entryHash: 'h', previousHash: null });
+        const res = await mfaPolicyPUT(
+            makeReq('PUT', path, { mfaPolicy: 'REQUIRED' }),
+            params,
+        );
+        expect(res.status).toBe(403);
+        expect(mockUpdateTenantMfaPolicy).not.toHaveBeenCalled();
+    });
+});
+
+

@@ -19,6 +19,7 @@ model Organization {
   tenants                      Tenant[]
   memberships                  OrgMembership[]
   provisionedTenantMemberships TenantMembership[] @relation("OrgProvisionedTenantMemberships")
+  invites                      OrgInvite[]
 }
 
 model OrgMembership {
@@ -57,6 +58,11 @@ model Tenant {
   organization Organization?      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   memberships  TenantMembership[]
 
+  securitySettings TenantSecuritySettings?
+  invites          TenantInvite[]
+  mfaEnrollments   UserMfaEnrollment[]
+  customRoles      TenantCustomRole[]
+
   @@index([organizationId])
 }
 
@@ -75,13 +81,17 @@ model TenantMembership {
   /// provisioning (sub-phase 1.4) for the named organization. NULL means
   /// it was created directly. ON DELETE SET NULL on the organization.
   provisionedByOrgId String?
+  /// A custom role (sub-phase 1.4). Never on an OWNER membership: the CHECK
+  /// `TenantMembership_built_in_scope_role_no_custom_role`.
+  customRoleId       String?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
-  tenant           Tenant        @relation(fields: [tenantId], references: [id])
-  user             User          @relation(fields: [userId], references: [id])
-  invitedBy        User?         @relation("MembershipInviter", fields: [invitedByUserId], references: [id])
-  provisionedByOrg Organization? @relation("OrgProvisionedTenantMemberships", fields: [provisionedByOrgId], references: [id], onDelete: SetNull)
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  user             User              @relation(fields: [userId], references: [id])
+  invitedBy        User?             @relation("MembershipInviter", fields: [invitedByUserId], references: [id])
+  provisionedByOrg Organization?     @relation("OrgProvisionedTenantMemberships", fields: [provisionedByOrgId], references: [id], onDelete: SetNull)
+  customRole       TenantCustomRole? @relation(fields: [customRoleId], references: [id])
 
   @@unique([tenantId, userId])
   /// The composite an FK from a tenant-scoped child references. `id` alone is
@@ -95,6 +105,7 @@ model TenantMembership {
   @@index([userId, status])
   @@index([invitedByUserId])
   @@index([provisionedByOrgId])
+  @@index([customRoleId])
 }
 
 /// A person's global sign-in identity, independent of any workspace.
@@ -116,4 +127,11 @@ model User {
   tenantMemberships  TenantMembership[]
   invitedMemberships TenantMembership[] @relation("MembershipInviter")
   orgMemberships     OrgMembership[]
+
+  accounts            Account[]
+  userSessions        UserSession[]        @relation("UserSessionOwner")
+  passwordResetTokens PasswordResetToken[] @relation("UserPasswordResetTokens")
+  mfaEnrollments      UserMfaEnrollment[]
+  invitesSent         TenantInvite[]
+  orgInvitesIssued    OrgInvite[]          @relation("OrgInviteInviter")
 }

@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import type { NextRequest } from 'next/server';
 
 import { getSessionOrThrow } from '@/lib/auth/session';
+import { assertWorkspaceMfaSatisfied } from '@/lib/auth/workspace-mfa-gate';
 import { badRequest, notFound } from '@/lib/errors/types';
 import { mergeRequestContext } from '@/lib/observability/context';
 import { logger } from '@/lib/observability/logger';
@@ -14,12 +15,13 @@ import type { OrgContext, RequestContext } from './types';
 /**
  * Request-context builders for route handlers.
  *
- * SUB-PHASE 1.3: session-only and gate-free. `getSessionOrThrow` is a stub
- * that always answers 401 until sub-phase 1.4 ports NextAuth, so neither
- * builder can succeed outside tests yet. 1.4 restores, in BOTH this file and
- * the page-side twins in `src/lib/server/`, the gates inflect-compliance
- * runs here: API-key authentication (with its tenant-slug check), the SSO
- * session scope, the Entra gate, "Enforce SSO" and the workspace MFA check.
+ * The session comes from NextAuth through `getSessionOrThrow`
+ * (`src/lib/auth/session.ts`, sub-phase 1.4). Sub-phase 1.4 restored the
+ * workspace MFA check in BOTH this file and the page-side twin
+ * (`src/lib/server/tenant-context.server.ts`). The other gates
+ * inflect-compliance runs here wait for their sub-phases, and land in both
+ * files together: API-key authentication with its tenant-slug check (5.2),
+ * and the SSO session scope, the Entra gate and "Enforce SSO" (8.3).
  */
 
 /**
@@ -50,6 +52,10 @@ export async function getTenantCtx(
 
     // This checks membership and resolves the tenant UUID & role
     const ctx = await resolveTenantContext(params, session.userId);
+    // A workspace that still wants this session's MFA code. The edge holds the
+    // ones in the session's capped membership claim; one past the cap is asked
+    // here. The MFA challenge and enrolment APIs stay reachable.
+    await assertWorkspaceMfaSatisfied(session, ctx.tenant.id, ctx.tenant.slug, req);
 
     // Enrich the observability context with tenant and user info
     // so that logs/traces emitted downstream automatically include them.

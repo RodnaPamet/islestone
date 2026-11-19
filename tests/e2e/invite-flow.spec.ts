@@ -1,0 +1,258 @@
+/**
+ * E2E — R-5 closure: Invitation journey
+ *
+ * Copied from inflect-compliance `tests/e2e/invite-flow.spec.ts` at
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e. Islestone's invitee is a MEMBER
+ * (the parent's EDITOR), and a signed-in person lands on the workspace page
+ * `/t/<slug>` rather than a dashboard with a sidebar (the app shell is 1.7).
+ *
+ * Walks the full happy path against a live server:
+ *   1. OWNER creates an invite via the API (and pre-registers the
+ *      invitee so their User row exists for credentials sign-in).
+ *   2. Invitee opens the preview page (fresh browser context, no cookies).
+ *   3. Invitee clicks "Sign in to accept" → cookie set → redirect to /login.
+ *   4. Invitee signs in → lands on the workspace page / picker; MEMBER
+ *      role is verified (admin.members endpoint returns 403).
+ *   5. Invalid/garbage token → preview shows "Invite not available".
+ *
+ * Isolation: the happy path runs against a FRESH isolated tenant
+ * provisioned by the `isolatedTenant` fixture, and the inviter is
+ * that tenant's OWNER. The previous shape was four serial `test()`s
+ * sharing module-level `let tenantSlug / inviteToken / invitePath`
+ * assigned in test 1 and read by tests 2-4 — a failure in test 1
+ * cascaded into all of them. Steps 1-4 are genuinely one sequential
+ * scenario, so they are now a single `test()` with `test.step(...)`
+ * sub-steps. Step 5 (garbage token) is independent and stays its
+ * own `test()`; it needs no tenant at all.
+ *
+ * Uses AUTH_TEST_MODE=1 credentials provider.
+ * All selectors use existing id / role attributes — no data-testid.
+ */
+import { test, expect } from './fixtures';
+import { type BrowserContext, type Page } from '@playwright/test';
+import { gotoLoginReady, LANDING_URL, safeGoto, submitCredentials, waitForHydration } from './e2e-utils';
+
+/** A workspace page or the workspace picker. */
+const LANDED = /\/(tenants(?:[?#]|$)|t\/[^/?#]+(?:[?#]|$))/;
+
+/**
+ * Sign in with email+password via the #credentials-form and return
+ * to the caller once either a workspace page or the picker is
+ * reached. Returns the URL the browser landed on.
+ */
+async function signInWithCredentials(
+    page: Page,
+    email: string,
+    password: string,
+): Promise<string> {
+    await gotoLoginReady(page);
+    await submitCredentials(page, email, password);
+    await page.waitForURL(LANDED, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    return page.url();
+}
+
+/** From the picker, open the given workspace; on its page already, do nothing. */
+async function openWorkspace(page: Page, tenantSlug: string) {
+    if (new URL(page.url()).pathname === '/tenants') {
+        // The picker names the workspace, not its slug (#4690).
+        const link = page.locator(`a[href="/t/${tenantSlug}"]`);
+        await link.waitFor({ timeout: 10_000 });
+        await link.click();
+        await page.waitForURL(LANDING_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    }
+}
+
+test.describe('Invitation journey', () => {
+    test('OWNER invites a new member who redeems and lands as MEMBER', async ({
+        authedPage,
+        isolatedTenant,
+        browser,
+    }) => {
+        const tenantSlug = isolatedTenant.tenantSlug;
+        const timestamp = Date.now();
+        const inviteeEmail = `r5-invitee-${timestamp}@e2e.test`;
+        // Sufficiently unique password unlikely to appear in HIBP.
+        const inviteePassword = `InvT3st!${timestamp}`;
+        let invitePath = '';
+
+        // ── 1. OWNER creates the invite + pre-registers the invitee ──
+        await test.step('OWNER creates an invite for a new email', async () => {
+            // Pre-register the invitee so their User row exists before
+            // credentials sign-in. /api/auth/register is public.
+            const regResult = await authedPage.evaluate(
+                async ({ email, password }: { email: string; password: string }) => {
+                    const res = await fetch('/api/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'register',
+                            email,
+                            password,
+                            name: 'R5 Invitee',
+                            orgName: 'R5 Invitee Org',
+                        }),
+                    });
+                    const data = await res.json();
+                    return { status: res.status, error: data?.error };
+                },
+                { email: inviteeEmail, password: inviteePassword },
+            );
+            // 200 on success; 409 if the email was already registered.
+            expect([200, 409]).toContain(regResult.status);
+
+            // POST to the admin invites API while authed as the OWNER.
+            const result = await authedPage.evaluate(
+                async ({ slug, email }: { slug: string; email: string }) => {
+                    const res = await fetch(`/api/t/${slug}/admin/invites`, {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, role: 'MEMBER' }),
+                    });
+                    const data = await res.json();
+                    return { status: res.status, invite: data?.invite, url: data?.url };
+                },
+                { slug: tenantSlug, email: inviteeEmail },
+            );
+
+            expect(result.status).toBe(201);
+            expect(result.invite?.token).toBeTruthy();
+            expect(result.url).toContain('/invite/');
+            invitePath = result.url as string;
+        });
+
+        // ── 2. Invite preview page (side-effect-free) ──
+        await test.step('invite preview shows tenant + role + accept button', async () => {
+            const ctx: BrowserContext = await browser.newContext();
+            const page = await ctx.newPage();
+            try {
+                await safeGoto(page, invitePath, { waitUntil: 'domcontentloaded' });
+                await page.waitForLoadState('networkidle').catch(() => {});
+
+                await expect(
+                    page.locator('text=You have been invited'),
+                ).toBeVisible({ timeout: 30_000 });
+                await expect(page.getByText(/Member/).first()).toBeVisible({
+                    timeout: 10_000,
+                });
+                await expect(
+                    page.getByRole('link', { name: /Sign in to accept/i }),
+                ).toBeVisible({ timeout: 10_000 });
+                // No membership side-effect yet.
+                await expect(
+                    page.getByRole('button', { name: /Accept invitation/i }),
+                ).not.toBeVisible();
+            } finally {
+                await ctx.close();
+            }
+        });
+
+        // ── 3. Invitee redeems by signing in via test-mode credentials ──
+        await test.step('invitee redeems by signing in', async () => {
+            const ctx: BrowserContext = await browser.newContext();
+            const page = await ctx.newPage();
+            try {
+                await safeGoto(page, invitePath, { waitUntil: 'domcontentloaded' });
+                await page.waitForLoadState('networkidle').catch(() => {});
+                await page.waitForSelector('a[href*="start-signin"]', {
+                    timeout: 30_000,
+                });
+
+                await page.click('a[href*="start-signin"]');
+                await page.waitForURL(/\/login/, { timeout: 30_000 });
+
+                await page
+                    .locator('#credentials-form input[type="email"][name="email"]')
+                    .waitFor({ state: 'visible', timeout: 30_000 });
+                await waitForHydration(page, '#credentials-form', 30_000);
+                await submitCredentials(page, inviteeEmail, inviteePassword);
+
+                // The accepted invitation lands on the inviting workspace's
+                // page (`/invite/result` redirects there).
+                await page.waitForURL(LANDING_URL, {
+                    waitUntil: 'domcontentloaded',
+                    timeout: 60_000,
+                });
+                expect(page.url()).not.toContain('/no-tenant');
+
+                const match = new URL(page.url()).pathname.match(/^\/t\/([^/]+)/);
+                expect(match).not.toBeNull();
+                expect(match![1]).toBe(tenantSlug);
+                await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toHaveText(
+                    isolatedTenant.tenantName,
+                );
+            } finally {
+                await ctx.close();
+            }
+        });
+
+        // ── 4. Invitee membership has the correct MEMBER role ──
+        await test.step('invitee has the MEMBER role (admin endpoint returns 403)', async () => {
+            const ctx: BrowserContext = await browser.newContext();
+            const page = await ctx.newPage();
+            try {
+                await signInWithCredentials(page, inviteeEmail, inviteePassword);
+                await openWorkspace(page, tenantSlug);
+
+                const match = new URL(page.url()).pathname.match(
+                    /^\/t\/([^/]+)/,
+                );
+                if (!match) {
+                    throw new Error('Could not extract slug after invitee sign-in');
+                }
+                const slug = match[1];
+
+                // MEMBER lacks admin.members → 403.
+                const result = await page.evaluate(async (s: string) => {
+                    const res = await fetch(`/api/t/${s}/admin/members`, {
+                        credentials: 'include',
+                    });
+                    return { status: res.status };
+                }, slug);
+                expect(result.status).toBe(403);
+
+                // Confirm the MEMBER role via the session's memberships array.
+                const sessionResult = await page.evaluate(async (s: string) => {
+                    const res = await fetch('/api/auth/session', {
+                        credentials: 'include',
+                    });
+                    const data = await res.json();
+                    const memberships: Array<{ slug: string; role: string }> =
+                        data?.user?.memberships ?? [];
+                    const m = memberships.find((x) => x.slug === s);
+                    return { status: res.status, role: m?.role ?? null };
+                }, slug);
+                expect(sessionResult.status).toBe(200);
+                expect(sessionResult.role).toBe('MEMBER');
+            } finally {
+                await ctx.close();
+            }
+        });
+    });
+
+    // Independent — needs no tenant, no shared state.
+    test('invalid token shows a clear error on the preview page', async ({
+        browser,
+    }) => {
+        const ctx: BrowserContext = await browser.newContext();
+        const page = await ctx.newPage();
+        try {
+            await safeGoto(page, '/invite/not-a-real-token-00000000000', {
+                waitUntil: 'domcontentloaded',
+            });
+            await page.waitForLoadState('networkidle').catch(() => {});
+
+            await expect(
+                page.getByText(/Invite not available/i),
+            ).toBeVisible({ timeout: 30_000 });
+            await expect(
+                page.getByRole('link', { name: /Sign in to accept/i }),
+            ).not.toBeVisible();
+            await expect(
+                page.getByRole('button', { name: /Accept invitation/i }),
+            ).not.toBeVisible();
+        } finally {
+            await ctx.close();
+        }
+    });
+});

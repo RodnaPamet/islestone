@@ -38,6 +38,7 @@ jest.mock('@/lib/observability/logger', () => ({
 
 import { logger } from '@/lib/observability/logger';
 import { getDefaultTenantForUser, resolveTenantContext } from '@/lib/tenant-context';
+import { getPermissionsForRole } from '@/lib/permissions';
 
 // ─── Test fixtures ───
 
@@ -163,7 +164,7 @@ describe('resolveTenantContext', () => {
 
         const ctx = await resolveTenantContext({ tenantSlug: 'acme-corp' }, 'user-1');
 
-        expect(ctx.permissions).toEqual({ canRead: true, canWrite: false, canAdmin: false, canExport: true });
+        expect(ctx.permissions).toEqual({ canRead: true, canWrite: false, canAdmin: false, canExport: false });
     });
 
     it('returns correct permissions for GUEST role', async () => {
@@ -178,13 +179,38 @@ describe('resolveTenantContext', () => {
         expect(ctx.permissions).toEqual({ canRead: true, canWrite: false, canAdmin: false, canExport: false });
     });
 
-    it('grants no granular permissions in sub-phase 1.3 (the stub fails closed)', async () => {
+    it('grants the built-in role\'s granular permissions when the membership carries no custom role', async () => {
         mockPrisma.tenant.findUnique.mockResolvedValue(TENANT);
-        mockPrisma.tenantMembership.findUnique.mockResolvedValue({ ...MEMBERSHIP, role: 'OWNER' });
+        mockPrisma.tenantMembership.findUnique.mockResolvedValue({ ...MEMBERSHIP, role: 'OWNER', customRole: null });
 
         const ctx = await resolveTenantContext({ tenantSlug: 'acme-corp' }, 'user-1');
 
-        expect(ctx.appPermissions).toEqual({});
+        expect(ctx.appPermissions).toEqual(getPermissionsForRole('OWNER'));
+        expect(ctx.customRole).toBeNull();
+    });
+
+    it('a custom role replaces the permissions and its base sets the coarse tier', async () => {
+        mockPrisma.tenant.findUnique.mockResolvedValue(TENANT);
+        const viewer = getPermissionsForRole('VIEWER');
+        mockPrisma.tenantMembership.findUnique.mockResolvedValue({
+            ...MEMBERSHIP,
+            role: 'MEMBER',
+            customRole: {
+                id: 'role-1',
+                tenantId: TENANT.id,
+                baseRole: 'VIEWER',
+                grantsJson: { ...viewer, docs: { view: true, create: true, edit: false } },
+            },
+        });
+
+        const ctx = await resolveTenantContext({ tenantSlug: 'acme-corp' }, 'user-1');
+
+        expect(ctx.role).toBe('VIEWER');
+        expect(ctx.membership.role).toBe('MEMBER');
+        expect(ctx.permissions).toEqual({ canRead: true, canWrite: false, canAdmin: false, canExport: false });
+        expect(ctx.appPermissions.docs).toEqual({ view: true, create: true, edit: false });
+        expect(ctx.appPermissions.work_items.create).toBe(false);
+        expect(ctx.membership).not.toHaveProperty('customRole');
     });
 });
 

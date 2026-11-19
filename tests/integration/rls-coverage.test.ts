@@ -247,7 +247,14 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
         // Defence against the inventory collapsing to zero (if the DMMF
         // enumeration broke, every check above would pass over nothing).
         // An exact list, ratcheted up as tenant tables land.
-        expect([...TENANT_SCOPED_MODELS].sort()).toEqual(['TenantMembership']);
+        expect([...TENANT_SCOPED_MODELS].sort()).toEqual([
+            'TenantCustomRole',
+            'TenantInvite',
+            'TenantMembership',
+            'TenantSecuritySettings',
+            'UserMfaEnrollment',
+            'UserSession',
+        ]);
     });
 
     test('app_user holds SELECT, INSERT, UPDATE and DELETE on every tenant- and org-scoped table', async () => {

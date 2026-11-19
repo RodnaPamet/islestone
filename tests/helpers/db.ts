@@ -102,7 +102,22 @@ export function prismaTestClient(): PrismaClient {
  * `TRUNCATE` fires no row-level triggers, so the last-owner guards do not
  * block a reset.
  */
-export const RESET_TABLES: readonly string[] = ['TenantMembership', 'OrgMembership', 'Tenant', 'Organization', 'User'];
+export const RESET_TABLES: readonly string[] = [
+    'UserMfaEnrollment',
+    'TenantSecuritySettings',
+    'TenantInvite',
+    'OrgInvite',
+    'UserSession',
+    'PasswordResetToken',
+    'VerificationToken',
+    'Account',
+    'TenantMembership',
+    'TenantCustomRole',
+    'OrgMembership',
+    'Tenant',
+    'Organization',
+    'User',
+];
 
 /**
  * Resolve `tables` against the database's real table list, refusing loudly

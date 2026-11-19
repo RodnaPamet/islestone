@@ -14,7 +14,7 @@ import { getPermissionsForRole } from '@/lib/permissions';
  * Build a complete RequestContext for tests.
  *
  * The coarse flags follow `computePermissions` in src/lib/tenant-context.ts
- * (ADR 0006 roles, provisional until sub-phase 1.4).
+ * (ADR 0006 roles).
  *
  * @param role - The Role enum value (defaults to ADMIN)
  * @param overrides - Partial overrides to any field
@@ -31,7 +31,7 @@ export function makeRequestContext(role: Role = 'ADMIN', overrides?: Partial<Req
             canRead: true,
             canWrite: role === 'OWNER' || role === 'ADMIN' || role === 'MEMBER',
             canAdmin: role === 'OWNER' || role === 'ADMIN',
-            canExport: role !== 'GUEST',
+            canExport: role === 'OWNER' || role === 'ADMIN',
         },
         appPermissions: getPermissionsForRole(role),
         ...overrides,
