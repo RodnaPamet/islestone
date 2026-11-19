@@ -489,6 +489,19 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    - Pull request titles are Conventional Commits; the `PR title` workflow
      (`scripts/check-pr-title.mjs`, tested in `tests/unit/pr-title.test.mjs`)
      fails any other title.
+   The `effect` override (CI review of PR #26, 2026-11-19): advisory
+   GHSA-7589-6fvf-x4pw (high, ReDoS) covers `effect` ≤3.22.0, and `prisma`
+   7.10.1 → `@prisma/config` 7.10.1 pins `effect` 3.20.0, so CI's `Audit` job
+   failed on `main` and on the pull request alike. `package.json` overrides
+   `@prisma/config`'s `effect` to 3.22.4 (published 2026-10-22; 3.22.5 was a
+   day old and not taken). Its dependencies are unchanged from 3.20.0. Checked:
+   `npm audit --omit=dev --audit-level=moderate` finds 0 vulnerabilities;
+   `prisma generate`, `migrate deploy` on a fresh database and
+   `db:check-schema-drift` pass; `build:worker` passes; the pruned production
+   tree (what the worker image and its `migrate` service carry) holds the
+   overridden version. Remove the override once Prisma ships an
+   `@prisma/config` that depends on `effect` ≥3.22.1 (CLAUDE.md, "package.json
+   overrides").
    Still open for the owner: whether the H1 "dependency audit blocking" item
    needs more than CI's existing `Audit` job (it already fails on a moderate
    advisory).

@@ -156,6 +156,9 @@
     "undici": "$undici",
     "next-auth": {
       "nodemailer": "$nodemailer"
+    },
+    "@prisma/config": {
+      "effect": "3.22.4"
     }
   }
 }
