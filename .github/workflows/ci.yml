@@ -265,6 +265,42 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+    # The auth specs (sub-phase 1.4) register a workspace and sign in, so the
+    # built app needs a migrated database, reached through PgBouncer as in
+    # production. The same services as the Integration job; throwaway values.
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg17-trixie
+        env:
+          POSTGRES_USER: islestone
+          POSTGRES_PASSWORD: islestone_ci
+          POSTGRES_DB: islestone_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U islestone -d islestone_e2e"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      pgbouncer:
+        image: edoburu/pgbouncer:v1.26.1-p0
+        env:
+          DB_HOST: postgres
+          DB_PORT: '5432'
+          DB_USER: islestone
+          DB_PASSWORD: islestone_ci
+          DB_NAME: islestone_e2e
+          AUTH_TYPE: scram-sha-256
+          POOL_MODE: transaction
+          MAX_CLIENT_CONN: '200'
+          DEFAULT_POOL_SIZE: '20'
+          MAX_PREPARED_STATEMENTS: '100'
+        ports:
+          - 6432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -p 5432"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://islestone:islestone_ci@127.0.0.1:6432/islestone_e2e
+      DIRECT_DATABASE_URL: postgresql://islestone:islestone_ci@127.0.0.1:5432/islestone_e2e
     steps:
       - uses: actions/checkout@v7
         with:
@@ -279,6 +315,11 @@ jobs:
         with:
           name: next-build
           path: .next
+      - name: Create the app_user role (prisma/init-roles.sh)
+        run: >-
+          docker exec -i -e POSTGRES_USER=islestone -e POSTGRES_DB=islestone_e2e
+          ${{ job.services.postgres.id }} bash -s < prisma/init-roles.sh
+      - run: npm run migrate:deploy
       - name: Install Chromium for Playwright
         run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
