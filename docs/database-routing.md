@@ -1,6 +1,6 @@
 # Database routing — primary vs read replica
 
-A deployment can run a read replica for analytical and dashboard reads, taking aggregation pressure off the primary. Routing is **opt-in per usecase** and deliberately conservative: replicas are eventually consistent, so only reads that tolerate lag go there. Where the replica lives is decided by sub-phase 1.8.
+A deployment can run a read replica for analytical and dashboard reads, taking aggregation pressure off the primary. Routing is **opt-in per usecase** and deliberately conservative: replicas are eventually consistent, so only reads that tolerate lag go there. Production runs no replica yet (sub-phase 1.8, `docs/deployment.md`): `DATABASE_READ_URL` is unset there, so every read uses the primary.
 
 ## The two clients
 

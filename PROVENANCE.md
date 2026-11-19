@@ -1826,6 +1826,41 @@ The authenticated application shell (sidebar, top chrome, mobile drawer), the th
 
 </details>
 
+## Copied: environments and delivery (sub-phase 1.8)
+
+The container build, the production Compose stack, the deploy scripts, the release and publish workflow, the report-only security scans and the change-management policy (roadmap 1.8; owner decisions 42 to 47 in `docs/HANDOFF.md`). These facts hold for every row below:
+
+- **Source:** inflect-compliance at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`, at the path in the row's Source column. Each of those files is identical at that commit and at inflect's `origin/main` of 2026-11-19 (`884dbdd32d7869bb47d2416ec93186144fbb7730`), checked file by file.
+- **Licence:** BUSL-1.1, licensor Inflect Ltd. Copying is allowed by [ADR 0001](docs/adr/0001-code-provenance-and-licences.md) decision D1. The source files carry no per-file notice. `NOTICE` gains an entry for the two third-party components the images carry (libvips, LGPL-3.0-or-later; elkjs, EPL-2.0; ADR 0007 E1a and E7); neither came with the copied text.
+- **What every port changed:** inflect's single VM of its own became a shared one (Agrent's Caddy, its network, its scoped Watchtower); one image became two (app, standalone; worker, with the Prisma CLI); migrations moved from the app's entrypoint to a one-shot `migrate` service, with a start gate in both images; staging, previews, the IAP `VM check`/`VM apply` workflows, ClamAV, the embedder and the capacity recorder are not taken (owner decision 43; not needed).
+- **Action** is COPY (byte for byte), COPY+EDIT, ADAPT (the source's structure and rules, rewritten for Islestone), PATTERN (pattern only, no code copied), or Islestone-owned (written fresh).
+
+| File | Source | Action | Changes |
+|---|---|---|---|
+| `Dockerfile` | `Dockerfile` | ADAPT | Two runnable targets from one builder (`app`: the standalone server; `worker`: bundles, pruned tree, Prisma CLI); Node 24.22.3 on Alpine 3.23; npm removed and `HUSKY=0`; the `node` user; `.migration-head` and `scripts/wait-for-migrations.mjs` in both; `HEALTHCHECK` on `/api/livez` and the worker heartbeat; no entrypoint script, no seeds, no data directories; `BUILD_SHA` last, as inflect's. |
+| `.dockerignore` | `.dockerignore` | ADAPT | Islestone's paths; `deploy/`, `eslint-rules/` and `__mocks__/` out; no re-included fixtures. |
+| `deploy/docker-compose.prod.yml` | `deploy/docker-compose.prod.yml` | ADAPT | Header contract (canonical file, `:?` secrets, `--env-file`), the `x-logging` anchor, per-service `mem_limit`/`cpus` and heap ceilings, PgBouncer's quiet logging, Redis `noeviction`, the Watchtower labels and settings. New: the `migrate` one-shot, the runtime role, explicit per-service `environment:` with no `env_file:`, `islestone-` container names, `islestone_internal` and the external `agrent_internal`, the Watchtower scope and revive settings, Redis's password on stdin; no Caddy, ClamAV, embedder or uploads volume. |
+| `deploy/caddy/islestone.caddy` | `deploy/caddy/Caddyfile` | ADAPT | Site blocks only (imported into Agrent's Caddyfile): the `app_site` body inlined for `islestone.cloud`, `www` redirected to it, Islestone's HSTS value, a 10 MB body limit, `islestone-app:3000` upstream with the forwarded headers; no global options or snippets. |
+| `deploy/apply.sh` | `deploy/apply.sh` | ADAPT | The contract (repo-canonical, preflight by default, `CONFIRM=1`, backups, never reads `.env.prod` values, exit 0/1/2) rewritten for the shared VM: runs on the VM (shipped over IAP when started elsewhere); refuses without the Caddyfile import line, the read-only sites mount, a private complete `.env.prod`, or with an unscoped Watchtower; validates the site in `agrent-caddy`, installs, `compose up`, waits for health, then validates the whole Caddy configuration and reloads it, rolling the site back on failure. |
+| `deploy/check-drift.sh` | `deploy/check-drift.sh` | ADAPT | Compares the four installed files with the repository and checks the host pieces Islestone depends on (import line, mount, network, Watchtower scopes, `.env.prod` names and mode, running containers and health). |
+| `deploy/lib/common.sh` | `deploy/apply.sh` | ADAPT | The shared configuration, the IAP transport and the "names, never values" reading of the env file, as one library for the three scripts. |
+| `deploy/backup.sh` | — | Islestone-owned | `pg_dump` (custom format) with a listing check and retention; the restore drill into a scratch database with a structure, row-count and audit-chain comparison. |
+| `deploy/postgres/init-runtime-role.sh` | `deploy/init-roles.sh` | PATTERN | Pattern only, no code copied: the runtime login role (not superuser, not BYPASSRLS, member of `app_user`) that docs/rls-tenant-isolation.md requires of production; password through `\getenv`, idempotent. |
+| `deploy/.env.prod.example` | `deploy/.env.prod.example` | PATTERN | Pattern only, no code copied: Islestone's names, placeholders only. |
+| `.github/workflows/release.yml` | `.github/workflows/release.yml`, `.github/workflows/ghcr-publish.yml` | ADAPT | One workflow: semantic-release (pinned through `npx`, no commit back to main, no comments) then build → scan → push of both images, immutable tags before `:latest`, `GITHUB_TOKEN` with `packages: write`; the Trivy step report-only under a dated deferral; no merge-queue gate or release app. |
+| `.releaserc.json` | `.releaserc.json` | ADAPT | Branch `main`, `v${version}`, the Conventional Commits preset; commit analyser, release notes and the GitHub plugin only; no changelog, npm or git plugins and no minor odometer. |
+| `.github/workflows/dast.yml` | `.github/workflows/dast.yml` | ADAPT | One role (an owner the run registers) instead of four seeded ones; Islestone's services and the standalone server; report-only under `DAST-NON-BLOCKING-UNTIL`. |
+| `.github/workflows/ci.yml` (`Image` job) | `.github/workflows/ci.yml` (Docker Build, Trivy) | ADAPT | Builds both targets without pushing, reads the images (user, files, `BUILD_SHA`, no npm), Trivy SARIF report-only. |
+| `.zap/assert-no-high-risk.mjs` | same | COPY+EDIT | Provenance note and the doc pointer. |
+| `.zap/zap-json-to-sarif.mjs` | same | COPY+EDIT | Provenance note. |
+| `.zap/rules.tsv` | same | ADAPT | Four of inflect's entries, with Islestone's reasons. |
+| `.zap/dast-findings.md` | `.zap/dast-findings.md` | PATTERN | Pattern only, no code copied: the SARIF anchor file. |
+| `src/lib/health/readiness.ts`, `src/app/api/readyz/route.ts` | `src/app/api/readyz/route.ts` | ADAPT | The checks (parallel, per-check timeout, closed error set, production refuses an unset Redis) moved into a module the handler calls; the app's own Prisma client; no storage check; `version` from `BUILD_SHA`. |
+| `docs/change-management-policy.md` | `docs/change-management-policy.md` | ADAPT | Islestone's pipeline (PR checks, release.yml, Watchtower), the three classes, the approval matrix for a sole owner, the emergency procedure, forward-fix migrations; no merge queue, sub-processor or SOC 2 sections. |
+| `docs/deployment.md` | `docs/deployment.md` | PATTERN | Pattern only, no code copied: a runbook written for the shared VM. |
+| `tests/guards/security-scan-deferral.test.ts` | `tests/guardrails/dast-workflow-pinning.test.ts` | ADAPT | The dated-deferral clock for ZAP and Trivy alike, population from git, a planted repository. |
+| `scripts/wait-for-migrations.mjs`, `scripts/start-standalone.mjs`, `tests/helpers/compose-file.ts`, `tests/guards/deploy-compose-files.test.ts`, `tests/unit/deploy/*.test.ts`, `tests/integration/runtime-role.test.ts`, `tests/integration/wait-for-migrations.test.ts` | — | Islestone-owned | The migration start gate, the standalone start, the compose reader and the tests of the stack, the image, the Caddy site, `apply.sh` (against a stand-in `docker`), the runtime role and the gate. |
+
 ## Adopted
 
 | Component | Source (repository and path) | Commit | Licence | What was taken | Changes |

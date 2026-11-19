@@ -52,6 +52,12 @@ porting maps now record them (next step 2); the last column says where.
 | 39 | The `IS` initials stay as the brand mark for now, with a generated letter favicon (`src/app/icon.svg`) on the brand colours; both are placeholders until a logo exists. Decided 2026-11-19, relayed. Applied. | relayed | `src/app/icon.svg`; `tests/unit/app-icon.test.ts`; `docs/app-shell.md` |
 | 40 | The command palette lists Settings only to a person who can open it, from `nav-config.ts`'s `mayOpenSettings`, not a restated rule. Decided 2026-11-19, relayed. Applied: the shell registers the answer for the palette. | relayed | `src/components/command-palette/workspace-access.tsx`; `tests/rendered/palette-commands.test.tsx` |
 | 41 | The MFA challenge and enrolment pages stay outside the shell for everyone. Decided 2026-11-19, relayed. No change. | relayed | `src/app/t/[tenantSlug]/(mfa)/`; `docs/app-shell.md` |
+| 42 | Hosting: Islestone runs on the existing GCP VM `agrent` (project `hazel-design-419410`, zone `europe-west1-b`, e2-highmem-2: 2 vCPUs, 16 GB), shared with Agrent and Playerz, each its own Docker Compose project under `/opt/<name>`. Islestone's project is `islestone`, in `/opt/islestone`. Decided 2026-11-19, relayed. Applied. | relayed | `deploy/docker-compose.prod.yml`; `deploy/lib/common.sh`; `docs/deployment.md` |
+| 43 | Production only, on `islestone.cloud` (and `www.islestone.cloud`). No staging environment and no per-pull-request previews for now: the roadmap's staging and previews (1.8) are deferred. Decided 2026-11-19, relayed. Applied. | relayed | `docs/ROADMAP.md` 1.8 and H1; `docs/deployment.md`; `docs/change-management-policy.md` |
+| 44 | Caddy: the shared `agrent-caddy` (ports 80/443, network `agrent_internal`, Agrent's `/opt/agrent/Caddyfile`) serves Islestone. Islestone does not edit Agrent's Caddyfile: it gains one line, `import /etc/caddy/sites/*.caddy`, and Caddy a read-only mount of `/opt/caddy-sites` at `/etc/caddy/sites`; Islestone ships `deploy/caddy/islestone.caddy` (apex, `www` redirects to it, headers, body limit, `reverse_proxy islestone-app:3000` with forwarded headers, HSTS), and its app joins `agrent_internal`. The Agrent-side change is a runbook step; the apply script refuses without it. Decided 2026-11-19, relayed. Applied. | relayed | `deploy/caddy/islestone.caddy`; `deploy/apply.sh`; `docs/deployment.md` ("The shared Caddy") |
+| 45 | Delivery is GHCR plus Watchtower: CI publishes `ghcr.io/rodnapamet/islestone` (and a worker image) on each merge to `main`, tagged `:latest`, the commit and semantic-release's version; a Watchtower scoped to Islestone's containers by label pulls `:latest`, as Agrent's scoped one does; migrations run in a one-shot `migrate` service that app and worker `depends_on` with `service_completed_successfully` (forward fix, never down-migrations); semantic-release versions `main`. Decided 2026-11-19, relayed. Applied: two images (`islestone`, `islestone-worker`), reasons in the `Dockerfile`; a start gate in both images (`scripts/wait-for-migrations.mjs`), because Watchtower ignores `depends_on`. | relayed | `.github/workflows/release.yml`; `.releaserc.json`; `Dockerfile`; `deploy/docker-compose.prod.yml` |
+| 46 | Islestone runs its own Postgres (pgvector, `prisma/init-roles.sh` for `app_user`), PgBouncer (transaction mode) and Redis (`noeviction`, a password), all on an internal `islestone_internal` network; only the app also joins `agrent_internal`. Every secret comes from `/opt/islestone/.env.prod` through `env_file` or `--env-file`, never inline, with `:?error` guards on the required ones (`DATA_ENCRYPTION_KEY`, `AUTH_SECRET`, `REDIS_URL`, and the Upstash pair or `RATE_LIMIT_MODE=memory`); memory limits sized to share the ~11 GB free. Decided 2026-11-19, relayed. Applied: `--env-file` only, each service naming its variables; 4 GB for the long-running services; the app connects as a non-superuser runtime role (`deploy/postgres/init-runtime-role.sh`), as `docs/rls-tenant-isolation.md` requires. | relayed | `deploy/docker-compose.prod.yml`; `deploy/.env.prod.example`; `tests/unit/deploy/compose-prod.test.ts` |
+| 47 | H1's security scans start report-only: a nightly OWASP ZAP baseline against the built app in CI and a Trivy CRITICAL/HIGH container scan on the image, both publishing SARIF, neither blocking yet, both carrying a dated note that they become blocking after two clean weeks, with a guard that fails once the date has passed and a scan is still non-blocking. Decided 2026-11-19, relayed. Applied: the date is 2026-12-03. | relayed | `.github/workflows/dast.yml`; `.github/workflows/ci.yml` (`Image`); `.github/workflows/release.yml`; `tests/guards/security-scan-deferral.test.ts` |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
@@ -362,3 +368,97 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    nothing; 2.3 brings it with the first detail page), `docs/keyboard-shortcuts.md`,
    `docs/i18n.md` and `docs/epic-52-list-page-shell.md` (distilled into
    `docs/app-shell.md`), `@axe-core/playwright` (the a11y checks are jest-axe).
+
+   **1.8 (environments and delivery) has landed** on branch `wt/p18` (not pushed),
+   by the owner decisions of 2026-11-19 (rows 42 to 47) and `PROVENANCE.md`
+   ("Copied: environments and delivery"). The repository side only; nothing on
+   the VM, in GitHub's settings or in DNS has been changed.
+   - **Images.** One `Dockerfile`, two targets from one builder:
+     `ghcr.io/rodnapamet/islestone` (the Next.js standalone server;
+     `output: 'standalone'` is now on, and `npm run start` and the Playwright
+     suite serve it through `scripts/start-standalone.mjs`) and
+     `ghcr.io/rodnapamet/islestone-worker` (the worker, scheduler and probe
+     bundles, the pruned production tree and the Prisma CLI). Node 24.22.3 on
+     Alpine 3.23, non-root `node`, npm removed, `LICENSE` and `NOTICE` inside,
+     `BUILD_SHA` baked in. `NOTICE` names libvips (LGPL) and elkjs (EPL), as
+     ADR 0007 asked of this sub-phase.
+   - **Health.** `/api/readyz` now checks PostgreSQL and Redis (503 naming the
+     failure, two-second timeouts, a closed set of error strings, `version`
+     from `BUILD_SHA`; `src/lib/health/readiness.ts`). The app container's
+     healthcheck uses it; the worker's reads the heartbeat.
+   - **The stack.** `deploy/docker-compose.prod.yml`: Postgres (pgvector),
+     PgBouncer, Redis, the one-shot `migrate`, `app`, `worker` and a Watchtower
+     scoped to `islestone`. `--env-file /opt/islestone/.env.prod` only, every
+     secret a `:?` or empty-default reference, each service naming its
+     variables. Only `app` joins `agrent_internal`. 4 GB for the long-running
+     services. `ISLESTONE_IMAGE_TAG` pins a build (the rollback lever).
+   - **The runtime role.** The app, the worker and PgBouncer connect as
+     `islestone_app` (`deploy/postgres/init-runtime-role.sh`): not a
+     superuser, not BYPASSRLS, a member of `app_user`, as
+     `docs/rls-tenant-isolation.md` has required of production since 1.3.
+     Checked before building on it: the whole integration suite (383 tests)
+     passed with the app's `DATABASE_URL` pointed at such a role and the test
+     client still the superuser, and failed (12 of 13 in one file) with a wrong
+     password for it, so the run did use the role.
+     `tests/integration/runtime-role.test.ts` keeps its properties.
+   - **Migrations under Watchtower.** `depends_on` holds only for
+     `docker compose up`; Watchtower ignores it. So `migrate` is labelled and
+     revived by Watchtower, and both images start through
+     `scripts/wait-for-migrations.mjs`, which waits for the newest migration
+     each was built with (`.migration-head`) before the server or the worker
+     starts.
+   - **Deploy scripts.** `deploy/apply.sh` (preflight by default, `CONFIRM=1`
+     applies; refuses without the Agrent Caddyfile import line, the read-only
+     sites mount, a private complete `.env.prod`, or while another Watchtower
+     is unscoped; validates the Caddy site inside `agrent-caddy`, brings the
+     stack up, then validates the whole Caddy configuration and reloads it
+     gracefully, rolling the site back on failure), `deploy/check-drift.sh`,
+     `deploy/backup.sh` (pg_dump, and `RESTORE_DRILL=1`). They run on the VM,
+     shipped over IAP when started from a workstation.
+     `tests/unit/deploy/apply-script.test.ts` runs `apply.sh` against a
+     stand-in `docker`. `backup.sh` and its drill were run locally against a
+     migrated test database through a stand-in `docker` that ran the commands
+     here (dump kept and listed, restored, structure equal, chain links
+     intact); not on the VM.
+   - **Delivery.** `.github/workflows/release.yml`: semantic-release
+     (25.0.9, through `npx`, Conventional Commits, tags and GitHub Releases
+     only, no commit back to `main`), then build, Trivy and push of both
+     images (`:sha-<short>`, the version, `:latest` last) with `GITHUB_TOKEN`
+     and `packages: write`. CI's new `Image` job builds both images on every
+     pull request without pushing, reads them (user, files, `BUILD_SHA`, no
+     npm) and uploads Trivy SARIF. Dependabot watches the base image and the
+     compose images.
+   - **Scans (H1).** Trivy (CI and publish) and a nightly ZAP baseline
+     (`.github/workflows/dast.yml`, signed in as a registered owner) are
+     report-only until 2026-12-03; `tests/guards/security-scan-deferral.test.ts`
+     fails CI after that date while either is still non-blocking.
+   - **Docs.** `docs/deployment.md` (the runbook: the shared Caddy steps for
+     Agrent's repository, Watchtower, first deploy, operating, rollback,
+     backups and the restore drill, security scans) and
+     `docs/change-management-policy.md`.
+   - **Guards and tests.** `tests/guards/deploy-compose-files.test.ts` (every
+     git-listed production compose file: no inline secret, no `env_file`,
+     limits, no published port, `noeviction`; planted repository),
+     `tests/unit/deploy/{compose-prod,dockerfile,caddy-snippet,apply-script}.test.ts`,
+     `tests/integration/{runtime-role,wait-for-migrations}.test.ts`, readyz unit
+     and E2E tests, and the 1.8 halves of the Redis and worker-heartbeat
+     guards.
+   Checked locally (no Docker in this session, so no image was built here):
+   the standalone server answered `/api/livez`, `/api/readyz` and `/login`,
+   and the whole Playwright suite (34 specs) passed against it; `next build`
+   prints only the warning it printed before (`middleware` → `proxy`); the
+   compose file, the Dockerfile and the Caddy site are parsed by the tests
+   above; `caddy validate` and `docker compose config` run only on the VM,
+   in `apply.sh`'s preflight.
+   Manual steps, in order, for the owner and the orchestrator: `docs/deployment.md`,
+   "First deploy" (DNS; merge and the first publish; GHCR visibility or
+   `docker login` on the VM; the `Image` check in the `main` ruleset; Agrent's
+   Caddyfile import line and read-only mount, in Agrent's repository; Agrent's
+   and Playerz's Watchtowers scoped; `/opt/islestone/.env.prod`; preflight;
+   apply; checks; the first workspace; a backup and the H1 restore drill).
+   Open for the owner: where backups go off the VM (a GCS bucket is suggested);
+   GHCR package visibility (public, or a read token on the VM); Conventional
+   Commit pull-request titles, without which semantic-release makes no
+   version; whether the H1 "dependency audit blocking" item needs more than
+   CI's existing `Audit` job (it already fails on a moderate advisory);
+   Upstash or `memory` for production rate limits.

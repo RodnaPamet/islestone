@@ -160,6 +160,7 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 
 #### 1.8 Environments and delivery (M)
 - **Prompt:** "Add the container build, a staging environment, preview deployments per pull request, database migration on deploy with a forward-fix policy, semantic-release, image publishing, and a change-management document defining standard, significant and emergency changes. Add health, liveness and readiness endpoints."
+- **Decided, 2026-11-19 (owner decisions 42 to 47, `docs/HANDOFF.md`):** production only, on `islestone.cloud` and `www.islestone.cloud`, as the Compose project `islestone` on the shared GCP VM `agrent` (with Agrent and Playerz), behind Agrent's Caddy through an imported site file. **The staging environment and the per-pull-request previews in the prompt above are deferred by decision 43**, not built. Delivery is GHCR plus a scoped Watchtower; migrations run in a one-shot `migrate` service (forward fix only); semantic-release versions `main`; Islestone runs its own Postgres, PgBouncer and Redis; the H1 Trivy and ZAP scans start report-only with a dated end. Landed in sub-phase 1.8: see `docs/deployment.md` and `docs/change-management-policy.md`.
 
 **Hardening H1.**
 - Two-tenant integration tests prove no read or write crosses tenants on every table, as the application database role.
@@ -167,7 +168,7 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 - Baseline DAST scan (OWASP ZAP) nightly and blocking; dependency audit and container scan blocking.
 - Bundle-size budget per route; a guard that no server env schema reaches the client.
 - Accessibility pass (axe) on the shell and every primitive in the gallery.
-- A restore of a staging backup performed once and documented.
+- A restore of a staging backup performed once and documented. (With no staging environment, decision 43, the drill restores a production backup into a scratch database beside the live one: `RESTORE_DRILL=1 deploy/backup.sh`, `docs/deployment.md`.)
 
 ### Phase 2 — Work core
 

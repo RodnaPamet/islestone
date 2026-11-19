@@ -9,7 +9,8 @@
  * `installFramework` (compliance), `reloadUntilVisible`,
  * `selectComboboxOption` and `gotoAndVerify` (no user yet), and
  * `DEFAULT_USER`, the seeded `admin@acme.com`: Islestone has no seed step
- * (roadmap 1.8 or the H1 E2E setup brings one), so every spec signs in as a
+ * (sub-phase 1.8 added none: production's first workspace is registered by
+ * hand, docs/deployment.md), so every spec signs in as a
  * workspace it created. The tenant tracker and its global teardown are not
  * ported either; each run's workspaces carry a unique slug, and the local
  * database is disposable.
