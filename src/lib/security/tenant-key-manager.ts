@@ -22,7 +22,7 @@
  *   - `clearTenantDekCache(tenantId?)` / `getTenantDekCacheSize()`
  *     — observability + invalidation hooks for rotation.
  *
- *   - `rotateTenantDek(options)` (sub-phase 1.5b) — per-tenant DEK rotation. Atomic
+ *   - `rotateTenantDek(options)` — per-tenant DEK rotation. Atomic
  *     swap of `Tenant.encryptedDek` ⇒ `Tenant.previousEncryptedDek`,
  *     primes both caches, enqueues a `tenant-dek-rotation` BullMQ
  *     sweep job that re-encrypts every v2 ciphertext under the new
@@ -80,6 +80,7 @@ import {
     wrapDek,
     type TenantDek,
 } from './tenant-keys';
+import { enqueue } from '@/app-layer/jobs/queue';
 import { logger } from '@/lib/observability/logger';
 
 // ─── Cache ──────────────────────────────────────────────────────────
@@ -403,12 +404,194 @@ export function getTenantPreviousDekCacheSize(): number {
 }
 
 // ─── Per-tenant DEK rotation ────────────────────────────────────────
-//
-// `rotateTenantDek` (the atomic swap into `previousEncryptedDek` and the
-// enqueue of the `tenant-dek-rotation` re-encryption sweep) lands with
-// sub-phase 1.5b, once 1.6 provides the job queue. Until then the
-// previous-DEK read path below is already live, so a rotation that lands
-// later needs no change here.
+
+export interface RotateTenantDekOptions {
+    tenantId: string;
+    /** User who initiated the rotation — for audit attribution. */
+    initiatedByUserId: string;
+    /** Optional upstream request id for log correlation. */
+    requestId?: string;
+}
+
+export interface RotateTenantDekResult {
+    tenantId: string;
+    /** BullMQ job id of the re-encrypt sweep. */
+    jobId: string;
+}
+
+/**
+ * Rotate a tenant's Data Encryption Key. Three steps:
+ *
+ *   1. Atomic DEK swap. A fresh 32-byte DEK is generated, wrapped
+ *      under the master KEK, and written to `Tenant.encryptedDek`.
+ *      The PRIOR wrapped DEK is moved into `Tenant.previousEncryptedDek`
+ *      in the same `UPDATE` so the two columns transition together.
+ *      Guarded by `WHERE id = $1 AND previousEncryptedDek IS NULL`
+ *      — concurrent rotation attempts collapse to one winner; the
+ *      losers see `count === 0` and throw `RotationInProgressError`
+ *      so the operator can let the in-flight sweep finish first.
+ *
+ *   2. Cache invalidation. The primary cache entry is dropped (next
+ *      read unwraps the new DEK); the previous cache is primed with
+ *      the now-old DEK so the middleware can fall back to it on
+ *      mid-rotation v2 reads without paying an unwrap.
+ *
+ *   3. Re-encrypt sweep enqueued. A `tenant-dek-rotation` BullMQ job
+ *      walks every model+field in the encrypted-fields manifest,
+ *      decrypts each row's v2 ciphertexts under the previous DEK and
+ *      re-encrypts under the new primary, then clears
+ *      `Tenant.previousEncryptedDek` + the previous cache when done.
+ *
+ * Mid-rotation reads remain correct because:
+ *   - New writes use the new primary DEK (cache hit; no preference for
+ *     the previous column).
+ *   - Reads of rows still under the previous DEK fail AES-GCM on the
+ *     primary; the middleware's `decryptWithKeyOrPrevious` retries
+ *     under the previous DEK transparently.
+ *
+ * Failure modes:
+ *   - DB swap failure → throws; no state change visible to readers.
+ *   - Enqueue failure AFTER swap → throws; the previous-DEK fallback
+ *     keeps reads working but no automatic re-encrypt happens. The
+ *     operator follows the runbook to re-enqueue manually (the
+ *     rotation is half-finished, not broken).
+ *
+ * @throws if the tenant doesn't exist, is already mid-rotation
+ *         (`previousEncryptedDek` is non-null), or has no current
+ *         `encryptedDek` to rotate.
+ */
+export async function rotateTenantDek(
+    options: RotateTenantDekOptions,
+): Promise<RotateTenantDekResult> {
+    const { tenantId, initiatedByUserId, requestId } = options;
+
+    // Read current state. We need both the existing wrapped DEK (to
+    // become the previous) and the previousEncryptedDek (to refuse
+    // double-rotation cleanly with a useful error vs. a generic
+    // "0 rows updated" failure).
+    const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: {
+            id: true,
+            encryptedDek: true,
+            previousEncryptedDek: true,
+        },
+    });
+    if (!tenant) {
+        throw new Error(`rotateTenantDek: tenant ${tenantId} not found`);
+    }
+    if (!tenant.encryptedDek) {
+        // No DEK to rotate — surface as an explicit error rather than
+        // generating one out of nowhere (which would obscure a
+        // misconfigured tenant). Operator should call
+        // `ensureTenantDek` first.
+        throw new Error(
+            `rotateTenantDek: tenant ${tenantId} has no encryptedDek to ` +
+                'rotate. Call ensureTenantDek first.',
+        );
+    }
+    if (tenant.previousEncryptedDek !== null) {
+        throw new Error(
+            `rotateTenantDek: tenant ${tenantId} is already mid-rotation ` +
+                '(previousEncryptedDek is set). Wait for the re-encrypt ' +
+                'job to complete before initiating another rotation.',
+        );
+    }
+
+    // Generate the new DEK + wrap under the master KEK.
+    const newDek = generateDek();
+    const newWrapped = wrapDek(newDek);
+    const oldWrapped = tenant.encryptedDek;
+
+    // Atomic swap — predicated on previousEncryptedDek being NULL so
+    // a concurrent caller that beat us to the read sees count=0 and
+    // can be told "already rotating" without inventing a generic
+    // failure mode. The CHECK constraint on the column also enforces
+    // newWrapped !== oldWrapped (silent-key-mixing guard) — a fresh
+    // crypto.randomBytes(32) collision is astronomically unlikely but
+    // the constraint catches the operator-injected mistake too.
+    const swap = await prisma.tenant.updateMany({
+        where: { id: tenantId, previousEncryptedDek: null },
+        data: {
+            encryptedDek: newWrapped,
+            previousEncryptedDek: oldWrapped,
+        },
+    });
+    if (swap.count !== 1) {
+        // Another caller swapped between our read and our update.
+        // Refuse — the in-flight rotation needs to finish first.
+        throw new Error(
+            `rotateTenantDek: tenant ${tenantId} concurrent rotation ` +
+                'detected; previousEncryptedDek became non-null between ' +
+                'read and swap. Retry once the in-flight sweep completes.',
+        );
+    }
+
+    // Cache discipline:
+    //   - Drop the primary cache so the next read unwraps the new
+    //     DEK (cached value is now the OLD DEK).
+    //   - Prime the previous cache with the same value we just
+    //     dropped — it's correct as a fallback for v2 reads of rows
+    //     still under the old DEK.
+    //   - Drop the "no previous DEK" negative-cache entry — the
+    //     tenant now HAS a previous DEK and stale negative entries
+    //     would mask it.
+    const oldCachedDek = getCached(tenantId);
+    if (oldCachedDek) {
+        setCachedPrevious(tenantId, oldCachedDek);
+    }
+    dekCache.delete(tenantId);
+    noPreviousDekCache.delete(tenantId);
+
+    // Prime the new primary cache too so the first read after
+    // rotation doesn't pay an unwrap. (Both newDek and oldCachedDek
+    // are owned in-process; nothing escapes outside this function.)
+    setCached(tenantId, newDek);
+
+    logger.info('tenant-key-manager.dek_rotated', {
+        component: 'tenant-key-manager',
+        tenantId,
+        initiatedByUserId,
+    });
+
+    // Enqueue the re-encrypt sweep. Done AFTER the swap (and not
+    // wrapped in a transaction) because:
+    //   1. The swap must be visible before the job starts; otherwise
+    //      the job races the swap and may see no previousEncryptedDek.
+    //   2. BullMQ enqueue talks to Redis; mixing with a Postgres
+    //      transaction would cross-couple two failure domains.
+    //   3. If enqueue fails, the previous-DEK fallback keeps reads
+    //      correct — a stuck mid-rotation state, not a broken one.
+    //      The operator's runbook covers manual re-enqueue.
+    let jobId: string;
+    try {
+        const job = await enqueue('tenant-dek-rotation', {
+            tenantId,
+            initiatedByUserId,
+            requestId,
+        });
+        jobId = job.id ?? '';
+    } catch (err) {
+        // Enqueue failed AFTER successful swap — the rotation is
+        // half-done. Surface loudly; reads still work (previous-DEK
+        // fallback is in place).
+        logger.error('tenant-key-manager.dek_rotated_but_enqueue_failed', {
+            component: 'tenant-key-manager',
+            tenantId,
+            error: err instanceof Error ? err.message : String(err),
+        });
+        throw new Error(
+            `rotateTenantDek: tenant ${tenantId} DEK was swapped but the ` +
+                're-encrypt job could not be enqueued. Reads still work ' +
+                'via the previous-DEK fallback. Manually re-enqueue ' +
+                "'tenant-dek-rotation' with the same payload to complete. " +
+                'Underlying error: ' +
+                (err instanceof Error ? err.message : String(err)),
+        );
+    }
+
+    return { tenantId, jobId };
+}
 
 // ─── Test-only helpers ──────────────────────────────────────────────
 

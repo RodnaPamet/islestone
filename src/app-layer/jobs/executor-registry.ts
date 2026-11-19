@@ -30,10 +30,11 @@
  *
  * Copied from inflect-compliance `src/app-layer/jobs/executor-registry.ts` at
  * 5528464fc54a8681956f3b9ce23ca9c075f0420e: the registry, `makeResult`,
- * `JobOutcome` and `fanOutOutcome`, with two of its 78 registrations. A
+ * `JobOutcome`, `fanOutOutcome` and `keyRotationOutcome`, with five of its 78
+ * registrations (`health-check`, `notification-outbox-flush`, and sub-phase
+ * 1.5b's `audit-outbox-flush`, `key-rotation` and `tenant-dek-rotation`). A
  * non-retryable failure is a `NonRetryableJobError` (./non-retryable), so the
- * registry imports no integration code; sub-phase 1.5b registers the
- * key-rotation jobs and `keyRotationOutcome` here.
+ * registry imports no integration code.
  *
  * @module app-layer/jobs/executor-registry
  */
@@ -354,6 +355,19 @@ export function fanOutOutcome(
     };
 }
 
+/** The outcome of a master-KEK rotation sweep (#5299). */
+export function keyRotationOutcome(
+    totalErrors: number,
+    dekRewrapped: boolean,
+    dekRewrapError: string | undefined,
+): JobOutcome {
+    if (totalErrors === 0 && dekRewrapped) return { status: 'PASSED' };
+    const parts: string[] = [];
+    if (!dekRewrapped) parts.push(`DEK not re-wrapped${dekRewrapError ? ` (${dekRewrapError})` : ''}`);
+    if (totalErrors > 0) parts.push(`${totalErrors} error(s)`);
+    return { status: 'ERROR', errorMessage: `key-rotation: ${parts.join('; ')}` };
+}
+
 // ── health-check ─────────────────────────────────────────────────────
 
 executorRegistry.register('health-check', async (payload) => {
@@ -397,5 +411,130 @@ executorRegistry.register('notification-outbox-flush', async (payload) => {
         'notification-outbox-flush', startedAt, startMs,
         r.sent + r.failed + r.skipped, r.sent, r.skipped,
         { sent: r.sent, failed: r.failed, skipped: r.skipped },
+    );
+});
+
+// ── audit-outbox-flush (sub-phase 1.5b) ──────────────────────────────
+//
+// When the hash chain cannot take an entry (an AUTHZ_DENIED under lock
+// contention, say), `appendAuditEntryOrQueue` writes it to `AuditOutbox`
+// instead, so the record is durable before the response. This is the
+// out-of-band half that turns those rows back into chain entries.
+//
+// IT MUST BE SCHEDULED FOR THE FIX TO BE A FIX. A queued entry is durable but
+// not yet evidence; without a drain the outbox is a table that only ever
+// grows, and the denial still never reaches the trail. The cadence is five
+// minutes because the failure it backs up is lock contention, which clears in
+// seconds — the queue should be short-lived, not a parking lot.
+//
+// The payload's fields are NAMED rather than spread, for the same reason as
+// the notification drain: a payload forwarded opaquely is how a tenant-scoped
+// operator re-run silently becomes an all-tenant pass.
+
+executorRegistry.register('audit-outbox-flush', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runAuditOutboxFlush } = await import('./audit-outbox-flush');
+    const forwarded: NamesEveryField<typeof payload> = {
+        tenantId: payload.tenantId,
+        limit: payload.limit,
+        maxAttempts: payload.maxAttempts,
+    };
+    const r = await runAuditOutboxFlush(forwarded);
+    // `applied` is the only one that means an entry reached the chain.
+    // `skipped` covers a row another pass had already claimed and a row whose
+    // replay failed but has attempts left — neither is an incident, and
+    // counting either as a failure would make ordinary overlap look like one.
+    return makeResult(
+        'audit-outbox-flush', startedAt, startMs,
+        r.applied + r.failed + r.skipped, r.applied, r.skipped,
+        { applied: r.applied, failed: r.failed, skipped: r.skipped },
+    );
+});
+
+// ── key-rotation (sub-phase 1.5b) ────────────────────────────────────
+//
+// Enqueued by `POST /api/t/:slug/admin/key-rotation`, never scheduled: the
+// operator starts it once per workspace after staging a new master key.
+
+executorRegistry.register('key-rotation', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runKeyRotation } = await import('./key-rotation');
+    const forwarded: NamesEveryField<typeof payload> = {
+        tenantId: payload.tenantId,
+        initiatedByUserId: payload.initiatedByUserId,
+        requestId: payload.requestId,
+    };
+    const r = await runKeyRotation(forwarded);
+    return makeResult(
+        'key-rotation',
+        startedAt,
+        startMs,
+        r.totalScanned,
+        r.totalRewritten,
+        0,
+        {
+            tenantId: r.tenantId,
+            dekRewrapped: r.dekRewrapped,
+            dekRewrapError: r.dekRewrapError,
+            perField: r.perField,
+            totalErrors: r.totalErrors,
+            jobRunId: r.jobRunId,
+        },
+        // A sweep with errors — a DEK that failed to re-wrap, a row that
+        // failed to re-encrypt — is a FAILED job, so the job history stops
+        // reading green while the workspace still depends on the previous KEK
+        // (#5299). It has one attempt (`JOB_DEFAULTS`): the operator reads the
+        // failure and re-enqueues, which is safe because the sweep is
+        // idempotent.
+        keyRotationOutcome(r.totalErrors, r.dekRewrapped, r.dekRewrapError),
+    );
+});
+
+// ── tenant-dek-rotation (sub-phase 1.5b) ─────────────────────────────
+//
+// Enqueued by `rotateTenantDek` after the DEK swap, never scheduled.
+
+executorRegistry.register('tenant-dek-rotation', async (payload, ctx) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { runTenantDekRotation } = await import('./tenant-dek-rotation');
+    const forwarded: NamesEveryField<typeof payload> = {
+        tenantId: payload.tenantId,
+        initiatedByUserId: payload.initiatedByUserId,
+        requestId: payload.requestId,
+        batchSize: payload.batchSize,
+    };
+    const r = await runTenantDekRotation({
+        ...forwarded,
+        // Forward the worker's progress callback so the
+        // GET /admin/tenant-dek-rotation status endpoint sees live counters
+        // mid-rotation, not just empty progress until the job completes.
+        onProgress: ctx?.updateProgress,
+    });
+    return makeResult(
+        'tenant-dek-rotation',
+        startedAt,
+        startMs,
+        r.totalScanned,
+        r.totalRewritten,
+        r.totalSkipped,
+        {
+            tenantId: r.tenantId,
+            previousEncryptedDekCleared: r.previousEncryptedDekCleared,
+            perField: r.perField,
+            totalErrors: r.totalErrors,
+            jobRunId: r.jobRunId,
+        },
+        // Errors leave previousEncryptedDek set, which blocks every later
+        // rotation; that is a failed job, not a green one (#5299). One
+        // attempt: the operator investigates and re-enqueues.
+        r.totalErrors > 0
+            ? {
+                  status: 'ERROR',
+                  errorMessage: `tenant-dek-rotation: ${r.totalErrors} row(s) not re-encrypted; previous DEK kept`,
+              }
+            : { status: 'PASSED' },
     );
 });

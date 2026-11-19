@@ -125,3 +125,39 @@ export function assertCanViewQuarantinedFiles(ctx: RequestContext): void {
         );
     }
 }
+
+// ─── Key rotation (sub-phase 1.5b) ───
+
+/**
+ * Asserts the caller may start (or read the progress of) a master-key
+ * rotation for this workspace: re-wrapping its DEK and re-encrypting its `v1:`
+ * ciphertexts under the new `DATA_ENCRYPTION_KEY`.
+ *
+ * `admin.manage` on top of the coarse admin tier, the key the route is gated
+ * on: the rotation changes no key a member can use and only finishes work the
+ * operator started by staging the new key, so the ADMIN tier suffices
+ * (inflect-compliance decision, kept).
+ */
+export function assertCanRotateMasterKey(ctx: RequestContext): void {
+    assertCanAdmin(ctx);
+    if (!ctx.appPermissions?.admin?.manage) {
+        throw forbidden('Starting a master-key rotation needs admin.manage.');
+    }
+}
+
+/**
+ * Asserts the caller may rotate this workspace's own data key, or read the
+ * progress of that rotation's sweep.
+ *
+ * OWNER-only, `admin.tenant_lifecycle`, which ADMIN is explicitly denied
+ * (`src/lib/permissions.ts`): a fresh DEK is the response to a suspected
+ * compromise of this workspace, and while its sweep runs no second rotation
+ * can start. The route is gated on the same key by `requirePermission`; this
+ * is the usecase-layer twin, so a caller that is not a route cannot rotate
+ * without the same authority.
+ */
+export function assertCanRotateTenantDek(ctx: RequestContext): void {
+    if (!ctx.appPermissions?.admin?.tenant_lifecycle) {
+        throw forbidden('Rotating the workspace data key is an owner-level action.');
+    }
+}

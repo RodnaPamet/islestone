@@ -23,9 +23,11 @@
  * 5528464fc54a8681956f3b9ce23ca9c075f0420e (the source as template): the
  * `JobRunResult` contract, the due-item shapes, `NamesEveryField`, and two of
  * its 78 jobs, `health-check` and `notification-outbox-flush`. Sub-phase 1.5b
- * adds the key-rotation jobs here, and each later sub-phase adds its own: a
- * `JobPayloadMap` key, its payload interface and its `JOB_DEFAULTS` entry
- * together, since `JOB_DEFAULTS` is a `Record<JobName, …>`.
+ * added three more from the same file: `audit-outbox-flush`, `key-rotation`
+ * (without the source's `apiKeyId`, which returns with API keys in 5.2) and
+ * `tenant-dek-rotation`. Each later sub-phase adds its own: a `JobPayloadMap`
+ * key, its payload interface and its `JOB_DEFAULTS` entry together, since
+ * `JOB_DEFAULTS` is a `Record<JobName, …>`.
  *
  * @module app-layer/jobs/types
  */
@@ -163,6 +165,79 @@ export interface NotificationOutboxFlushPayload {
 }
 
 /**
+ * Drain queued audit entries onto the hash chain (sub-phase 1.5b).
+ *
+ * `appendAuditEntryOrQueue` writes an `AuditOutbox` row when the chain write
+ * fails; this job replays those rows, oldest event first. Same two shapes as
+ * the notification drain: no `tenantId` is the scheduled drain of every
+ * workspace, a `tenantId` narrows it to one. `maxAttempts` is how many replays
+ * a row gets before it is parked FAILED (default 5).
+ */
+export interface AuditOutboxFlushPayload {
+    tenantId?: string;
+    limit?: number;
+    maxAttempts?: number;
+}
+
+/**
+ * Master-KEK rotation, one workspace at a time (sub-phase 1.5b).
+ *
+ * Enqueued by `POST /api/t/:slug/admin/key-rotation` after an operator has
+ * staged `DATA_ENCRYPTION_KEY_PREVIOUS` alongside the new
+ * `DATA_ENCRYPTION_KEY`. The job:
+ *   1. Re-wraps the workspace's `encryptedDek` under the primary KEK.
+ *   2. Re-encrypts every v1 ciphertext belonging to this workspace
+ *      under the primary KEK.
+ *
+ * Idempotent — the dual-KEK fallback transparently decrypts whatever
+ * state the row is in, so a re-run after a crash continues from
+ * wherever the last batch stopped.
+ *
+ * inflect-compliance's payload also carries `apiKeyId`, the API key the
+ * rotation was requested with, re-read for liveness before any work. API
+ * keys arrive in sub-phase 5.2, which restores the field and the check.
+ */
+export interface KeyRotationPayload {
+    tenantId: string;
+    /** User who initiated — attribution on audit-log entries. */
+    initiatedByUserId: string;
+    /** Upstream request id for log correlation. */
+    requestId?: string;
+}
+
+/**
+ * Per-tenant DEK rotation re-encrypt sweep (sub-phase 1.5b).
+ *
+ * Enqueued by `rotateTenantDek` after the atomic DEK swap. The job:
+ *   1. Walks every (model, field) in the encrypted-fields manifest
+ *      that has a `tenantId` column.
+ *   2. For each row carrying a v2 ciphertext, decrypts under the
+ *      previous DEK and re-encrypts under the new primary DEK.
+ *   3. On completion, clears `Tenant.previousEncryptedDek` to NULL
+ *      and invalidates the previous-DEK cache for that tenant.
+ *
+ * Idempotent — the dual-DEK fallback in the encryption middleware
+ * means rows already rewritten under the new primary stay readable
+ * if the job re-runs after a crash. The job's own decrypt path uses
+ * the previous DEK directly (not the fallback) because rows that
+ * primary-decrypt successfully are by definition NOT what we're
+ * sweeping for.
+ *
+ * Mid-flight reads remain correct via the middleware's
+ * `decryptWithKeyOrPrevious` fallback (the previous DEK stays
+ * resolvable until the final UPDATE clears `previousEncryptedDek`).
+ */
+export interface TenantDekRotationPayload {
+    tenantId: string;
+    /** User who initiated — attribution on audit-log entries. */
+    initiatedByUserId: string;
+    /** Upstream request id for log correlation. */
+    requestId?: string;
+    /** Override SELECT batch size per (model, field). Default 500. */
+    batchSize?: number;
+}
+
+/**
  * Every key of `T` required to be PRESENT, keeping each key's own value type.
  *
  * The executor registrations name payload fields one by one rather than
@@ -188,6 +263,9 @@ export type NamesEveryField<T> = { [K in keyof Required<T>]: T[K] };
 export interface JobPayloadMap {
     'health-check': HealthCheckPayload;
     'notification-outbox-flush': NotificationOutboxFlushPayload;
+    'audit-outbox-flush': AuditOutboxFlushPayload;
+    'key-rotation': KeyRotationPayload;
+    'tenant-dek-rotation': TenantDekRotationPayload;
 }
 
 /** Union of all valid job names */
@@ -230,6 +308,45 @@ export const JOB_DEFAULTS: Record<JobName, {
         backoff: { type: 'fixed', delay: 0 },
         removeOnComplete: 50,
         removeOnFail: 200,
+    },
+    'audit-outbox-flush': {
+        // ONE attempt, for the same reason as `notification-outbox-flush`:
+        // this runs every five minutes, so "retry" already has a name — the
+        // next tick. A BullMQ retry seconds after a failure re-enters the same
+        // unreachable database.
+        //
+        // Nothing is lost by declining it. Each row is claimed atomically
+        // before its replay and `attempts` is the optimistic-concurrency
+        // token, so a pass that dies mid-batch leaves unclaimed rows PENDING
+        // for the next pass. Per-ROW retry is the separate mechanism that
+        // still applies: five attempts with backoff before a row is parked
+        // FAILED, and a parked row is never deleted.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 50,
+        removeOnFail: 200,
+    },
+    'key-rotation': {
+        // Do NOT auto-retry: a partial rotation needs operator review.
+        // The job is idempotent, so the operator can re-enqueue after
+        // investigating; we'd rather they see "this one failed" in the
+        // completed-with-errors state than have the queue silently
+        // retry and potentially compound the problem.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
+    },
+    'tenant-dek-rotation': {
+        // Same posture as key-rotation: a partial sweep means
+        // `Tenant.previousEncryptedDek` is still populated and reads
+        // continue working via the dual-DEK fallback. The operator
+        // re-enqueues manually after investigating any failure;
+        // silent auto-retry could compound a partial-progress bug.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 0 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
     },
 };
 

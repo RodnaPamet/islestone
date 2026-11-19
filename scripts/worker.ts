@@ -273,7 +273,7 @@ async function bootstrap(): Promise<void> {
                     );
 
                     // GAP-22: forward the BullMQ Job's progress channel so
-                    // executors that report mid-run progress (sub-phase 1.5b's
+                    // executors that report mid-run progress (today
                     // tenant-dek-rotation) surface it via `GET .../?jobId=…`
                     // without depending on bullmq from the executor side.
                     const result = await executorRegistry.execute(jobName, payload, {
