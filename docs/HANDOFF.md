@@ -264,6 +264,5 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    Decided on review (rows 28 to 30): the startup checks are in
    `src/instrumentation-node.ts`, behind a literal `process.env.NEXT_RUNTIME` branch, so
    `next build` no longer warns; `upstash` stays the default with the production refusal;
-   the CSP violation-report sink is ported in 1.6. Open: whether the 1.4 suites that read
-   audit entries through `tests/helpers/audit-recorder.ts` should move to reading rows
-   (issue #18). 1.5b is issue #19. 1.6 is next.
+   the CSP violation-report sink is ported in 1.6. The 1.4 integration suites now read
+   real audit rows and the recorder is gone (issue #18). 1.5b is issue #19. 1.6 is next.
