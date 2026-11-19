@@ -40,11 +40,16 @@ const UNBOUND_CEILING = 10;
 const NAMESPACE_CALL = /\b(?:useTranslations|getTranslations)\(\s*['"]([^'"]+)['"]\s*\)/g;
 const BINDING = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?(?:useTranslations|getTranslations)\(\s*['"]([^'"]+)['"]\s*\)/g;
 
+/** Every RegExp metacharacter in `s`, backslash included, escaped. */
+function escapeRegExp(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function callsOn(code: string, ident: string): string[] {
     // Not preceded by a word char, `.` or `$`, so `t(` does not match inside
     // `tNav(` or `obj.t(`; the key must be a whole literal, followed by `)`
     // or `,`, so a concatenated key is skipped rather than half-read.
-    const re = new RegExp(`(?<![\\w.$])${ident.replace(/\$/g, '\\$')}\\(\\s*(['"])([A-Za-z0-9_.-]+)\\1\\s*(?=[),])`, 'g');
+    const re = new RegExp(`(?<![\\w.$])${escapeRegExp(ident)}\\(\\s*(['"])([A-Za-z0-9_.-]+)\\1\\s*(?=[),])`, 'g');
     return [...code.matchAll(re)].map((m) => m[2] as string);
 }
 
