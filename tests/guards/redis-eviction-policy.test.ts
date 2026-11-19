@@ -1,0 +1,136 @@
+/**
+ * Structural ratchet — Redis BullMQ-safe eviction policy.
+ *
+ * REGRESSION CLASS
+ * ----------------
+ * Every Docker Compose `redis` service originally ran with
+ *
+ *     redis-server … --maxmemory <N> --maxmemory-policy allkeys-lru
+ *
+ * `allkeys-lru` EVICTS keys under memory pressure. BullMQ stores job
+ * records in Redis — under an eviction policy those records can be
+ * silently dropped, losing queued work. The only BullMQ-safe policy
+ * is `noeviction` (Redis rejects writes with an OOM error instead,
+ * which surfaces loudly rather than corrupting the queue).
+ *
+ * (That was inflect-compliance.) Islestone's compose redis runs
+ * `--maxmemory-policy noeviction` explicitly. This guardrail fails CI if a
+ * "tune the compose files" PR reverts it to an eviction policy; sub-phase
+ * 1.8's production and staging compose files join its list.
+ *
+ * Copied from inflect-compliance `tests/guards/redis-eviction-policy.test.ts`
+ * at 5528464fc54a8681956f3b9ce23ca9c075f0420e (Islestone's compose file,
+ * a planted positive control, and the hook's Node.js half).
+ *
+ * The runtime side (`verifyRedisEvictionPolicy` in `src/lib/redis.ts`,
+ * wired from `src/instrumentation-node.ts`) is covered by
+ * `tests/unit/redis-eviction-policy.test.ts`; its wiring is asserted
+ * at the end of this file.
+ */
+import * as fs from 'fs';
+import * as path from 'path';
+
+const REPO_ROOT = path.resolve(__dirname, '../..');
+import { codeOf } from '../helpers/source-blocks';
+
+// #2246 Class A — the mask goes at the READ SEAM, and WHICH masker depends on
+// the language. `read` stays RAW because this file also reads YAML, none of
+// which `codeOf` lexes — handing it YAML once blanked a bare-scalar URL from
+// `//` to end of line. TypeScript reads go through `readSrc`, which masks.
+const read = (rel: string) => fs.readFileSync(path.join(REPO_ROOT, rel), 'utf-8');
+const readSrc = (rel: string) => codeOf(read(rel));
+
+/** Redis `maxmemory-policy` values that evict keys — all BullMQ-unsafe. */
+const EVICTION_POLICIES = [
+    'allkeys-lru',
+    'allkeys-lfu',
+    'allkeys-random',
+    'volatile-lru',
+    'volatile-lfu',
+    'volatile-random',
+    'volatile-ttl',
+];
+
+/**
+ * Extract a top-level compose service block — the `  <service>:` line
+ * up to the next sibling service / top-level key.
+ */
+function extractServiceBlock(src: string, service: string): string {
+    const lines = src.split('\n');
+    const start = lines.findIndex((l) =>
+        new RegExp(`^ {2}${service}:\\s*$`).test(l),
+    );
+    if (start === -1) return '';
+    let end = lines.length;
+    for (let i = start + 1; i < lines.length; i++) {
+        if (/^ {2}\S/.test(lines[i]) || /^\S/.test(lines[i])) {
+            end = i;
+            break;
+        }
+    }
+    return lines.slice(start, end).join('\n');
+}
+
+/**
+ * The `redis-server …` command line from a service block — scanned
+ * in isolation so an explanatory COMMENT that names a policy (e.g.
+ * "NOT allkeys-lru") never trips the eviction-token check.
+ */
+function redisCommandLine(block: string): string {
+    return block.split('\n').find((l) => l.includes('redis-server')) ?? '';
+}
+
+/** Every Compose file whose `redis` service runs BullMQ-bearing Redis. */
+const COMPOSE_WITH_REDIS = [
+    'docker-compose.yml', // local dev — also runs the app + BullMQ
+    // The production and staging compose files come with sub-phase 1.8,
+    // and join this list then.
+];
+
+describe('Redis eviction-policy ratchet — Compose redis is BullMQ-safe', () => {
+    it.each(COMPOSE_WITH_REDIS)(
+        '%s — redis runs --maxmemory-policy noeviction',
+        (file) => {
+            const block = extractServiceBlock(read(file), 'redis');
+            expect(block).not.toBe('');
+            expect(redisCommandLine(block)).toMatch(/--maxmemory-policy\s+noeviction/);
+        },
+    );
+
+    it.each(COMPOSE_WITH_REDIS)(
+        '%s — redis does NOT use any key-evicting policy',
+        (file) => {
+            const cmd = redisCommandLine(extractServiceBlock(read(file), 'redis'));
+            for (const policy of EVICTION_POLICIES) {
+                expect(cmd).not.toContain(policy);
+            }
+        },
+    );
+
+    it('the reader flags a planted evicting redis service (the check is not vacuous)', () => {
+        const planted = [
+            'services:',
+            '  redis:',
+            "    command: ['sh', '-c', 'exec redis-server --maxmemory-policy allkeys-lru']",
+            '  app:',
+            '    image: x',
+        ].join('\n');
+        const cmd = redisCommandLine(extractServiceBlock(planted, 'redis'));
+        expect(cmd).not.toMatch(/--maxmemory-policy\s+noeviction/);
+        expect([...EVICTION_POLICIES].some((p) => cmd.includes(p))).toBe(true);
+    });
+});
+
+describe('Redis eviction-policy ratchet — runtime check is wired', () => {
+    it('src/lib/redis.ts exports verifyRedisEvictionPolicy', () => {
+        expect(readSrc('src/lib/redis.ts')).toMatch(
+            /export async function verifyRedisEvictionPolicy/,
+        );
+    });
+
+    it('src/instrumentation-node.ts calls verifyRedisEvictionPolicy at startup', () => {
+        // The Node.js half of the instrumentation hook (owner decision,
+        // 2026-11-19: src/instrumentation.ts only branches on NEXT_RUNTIME).
+        expect(readSrc('src/instrumentation-node.ts')).toMatch(/verifyRedisEvictionPolicy\(/);
+    });
+});

@@ -17,6 +17,9 @@ export const VALID_ENV: Readonly<Record<string, string>> = {
     NODE_ENV: 'test',
     DATABASE_URL: 'postgres://user:password@localhost:5432/db',
     AUTH_SECRET: 'supersecretstringthatis16charplus', // pragma: allowlist secret — test fixture
+    // Required in production since sub-phase 1.6, with a password; harmless
+    // elsewhere. A case about REDIS_URL overrides it.
+    REDIS_URL: 'redis://:fixture-redis-password@localhost:6379', // pragma: allowlist secret — test fixture
 };
 
 /**

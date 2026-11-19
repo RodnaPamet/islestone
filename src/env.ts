@@ -52,11 +52,41 @@ export const env = createEnv({
         LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'fatal']).optional(),
 
         /**
-         * Redis (queues, rate limits). Optional for now; sub-phases 1.5 and
-         * 1.6 decide when it becomes required and that production URLs carry
-         * a password.
+         * Redis: the BullMQ job queue and the worker heartbeat (sub-phase
+         * 1.6). REQUIRED in production, and the URL must carry a password in
+         * its userinfo (`redis://:PASSWORD@HOST:6379`, or `rediss://` for TLS):
+         * an unauthenticated Redis that is network-reachable lets anyone who
+         * can reach the port read and enqueue jobs. `src/instrumentation-node.ts`
+         * refuses a production boot without it again, for the case where
+         * SKIP_ENV_VALIDATION=1 leaks into the runtime container. The rule
+         * reads `process.env.NODE_ENV` itself, as DATA_ENCRYPTION_KEY's does.
          */
-        REDIS_URL: z.url({ protocol: /^rediss?$/ }).optional(),
+        REDIS_URL: z
+            .url({ protocol: /^rediss?$/ })
+            .optional()
+            .superRefine((val, ctx) => {
+                if (process.env.NODE_ENV !== 'production') return;
+                if (!val) {
+                    ctx.addIssue({
+                        code: 'custom',
+                        message:
+                            'REDIS_URL is REQUIRED in production. The job queue and ' +
+                            'the worker heartbeat depend on it. Set REDIS_URL ' +
+                            '(e.g. redis://:PASSWORD@HOST:6379) before deploying.',
+                    });
+                    return;
+                }
+                if (!new URL(val).password) {
+                    ctx.addIssue({
+                        code: 'custom',
+                        message:
+                            'REDIS_URL must be AUTHENTICATED in production. A bare ' +
+                            'redis://HOST:6379 leaves Redis open to anyone who can ' +
+                            'reach the port. Set a password: redis://:PASSWORD@HOST:6379 ' +
+                            '(or rediss:// for TLS).',
+                    });
+                }
+            }),
 
         // ─── Authentication (sub-phase 1.4, ADR 0004) ────────────────
         /** NextAuth's signing and encryption secret. At least 16 characters. */
@@ -271,6 +301,35 @@ export const env = createEnv({
         CORS_ALLOWED_ORIGINS: z.string().optional(),
         /** Set by Next.js itself: `nodejs` or `edge` (src/instrumentation.ts). */
         NEXT_RUNTIME: z.string().optional(),
+
+        // ─── Jobs, notifications and observability (sub-phase 1.6) ───
+        /** "true" starts the OpenTelemetry SDK (src/lib/observability/instrumentation.ts). */
+        OTEL_ENABLED: z.enum(['true', 'false']).optional(),
+        /** "true" logs the OpenTelemetry SDK's own diagnostics. */
+        OTEL_DEBUG: z.enum(['true', 'false']).optional(),
+        /** The `service.name` resource attribute. Defaults to `islestone`. */
+        OTEL_SERVICE_NAME: z.string().min(1).optional(),
+        /** OTLP/HTTP collector base URL. Defaults to http://localhost:4318. */
+        OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
+        /**
+         * Set by npm when a process starts through `npm run`/`npm start`: the
+         * `service.version` resource attribute. Not set by the deployer.
+         */
+        npm_package_version: z.string().optional(),
+        /**
+         * SMTP relay host. There is no SMTP transport yet (nodemailer is
+         * MIT-0, which the licence allowlist does not list: an owner
+         * decision), so when this is set the mailer logs that mail stays on
+         * the console sink (src/lib/mailer.ts, `initMailerFromEnv`).
+         */
+        SMTP_HOST: z.string().min(1).optional(),
+        /**
+         * The deployment's sender address: the fallback `From` for every
+         * outbound email (src/lib/email/sender-identity.ts). Unset, the
+         * placeholder `noreply@islestone.invalid` is used, which no relay
+         * will accept.
+         */
+        SMTP_FROM: z.string().min(1).optional(),
     },
 
     // Listed key by key so a variable cannot be declared without being wired.
@@ -312,6 +371,13 @@ export const env = createEnv({
         CSP_REPORT_ONLY: process.env.CSP_REPORT_ONLY,
         CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS,
         NEXT_RUNTIME: process.env.NEXT_RUNTIME,
+        OTEL_ENABLED: process.env.OTEL_ENABLED,
+        OTEL_DEBUG: process.env.OTEL_DEBUG,
+        OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME,
+        OTEL_EXPORTER_OTLP_ENDPOINT: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
+        npm_package_version: process.env.npm_package_version,
+        SMTP_HOST: process.env.SMTP_HOST,
+        SMTP_FROM: process.env.SMTP_FROM,
     },
 
     skipValidation: skipEnvValidation(),

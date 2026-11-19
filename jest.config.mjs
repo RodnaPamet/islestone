@@ -96,6 +96,11 @@ const ESM_PACKAGES = [
     'dom-serializer',
     'domelementtype',
     'entities',
+    // react-email's renderer (src/app-layer/notifications/templates.ts,
+    // sub-phase 1.6). Its CommonJS build loads react-dom/server with a
+    // dynamic `import()`, which Jest's CommonJS runtime refuses without
+    // `--experimental-vm-modules`; compiled, the import becomes a require.
+    '@react-email/render',
 ];
 
 const moduleNameMapper = {
