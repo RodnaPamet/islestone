@@ -7,7 +7,7 @@ function expectSecurityHeaders(headers: Record<string, string>) {
     expect(headers['content-security-policy']).toContain("frame-ancestors 'none'");
     expect(headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
     expect(headers['permissions-policy']).toContain('camera=()');
-    // `next start` serves a production build.
+    // The standalone server (`npm run start`) serves a production build.
     expect(headers['strict-transport-security']).toMatch(/^max-age=\d+; includeSubDomains$/);
     expect(headers).not.toHaveProperty('x-powered-by');
 }
@@ -31,6 +31,19 @@ test('/api/livez answers 200', async ({ request }) => {
     expect(response.status()).toBe(200);
     expect(await response.json()).toEqual({ status: 'ok' });
     expectSecurityHeaders(headersOf(response));
+});
+
+// Sub-phase 1.8: readiness reaches the real database (through PgBouncer in
+// CI) and the real Redis, as the production healthcheck does.
+test('/api/readyz answers ready, with the database and Redis checked', async ({ request }) => {
+    const response = await request.get('/api/readyz');
+
+    expect(response.status()).toBe(200);
+    expect(await response.json()).toMatchObject({
+        status: 'ready',
+        failed: [],
+        checks: { database: { status: 'ok' }, redis: { status: 'ok' } },
+    });
 });
 
 // Sub-phase 1.5: the policy carries a per-request script nonce, and the page

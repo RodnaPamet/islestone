@@ -14,8 +14,10 @@
  * Copied from inflect-compliance `tests/guardrails/redis-prod-required.test.ts`
  * at 5528464fc54a8681956f3b9ce23ca9c075f0420e, the schema and startup-hook
  * halves (the hook is `src/instrumentation-node.ts` in Islestone, owner
- * decision 2026-11-19). The health-endpoint, env-template, deployment-doc and
- * CI-workflow assertions wait for sub-phase 1.8.
+ * decision 2026-11-19). The readiness probe's half (an unset REDIS_URL is an
+ * error in production, never a skipped check) is behavioural, in
+ * `tests/unit/health-routes.test.ts`; the production compose file's half is
+ * in `tests/unit/deploy/compose-prod.test.ts` (sub-phase 1.8).
  */
 import * as fs from 'fs';
 import * as path from 'path';

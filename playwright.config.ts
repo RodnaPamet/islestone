@@ -5,8 +5,9 @@ import { defineConfig, devices } from '@playwright/test';
 
 /**
  * End-to-end tests against the BUILT app: run `npm run build` first. The web
- * server is `next start` on a fixed port, so a run tests what ships, not the
- * dev server.
+ * server is the standalone server the app image runs (`npm run start`,
+ * scripts/start-standalone.mjs, sub-phase 1.8) on a fixed port, so a run tests
+ * what ships, not the dev server.
  *
  * Browsers: CI installs Playwright's Chromium (`npx playwright install
  * --with-deps chromium`). Where a Chromium is already installed, point
@@ -68,18 +69,18 @@ export default defineConfig({
     ],
     webServer: {
         // AUTH_TEST_MODE=1 turns off the credential throttle and the
-        // mutation-tier rate limit, which the auth specs would trip. `next
-        // start` forces NODE_ENV=production, where src/env.ts refuses the flag
-        // unless NEXT_TEST_MODE=1, which only this server sets
+        // mutation-tier rate limit, which the auth specs would trip. The
+        // standalone server forces NODE_ENV=production, where src/env.ts
+        // refuses the flag unless NEXT_TEST_MODE=1, which only this server sets
         // (tests/unit/security/auth-test-mode-prod-refusal.test.ts).
-        command: `AUTH_TEST_MODE=1 NEXT_TEST_MODE=1 npx next start --hostname 127.0.0.1 --port ${PORT}`,
+        command: `AUTH_TEST_MODE=1 NEXT_TEST_MODE=1 HOSTNAME=127.0.0.1 PORT=${PORT} node scripts/start-standalone.mjs`,
         url: `${BASE_URL}/api/livez`,
         reuseExistingServer: !isCI,
         timeout: 120_000,
         env: {
-            // Validated at start by next.config.ts, so it must be real.
+            // Validated when the server first loads src/env-client.ts, so it must be real.
             NEXT_PUBLIC_APP_URL: BASE_URL,
-            // Required by src/env.ts, which next start validates. The auth
+            // Required by src/env.ts, which the server validates at start (src/instrumentation-node.ts). The auth
             // specs (sub-phase 1.4) register and sign in, so it must reach a
             // migrated database. Do not set
             // SKIP_ENV_VALIDATION here: this is the one run that exercises

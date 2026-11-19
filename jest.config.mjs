@@ -131,6 +131,10 @@ const shared = {
     moduleNameMapper,
     setupFiles: ['<rootDir>/jest.setup.ts'],
     clearMocks: true,
+    // The standalone build (`output: 'standalone'`, sub-phase 1.8) copies a
+    // package.json and a traced node_modules into .next/standalone; without
+    // this Jest's module map indexes them beside the real ones.
+    modulePathIgnorePatterns: ['<rootDir>/.next/', '<rootDir>/dist/'],
 };
 
 /** @type {import('jest').Config} */

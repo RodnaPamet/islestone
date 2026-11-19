@@ -344,6 +344,16 @@ export const env = createEnv({
          * will accept.
          */
         SMTP_FROM: z.string().min(1).optional(),
+
+        // ─── Environments and delivery (sub-phase 1.8) ───────────────
+        /**
+         * The commit the running image was built from. The Dockerfile bakes
+         * it in from the `BUILD_SHA` build argument the publish workflow
+         * passes; `/api/readyz` reports it as `version`, so a deploy can be
+         * confirmed from outside the VM. Unset (a local or CI build) reads as
+         * `dev`.
+         */
+        BUILD_SHA: z.string().min(1).optional(),
     },
 
     // Listed key by key so a variable cannot be declared without being wired.
@@ -398,6 +408,7 @@ export const env = createEnv({
         SENTRY_DSN: process.env.SENTRY_DSN,
         SENTRY_ENVIRONMENT: process.env.SENTRY_ENVIRONMENT,
         SENTRY_TRACES_SAMPLE_RATE: process.env.SENTRY_TRACES_SAMPLE_RATE,
+        BUILD_SHA: process.env.BUILD_SHA,
     },
 
     skipValidation: skipEnvValidation(),
