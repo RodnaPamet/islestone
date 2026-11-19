@@ -30,11 +30,10 @@ All inflect-compliance rows were read in the sibling checkout at commit `5528464
 
 The whole of inflect-compliance's `packages/ui`, copied byte for byte. These facts hold for every row below:
 
-- **Source:** inflect-compliance, `packages/ui/` at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`.
+- **Source:** inflect-compliance, `packages/ui/` at commit `884dbdd32d7869bb47d2416ec93186144fbb7730` (2026-11-19, inflect PR #5773). First copied at `5528464fc54a8681956f3b9ce23ca9c075f0420e`; re-pinned for issue #7, which fixed the package upstream: it now declares its dependencies, passes `noUncheckedIndexedAccess` under its own `tsconfig.json`, describes itself correctly and drops product wording from its chart comments and examples. 24 files changed, none added or removed.
 - **Licence:** BUSL-1.1, licensor Inflect Ltd. (the package's `"license"` field is kept). Copying is allowed by [ADR 0001](docs/adr/0001-code-provenance-and-licences.md) decision D1.
 - **Third-party origin:** much of the package derives from Dub (`github.com/dubinc/dub`, AGPL-3.0 outside its `(ee)` folders; "Copyright (c) 2024-present Dub Technologies, Inc."), and the Nucleo icons carry Nucleo's terms. The owner decided to copy them as they are and accept the licence risk (ADR 0001 decision D4). A file is marked Dub-derived when `docs/porting/licence/dub-overlap.py` finds at least 50% of its normalised lines in Dub's `packages/ui` or `packages/utils` at `6b463b4bdd9ed2fd9aa416f67b5b77d317b1471e` (74 files); line overlap shows shared text, not who wrote it first. The 270 Nucleo icon files are marked as such. [`NOTICE`](NOTICE) carries both attributions.
 - **Changes:** none. `packages/ui/UPSTREAM.json` records each file's sha256; `node scripts/ui-drift.mjs verify` fails on any edit, and `audit` fails when the manifest does not match the package at the commit above ([`docs/porting/shared-ui.md`](docs/porting/shared-ui.md)).
-- **Stale upstream text:** the package `README.md`, `src/index.ts` and the hooks README are stale upstream (see `docs/porting/shared-ui.md`, "Known upstream issues"); they are copied unchanged.
 
 <details>
 <summary>All 397 copied files</summary>

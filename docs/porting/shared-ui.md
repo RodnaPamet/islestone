@@ -41,7 +41,7 @@ may not notice), a reordered key or CRLF line endings are refused rather than re
 | | |
 |---|---|
 | Source | inflect-compliance, `packages/ui` |
-| Commit | `5528464fc54a8681956f3b9ce23ca9c075f0420e` |
+| Commit | `884dbdd32d7869bb47d2416ec93186144fbb7730` (re-pinned 2026-11-19 for issue #7; first copied at `5528464fc54a8681956f3b9ce23ca9c075f0420e`) |
 | Package | `@inflect/ui` `0.0.0`, `private: true`, `license: BUSL-1.1` (unchanged) |
 | Files | 397: every file `git ls-files packages/ui` lists at that commit, and nothing untracked |
 | Manifest | `packages/ui/UPSTREAM.json`, holding the sha256 of each of the 397 files and the list of files at git mode `100755` (empty) |
@@ -57,7 +57,8 @@ may not notice), a reordered key or CRLF line endings are refused rather than re
 | `src/lib/`: `cn.ts`, `format-date.ts`, `number-format.ts` | 3 |
 
 The copy was made by `node scripts/ui-drift.mjs pin /path/to/inflect-compliance --ref
-5528464fc54a8681956f3b9ce23ca9c075f0420e`. That command reads the blobs of the commit
+5528464fc54a8681956f3b9ce23ca9c075f0420e` and re-pinned the same way to `884dbdd`
+(24 files changed, none added or removed; `audit` binds the manifest to that commit). That command reads the blobs of the commit
 itself, not a working tree. Three independent checks confirmed it:
 
 - The file list equals `git ls-files packages/ui`.
@@ -192,9 +193,12 @@ The other sub-phases need these facts, which the copy itself cannot provide.
     (ADR 0001 D4, "What the decision requires").
   - **`PROVENANCE.md`.** One row per copied file ("Copied: `@inflect/ui`"), naming the
     Dub origin of the files the measurement links to Dub and the Nucleo terms.
-- **Root `tsconfig.json`.** Islestone's root config drops `noUncheckedIndexedAccess`
-  (24 errors in six chart and hook files otherwise) and excludes `packages/ui`, which
-  `npm run typecheck:ui` checks through the package's own config.
+- **Root `tsconfig.json`.** Islestone's root config leaves `noUncheckedIndexedAccess`
+  off and excludes `packages/ui`, which `npm run typecheck:ui` checks through the
+  package's own config. Since inflect PR #5773 (pinned at `884dbdd`) that config turns
+  the flag on, and the package passes it. The root stays off because Islestone's own
+  code and tests, and the part B mirror under `src/components/ui`, raise 542 errors
+  with it on (measured 2026-11-19; issue #21).
   `packages/ui/tsconfig.json` extends `../../tsconfig.json`
   and resets only `baseUrl`, `paths`, `rootDir`, `include` and `exclude`. Everything
   else is inherited from Islestone's root config. inflect's values are `strict`,
@@ -217,10 +221,11 @@ The other sub-phases need these facts, which the copy itself cannot provide.
   coincidence. The rule sits outside `packages/ui`, so it does not touch byte identity.
   `tests/unit/ui-drift.test.mjs` shows both halves: an `autocrlf` clone fails `verify`,
   and the same clone with this rule passes.
-- **Root dependencies.** `packages/ui/package.json` declares only `clsx` and
-  `tailwind-merge`, plus four peers (`react`, `react-dom`, `next`, `next-intl`). The
-  sources also import the packages below, which the root `package.json` must declare.
-  The versions are inflect's locked versions at the pinned commit:
+- **Root dependencies.** Since `884dbdd`, `packages/ui/package.json` declares every
+  package its sources import, with inflect's root ranges (`^x.y.z`), and four peers
+  (`react`, `react-dom`, `next`, `next-intl`). The root `package.json` pins each one
+  exactly, at a version those ranges accept, so npm installs one copy (no
+  `packages/ui/node_modules`). The root pins are inflect's locked versions:
 
   | Package | Version |
   |---|---|
@@ -406,30 +411,16 @@ or lockfile was added here. The setup was a root holding inflect's root
 Fixing any of these here would break byte identity. Each one is a change in
 inflect-compliance, which then arrives through a sync.
 
-1. **Stale "empty package" text.** Three files describe the package as it was at
-   inflect's step 1:
-   - `src/index.ts` is `export {}`, and its comment says the package is empty.
-   - `README.md` says "It is empty", says no dependency "is declared yet", and says
-     "Nothing runs `tsc -p packages/ui` yet". inflect's `typecheck:ui-boundary` does
-     run it.
-   - The `package.json` `description` says "Empty at step 1".
+Items 1 to 4 below were fixed upstream in inflect PR #5773 and arrived with the
+re-pin to `884dbdd` (Islestone issue #7). Three chart files (`time-series-chart.tsx`,
+`areas.tsx`, `bars.tsx`) stay `MIXED` upstream, for a `text-brand-*` default fill class
+that is behaviour, not wording.
 
-   The package now holds 391 sources, and the public surface is deep imports through
-   `exports` (`./*`), not the index.
-2. **Undeclared dependencies.** `package.json` does not declare most of what the
-   sources import (the list above). inflect gets away with it because its root
-   installs everything.
-3. **Stale hooks README.** `src/components/ui/hooks/README.md` still describes
-   `src/components/ui/hooks/` and `useKeyboardShortcut`, which is not in the package.
-   It also uses compliance examples (`useControls`, `useRisks`).
-4. **MIXED files inside the package.** 11 chart files are classified `MIXED` in
-   inflect's `docs/_status/ui-core-classification.json`, mostly for compliance or
-   product wording in comments and examples:
-   - `areas.tsx` and `bars.tsx` paint brand tokens as text.
-   - `chart-legend.tsx` and `time-series-chart.tsx` contain hardcoded English.
-   - `examples.ts` holds compliance sample data.
-   - The others are `bar-field-3d.tsx`, `chart-gloss.tsx`, `chart-gradient.tsx`,
-     `index.ts`, `interaction.tsx` and `use-heat-scale.ts`.
+1. ~~Stale "empty package" text~~ (fixed at `884dbdd`).
+2. ~~Undeclared dependencies~~ (fixed at `884dbdd`).
+3. ~~Stale hooks README~~ (fixed at `884dbdd`).
+4. ~~MIXED files inside the package~~ (eight of eleven fixed at `884dbdd`; the three
+   above remain, by design).
 5. **Nucleo icons and Dub-derived files: accepted risk, ADR 0001 D4** (owner decision,
    2026-11-18: "Copy as is, accept risk"). The package is copied as it is. Its
    `PROVENANCE.md` rows name the Dub origin and the Nucleo terms
