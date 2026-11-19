@@ -69,6 +69,9 @@ if [ -f "$ENV_FILE" ]; then
     done
     ENV_VALUE=""
     if [ "${#missing[@]}" -eq 0 ]; then ok "${ENV_FILE} has every required name"; else drift "${ENV_FILE} lacks: ${missing[*]}"; fi
+    env_value BACKUP_GCS_BUCKET
+    if [ -n "$ENV_VALUE" ]; then ok "backups are copied to a bucket (BACKUP_GCS_BUCKET is set)"; else drift "BACKUP_GCS_BUCKET is not set: backups stay on this VM only"; fi
+    ENV_VALUE=""
     mode="$(stat -c '%a' "$ENV_FILE")"
     case "$mode" in 600|400) ok "${ENV_FILE} is private (${mode})" ;; *) drift "${ENV_FILE} has mode ${mode}, not 600" ;; esac
 else

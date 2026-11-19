@@ -187,10 +187,11 @@ A Watchtower that runs without a scope considers every container on the host,
 Islestone's included. `deploy/apply.sh` refuses while one runs; Agrent's and
 Playerz's must be scoped (as Agrent's is) before the first deploy.
 
-Watchtower pulls from GHCR with the credentials in `/root/.docker/config.json`,
-mounted read-only. If the `islestone` packages are private, root on the VM
-must be logged in to `ghcr.io` with a token that can read them (see "First
-deploy", step 2).
+Watchtower and Compose pull from GHCR anonymously: both packages,
+`islestone` and `islestone-worker`, are public (owner decision 49), so no
+registry credential is kept on the VM and nothing is mounted for one. A pull
+before the packages are made public fails with `denied` or `unauthorized`
+(see "First deploy", step 2).
 
 ## Operating
 
@@ -203,8 +204,9 @@ deploy/apply.sh                      # preflight on the VM, print the plan, chan
 CONFIRM=1 deploy/apply.sh            # preflight, then apply
 CADDY_ONLY=1 CONFIRM=1 deploy/apply.sh   # install and reload only the Caddy site
 deploy/check-drift.sh                # does the VM run what the repository says? (exit 1 on drift)
-deploy/backup.sh                     # a pg_dump into /opt/islestone/backups/db
-RESTORE_DRILL=1 deploy/backup.sh     # restore the newest dump into a scratch database and compare
+deploy/backup.sh                     # a pg_dump into /opt/islestone/backups/db, copied to the bucket
+RESTORE_DRILL=1 deploy/backup.sh     # restore the newest local dump into a scratch database and compare
+RESTORE_DRILL=1 BACKUP_SOURCE=gcs deploy/backup.sh   # the same, from the newest copy in the bucket
 ```
 
 `apply.sh` exits 0 when it applied (or the preflight passed), 1 when a step
@@ -256,12 +258,18 @@ GitHub and at the DNS provider; this repository cannot do them.
    certificates on the first request, so the records must resolve first.
 2. **GitHub.**
    - Merge the 1.8 pull request; `release.yml` publishes the first images.
-   - Decide the packages' visibility (`islestone`, `islestone-worker`; GitHub
-     → the organization's Packages). If they stay private, log root on the VM
-     in to GHCR with a token that can read them:
-     `sudo docker login ghcr.io -u <user>` (the token is typed, never put in a
-     file in this repository).
-   - Add the new `Image` check to the `main` ruleset's required checks.
+   - Set both packages public after that first publish (owner decision 49):
+     the organization's Packages → `islestone` and then `islestone-worker` →
+     Package settings → Change visibility → Public. A package does not exist
+     until its first push, so this cannot be done earlier. No registry
+     credential goes on the VM.
+   - Add the new `Image` and `PR title` checks to the `main` ruleset's
+     required checks.
+   - Make squash the merge method, with the pull request's title as the
+     default commit message (Settings → General → Pull Requests: allow squash
+     merging, "Default commit message: Pull request title"), so the
+     Conventional Commit title the `PR title` check holds is the subject
+     semantic-release reads (owner decision 51).
    - Enable code scanning results for the SARIF the `Image` and `DAST` jobs
      upload, if the Security tab is not on.
 3. **Agrent's Caddy.** Make the two changes in "The shared Caddy" in Agrent's
@@ -280,8 +288,11 @@ GitHub and at the DNS provider; this repository cannot do them.
    `openssl rand -base64 48` for the three keys). Keep a copy of
    `DATA_ENCRYPTION_KEY`, `LOOKUP_HASH_KEY` and `DERIVED_SUBKEY_KEY` in the
    owner's password manager: without them no encrypted field and no email
-   sign-in can be read again. Choose `RATE_LIMIT_MODE` (`memory`, or
-   `upstash` with both Upstash values). Leave `AUTH_PUBLIC_SIGNUP` empty.
+   sign-in can be read again. Set `RATE_LIMIT_MODE=memory` (owner decision
+   50: production runs a single app container, so the per-process limits are
+   exact; revisit with Upstash when the app runs in more than one container).
+   Set `BACKUP_GCS_BUCKET` once the bucket exists (step 9). Leave
+   `AUTH_PUBLIC_SIGNUP` empty.
 5. **Preflight**, from a workstation: `deploy/apply.sh`. Fix whatever it
    refuses.
 6. **Apply**: `CONFIRM=1 deploy/apply.sh`. The first run initialises the
@@ -295,9 +306,11 @@ GitHub and at the DNS provider; this repository cannot do them.
    `AUTH_PUBLIC_SIGNUP=1` in `.env.prod`, apply, register the owner's
    workspace on the sign-in page (`https://islestone.cloud/login`, in its
    register mode), then empty it and apply again.
-9. **Backups.** Take one (`deploy/backup.sh`), run the restore drill
-   (`RESTORE_DRILL=1 deploy/backup.sh`), and record it below. Schedule the
-   backup (below).
+9. **Backups.** Create the bucket and grant the VM's service account access
+   ("Off-host copies", below), set `BACKUP_GCS_BUCKET` in `.env.prod`, take a
+   backup (`deploy/backup.sh`; it reports the upload), run the restore drill
+   from the bucket (`RESTORE_DRILL=1 BACKUP_SOURCE=gcs deploy/backup.sh`), and
+   record it below. Schedule the backup (below).
 
 ## Backups and the restore drill
 
@@ -317,13 +330,77 @@ Schedule it on the VM, as root, for example daily at 02:23 UTC:
 (`/opt/islestone/deploy-tools` is a checkout or copy of this repository's
 `deploy/` and `prisma/init-roles.sh`; the scripts run from anywhere.)
 
-**A backup on the VM's disk does not survive the loss of the VM.** Copying
-each dump off the host (a GCS bucket in the same project, encrypted, with its
-own retention) is open for the owner (`docs/HANDOFF.md`, the 1.8 step).
+### Off-host copies
 
-**The restore drill** (Hardening H1: "a restore performed once and
-documented"): `RESTORE_DRILL=1 deploy/backup.sh` (or `BACKUP_FILE=<path>`)
-creates the scratch database `islestone_restore_drill` in the same Postgres,
+A backup on the VM's disk does not survive the loss of the VM, so every kept
+dump is also uploaded to a private Cloud Storage bucket in the same project
+(owner decision 48): `gs://islestone-backups-hazel-design-419410/db/<file>`.
+`deploy/backup.sh` uploads with `gcloud storage cp`, as the VM's own service
+account (the metadata server's credentials; no key file exists). The bucket
+comes from `--bucket gs://NAME`, else `BACKUP_GCS_BUCKET` in the environment,
+else `BACKUP_GCS_BUCKET` in `.env.prod`. With none, the script warns and keeps
+the local copy only (`deploy/check-drift.sh` reports that as drift); with one,
+a failed upload fails the run (exit 1) and the local copy is kept.
+
+The bucket is versioned and has one lifecycle policy,
+`deploy/gcs/backup-lifecycle.json`: a live object is deleted 30 days after it
+was written, and a noncurrent version 30 days after it stopped being current.
+With versioning on, the first rule turns a dump noncurrent rather than
+erasing it, so a dump stays recoverable for about 60 days in all. The VM's
+account may create objects and read them (the drill), never delete or
+overwrite one: a compromised VM cannot destroy the off-host history.
+
+**One-time setup**, run by the orchestrator from a workstation signed in to
+`gcloud`, with the owner's approval. Nothing in this repository creates these.
+
+```bash
+PROJECT=hazel-design-419410
+BUCKET=gs://islestone-backups-hazel-design-419410
+
+# 1. The VM's service account, and the access scopes it runs with. A scope
+#    narrower than storage read-write (the GCE default is devstorage.read_only)
+#    blocks uploads whatever IAM grants; if the output lists neither
+#    .../auth/devstorage.read_write nor .../auth/cloud-platform, stop and ask
+#    the owner: changing scopes needs the VM stopped, and the VM also runs
+#    Agrent and Playerz.
+gcloud compute instances describe agrent --project "$PROJECT" --zone europe-west1-b \
+  --format='value(serviceAccounts[0].email)'
+gcloud compute instances describe agrent --project "$PROJECT" --zone europe-west1-b \
+  --format='value(serviceAccounts[0].scopes)'
+VM_SA=<the email printed above>
+
+# 2. The bucket: in the VM's region, uniform bucket-level access, public
+#    access prevented.
+gcloud storage buckets create "$BUCKET" --project "$PROJECT" --location europe-west1 \
+  --default-storage-class STANDARD --uniform-bucket-level-access --public-access-prevention
+
+# 3. Versioning and the 30-day lifecycle (the file is in this repository).
+gcloud storage buckets update "$BUCKET" --versioning
+gcloud storage buckets update "$BUCKET" --lifecycle-file deploy/gcs/backup-lifecycle.json
+
+# 4. The VM's account: create objects (the upload) and read them (the drill
+#    lists the bucket and downloads a dump). On this bucket only; no delete.
+gcloud storage buckets add-iam-policy-binding "$BUCKET" \
+  --member "serviceAccount:${VM_SA}" --role roles/storage.objectCreator
+gcloud storage buckets add-iam-policy-binding "$BUCKET" \
+  --member "serviceAccount:${VM_SA}" --role roles/storage.objectViewer
+
+# 5. Check.
+gcloud storage buckets describe "$BUCKET" \
+  --format='yaml(versioning,lifecycle_config,iam_configuration,public_access_prevention)'
+```
+
+Then, on the VM: `command -v gcloud` (the Google Cloud CLI is on Google's
+standard images; install it if not), set `BACKUP_GCS_BUCKET` in `.env.prod`,
+and run `deploy/backup.sh` once: it ends with `uploaded gs://…`.
+
+### The restore drill
+
+The drill (Hardening H1: "a restore performed once and documented"):
+`RESTORE_DRILL=1 deploy/backup.sh` restores the newest local dump (or
+`BACKUP_FILE=<path>`); with `BACKUP_SOURCE=gcs` it downloads the newest
+object under `gs://BUCKET/db/` instead (or `BACKUP_FILE=gs://…` names one),
+to a private temporary file removed when it ends. It creates the scratch database `islestone_restore_drill` in the same Postgres,
 restores the dump into it with `--exit-on-error`, prints the restored and live
 migration head, table, forced-RLS, policy and trigger counts and every table's
 row count side by side, checks that every audit entry's previous hash is in
@@ -339,6 +416,7 @@ $C stop app worker watchtower
 docker exec -i islestone-postgres psql -U islestone -d postgres -c 'DROP DATABASE islestone WITH (FORCE)'
 docker exec -i islestone-postgres psql -U islestone -d postgres -c 'CREATE DATABASE islestone OWNER islestone'
 docker exec -i islestone-postgres pg_restore -U islestone -d islestone --exit-on-error < backups/db/<file>.dump
+# (from the bucket: gcloud storage cp gs://islestone-backups-hazel-design-419410/db/<file>.dump backups/db/ first)
 $C up -d
 ```
 

@@ -14,8 +14,9 @@ a repository with one owner.
 1. **Pull request.** Every change to `main` is a pull request. `main` is
    protected: a pull request and the CI checks (`Lint`, `Typecheck`, `Test`,
    `Integration`, `Build`, `E2E`, `Licence`, `Shared UI`, `Audit`, `Image`)
-   are required. This is the last point at which a person or a check can stop
-   a change.
+   are required, as is `PR title` (the title is a Conventional Commit
+   subject; "Versioning" below). This is the last point at which a person or
+   a check can stop a change.
 2. **Release and publish.** `.github/workflows/release.yml` runs on the merge:
    semantic-release tags a version when the commit subjects call for one, and
    both images are built, scanned and pushed to GHCR (`:sha-<short>`,
@@ -112,12 +113,35 @@ orchestrating session the owner runs; neither approves its own change.
 
 ## Versioning
 
-semantic-release reads Conventional Commit subjects: `feat:` makes a minor
-release, `fix:` and `perf:` a patch, a `!` or a `BREAKING CHANGE:` footer a
-major. A squash merge's subject is the pull request's title, so the title
-decides. Other subjects (`docs:`, `test:`, `chore:`, and the repository's
-earlier `1.7: …` style) make no release; the images are still published as
-`:sha-<short>` and `:latest`.
+**Pull request titles follow Conventional Commits** (owner decision 51,
+2026-11-19). Pull requests are squash-merged with the title as the commit
+subject, and semantic-release reads those subjects on `main`:
+
+```
+type(scope)!: subject
+```
+
+| Type | Use | Release |
+|---|---|---|
+| `feat` | A capability users or operators can see | minor |
+| `fix` | A defect fixed | patch |
+| `perf` | Faster, same behaviour | patch |
+| `refactor` | Restructured, same behaviour | none |
+| `revert` | A previous change undone | none |
+| `docs` | Documentation only | none |
+| `test` | Tests only | none |
+| `build` | The build, the images, dependencies | none |
+| `ci` | Workflows | none |
+| `chore` | Anything else that ships no behaviour | none |
+| `style` | Formatting only | none |
+
+The scope is optional, lower case, and may name a sub-phase or an area
+(`feat(1.8): …`, `fix(deploy): …`). A `!` before the colon marks a breaking
+change and makes a major release. The whole title is at most 100 characters.
+The `PR title` check (`.github/workflows/pr-title.yml`, runs when a pull
+request is opened, edited or pushed to) fails a title that does not match
+`scripts/check-pr-title.mjs`. Titles before the rule (`1.7: …`) made no
+release; every merge still publishes `:sha-<short>` and `:latest`.
 
 ## Open questions
 

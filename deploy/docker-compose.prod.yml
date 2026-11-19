@@ -361,9 +361,8 @@ services:
     cpus: 0.25
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      # GHCR credentials: `docker login ghcr.io` on the host as root
-      # (docs/deployment.md, "First deploy").
-      - /root/.docker/config.json:/config.json:ro
+      # No registry credentials: the two GHCR packages are public (owner
+      # decision 49), so nothing that can read them is kept on the VM.
     environment:
       # Watchtower 1.7.1's Docker client pins an API version modern daemons
       # refuse; state a current one (inflect-compliance measured it).

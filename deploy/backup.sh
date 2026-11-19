@@ -1,23 +1,38 @@
 #!/usr/bin/env bash
 #
-# deploy/backup.sh — a pg_dump of Islestone's database, and the restore drill.
+# deploy/backup.sh — a pg_dump of Islestone's database, its off-host copy, and
+# the restore drill.
 #
 #   deploy/backup.sh                          take a backup (custom format) into
 #                                             /opt/islestone/backups/db, verify
-#                                             it lists, keep the newest BACKUP_KEEP
-#   RESTORE_DRILL=1 deploy/backup.sh          restore the newest backup (or
+#                                             it lists, upload it to the GCS
+#                                             bucket, keep the newest BACKUP_KEEP
+#   deploy/backup.sh --bucket gs://NAME       the same, naming the bucket
+#   RESTORE_DRILL=1 deploy/backup.sh          restore the newest local backup (or
 #                                             BACKUP_FILE) into a scratch database
 #                                             in the same Postgres, compare it with
 #                                             the live one, then drop it
+#   RESTORE_DRILL=1 BACKUP_SOURCE=gcs deploy/backup.sh
+#                                             the drill from the newest copy in the
+#                                             bucket (or BACKUP_FILE=gs://…)
 #
 # Run from a workstation (over IAP, as root on the VM) or on the VM with
 # ON_VM=1. The dump is taken inside islestone-postgres as the database
-# superuser, through its local socket: no password crosses a command line and
-# nothing reads .env.prod. Each file is mode 600 under a mode-700 directory.
+# superuser, through its local socket: no password crosses a command line.
+# Each file is mode 600 under a mode-700 directory.
 #
-# A backup on the VM's own disk does not survive the loss of the VM. Copying
-# it off the host is a step of the runbook (docs/deployment.md, "Backups and
-# the restore drill") until the owner picks a destination.
+# OFF-HOST COPY (owner decision 48, 2026-11-19). A backup on the VM's disk
+# does not survive the loss of the VM, so each kept dump is uploaded with
+# `gcloud storage cp`, as the VM's own service account (no key file), to
+# gs://BUCKET/db/<file>. The bucket is private, versioned and deletes old and
+# noncurrent objects after 30 days (deploy/gcs/backup-lifecycle.json); the
+# account may create objects and read them back for the drill, never delete
+# them (docs/deployment.md, "Off-host copies"). The bucket comes from
+# --bucket, else BACKUP_GCS_BUCKET in the environment, else BACKUP_GCS_BUCKET
+# in /opt/islestone/.env.prod (the one value this script reads from it). With
+# no bucket configured the upload is skipped with a warning and the local copy
+# still counts; a configured upload that fails is a failure (exit 1), the
+# local copy kept.
 #
 # The drill is what Hardening H1 asks for ("a restore performed once and
 # documented"): it proves a file restores into a working schema, with the
@@ -33,7 +48,19 @@ TAG=backup
 # shellcheck source=deploy/lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
+# --bucket gs://NAME (or NAME) sets BACKUP_GCS_BUCKET, so it is forwarded to
+# the VM like the environment variable.
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --bucket) BACKUP_GCS_BUCKET="${2:-}"; shift 2 ;;
+        --bucket=*) BACKUP_GCS_BUCKET="${1#--bucket=}"; shift ;;
+        *) fail "unknown argument: $1 (usage: deploy/backup.sh [--bucket gs://NAME])" ;;
+    esac
+done
+
 RESTORE_DRILL="${RESTORE_DRILL:-0}"
+BACKUP_SOURCE="${BACKUP_SOURCE:-local}"
+GCLOUD="${GCLOUD:-gcloud}"
 BACKUP_KEEP="${BACKUP_KEEP:-14}"
 BACKUP_DIR="${BACKUP_DIR:-${REMOTE_DIR}/backups/db}"
 PG_CONTAINER="${PG_CONTAINER:-islestone-postgres}"
@@ -42,9 +69,28 @@ PG_DB="${PG_DB:-islestone}"
 DRILL_DB="${DRILL_DB:-islestone_restore_drill}"
 
 if [ "${ON_VM:-0}" != "1" ]; then
-    run_on_vm backup.sh RESTORE_DRILL BACKUP_KEEP BACKUP_FILE
+    run_on_vm backup.sh RESTORE_DRILL BACKUP_KEEP BACKUP_FILE BACKUP_GCS_BUCKET BACKUP_SOURCE
     exit $?
 fi
+
+# The bucket, as a bare name: from the flag or the environment, else from
+# .env.prod. A malformed name is refused rather than guessed at.
+resolve_bucket() {
+    local bucket="${BACKUP_GCS_BUCKET:-}"
+    if [ -z "$bucket" ] && [ -r "$ENV_FILE" ]; then
+        env_value BACKUP_GCS_BUCKET
+        bucket="$ENV_VALUE"
+        ENV_VALUE=""
+    fi
+    bucket="${bucket#gs://}"
+    bucket="${bucket%/}"
+    if [ -n "$bucket" ] && ! [[ "$bucket" =~ ^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$ ]]; then
+        fail "BACKUP_GCS_BUCKET is not a bucket name: ${bucket}"
+    fi
+    BUCKET="$bucket"
+}
+BUCKET=""
+resolve_bucket
 
 psql_in() { "$DOCKER" exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 -X -q -At -U "$PG_USER" "$@"; }
 
@@ -63,6 +109,16 @@ if [ "$RESTORE_DRILL" != "1" ]; then
     mv "${file}.partial" "$file"
     chmod 600 "$file"
     log "kept ${file} ($(du -h "$file" | cut -f1), ${entries} tables with data)"
+    # The off-host copy, before local retention can remove anything.
+    if [ -z "$BUCKET" ]; then
+        warn "BACKUP_GCS_BUCKET is not configured: the backup stays on this VM only and does not survive its loss (docs/deployment.md, \"Off-host copies\")."
+    else
+        object="gs://${BUCKET}/db/$(basename "$file")"
+        if ! "$GCLOUD" storage cp --quiet "$file" "$object"; then
+            fail "the upload to ${object} failed; the local copy ${file} is kept. Check the VM's access to the bucket (docs/deployment.md, \"Off-host copies\")."
+        fi
+        log "uploaded ${object}"
+    fi
     # Retention: the newest BACKUP_KEEP files.
     ls -1t "${BACKUP_DIR}"/islestone-*.dump 2>/dev/null | tail -n +"$((BACKUP_KEEP + 1))" | while read -r old; do
         rm -f "$old"; log "removed ${old} (keeping ${BACKUP_KEEP})"
@@ -71,13 +127,39 @@ if [ "$RESTORE_DRILL" != "1" ]; then
 fi
 
 # ── Restore drill ──────────────────────────────────────────────────────────
-file="${BACKUP_FILE:-$(ls -1t "${BACKUP_DIR}"/islestone-*.dump 2>/dev/null | head -n 1 || true)}"
+# From the bucket: BACKUP_FILE=gs://… names one object; BACKUP_SOURCE=gcs takes
+# the newest under gs://BUCKET/db/ (the names carry a UTC timestamp, so the
+# greatest name is the newest). It is downloaded to a private temporary file
+# that is removed on exit.
+DOWNLOADED=""
+case "${BACKUP_FILE:-}" in
+    gs://*) source_object="$BACKUP_FILE" ;;
+    *) source_object="" ;;
+esac
+if [ -z "$source_object" ] && [ "$BACKUP_SOURCE" = "gcs" ]; then
+    [ -n "$BUCKET" ] || fail "BACKUP_SOURCE=gcs needs a bucket (--bucket, or BACKUP_GCS_BUCKET)."
+    source_object="$("$GCLOUD" storage ls "gs://${BUCKET}/db/" | grep -E '/islestone-[0-9TZ]+\.dump$' | sort | tail -n 1 || true)"
+    [ -n "$source_object" ] || fail "no backup in gs://${BUCKET}/db/."
+fi
+if [ -n "$source_object" ]; then
+    install -d -m 0700 "$BACKUP_DIR"
+    DOWNLOADED="$(umask 077; mktemp "${BACKUP_DIR}/drill-XXXXXX.dump")"
+    "$GCLOUD" storage cp --quiet "$source_object" "$DOWNLOADED" || fail "could not download ${source_object}."
+    file="$DOWNLOADED"
+    log "downloaded ${source_object} for the drill"
+else
+    file="${BACKUP_FILE:-$(ls -1t "${BACKUP_DIR}"/islestone-*.dump 2>/dev/null | head -n 1 || true)}"
+fi
 [ -n "$file" ] && [ -f "$file" ] || fail "no backup to restore in ${BACKUP_DIR}; take one first (deploy/backup.sh)."
-log "restore drill: ${file} into the scratch database ${DRILL_DB}"
+log "restore drill: ${source_object:-$file} into the scratch database ${DRILL_DB}"
 
-cleanup() { psql_in -d postgres -c "DROP DATABASE IF EXISTS ${DRILL_DB} WITH (FORCE)" >/dev/null 2>&1 || true; }
+drop_drill_db() { psql_in -d postgres -c "DROP DATABASE IF EXISTS ${DRILL_DB} WITH (FORCE)" >/dev/null 2>&1 || true; }
+cleanup() {
+    drop_drill_db
+    if [ -n "$DOWNLOADED" ]; then rm -f "$DOWNLOADED"; fi
+}
 trap cleanup EXIT
-cleanup
+drop_drill_db
 psql_in -d postgres -c "CREATE DATABASE ${DRILL_DB}"
 started="$(date +%s)"
 "$DOCKER" exec -i "$PG_CONTAINER" pg_restore -U "$PG_USER" -d "$DRILL_DB" --exit-on-error --no-owner < "$file" \

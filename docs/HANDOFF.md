@@ -58,6 +58,10 @@ porting maps now record them (next step 2); the last column says where.
 | 45 | Delivery is GHCR plus Watchtower: CI publishes `ghcr.io/rodnapamet/islestone` (and a worker image) on each merge to `main`, tagged `:latest`, the commit and semantic-release's version; a Watchtower scoped to Islestone's containers by label pulls `:latest`, as Agrent's scoped one does; migrations run in a one-shot `migrate` service that app and worker `depends_on` with `service_completed_successfully` (forward fix, never down-migrations); semantic-release versions `main`. Decided 2026-11-19, relayed. Applied: two images (`islestone`, `islestone-worker`), reasons in the `Dockerfile`; a start gate in both images (`scripts/wait-for-migrations.mjs`), because Watchtower ignores `depends_on`. | relayed | `.github/workflows/release.yml`; `.releaserc.json`; `Dockerfile`; `deploy/docker-compose.prod.yml` |
 | 46 | Islestone runs its own Postgres (pgvector, `prisma/init-roles.sh` for `app_user`), PgBouncer (transaction mode) and Redis (`noeviction`, a password), all on an internal `islestone_internal` network; only the app also joins `agrent_internal`. Every secret comes from `/opt/islestone/.env.prod` through `env_file` or `--env-file`, never inline, with `:?error` guards on the required ones (`DATA_ENCRYPTION_KEY`, `AUTH_SECRET`, `REDIS_URL`, and the Upstash pair or `RATE_LIMIT_MODE=memory`); memory limits sized to share the ~11 GB free. Decided 2026-11-19, relayed. Applied: `--env-file` only, each service naming its variables; 4 GB for the long-running services; the app connects as a non-superuser runtime role (`deploy/postgres/init-runtime-role.sh`), as `docs/rls-tenant-isolation.md` requires. | relayed | `deploy/docker-compose.prod.yml`; `deploy/.env.prod.example`; `tests/unit/deploy/compose-prod.test.ts` |
 | 47 | H1's security scans start report-only: a nightly OWASP ZAP baseline against the built app in CI and a Trivy CRITICAL/HIGH container scan on the image, both publishing SARIF, neither blocking yet, both carrying a dated note that they become blocking after two clean weeks, with a guard that fails once the date has passed and a scan is still non-blocking. Decided 2026-11-19, relayed. Applied: the date is 2026-12-03. | relayed | `.github/workflows/dast.yml`; `.github/workflows/ci.yml` (`Image`); `.github/workflows/release.yml`; `tests/guards/security-scan-deferral.test.ts` |
+| 48 | Off-host backups go to a private, versioned GCS bucket in project `hazel-design-419410` (e.g. `gs://islestone-backups-hazel-design-419410`), uniform access and public access prevention, with a 30-day delete rule on noncurrent and old objects. `deploy/backup.sh` uploads each dump with the VM's service account through `gcloud storage cp`, skipping with a clear warning when no bucket is configured; `BACKUP_GCS_BUCKET` comes from `.env.prod` or a flag; the restore drill can restore from the bucket. The one-time setup is documented as exact `gcloud` commands for the orchestrator to run with the owner's approval; nothing is created from this repository. Decided 2026-11-19, relayed. Applied. | relayed | `deploy/backup.sh`; `deploy/gcs/backup-lifecycle.json`; `docs/deployment.md` ("Off-host copies"); `tests/unit/deploy/backup-script.test.ts` |
+| 49 | The GHCR packages (`islestone`, `islestone-worker`) are public, set so after the first publish; no registry credential goes on the VM. Decided 2026-11-19, relayed. Applied: the `docker login` step and Watchtower's `config.json` mount are removed. | relayed | `deploy/docker-compose.prod.yml`; `docs/deployment.md`; `tests/unit/deploy/compose-prod.test.ts` |
+| 50 | Production uses `RATE_LIMIT_MODE=memory`: a single app container, so the limits are exact. Revisit when the app scales past one container. Decided 2026-11-19, relayed. Applied. | relayed | `deploy/.env.prod.example`; `docs/deployment.md` |
+| 51 | Pull request titles follow Conventional Commits from now on, so the squash-merge subject lets semantic-release cut versions; a CI check fails a title that does not. Decided 2026-11-19, relayed. Applied. | relayed | `.github/workflows/pr-title.yml`; `scripts/check-pr-title.mjs`; `CLAUDE.md` ("Delivery"); `docs/change-management-policy.md` ("Versioning") |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
@@ -451,14 +455,40 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    above; `caddy validate` and `docker compose config` run only on the VM,
    in `apply.sh`'s preflight.
    Manual steps, in order, for the owner and the orchestrator: `docs/deployment.md`,
-   "First deploy" (DNS; merge and the first publish; GHCR visibility or
-   `docker login` on the VM; the `Image` check in the `main` ruleset; Agrent's
-   Caddyfile import line and read-only mount, in Agrent's repository; Agrent's
-   and Playerz's Watchtowers scoped; `/opt/islestone/.env.prod`; preflight;
-   apply; checks; the first workspace; a backup and the H1 restore drill).
-   Open for the owner: where backups go off the VM (a GCS bucket is suggested);
-   GHCR package visibility (public, or a read token on the VM); Conventional
-   Commit pull-request titles, without which semantic-release makes no
-   version; whether the H1 "dependency audit blocking" item needs more than
-   CI's existing `Audit` job (it already fails on a moderate advisory);
-   Upstash or `memory` for production rate limits.
+   "First deploy" (DNS; merge and the first publish; both GHCR packages set
+   public; the `Image` and `PR title` checks in the `main` ruleset and squash
+   merges titled by the pull request; Agrent's Caddyfile import line and
+   read-only mount, in Agrent's repository; Agrent's and Playerz's Watchtowers
+   scoped; `/opt/islestone/.env.prod`; preflight; apply; checks; the first
+   workspace; the backup bucket's one-time `gcloud` setup, a backup and the H1
+   restore drill from the bucket).
+   Decided on review, 2026-11-19 (rows 48 to 51), and applied:
+   - Off-host backups go to a private, versioned GCS bucket in the project
+     (`gs://islestone-backups-hazel-design-419410`), with a 30-day delete rule
+     for old and noncurrent objects (`deploy/gcs/backup-lifecycle.json`).
+     `deploy/backup.sh` uploads each kept dump with `gcloud storage cp` as the
+     VM's service account (bucket from `--bucket`, `BACKUP_GCS_BUCKET` or
+     `.env.prod`; a warning and no upload when none is set, exit 1 when a
+     configured upload fails); `RESTORE_DRILL=1 BACKUP_SOURCE=gcs` restores
+     the newest object. The one-time setup is exact `gcloud` commands in
+     `docs/deployment.md`, "Off-host copies" (create, versioning, lifecycle,
+     `roles/storage.objectCreator` and `roles/storage.objectViewer` for the
+     VM's account on the bucket); nothing was created.
+     `tests/unit/deploy/backup-script.test.ts` runs the upload, skip, failure
+     and bucket-drill paths against stand-in `docker` and `gcloud`; the first
+     run found a real defect (the drill's early database drop also removed
+     the downloaded dump), now fixed. One point the setup must check before
+     granting: the VM's access scopes. The Compute Engine default is
+     `devstorage.read_only`, which blocks uploads whatever IAM grants, and
+     changing scopes needs the VM stopped (it also runs Agrent and Playerz);
+     the runbook says to stop and ask if the scopes are narrow.
+   - The GHCR packages are public: no registry credential on the VM; the
+     Watchtower `config.json` mount and the `docker login` step are gone.
+   - Production uses `RATE_LIMIT_MODE=memory` (one app container, so the
+     limits are exact; revisit when the app scales past one container).
+   - Pull request titles are Conventional Commits; the `PR title` workflow
+     (`scripts/check-pr-title.mjs`, tested in `tests/unit/pr-title.test.mjs`)
+     fails any other title.
+   Still open for the owner: whether the H1 "dependency audit blocking" item
+   needs more than CI's existing `Audit` job (it already fails on a moderate
+   advisory).

@@ -148,10 +148,19 @@ describe('secrets', () => {
         }
     });
 
-    it('lists exactly the interpolated names in deploy/.env.prod.example', () => {
+    it('lists exactly the interpolated names in deploy/.env.prod.example, plus the scripts\' own', () => {
         const example = fs.readFileSync(path.join(REPO, 'deploy/.env.prod.example'), 'utf8');
         const names = [...example.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1]).sort();
-        expect(names).toEqual([...interpolatedVariables(TEXT).keys()].sort());
+        // Read by deploy/backup.sh from .env.prod, never by Compose.
+        const scriptOnly = ['BACKUP_GCS_BUCKET'];
+        expect(names).toEqual([...interpolatedVariables(TEXT).keys(), ...scriptOnly].sort());
+        expect(TEXT).not.toContain('BACKUP_GCS_BUCKET');
+    });
+
+    it('states RATE_LIMIT_MODE=memory for production, with the reason (owner decision 50)', () => {
+        const example = fs.readFileSync(path.join(REPO, 'deploy/.env.prod.example'), 'utf8');
+        expect(example).toMatch(/^RATE_LIMIT_MODE=memory$/m);
+        expect(example).toMatch(/single app\n# container/);
     });
 });
 
@@ -262,6 +271,14 @@ describe('migrations and rollout', () => {
             WATCHTOWER_INCLUDE_STOPPED: 'true',
             WATCHTOWER_REVIVE_STOPPED: 'true',
         });
+    });
+
+    it('keeps no registry credentials on the VM: the GHCR packages are public (owner decision 49)', () => {
+        for (const [name, def] of Object.entries(compose.services)) {
+            const creds = (def.volumes ?? []).filter((v) => /\.docker\/config\.json|config\.json:/.test(v));
+            expect({ name, creds }).toEqual({ name, creds: [] });
+        }
+        expect(Object.keys(environmentOf(svc('watchtower'))).filter((k) => /REPO_(USER|PASS)|REGISTRY/.test(k))).toEqual([]);
     });
 
     it('runs the app, worker and migrate without privileges they never use', () => {

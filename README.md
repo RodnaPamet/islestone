@@ -47,6 +47,7 @@ For Playwright with a Chromium already on the machine, set `PW_CHROMIUM_PATH` to
 Every pull request, and every push to `main`, runs:
 
 - `CI` (`.github/workflows/ci.yml`): Lint, Audit (`npm audit --omit=dev --audit-level=moderate`), Typecheck, Test, Licence, Shared UI (the `packages/ui` mirror against its manifest and upstream), Build, Image (both container images, built and scanned, never pushed) and E2E.
+- `PR title` (`.github/workflows/pr-title.yml`, pull requests only): the title is a Conventional Commit subject, which becomes the squash commit semantic-release reads.
 - `Release` (`.github/workflows/release.yml`, pushes to `main` only): semantic-release, then the images published to GHCR.
 - `DAST` (`.github/workflows/dast.yml`, nightly): an OWASP ZAP baseline scan of the built app, report-only until 2026-12-03.
 - `CodeQL` (`.github/workflows/codeql.yml`): the `security-extended` queries over JavaScript/TypeScript and the workflow files. It also runs weekly.
