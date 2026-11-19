@@ -36,28 +36,76 @@ export interface EmailTemplateResult {
 
 // ─── Work item assigned ───
 
-export interface WorkItemAssignedPayload {
+/** One work item in an assignment mail. */
+export interface AssignedWorkItemLine {
     workItemTitle: string;
     workItemKey?: string | null;
+    /** The item's type row's name, rendered as given ("assigned you a Bug"). */
+    workItemTypeName?: string | null;
+}
+
+/** One item assigned (the single mail). */
+export interface WorkItemAssignedSinglePayload extends AssignedWorkItemLine {
     assigneeName: string;
     assignerName?: string;
     /**
      * The item's path in the app (`/t/<slug>/…`). Sub-phase 2.3 owns the
-     * route and its `workItemPath` helper; until then the caller names it.
+     * route; the caller builds it with `workItemPath`.
      */
     linkPath: string;
 }
 
+/**
+ * Several items handed over by one bulk assign (the digest): one mail for
+ * everything the action newly gave the assignee (inflect-compliance #4278).
+ */
+export interface WorkItemAssignedDigestPayload {
+    items: AssignedWorkItemLine[];
+    assigneeName: string;
+    assignerName?: string;
+    /** The workspace's My Work page, `/t/<slug>/my-work`. */
+    linkPath: string;
+}
+
+export type WorkItemAssignedPayload = WorkItemAssignedSinglePayload | WorkItemAssignedDigestPayload;
+
+function lineText(line: AssignedWorkItemLine): string {
+    const label = workItemLabel(line);
+    return line.workItemTypeName ? `${label} (${line.workItemTypeName})` : label;
+}
+
 export async function buildWorkItemAssignedEmail(payload: WorkItemAssignedPayload): Promise<EmailTemplateResult> {
     const link = appLink(payload.linkPath);
+    if ('items' in payload) {
+        const element = createElement(WorkItemAssignedEmail, { ...payload, link });
+        const lines = payload.items.map((i) => `  ${lineText(i)}`);
+        return {
+            subject: `${payload.items.length} work items assigned to you`,
+            bodyText: [
+                `Hi ${payload.assigneeName},`,
+                '',
+                payload.assignerName
+                    ? `${payload.assignerName} assigned you ${payload.items.length} work items:`
+                    : `You were assigned ${payload.items.length} work items:`,
+                '',
+                ...lines,
+                '',
+                `Open My Work: ${link}`,
+                '',
+                `— ${PRODUCT_NAME}`,
+            ].join('\n'),
+            bodyHtml: await render(element),
+        };
+    }
     const label = workItemLabel(payload);
     const element = createElement(WorkItemAssignedEmail, { ...payload, link });
+    const what = payload.workItemTypeName ? `a ${payload.workItemTypeName}` : 'a work item';
     return {
         subject: `Assigned to you: ${label}`,
         bodyText: [
             `Hi ${payload.assigneeName},`,
             '',
-            payload.assignerName ? `${payload.assignerName} assigned you a work item:` : 'You were assigned a work item:',
+            payload.assignerName ? `${payload.assignerName} assigned you ${what}:` : `You were assigned ${what}:`,
             '',
             `  ${label}`,
             '',

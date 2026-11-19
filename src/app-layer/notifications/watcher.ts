@@ -3,7 +3,7 @@
  * `WorkItemWatcher`).
  *
  * Channel decision — BELL, not per-event email. A watched item can take many
- * comments and status changes in a day; an email per event to every watcher
+ * comments and state changes in a day; an email per event to every watcher
  * is the notification fatigue that makes people stop watching (GitHub and
  * Linear route watched-item activity to the in-app feed, not the inbox).
  * Email stays reserved for direct assignment — a stronger, lower-frequency
@@ -18,11 +18,13 @@
  *     AFTER the item write commits, so a notification failure never rolls
  *     back the item.
  *
- * No caller until sub-phase 2.2 (comments, status changes, assignment).
+ * Callers: the work-item usecases (comments, state changes, assignment and
+ * material edits), sub-phase 2.2.
  *
  * Copied from inflect-compliance `src/app-layer/notifications/watcher.ts` at
  * 5528464fc54a8681956f3b9ce23ca9c075f0420e: task fields renamed to work-item
- * fields, `TASK_WATCH_UPDATE` → `WORK_ITEM_WATCH_UPDATE`, the link supplied
+ * fields, `TASK_WATCH_UPDATE` → `WORK_ITEM_WATCH_UPDATE`, `status_changed` →
+ * `state_changed` (ADR 0006 keeps "status" for fixed enums; sub-phase 2.2), the link supplied
  * by the caller until 2.3 owns the route, the mute check added, and the bell
  * text is `body`.
  */
@@ -33,13 +35,13 @@ import { insertedNotificationIds } from './inserted-ids';
 import { isInAppTypeEnabled } from './settings';
 
 /**
- * `updated` covers MATERIAL field edits (due-date reschedule, reviewer
- * reassignment) — the changes a watcher needs to know about that aren't a
- * comment, status move, or assignment. Cosmetic edits (title/description
+ * `updated` covers MATERIAL field edits (due-date change, start-date change,
+ * re-parent, move) — the changes a watcher needs to know about that aren't a
+ * comment, state move, or assignment. Cosmetic edits (title/description
  * wording) deliberately do NOT notify: a bell for every keystroke-level save
  * trains people to ignore the bell.
  */
-export type WatcherActivityKind = 'commented' | 'status_changed' | 'assigned' | 'updated';
+export type WatcherActivityKind = 'commented' | 'state_changed' | 'assigned' | 'updated';
 
 export interface WatcherActivity {
     tenantId: string;
@@ -54,12 +56,12 @@ export interface WatcherActivity {
     kind: WatcherActivityKind;
     /**
      * Distinguishes genuinely different events while deduping retries of
-     * the SAME event — e.g. the comment id, `${from}->${to}` for a status
+     * the SAME event — e.g. the comment id, `${from}->${to}` for a state
      * change, or the new assignee id. Without it, two comments in a day
      * would collapse to one bell entry (too coarse for activity).
      */
     discriminator: string;
-    /** Short human phrase for the body, e.g. "status OPEN → IN_PROGRESS". */
+    /** Short human phrase for the body, e.g. "state Todo → In progress" (state names). */
     detail: string;
 }
 
