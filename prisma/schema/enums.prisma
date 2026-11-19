@@ -54,9 +54,9 @@ enum MfaType {
   TOTP
 }
 
-/// Organization audit actions (sub-phase 1.4 creates the enum because it
-/// lands before 1.5; 1.5 adds the `OrgAuditLog` table that stores them).
-/// The nine values of docs/porting/maps/1.5.md.
+/// Organization audit actions, stored by `OrgAuditLog` (sub-phase 1.5).
+/// Sub-phase 1.4 created the enum because it landed first. The nine values
+/// of docs/porting/maps/1.5.md.
 enum OrgAuditAction {
   ORG_MEMBER_ADDED
   ORG_MEMBER_REMOVED
@@ -67,4 +67,12 @@ enum OrgAuditAction {
   ORG_INVITE_REDEEMED
   ORG_INVITE_REVOKED
   ORG_AUTHZ_DENIED
+}
+
+/// The state of an `AuditOutbox` row (sub-phase 1.5): queued, drained onto
+/// the hash chain, or given up on after the drain's attempts.
+enum AuditOutboxStatus {
+  PENDING
+  APPLIED
+  FAILED
 }

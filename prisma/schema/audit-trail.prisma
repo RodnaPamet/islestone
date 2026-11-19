@@ -1,0 +1,131 @@
+// The audit trail: the hash-chained, immutable event logs (sub-phase 1.5,
+// docs/audit-trail.md). Copied in shape from inflect-compliance
+// `prisma/schema/audit-trail.prisma` at
+// 5528464fc54a8681956f3b9ce23ca9c075f0420e.
+//
+//   AuditLog     per-workspace chain, tenant axis, Class A RLS
+//   OrgAuditLog  per-organization chain, global client, no RLS
+//   AuditOutbox  the durable fallback for an entry the chain could not take,
+//                tenant axis, Class A RLS
+//
+// Policy:
+//   * Append-only. Every write goes through `appendAuditEntry`
+//     (src/lib/audit/audit-writer.ts) or `appendOrgAuditEntry`; guard tests
+//     refuse any other writer, and DB triggers refuse UPDATE and DELETE. The
+//     one admitted UPDATE on AuditLog is pseudonymisation: `userId` from a
+//     value to NULL with every other column unchanged (the erasure writer,
+//     sub-phase 8.3).
+//   * Hash-chained: each row's hash covers the previous row's hash.
+//     `HASH_FIELDS` and the canonical JSON are the wire format; a schema
+//     change here must preserve the chain layout.
+//   * `app_user` holds SELECT and INSERT only (no UPDATE, DELETE or
+//     TRUNCATE) on both logs.
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  tenantId     String
+  userId       String?
+  entity       String
+  entityId     String
+  action       String
+  details      String?
+  createdAt    DateTime @default(now())
+  metadataJson Json?
+  recordIds    Json?
+  requestId    String?
+  diffJson     Json?
+  actorType    String   @default("USER")
+  detailsJson  Json?
+  entryHash    String?
+  previousHash String?
+  version      Int      @default(1)
+
+  /// RESTRICT: a workspace with audit rows cannot be hard-deleted. Sub-phase
+  /// 8.3's purge retains the trail and a tombstone.
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  /// SET NULL: the pseudonymisation shape the immutability trigger admits.
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  /// The composite an FK from a tenant-scoped child references, so a
+  /// cross-tenant reference is unrepresentable rather than merely filtered.
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entity])
+  @@index([tenantId, action])
+  @@index([tenantId, entryHash])
+  @@index([userId])
+}
+
+/// The organization-level ledger of privilege changes. Not tenant-scoped,
+/// so it is not in AuditLog: each organization has its own chain, anchored
+/// on its own advisory lock, and org rows are written and read with the
+/// global client.
+model OrgAuditLog {
+  id             String         @id @default(cuid())
+  organizationId String
+  actorUserId    String?
+  actorType      String         @default("USER")
+  action         OrgAuditAction
+  /// The user the action was done to (inflect-compliance's `targetUserId`;
+  /// ADR 0006 bans "Target" in the schema). The hash payload keeps the
+  /// source's key, `targetUserId`.
+  subjectUserId  String?
+  detailsJson    Json?
+  requestId      String?
+  occurredAt     DateTime       @default(now())
+  entryHash      String
+  previousHash   String?
+  version        Int            @default(1)
+
+  /// RESTRICT, not inflect-compliance's CASCADE: a cascade delete fires the
+  /// immutability trigger, so an organization with audit rows could never be
+  /// deleted anyway. RESTRICT makes that refusal explicit; 8.3 decides
+  /// organization deletion.
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// RESTRICT: both user columns are hashed into the chain and the trigger
+  /// refuses every UPDATE, so a SET NULL could only fail mid-delete.
+  actor        User?        @relation("OrgAuditLogActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  subject      User?        @relation("OrgAuditLogSubject", fields: [subjectUserId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, occurredAt])
+  @@index([organizationId, action])
+  @@index([organizationId, entryHash])
+  @@index([actorUserId])
+  @@index([subjectUserId])
+}
+
+/// The audit trail's durable fallback. A caller that cannot reach the hash
+/// chain (`appendAuditEntryOrQueue`) writes the entry here instead; a drain
+/// (sub-phase 1.5b, after 1.6's job runner) moves it onto the chain. Until the
+/// drain lands, queued rows accumulate; they are not lost.
+model AuditOutbox {
+  id             String            @id @default(cuid())
+  tenantId       String
+  /// The `AppendAuditInput` exactly as the caller built it.
+  payloadJson    Json
+  /// When the EVENT happened, which the drain carries into the entry's
+  /// `detailsJson.occurredAt` (the chain stamps its own `createdAt`).
+  occurredAt     DateTime
+  /// Denormalised from the payload, so "how many AUTHZ_DENIED are stuck?"
+  /// needs no JSON parse.
+  action         String
+  status         AuditOutboxStatus @default(PENDING)
+  attempts       Int               @default(0)
+  lastError      String?
+  nextAttemptAt  DateTime          @default(now())
+  createdAt      DateTime          @default(now())
+  appliedAt      DateTime?
+  /// The `AuditLog.id` this became, once drained.
+  appliedAuditId String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  /// No dedupe key, deliberately: two identical denials a second apart are
+  /// two real security events, and failing to record one is worse than
+  /// recording both.
+  @@index([status, nextAttemptAt])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, action, status])
+}

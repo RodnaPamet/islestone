@@ -9,9 +9,7 @@
  *   - `authenticateWithPassword` chokepoint (src/lib/auth/credentials.ts)
  *   - `issueEmailVerification` + `consumeEmailVerification`
  *   - per-identifier rate limit (memory fallback)
- *   - security-event emission (appendAuditEntry; until sub-phase 1.5 adds
- *     the AuditLog table, the entries the stub receives are recorded by
- *     tests/helpers/audit-recorder.ts and asserted on instead of rows)
+ *   - security-event emission (appendAuditEntry → real AuditLog row)
  *
  * Scenarios (mapped to the prompt's success criteria):
  *   1. verified successful login
@@ -23,10 +21,8 @@
  * rate-limit + env state between cases so each scenario is isolated.
  */
 
-jest.mock('@/lib/audit', () => jest.requireActual('../helpers/audit-recorder').auditModuleMock());
-
 import { DB_AVAILABLE } from './db-helper';
-import { auditEntries } from '../helpers/audit-recorder';
+import { deleteAuditRowsForTenants, deleteAuditRowsForUsers } from '../helpers/audit-cleanup';
 import { prismaTestClient } from '../helpers/db';
 import type { PrismaClient } from '@prisma/client';
 
@@ -90,8 +86,12 @@ describeFn('Credentials path — end-to-end', () => {
     afterAll(async () => {
         await prisma.verificationToken.deleteMany({ where: { identifier: email } });
         await prisma.tenantMembership.deleteMany({ where: { userId } });
-        await prisma.user.delete({ where: { id: userId } }).catch(() => {});
-        await prisma.tenant.delete({ where: { id: tenantId } }).catch(() => {});
+        // Audit rows block both deletes (ON DELETE RESTRICT and the
+        // immutability trigger), so they go first.
+        await deleteAuditRowsForTenants(prisma, tenantId);
+        await deleteAuditRowsForUsers(prisma, userId);
+        await prisma.user.delete({ where: { id: userId } });
+        await prisma.tenant.delete({ where: { id: tenantId } });
         await prisma.$disconnect();
     });
 
@@ -134,8 +134,12 @@ describeFn('Credentials path — end-to-end', () => {
             name: 'CE2E User',
         });
 
-        // Audit trail carries an AUTH_LOGIN_SUCCESS entry for this user
-        const audits = auditEntries({ userId, action: 'AUTH_LOGIN_SUCCESS' }).slice(-1);
+        // Audit trail carries an AUTH_LOGIN_SUCCESS row for this user
+        const audits = await prisma.auditLog.findMany({
+            where: { userId, action: 'AUTH_LOGIN_SUCCESS' },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+        });
         expect(audits.length).toBe(1);
         // Plaintext password must never appear in the audit row
         expect(JSON.stringify(audits[0])).not.toContain(password);
@@ -159,7 +163,11 @@ describeFn('Credentials path — end-to-end', () => {
         expect(result).toEqual({ ok: false, reason: 'email_not_verified' });
 
         // Audit row uses the dedicated verification-required action
-        const audits = auditEntries({ userId, action: 'AUTH_LOGIN_EMAIL_VERIFICATION_REQUIRED' }).slice(-1);
+        const audits = await prisma.auditLog.findMany({
+            where: { userId, action: 'AUTH_LOGIN_EMAIL_VERIFICATION_REQUIRED' },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+        });
         expect(audits.length).toBe(1);
     });
 
@@ -172,7 +180,11 @@ describeFn('Credentials path — end-to-end', () => {
         });
         expect(result).toEqual({ ok: false, reason: 'credentials_invalid' });
 
-        const audits = auditEntries({ userId, action: 'AUTH_LOGIN_FAILURE' }).slice(-1);
+        const audits = await prisma.auditLog.findMany({
+            where: { userId, action: 'AUTH_LOGIN_FAILURE' },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+        });
         expect(audits.length).toBe(1);
         expect(JSON.stringify(audits[0])).not.toContain('this-is-not-the-password');
         // Plaintext email also never leaks to audit details (only the hash)
@@ -212,7 +224,11 @@ describeFn('Credentials path — end-to-end', () => {
             expect(blocked.retryAfterSeconds).toBeGreaterThan(0);
         }
 
-        const audits = auditEntries({ userId, action: 'AUTH_LOGIN_RATE_LIMITED' }).slice(-1);
+        const audits = await prisma.auditLog.findMany({
+            where: { userId, action: 'AUTH_LOGIN_RATE_LIMITED' },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+        });
         expect(audits.length).toBe(1);
 
         // Reset the bucket (simulating the window elapsing) — next real

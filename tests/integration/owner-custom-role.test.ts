@@ -24,15 +24,11 @@
  * `20261119130000_auth_and_roles`, validated, so the parent's NOT VALID
  * branch for pre-existing offending rows does not exist here and its replay
  * test is not ported; the legacy-row case adds the CHECK back with the
- * migration's own statement. Audit rows are the entries the 1.4 audit stub
- * received (tests/helpers/audit-recorder.ts) until 1.5 adds the table.
+ * migration's own statement. Audit assertions read real `AuditLog` rows.
  */
 import { randomBytes } from 'crypto';
 
-jest.mock('@/lib/audit', () => jest.requireActual('../helpers/audit-recorder').auditModuleMock());
-
 import { DB_AVAILABLE } from './db-helper';
-import { auditEntries } from '../helpers/audit-recorder';
 import { createTenantWithOwner } from '../helpers/tenant-fixture';
 import { prismaTestClient } from '../helpers/db';
 import { makeRequestContext } from '../helpers/make-context';
@@ -212,15 +208,17 @@ describeFn('an OWNER never carries a custom role (real DB, two tenants)', () => 
         });
         expect(await stateOf(secondOwner.id)).toMatchObject({ role: 'OWNER', customRoleId: null });
         expect(
-            auditEntries({ tenantId: a.tenantId, entityId: secondOwner.id, action: 'MEMBER_CUSTOM_ROLE_CHANGED' }),
-        ).toHaveLength(0);
+            await prisma.auditLog.count({
+                where: { tenantId: a.tenantId, entityId: secondOwner.id, action: 'MEMBER_CUSTOM_ROLE_CHANGED' },
+            }),
+        ).toBe(0);
 
         // Tenant A's OWNER cannot reach tenant B's OWNER, with A's role or B's.
         for (const roleId of [a.customRoleId, b.customRoleId]) {
             await expect(assignCustomRole(a.ownerCtx, ownerInB.id, roleId)).rejects.toThrow(/not found/i);
         }
         expect(await stateOf(ownerInB.id)).toMatchObject({ role: 'OWNER', customRoleId: null });
-        expect(auditEntries({ tenantId: b.tenantId, entityId: ownerInB.id })).toHaveLength(0);
+        expect(await prisma.auditLog.count({ where: { tenantId: b.tenantId, entityId: ownerInB.id } })).toBe(0);
     });
 
     it('promoting a member who carries a custom role to OWNER is refused on the members page until it is removed; B is not held back', async () => {
@@ -321,12 +319,11 @@ describeFn('an OWNER never carries a custom role (real DB, two tenants)', () => 
 
             await assignCustomRole(a.ownerCtx, legacyOwner.id, null);
             expect(await stateOf(legacyOwner.id)).toMatchObject({ role: 'OWNER', customRoleId: null });
-            const audit = auditEntries({
-                tenantId: a.tenantId,
-                entityId: legacyOwner.id,
-                action: 'MEMBER_CUSTOM_ROLE_CHANGED',
+            const audit = await prisma.auditLog.findMany({
+                where: { tenantId: a.tenantId, entityId: legacyOwner.id, action: 'MEMBER_CUSTOM_ROLE_CHANGED' },
+                select: { userId: true },
             });
-            expect(audit.map((e) => e.userId)).toEqual([a.ownerUserId]);
+            expect(audit).toEqual([{ userId: a.ownerUserId }]);
         } finally {
             await prisma.$executeRawUnsafe(
                 `UPDATE "TenantMembership" SET "customRoleId" = NULL WHERE "tenantId" = $1 AND role = 'OWNER'`,

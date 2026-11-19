@@ -22,7 +22,7 @@ const KEY_INFO = 'mfa-totp-encryption';
  */
 function deriveKey(authSecret: string): Buffer {
     // Use HKDF to derive a proper encryption key from AUTH_SECRET
-    const salt = Buffer.from('inflect-mfa-salt', 'utf8');
+    const salt = Buffer.from('islestone-mfa-salt', 'utf8');
     const ikm = Buffer.from(authSecret, 'utf8');
     const info = Buffer.from(KEY_INFO, 'utf8');
 
@@ -101,7 +101,7 @@ export function generateTotpSecret(): string {
  * @param email User's email address (used as account label)
  * @param issuer Application name shown in authenticator app
  */
-export function generateTotpUri(secret: string, email: string, issuer: string = 'Inflect'): string {
+export function generateTotpUri(secret: string, email: string, issuer: string = 'Islestone'): string {
     const encodedIssuer = encodeURIComponent(issuer);
     const encodedEmail = encodeURIComponent(email);
     return `otpauth://totp/${encodedIssuer}:${encodedEmail}?secret=${secret}&issuer=${encodedIssuer}&algorithm=SHA1&digits=6&period=30`;

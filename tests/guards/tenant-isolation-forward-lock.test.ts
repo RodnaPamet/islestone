@@ -32,6 +32,8 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     TenantSecuritySettings: 'tests/integration/auth-tables-isolation.test.ts',
     TenantInvite: 'tests/integration/auth-tables-isolation.test.ts',
     TenantCustomRole: 'tests/integration/auth-tables-isolation.test.ts',
+    AuditLog: 'tests/integration/audit-tables-isolation.test.ts',
+    AuditOutbox: 'tests/integration/audit-tables-isolation.test.ts',
 };
 
 /** Models proven only structurally, pending a two-tenant test. Empty, and should stay so. */

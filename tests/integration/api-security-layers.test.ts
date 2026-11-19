@@ -56,6 +56,7 @@ afterAll(() => {
 import { NextRequest, NextResponse } from 'next/server';
 import { DB_AVAILABLE } from './db-helper';
 import { prismaTestClient } from '../helpers/db';
+import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import type { PrismaClient } from '@prisma/client';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import {
@@ -139,6 +140,8 @@ describeFn('Epic A — tenant isolation + rate limiting + brute-force protection
             await prisma.tenantCustomRole.deleteMany({
                 where: { tenantId: { in: [tenantA, tenantB] } },
             });
+            // Audit rows block the tenant delete (RESTRICT); clear them first.
+            await deleteAuditRowsForTenants(prisma, [tenantA, tenantB]);
             await prisma.tenant.deleteMany({
                 where: { id: { in: [tenantA, tenantB] } },
             });

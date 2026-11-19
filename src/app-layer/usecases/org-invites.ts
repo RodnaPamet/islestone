@@ -31,7 +31,7 @@ import { OrgAuditAction } from '@prisma/client';
 import type { OrgContext } from '@/app-layer/types';
 import { logger } from '@/lib/observability/logger';
 import { prisma } from '@/lib/prisma';
-import { lookupEmail } from '@/lib/auth/email-lookup';
+import { hashForLookup } from '@/lib/security/encryption';
 import { appendOrgAuditEntry } from '@/lib/audit/org-audit-writer';
 import { provisionOrgAdminToTenants, type ProvisionResult } from './org-provisioning';
 import type { InviteRefusal } from '@/lib/invite-refusals';
@@ -108,7 +108,7 @@ export async function createOrgInviteToken(
 
     // Guard: reject if the user already has an OrgMembership.
     const existingUser = await prisma.user.findUnique({
-        where: { email: lookupEmail(normalizedEmail) },
+        where: { emailHash: hashForLookup(normalizedEmail) },
         select: { id: true },
     });
     if (existingUser) {

@@ -6,7 +6,7 @@ Islestone is an AI-enabled project-management SaaS: one work-item table with man
 
 ## Prerequisites
 
-- **Node.js 24.** `.nvmrc` pins it (`nvm use`). `package.json` accepts `>=22.12 <25` so a contributor on Node 22 LTS can work, but CI and production run Node 24, and `.npmrc` sets `engine-strict` so npm refuses anything outside that range.
+- **Node.js 24.** `.nvmrc` pins it (`nvm use`). `package.json` accepts `>=22.19 <25` (undici 8, which `safeFetch` pins, needs 22.19) so a contributor on Node 22 LTS can work, but CI and production run Node 24, and `.npmrc` sets `engine-strict` so npm refuses anything outside that range.
 - **npm 10** or later (ships with Node).
 - **Docker with Compose**, for the local Postgres, PgBouncer and Redis. Nothing in the skeleton connects to them yet.
 

@@ -2,8 +2,7 @@
  * Org invite lifecycle (integration).
  *
  * Copied from inflect-compliance at 5528464fc54a8681956f3b9ce23ca9c075f0420e.
- * Until sub-phase 1.5 adds `OrgAuditLog`, the audit assertions read the
- * entries the org audit writer received (tests/helpers/audit-recorder.ts).
+ * The audit assertions read real `OrgAuditLog` rows and verify the chain.
  *
  * Real Postgres. Skipped if no DB is available. Exercises:
  *   ✅ createOrgInviteToken writes the row + emits ORG_INVITE_CREATED audit
@@ -14,10 +13,6 @@
  *   ✅ Successful redemption creates OrgMembership + emits 2-3 audit rows
  *   ✅ revokeOrgInvite + ORG_INVITE_REVOKED audit
  */
-jest.mock('@/lib/audit/org-audit-writer', () =>
-    jest.requireActual('../helpers/audit-recorder').orgAuditModuleMock(),
-);
-
 import { DB_AVAILABLE } from './db-helper';
 import { prismaTestClient } from '../helpers/db';
 import type { PrismaClient } from '@prisma/client';
@@ -30,7 +25,8 @@ import {
 import type { OrgContext } from '@/app-layer/types';
 import { lookupEmail } from '@/lib/auth/email-lookup';
 import { getOrgPermissions } from '@/lib/permissions';
-import { orgAuditEntries } from '../helpers/audit-recorder';
+import { verifyOrgAuditChain } from '@/lib/audit/org-audit-writer';
+import { deleteOrgAuditRowsForOrganizations } from '../helpers/audit-cleanup';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -77,11 +73,12 @@ describeFn('Epic D — org invite lifecycle (integration)', () => {
     });
 
     afterAll(async () => {
-        // No org audit rows to clean up until sub-phase 1.5 adds the table
-        // (tests/helpers/audit-recorder.ts records the entries instead). The
-        // OrgInvite / OrgMembership deletes keep the replica-mode transaction,
-        // which skips the last-owner trigger.
+        // Org audit rows go through tests/helpers/audit-cleanup.ts, the only
+        // module allowed to disable the immutability trigger. The OrgInvite /
+        // OrgMembership deletes keep the replica-mode transaction, which skips
+        // the last-owner trigger.
         try {
+            await deleteOrgAuditRowsForOrganizations(prisma, organizationId);
             await prisma.$transaction(async (tx) => {
                 await tx.$executeRawUnsafe(`SET LOCAL session_replication_role = 'replica'`);
                 await tx.$executeRawUnsafe(
@@ -117,9 +114,13 @@ describeFn('Epic D — org invite lifecycle (integration)', () => {
         expect(result.invite.role).toBe('ORG_READER');
         expect(result.url).toMatch(/^\/invite\/org\/[A-Za-z0-9_-]+$/);
 
-        const audit = orgAuditEntries({ organizationId, action: 'ORG_INVITE_CREATED' }).at(-1);
-        expect(audit).toBeDefined();
+        const audit = await prisma.orgAuditLog.findFirst({
+            where: { organizationId, action: 'ORG_INVITE_CREATED' },
+            orderBy: { occurredAt: 'desc' },
+        });
+        expect(audit).not.toBeNull();
         expect(audit?.actorUserId).toBe(inviterId);
+        expect((await verifyOrgAuditChain(organizationId, prisma)).valid).toBe(true);
     });
 
     // ── previewOrgInviteByToken anti-enumeration ──────────────────
@@ -214,9 +215,14 @@ describeFn('Epic D — org invite lifecycle (integration)', () => {
         });
         expect(after?.revokedAt).not.toBeNull();
 
-        const audit = orgAuditEntries({ organizationId, action: 'ORG_INVITE_REVOKED' }).find(
-            (e) => (e.detailsJson as { inviteId?: string } | undefined)?.inviteId === inv.invite.id,
-        );
-        expect(audit).toBeDefined();
+        const audit = await prisma.orgAuditLog.findFirst({
+            where: {
+                organizationId,
+                action: 'ORG_INVITE_REVOKED',
+                detailsJson: { path: ['inviteId'], equals: inv.invite.id },
+            },
+        });
+        expect(audit).not.toBeNull();
+        expect((await verifyOrgAuditChain(organizationId, prisma)).valid).toBe(true);
     });
 });

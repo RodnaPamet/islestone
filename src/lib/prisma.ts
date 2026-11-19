@@ -4,15 +4,405 @@ import { PrismaClient } from '@prisma/client';
 import { env } from '@/env';
 import { logger as auditMiddlewareLogger } from '@/lib/observability/logger';
 
+import { getAuditContext } from './audit-context';
+import { extractChangedFields, redactSensitiveFields } from './audit-redact';
+// A namespace import, dereferenced inside the audit extension's handler:
+// audit-writer.ts imports this module back (`import * as prismaModule`), and
+// the cycle resolves only because neither side reads the other at module
+// init. inflect-compliance used a runtime `require` here; Islestone's lint
+// refuses `require`, and the namespace binding gives the same deferral.
+import * as auditWriterModule from './audit/audit-writer';
 import { DB_POOL_CONNECTION_TIMEOUT_MS, DB_POOL_MAX } from './db/concurrency-limits';
+import { withEncryptionExtension } from './db/encryption-middleware';
 import { withRlsTripwireExtension } from './db/rls-middleware';
+import { ENCRYPTED_FIELDS } from './security/encrypted-fields';
+import { withPiiEncryptionExtension } from './security/pii-middleware';
 
 // Slow-query threshold. Typical Prisma p99 sits at 5-20ms; 50ms is the
 // "this query is suspicious / worth a look" line, not a per-request SLO.
 // Tune in one place. See docs/implementation-notes/2026-06-26-perf-baseline.md.
 const SLOW_QUERY_THRESHOLD_MS = 50;
 
+// ─── Write actions to intercept ───
+const WRITE_ACTIONS = new Set([
+    'create',
+    'createMany',
+    'update',
+    'updateMany',
+    'delete',
+    'deleteMany',
+    'upsert',
+]);
 
+// Actions that have before/after diff potential
+const DIFF_ACTIONS = new Set(['update', 'upsert']);
+
+// ─── Models to exclude from audit logging ───
+const EXCLUDED_MODELS = new Set([
+    'AuditLog', // Prevent infinite recursion
+]);
+
+/**
+ * Simple cuid-like ID generator for audit log entries.
+ */
+
+/**
+ * Build diff JSON for update/upsert operations.
+ *
+ * ═══ WHAT `changedFields` USED TO MEAN, AND WHY IT HAD TO CHANGE ═══
+ *
+ * It was `Object.keys(payload)` — the keys the CALLER SENT, never a
+ * comparison. The paragraph this replaces was honest about choosing that and
+ * gave three reasons for not reading the prior row: added latency, the row may
+ * have moved on, and "for multi-tenant RLS contexts, a separate query might
+ * fail". The third is the real one and it was right: a read issued from a
+ * Prisma query extension has no client of its own, so it would have run on the
+ * module-scope singleton — a different connection, outside the caller's
+ * transaction, as the OWNING role, which bypasses RLS. Rows from other tenants
+ * would have been written into this tenant's audit row as `before`.
+ *
+ * The cost of the old choice was a trail that says the same thing every time.
+ * An upsert that names every column unconditionally (a sync from another
+ * system, say) would claim on every run that every field changed for every
+ * row; somebody asking when an item's status moved would get a hit on every
+ * sync since the workspace was created. A trail that answers every question affirmatively is not a
+ * weaker signal than none — it is a misleading one.
+ *
+ * ═══ WHAT MAKES THE READ SAFE NOW ═══
+ *
+ * `runInTenantContext` and its siblings bind a {@link PriorStateReader} into
+ * the audit context from INSIDE the transaction, closing over `tx` — the one
+ * client that is both in this transaction and under `SET LOCAL ROLE app_user`
+ * with a transaction-scoped `app.tenant_id`. The extension reads through that
+ * and nothing else. The first two objections stand and are answered in kind:
+ * the read costs one round trip on update/upsert paths, and it is taken BEFORE
+ * the write so "the row may have moved on" cannot apply within the transaction.
+ *
+ * ═══ AND WHEN THERE IS NO READER ═══
+ *
+ * Writes that do not run in a tenant transaction — a seed, `runWithoutRls`, a
+ * job on the singleton — have no reader. Those fall back to payload keys AND
+ * SAY SO on the row (`changedFieldsAreDiffed: false`). Falling back silently
+ * would reintroduce the original defect wearing the fix's clothes, which is
+ * the one outcome worth engineering against here.
+ */
+/**
+ * EXPORTED FOR ITS TESTS, and the export is the smaller cost.
+ *
+ * The alternative is driving it through a real Prisma client extension with a
+ * faked `query`, which pins the wiring rather than the comparison — and the
+ * comparison is where every interesting case lives (a payload operator, a Date,
+ * null against undefined, a value already equal to what is stored). A guard
+ * that cannot reach those cases is the kind that stays green while the rule
+ * rots.
+ */
+export function buildDiffJson(
+    action: string,
+    data: Record<string, unknown> | null | undefined,
+    result: unknown,
+    priorState?: Record<string, unknown> | null,
+    model?: string,
+): Record<string, unknown> | null {
+    if (!DIFF_ACTIONS.has(action) || !data) return null;
+
+    // ═══ EPIC B FIELDS ARE NAMED, NEVER COMPARED, NEVER RECORDED (#5292) ═══
+    //
+    // This extension is the INNERMOST layer, so `data` and `result` reach it as
+    // CIPHERTEXT. `priorState` does not: `priorStateReaderFor(tx)` reads through
+    // the fully extended client and `findFirst` is on the encryption extension's
+    // decrypting list, so the prior row arrives DECRYPTED.
+    //
+    // Two consequences, both of which this removes:
+    //
+    //   - `before` recorded the old PLAINTEXT of every field in the encryption
+    //     manifest (`TenantSecuritySettings.auditStreamSecretEncrypted` today;
+    //     work-item and comment bodies from 2.2) into `AuditLog.diffJson`, a column `encrypted-fields.ts`
+    //     deliberately leaves unencrypted. That defeats Epic B's at-rest contract
+    //     for every PRIOR value. `redactSensitiveFields` does not catch it — it
+    //     redacts by NAME, and `description`/`body`/`notes` are not secret-shaped.
+    //
+    //   - comparing plaintext against ciphertext NEVER matches, so every encrypted
+    //     field a payload named was reported as changed even when nothing changed.
+    //     That is #2881's "fires on everything" defect, reintroduced for this subset.
+    //
+    // The honest report is the one `changedFieldsAreDiffed` already draws, per
+    // field: this layer can see that the write NAMED these columns and cannot see
+    // whether their values moved. So they go in `undiffableFields`, never in
+    // `changedFields`, and their values go nowhere.
+    //
+    // `model` is optional so the 4-argument call shape keeps its exact behaviour.
+    const encrypted = new Set<string>(model ? ENCRYPTED_FIELDS[model] ?? [] : []);
+
+    // `priorState === undefined` means no reader was available; `null` means
+    // the reader ran and found no row. Only the first is a fallback — the
+    // second is an upsert that inserted, where every payload key IS new.
+    const diffed = priorState !== undefined && priorState !== null;
+    const named = extractChangedFields(data);
+    const undiffableFields = named.filter((f) => encrypted.has(f));
+    const comparable = named.filter((f) => !encrypted.has(f));
+    const changedFields = diffed
+        ? comparable.filter((f) => !sameStoredValue(priorState[f], data[f]))
+        : comparable;
+    // A write that named ONLY encrypted columns still happened, and a trail that
+    // says nothing about it is worse than one that says "these were written".
+    if (changedFields.length === 0 && undiffableFields.length === 0) return null;
+
+    // Build redacted "after" snapshot from result, limited to changed fields
+    const afterRaw: Record<string, unknown> = {};
+    for (const field of changedFields) {
+        if (result && typeof result === 'object' && field in result) {
+            afterRaw[field] = (result as Record<string, unknown>)[field];
+        }
+    }
+
+    const after = redactSensitiveFields(afterRaw);
+
+    return {
+        changedFields,
+        ...(undiffableFields.length > 0 ? { undiffableFields } : {}),
+        after,
+        // ON THE ROW, not inferred by a reader. Whether these fields were
+        // COMPARED or merely NAMED is the difference between evidence and a
+        // restatement of the request, and a consumer cannot tell them apart
+        // from the field list alone.
+        changedFieldsAreDiffed: diffed,
+        ...(diffed ? { before: redactSensitiveFields(pick(priorState, changedFields)) } : {}),
+    };
+}
+
+/** Narrow a row to the fields a diff named. */
+function pick(row: Record<string, unknown>, fields: readonly string[]): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const f of fields) if (f in row) out[f] = row[f];
+    return out;
+}
+
+/**
+ * Is the stored value already what this payload would write?
+ *
+ * Deliberately conservative: anything it cannot confidently call EQUAL is
+ * reported as changed. Under-reporting a change would hide it from the trail,
+ * which is the failure this whole function exists to end; over-reporting one
+ * costs a field name in a list.
+ *
+ * Prisma payload values are not always scalars. `{ set: v }` is unwrapped
+ * because it is exactly an assignment; every other operator form
+ * (`increment`, `connect`, `push`, …) is treated as a change without
+ * inspection, since computing the result would mean reimplementing the
+ * database.
+ */
+function sameStoredValue(prior: unknown, next: unknown): boolean {
+    if (next !== null && typeof next === 'object' && !(next instanceof Date)) {
+        const op = next as Record<string, unknown>;
+        if ('set' in op && Object.keys(op).length === 1) return sameStoredValue(prior, op.set);
+        return false;
+    }
+    if (prior instanceof Date && next instanceof Date) return prior.getTime() === next.getTime();
+    if (prior instanceof Date || next instanceof Date) return false;
+    // STRICT, and the loose version was a bug worth recording. An earlier
+    // draft had `if (prior == null && next == null) return true;`, which is
+    // redundant for null-against-null — `===` already says so — and WRONG when
+    // `prior` is `undefined`, meaning the row carried no such field. That is
+    // "we do not know", and calling it equal hides a change, which is the one
+    // direction this function is not allowed to err in. A mutation deleting
+    // the line stayed green, which is how it was found.
+    return prior === next;
+}
+
+/**
+ * Audit-trail extension factory.
+ *
+ * Returns a Prisma 7 client extension that intercepts every WRITE
+ * action ($allModels.create/update/upsert/delete/createMany/
+ * updateMany/deleteMany) and writes a hash-chained AuditLog row
+ * AFTER the operation completes. Best-effort — never breaks the
+ * original write if audit logging itself fails.
+ *
+ * This was a `$use` middleware in Prisma 5; `$use` was removed in
+ * Prisma 7. The new shape composes via `client.$extends({ query })`
+ * with per-action handlers.
+ *
+ * Composition order MATTERS: this extension runs INSIDE soft-delete
+ * + PII encryption + field-level encryption. Audit sees the final
+ * transformed args (delete → update from soft-delete; encrypted
+ * values from PII / field encryption) and logs them post-write.
+ *
+ * MUST only be wired in Node.js runtime (not Edge) — `appendAuditEntry`
+ * pulls in heavy server deps. The wiring at module bottom guards
+ * with `typeof EdgeRuntime === 'undefined'`.
+ */
+function buildAuditExtension() {
+    // Per-action wrapper — same shape for create/update/upsert/delete/etc.
+    // The Prisma 7 query extension API has separate handlers for each
+    // operation; we factor the common audit logic into one function.
+    const handle = async ({
+        model,
+        operation,
+        args,
+        query,
+    }: {
+        model: string;
+        operation: string;
+        args: Record<string, unknown>;
+        query: (a: typeof args) => Promise<unknown>;
+    }) => {
+        // Fast-path non-write operations and excluded models. Reads
+        // don't need audit; AuditLog itself must skip to avoid an
+        // infinite write loop.
+        if (!WRITE_ACTIONS.has(operation)) {
+            return query(args);
+        }
+        if (EXCLUDED_MODELS.has(model)) {
+            return query(args);
+        }
+
+        // ⚠️ Capture audit context BEFORE running the query —
+        // Prisma's underlying execution may detach from the AsyncLocalStorage
+        // chain.
+        const ctx = getAuditContext();
+        const tenantId = ctx?.tenantId;
+        if (!tenantId) {
+            return query(args);
+        }
+
+        const actorUserId = ctx?.actorUserId || null;
+        const requestId = ctx?.requestId || null;
+        const source = ctx?.source || 'api';
+
+        // For upsert, the update payload is in args.update, not args.data.
+        // `args` is typed as `object` by the Prisma query-extension API —
+        // casting to a narrowed record shape is the correct probe pattern.
+        const argsRecord = args as Record<string, unknown>;
+        const updateData =
+            operation === 'upsert'
+                ? (argsRecord.update as Record<string, unknown> | null | undefined) ?? null
+                : (argsRecord.data as Record<string, unknown> | null | undefined) ?? null;
+
+        // ═══ THE PRIOR ROW, READ BEFORE THE WRITE ═══
+        //
+        // Taken here and not after, because after is too late: the row this
+        // statement is about to replace exists only until `query` runs.
+        //
+        // Through the context's reader and nothing else — see
+        // {@link PriorStateReader}. Absent outside a tenant transaction, in
+        // which case `priorState` stays `undefined` and the diff below
+        // degrades to payload keys and says so.
+        //
+        // Only for `update` / `upsert`, and only with a `where`. `updateMany`
+        // and `deleteMany` touch an unbounded set, so a per-row before-image
+        // is unbounded work on the write path; they keep the behaviour they
+        // have. `create` has no prior row by definition.
+        let priorState: Record<string, unknown> | null | undefined;
+        if (DIFF_ACTIONS.has(operation) && ctx?.readPriorState && argsRecord.where) {
+            priorState = await ctx.readPriorState(model, argsRecord.where);
+        }
+
+        // Execute the original operation first — never block it
+        const result = await query(args);
+
+        // Best-effort audit logging — never throw
+        try {
+            const action = operation.toUpperCase();
+
+            // Extract record ID(s) from the result
+            let entityId = 'unknown';
+            let recordIds: { count: number } | null = null;
+
+            if (
+                operation === 'create' ||
+                operation === 'update' ||
+                operation === 'upsert' ||
+                operation === 'delete'
+            ) {
+                entityId = (result as { id?: string } | null)?.id || 'unknown';
+            } else if (operation === 'createMany') {
+                entityId = 'batch';
+                recordIds = { count: (result as { count?: number } | null)?.count ?? 0 };
+            } else if (operation === 'updateMany' || operation === 'deleteMany') {
+                entityId = 'batch';
+                recordIds = { count: (result as { count?: number } | null)?.count ?? 0 };
+            }
+
+            const metadataJson: Record<string, unknown> = { source };
+            const argsWhere = argsRecord.where as Record<string, unknown> | null | undefined;
+            if (
+                argsWhere &&
+                (operation === 'updateMany' || operation === 'deleteMany')
+            ) {
+                metadataJson.filterKeys = Object.keys(argsWhere);
+            }
+
+            const diffJson = buildDiffJson(operation, updateData, result, priorState, model);
+
+            const detailsJson: Record<string, unknown> = {
+                category: 'entity_lifecycle',
+                entityName: model,
+                operation: action.toLowerCase(),
+            };
+            if (diffJson) {
+                detailsJson.changedFields = diffJson.changedFields;
+                detailsJson.after = diffJson.after;
+            }
+            detailsJson.summary = `${action} ${model}${entityId !== 'unknown' ? ` ${entityId}` : ''}`;
+
+            await auditWriterModule.appendAuditEntry({
+                tenantId,
+                userId: actorUserId,
+                actorType: 'SYSTEM',
+                entity: model,
+                entityId,
+                action,
+                details: null,
+                requestId,
+                recordIds,
+                metadataJson,
+                diffJson,
+                detailsJson,
+            });
+        } catch (auditError) {
+            if (env.NODE_ENV === 'development') {
+                auditMiddlewareLogger.warn('Failed to write audit log', {
+                    component: 'audit-middleware',
+                    error:
+                        auditError instanceof Error
+                            ? auditError.message
+                            : String(auditError),
+                });
+            }
+        }
+
+        return result;
+    };
+
+    return {
+        name: 'audit-middleware',
+        query: {
+            $allModels: {
+                async create({ model, operation, args, query }: { model: string; operation: string; args: Record<string, unknown>; query: (a: typeof args) => Promise<unknown> }) {
+                    return handle({ model, operation, args, query });
+                },
+                async createMany({ model, operation, args, query }: { model: string; operation: string; args: Record<string, unknown>; query: (a: typeof args) => Promise<unknown> }) {
+                    return handle({ model, operation, args, query });
+                },
+                async update({ model, operation, args, query }: { model: string; operation: string; args: Record<string, unknown>; query: (a: typeof args) => Promise<unknown> }) {
+                    return handle({ model, operation, args, query });
+                },
+                async updateMany({ model, operation, args, query }: { model: string; operation: string; args: Record<string, unknown>; query: (a: typeof args) => Promise<unknown> }) {
+                    return handle({ model, operation, args, query });
+                },
+                async upsert({ model, operation, args, query }: { model: string; operation: string; args: Record<string, unknown>; query: (a: typeof args) => Promise<unknown> }) {
+                    return handle({ model, operation, args, query });
+                },
+                async delete({ model, operation, args, query }: { model: string; operation: string; args: Record<string, unknown>; query: (a: typeof args) => Promise<unknown> }) {
+                    return handle({ model, operation, args, query });
+                },
+                async deleteMany({ model, operation, args, query }: { model: string; operation: string; args: Record<string, unknown>; query: (a: typeof args) => Promise<unknown> }) {
+                    return handle({ model, operation, args, query });
+                },
+            },
+        },
+    } as const;
+}
 
 // ─── Singleton ───
 //
@@ -24,8 +414,7 @@ const SLOW_QUERY_THRESHOLD_MS = 50;
 // Middleware is `client.$extends({ query: { ... } })` (Prisma 7 removed
 // `$use`). `$extends` chains apply in reverse-call order: the LAST
 // `.$extends(...)` is the OUTERMOST wrapper (intercepts the caller
-// first). Sub-phase 1.3 installs one extension, the RLS tripwire; see
-// `buildExtended` for where the others go.
+// first). See `buildExtended` for the chain.
 
 type ExtendedClient = ReturnType<typeof buildClient>;
 
@@ -106,23 +495,23 @@ function buildExtended(url: string = env.DATABASE_URL ?? '') {
     // function") which made the static form load-bearing.
     //
     // Composition order — the tripwire is observation-only so its
-    // position in the chain is irrelevant; placing it outermost
-    // makes the logged model/action match the caller's intent
-    // before later extensions rewrite the args.
-    //
-    // WHERE THE OTHER EXTENSIONS GO. Sub-phase 1.5 (audit log, field
-    // encryption, PII) and 2.1 (soft delete) insert theirs INSIDE the
-    // tripwire, in this order, innermost first:
-    //   audit → soft-delete → field-encryption → PII → RLS-tripwire
-    // i.e.
-    //   withRlsTripwireExtension(
-    //       withPiiEncryptionExtension(
-    //           withEncryptionExtension(
-    //               withSoftDeleteExtension(base.$extends(buildAuditExtension())))))
-    // Field encryption sees the post-soft-delete write args (so it
-    // encrypts the rewritten update payload) before PII rewrites
-    // where-clauses; the two cover disjoint models.
-    return withRlsTripwireExtension(base);
+    // position in the chain is irrelevant; placing it outermost makes the
+    // logged model/action match the caller's intent before PII rewrites the
+    // where-clauses. Inner to outer:
+    //   audit → field-encryption → PII → RLS-tripwire
+    // Field encryption encrypts the manifest's columns before the audit
+    // extension (innermost) sees the write, so the audit diff carries
+    // ciphertext, never plaintext; PII then rewrites User where-clauses. The
+    // two cover disjoint models. Sub-phase 2.1 inserts soft delete between
+    // audit and field encryption (as in inflect-compliance), so field
+    // encryption sees the post-soft-delete write args.
+    return withRlsTripwireExtension(
+        withPiiEncryptionExtension(
+            withEncryptionExtension(
+                base.$extends(buildAuditExtension()),
+            ),
+        ),
+    );
 }
 
 const globalForPrisma = globalThis as unknown as {
@@ -138,8 +527,8 @@ if (env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 //
 // A SECOND extended client pointed at DATABASE_READ_URL (the replica,
 // via its own PgBouncer). It carries the SAME extension chain as the
-// primary, so once 1.5 adds field encryption and PII, reads of
-// encrypted columns decrypt correctly on the replica too.
+// primary, so reads of encrypted columns (field encryption and PII)
+// decrypt correctly on the replica too.
 //
 // Reads are NOT auto-routed: callers OPT IN via `runInTenantReadContext`
 // (which opens its RLS transaction on this client). Routing is a

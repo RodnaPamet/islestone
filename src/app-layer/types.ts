@@ -1,12 +1,10 @@
 import type { OrgRole, Role } from '@prisma/client';
 
+import type { ActorType } from '@/lib/audit/types';
 import type { OrgPermissionSet, PermissionSet } from '@/lib/permissions';
 
-/**
- * What KIND of actor a context represents. Sub-phase 1.5 moves this to
- * `@/lib/audit/types` (with a re-export here) or keeps it here.
- */
-export type ActorType = 'USER' | 'SYSTEM' | 'JOB';
+/** What KIND of actor a context represents; owned by `@/lib/audit/types`. */
+export type { ActorType };
 
 export interface RequestContext {
     /** Unique request identifier for log correlation */

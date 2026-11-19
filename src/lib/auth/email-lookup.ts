@@ -1,16 +1,13 @@
 /**
- * The form an email address is stored and looked up in: trimmed and
- * lower-cased. Edge-safe and client-safe (no imports).
+ * The form an email address is stored in: trimmed and lower-cased. Edge-safe
+ * and client-safe (no imports).
  *
- * inflect-compliance stores `User.email` encrypted and looks users up by a
- * keyed hash of this same normal form (`hashForLookup` in
- * `src/lib/security/encryption.ts`, which lower-cases and trims before it
- * hashes). Islestone's `User.email` is plaintext and unique until sub-phase
- * 1.5 adds `emailHash` and the PII extension (prisma/schema/tenancy.prisma),
- * so sub-phase 1.4 stores and matches the normal form itself. Every copied
- * `where: { emailHash: hashForLookup(x) }` became
- * `where: { email: lookupEmail(x) }`, and every create of a `User` stores
- * `lookupEmail(x)`, so two spellings of one address are one user.
+ * Since sub-phase 1.5, `User.email` is encrypted at rest and a user is looked
+ * up by `emailHash`, a keyed hash of this same normal form (`hashForLookup`
+ * in `src/lib/security/encryption.ts` lower-cases and trims before it hashes),
+ * as in inflect-compliance: `where: { emailHash: hashForLookup(x) }`. Every
+ * create of a `User` still stores `lookupEmail(x)`, so the decrypted address
+ * a user sees is the one their lookups hash.
  */
 export function lookupEmail(value: string): string {
     return value.toLowerCase().trim();

@@ -152,9 +152,9 @@ function buildTooManyRequestsResponse(
         'Retry-After': String(retryAfterSeconds),
         'X-RateLimit-Limit': String(config.maxAttempts),
         // What is actually left. For a one-unit charge that is 0 whenever this
-        // fires; for a refused BATCH (the MCP per-key budget charges per
-        // message) units can remain, and a client told 0 would wait when a
-        // smaller batch would fit (#4205).
+        // fires; for a refused batch (a caller charging several units at
+        // once) units can remain, and a client told 0 would wait when a
+        // smaller batch would fit.
         'X-RateLimit-Remaining': String(Math.max(0, result.remaining)),
         'X-RateLimit-Reset': String(resetAt),
     });
@@ -401,12 +401,5 @@ export {
     MFA_ENROLL_VERIFY_LIMIT,
     TENANT_INVITE_CREATE_LIMIT,
     INVITE_REDEEM_LIMIT,
-    // #3869. Re-exported rather than left to be imported from `rate-limit`
-    // directly: this list is how a route author finds the presets, and the one
-    // preset missing from it is described in the tests as a GAP rather than a
-    // pattern to copy.
-    AGENT_QUESTION_LIMIT,
-    MCP_PER_KEY_LIMIT,
-    MCP_IP_CEILING_LIMIT,
 } from './rate-limit';
 export type { RateLimitConfig, RateLimitResult } from './rate-limit';

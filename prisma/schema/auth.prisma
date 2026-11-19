@@ -123,15 +123,21 @@ model UserMfaEnrollment {
 /// limits. Sub-phase 1.5 adds the audit-stream columns, 5.2 the API-key
 /// rotation age.
 model TenantSecuritySettings {
-  id                    String    @id @default(cuid())
-  tenantId              String    @unique
-  mfaPolicy             MfaPolicy @default(DISABLED)
-  sessionMaxAgeMinutes  Int?
-  maxConcurrentSessions Int?
-  mfaFailClosed         Boolean   @default(false)
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  tenant                Tenant    @relation(fields: [tenantId], references: [id])
+  id                         String    @id @default(cuid())
+  tenantId                   String    @unique
+  mfaPolicy                  MfaPolicy @default(DISABLED)
+  sessionMaxAgeMinutes       Int?
+  maxConcurrentSessions      Int?
+  mfaFailClosed              Boolean   @default(false)
+  /// The tenant's SIEM endpoint for the audit stream (sub-phase 1.5,
+  /// src/app-layer/events/audit-stream.ts). Delivered through `safeFetch`.
+  auditStreamUrl             String?
+  /// The audit stream's HMAC secret, ENCRYPTED at rest by the field
+  /// encryption extension (src/lib/security/encrypted-fields.ts).
+  auditStreamSecretEncrypted String?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+  tenant                     Tenant    @relation(fields: [tenantId], references: [id])
 }
 
 /// An invitation into a workspace, redeemed once by the invited address.

@@ -23,7 +23,7 @@ import { resolveTenantContext } from '@/lib/tenant-context';
 import { makeRequestContext } from '../helpers/make-context';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { PrismaClient } from '@prisma/client';
-import { lookupEmail } from '@/lib/auth/email-lookup';
+import { hashForLookup } from '@/lib/security/encryption';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -90,7 +90,7 @@ describeFn('per-tenant role resolution (R-1, security-critical)', () => {
 
     async function createUser(email: string) {
         return prisma.user.upsert({
-            where: { email: lookupEmail(email) },
+            where: { emailHash: hashForLookup(email) },
             create: { email, name: email.split('@')[0] },
             update: {},
         });

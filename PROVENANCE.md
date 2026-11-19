@@ -1013,7 +1013,6 @@ NextAuth behind one seam, the edge gate, the permission set, roles and custom ro
 | `tests/guards/no-use-session.test.ts` | `tests/guards/no-use-session.test.ts` | COPY | None. |
 | `tests/guards/role-zod-enums.test.ts` | `tests/guardrails/role-zod-enums.test.ts` | COPY+EDIT | Custom-role routes validate against `CUSTOM_ROLE_BASE_ROLES`. |
 | `tests/guards/route-permissions-uppercase.test.ts` | `tests/guardrails/route-permissions-uppercase.test.ts` | COPY | None. |
-| `tests/helpers/audit-recorder.ts` | — | Islestone-owned | Records what the 1.4 audit stubs receive, so copied suites assert on entries until 1.5 adds the tables. |
 | `tests/helpers/markdown-regions.ts` | `tests/helpers/markdown-regions.ts` | COPY | None. |
 | `tests/helpers/route-permission-gate.ts` | `tests/helpers/route-permission-gate.ts` | COPY | None. |
 | `tests/helpers/strict-mock.ts` | `tests/helpers/strict-mock.ts` | COPY | None. |
@@ -1021,18 +1020,18 @@ NextAuth behind one seam, the edge gate, the permission set, roles and custom ro
 | `tests/integration/api-security-layers.test.ts` | `tests/integration/epic-a-security.test.ts` | COPY+EDIT | Renamed for its invariant; isolation proved on `TenantCustomRole` instead of automation rules; no `canAudit`. |
 | `tests/integration/auth-signin-no-auto-join.test.ts` | `tests/integration/auth-signin-no-auto-join.test.ts` | COPY+EDIT | Islestone roles (EDITOR → MEMBER, READER → VIEWER, AUDITOR → VIEWER or GUEST), `grantsJson`, `lookupEmail`, `@/lib/auth/session`, `islestone_*` cookies; cases for cut features (SSO, SCIM, Entra, agents, AI_ADMIN, compliance) removed. |
 | `tests/integration/auth-tables-isolation.test.ts` | `tests/integration/rls-isolation.test.ts` | PATTERN | Pattern only, no code copied: two-tenant tests for UserMfaEnrollment, TenantSecuritySettings, TenantInvite and TenantCustomRole. |
-| `tests/integration/credentials-end-to-end.test.ts` | `tests/integration/credentials-end-to-end.test.ts` | COPY+EDIT | Audit rows read from the recorder. |
+| `tests/integration/credentials-end-to-end.test.ts` | `tests/integration/credentials-end-to-end.test.ts` | COPY+EDIT | Audit rows read from `AuditLog` (issue #18); the teardown clears them before deleting the user and workspace. |
 | `tests/integration/custom-role-base-role-check.test.ts` | `tests/integration/custom-role-base-role-check.test.ts` | COPY+EDIT | OWNER only; NOT VALID replay and legacy-delete cases cut. |
 | `tests/integration/custom-role-carriage.test.ts` | `tests/integration/custom-role-carriage.test.ts` | COPY+EDIT | Admin-membership-only keys are `sso` and `scim`. |
 | `tests/integration/custom-role-name-reuse.test.ts` | `tests/integration/custom-role-name-reuse.test.ts` | COPY+EDIT | Islestone roles (EDITOR → MEMBER, READER → VIEWER, AUDITOR → VIEWER or GUEST), `grantsJson`, `lookupEmail`, `@/lib/auth/session`, `islestone_*` cookies; cases for cut features (SSO, SCIM, Entra, agents, AI_ADMIN, compliance) removed. |
 | `tests/integration/email-verification.test.ts` | `tests/integration/email-verification.test.ts` | COPY+EDIT | Islestone roles (EDITOR → MEMBER, READER → VIEWER, AUDITOR → VIEWER or GUEST), `grantsJson`, `lookupEmail`, `@/lib/auth/session`, `islestone_*` cookies; cases for cut features (SSO, SCIM, Entra, agents, AI_ADMIN, compliance) removed. |
-| `tests/integration/invite-redemption.test.ts` | `tests/integration/invite-redemption.test.ts` | COPY+EDIT | Audit actions read from the recorder; the hash-chain check waits for 1.5; MEMBER/VIEWER roles. |
+| `tests/integration/invite-redemption.test.ts` | `tests/integration/invite-redemption.test.ts` | COPY+EDIT | MEMBER/VIEWER roles; audit actions and the hash-chain check read `AuditLog` (issue #18). |
 | `tests/integration/invite-routes.test.ts` | `tests/integration/invite-routes.test.ts` | COPY+EDIT | Islestone roles (EDITOR → MEMBER, READER → VIEWER, AUDITOR → VIEWER or GUEST), `grantsJson`, `lookupEmail`, `@/lib/auth/session`, `islestone_*` cookies; cases for cut features (SSO, SCIM, Entra, agents, AI_ADMIN, compliance) removed. |
 | `tests/integration/jwt-claims-refresh.test.ts` | `tests/integration/jwt-claims-refresh.test.ts` | COPY+EDIT | Entra group-gate case cut (8.3). |
 | `tests/integration/last-owner-usecase-guard.test.ts` | `tests/integration/last-owner-usecase-guard.test.ts` | COPY+EDIT | Islestone roles (EDITOR → MEMBER, READER → VIEWER, AUDITOR → VIEWER or GUEST), `grantsJson`, `lookupEmail`, `@/lib/auth/session`, `islestone_*` cookies; cases for cut features (SSO, SCIM, Entra, agents, AI_ADMIN, compliance) removed. |
 | `tests/integration/multi-tenant-jwt.test.ts` | `tests/integration/multi-tenant-jwt.test.ts` | COPY+EDIT | Islestone roles (EDITOR → MEMBER, READER → VIEWER, AUDITOR → VIEWER or GUEST), `grantsJson`, `lookupEmail`, `@/lib/auth/session`, `islestone_*` cookies; cases for cut features (SSO, SCIM, Entra, agents, AI_ADMIN, compliance) removed. |
-| `tests/integration/org-invite-lifecycle.test.ts` | `tests/integration/org-invite-lifecycle.test.ts` | COPY+EDIT | `getOrgPermissions`; org audit from the recorder. |
-| `tests/integration/owner-custom-role.test.ts` | `tests/integration/owner-custom-role.test.ts` | COPY+EDIT | AI_ADMIN, ownership-transfer and NOT VALID replay cases cut; the CHECK restored with the migration's own statement; audit via the recorder. |
+| `tests/integration/org-invite-lifecycle.test.ts` | `tests/integration/org-invite-lifecycle.test.ts` | COPY+EDIT | `getOrgPermissions`; org audit read from `OrgAuditLog`, with the chain verified (issue #18). |
+| `tests/integration/owner-custom-role.test.ts` | `tests/integration/owner-custom-role.test.ts` | COPY+EDIT | AI_ADMIN, ownership-transfer and NOT VALID replay cases cut; the CHECK restored with the migration's own statement; audit read from `AuditLog` (issue #18). |
 | `tests/integration/per-tenant-role-resolution.test.ts` | `tests/integration/per-tenant-role-resolution.test.ts` | COPY+EDIT | Islestone roles (EDITOR → MEMBER, READER → VIEWER, AUDITOR → VIEWER or GUEST), `grantsJson`, `lookupEmail`, `@/lib/auth/session`, `islestone_*` cookies; cases for cut features (SSO, SCIM, Entra, agents, AI_ADMIN, compliance) removed. |
 | `tests/integration/user-session-rls.test.ts` | `tests/integration/user-session-rls.test.ts` | COPY+EDIT | `runInTenantContext` and `prismaTestClient()`; its own tenants and user. |
 | `tests/unit/admin-api-affordances.test.ts` | `tests/unit/admin-api-affordances.test.ts` | COPY+EDIT | Agent-register and tenant-layout cases cut (Phase 6, 1.7). |
@@ -1159,6 +1158,224 @@ Files from earlier sub-phases edited in 1.4 (their rows are in the sections abov
 | `tests/unit/tenant-context.test.ts` | Custom-role resolution cases and the membership include. |
 | `tests/unit/tenant-ctx.test.ts` | The restored MFA gate mocked; permissions shape. |
 | `tests/unit/tenant-server-context.test.ts` | The `session` argument (MFA facts) the gate now takes. |
+
+</details>
+
+## Copied: security perimeter (sub-phase 1.5)
+
+Field encryption with per-workspace data keys, the PII extension and `User.emailHash`, the hash-chained audit trail and `logEvent`, the audit stream, `safeFetch` and the webhook crypto at their source paths, the edge rate-limit tiers, the nonce Content-Security-Policy and CORS, sanitisation and secret detection, ported by [`docs/porting/maps/1.5.md`](docs/porting/maps/1.5.md) (part 1.5a; 1.5b, the rotation and outbox-drain jobs, waits for 1.6's queue). These facts hold for every row below:
+
+- **Source:** inflect-compliance at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`, at the path in the row's Source column.
+- **Licence:** BUSL-1.1, licensor Inflect Ltd. Copying is allowed by [ADR 0001](docs/adr/0001-code-provenance-and-licences.md) decision D1. The source files carry no per-file notice, so none is added, and `NOTICE` takes no entry: no third-party material came with them.
+- **What every port changed:** one-way literals (HKDF info and salt, the HMAC domain, the dev fallback key, the startup sentinel, the TOTP salt and issuer, the audit-stream User-Agent and the `X-Islestone-*` webhook headers) are Islestone's, chosen before the first stored value; `User.email` and `User.name` hold ciphertext under their own names, because ADR 0006 rule 3 bans `@map` (the parent maps them to `emailEncrypted`/`nameEncrypted`); `OrgAuditLog.targetUserId` is `subjectUserId` (ADR 0006 bans "Target"); compliance models, entities and examples are replaced by Islestone's; the CSP names no report endpoint and no Google Fonts host; the API-key, MCP and agent parts are cut (5.2, 6.x).
+- **Action** is COPY (byte for byte), COPY+EDIT (the source text, edited as the Changes column says), REWRITE (written fresh to the source's design), PATTERN (pattern only, no code copied), or Islestone-owned (written fresh, no source).
+- **Not taken (1.5b):** `src/app-layer/jobs/key-rotation.ts`, `tenant-dek-rotation.ts`, `audit-outbox-flush.ts`, `scripts/rotate-global-pii.ts`, `rotateTenantDek`, the key-rotation admin routes and their tests: each needs 1.6's job queue. **Not taken (other):** the CSP violation sink (`src/lib/security/csp-violations.ts`, `/api/security/csp-report`; with 1.6 observability), `src/lib/security/headers.ts` (Islestone's `security-headers.ts` holds the baseline), the data-classification registry (`src/lib/security/classification.ts`), and the backfill scripts `encrypt-existing-data.ts` and `generate-tenant-deks.ts` (no pre-existing data).
+- **Read, not copied** (historical implementation notes the map cites): `docs/implementation-notes/2026-08-09-decrypt-failure-three-outcomes.md`, `2026-07-10-encryption-manifest-coverage-guard.md`, `2026-04-27-implement-rotate-tenant-dek.md`, `2026-04-29-gap-22-rotate-tenant-dek-finalisation.md`, `2026-04-29-gap-21-pii-encrypted-only.md`, `2026-10-26-pii-relation-decrypt-from-schema.md`, `2026-04-30-epic-b-org-audit-trail.md`, `2026-05-21-audit-stream-observability.md`, `2026-07-03-ssrf-egress-coverage.md`, `2026-08-18-undici-dispatcher-version-coupling.md`, `2026-05-22-structural-sanitizer-coverage.md`, `2026-11-13-write-once-triggers-admit-the-dek-rewrap.md`, `2026-11-13-scanent-contract-dependency.md`.
+
+<details>
+<summary>All 133 rows</summary>
+
+| File | Source | Action | Changes |
+|---|---|---|---|
+| `.husky/pre-commit` | `.husky/pre-commit` | COPY+EDIT | The secret scan only: the lint-staged step, which re-ran the same scan on the staged subset, cut (no `lint-staged` dependency). |
+| `.secret-patterns` | `.secret-patterns` | COPY | None. |
+| `docs/audit-trail.md` | `docs/immutable-audit-trail.md`; `docs/epic-c-security.md` §C.4; `docs/epic-e-observability.md` §E.2 | COPY+EDIT | Rewritten for Islestone: `logEvent` usage, the trigger's pseudonymisation exception, outbox and erasure sections from the module docblocks, the teardown rule; "Historical row strategy" and the admin verify route cut. |
+| `docs/encryption.md` | `docs/epic-b-encryption.md`; `docs/encryption-data-protection.md` (L30–82); `docs/epic-f-finishing-touches.md` §F.2 | COPY+EDIT | One-entry manifest, the PII table, the `emailHash` schema/DB split, the register-time DEK; backfills cut; rotation marked 1.5b. |
+| `docs/rate-limiting.md` | `docs/rate-limiting.md`; `docs/epic-a-security.md` ("Rate limit presets") | COPY+EDIT | Anonymous edge surfaces and the MCP endpoint cut; API-key callers reduced to a note for 5.2; the `RATE_LIMIT_MODE` section and issue #17 added; bypass gates corrected to Islestone's code. |
+| `docs/security-perimeter.md` | `docs/epic-c-security.md` §C.2 and §C.5; `docs/epic-d-completeness.md` §D.2 | COPY+EDIT | Written for Islestone around the mined sections: headers, the nonce CSP and its two bridges, CORS, sanitisation, `safeFetch` and the egress allowlist, secret detection. |
+| `prisma/migrations/20261119140000_security_perimeter/migration.sql` | `20260422200000_add_tenant_encrypted_dek`, `20260424010000_add_tenant_previous_encrypted_dek`, `20260917130000_audit_log_immutable_permit_pseudonymization`, `20260430052807_epic_b_org_audit_log` and the audit-trail and audit-stream migrations | REWRITE | One fresh migration: tables from `prisma migrate diff`; a refusal for a database whose `User` rows predate the hash; `emailHash` NOT NULL; the DEK CHECK and partial index; grants (SELECT/INSERT only on both logs); Class-A RLS on `AuditLog` and `AuditOutbox`; both immutability triggers (the final pseudonymisation-permitting `AuditLog` guard); extra FK indexes. |
+| `prisma/schema/audit-trail.prisma` | `prisma/schema/audit-trail.prisma` | COPY+EDIT | Three models (`AuditLog`, `OrgAuditLog`, `AuditOutbox`); compliance back-relations cut; `OrgAuditLog.targetUserId` is `subjectUserId` (relation `subject`; ADR 0006 bans "Target"); FK indexes on `AuditLog.userId` and both `OrgAuditLog` user columns. |
+| `scripts/detect-secrets.sh` | `scripts/detect-secrets.sh` | COPY+EDIT | Temp-file prefix `islestone-secret-scan-`; a comment reworded so the array parser is not split by an apostrophe. |
+| `scripts/print-env-ok.ts` | `scripts/print-env-ok.ts` | COPY+EDIT | Rewritten: prints `OK` and the resolved `RATE_LIMIT_MODE`, for the env tests. |
+| `scripts/verify-audit-chain.ts` | `scripts/verify-audit-chain.ts` | COPY+EDIT | Run with `tsx` (shebang and usage lines); imports. |
+| `src/app-layer/automation/webhook-safety.ts` | `src/app-layer/automation/webhook-safety.ts` | COPY+EDIT | Kept at the source path; `import type`; the egress allowlist and billing-mode imports point at Islestone's copies. |
+| `src/app-layer/events/audit-stream.ts` | `src/app-layer/events/audit-stream.ts` | COPY+EDIT | User-Agent `Islestone-Audit-Stream/1`; header and payload comments re-pointed (`X-Islestone-*`, Islestone entities). |
+| `src/app-layer/events/webhook-headers.ts` | `src/app-layer/events/webhook-headers.ts` | COPY+EDIT | Header names `X-Islestone-*`. |
+| `src/app-layer/integrations/webhook-crypto.ts` | `src/app-layer/integrations/webhook-crypto.ts` | COPY+EDIT | HMAC sign and verify only; the provider-payload extraction helpers cut (5.x). |
+| `src/app-layer/schemas/json-columns.schemas.ts` | `src/app-layer/schemas/json-columns.schemas.ts` | COPY+EDIT | The audit `detailsJson` and diff schemas only; compliance JSON columns cut. |
+| `src/instrumentation-node.ts` | `src/instrumentation.ts` | COPY+EDIT | Cut to the startup refusals: `AUTH_TEST_MODE` in production, the rate-limit store (issue #17, new), the encryption key and sentinel. Telemetry, Sentry, mailer and shutdown are 1.6. Moved out of `src/instrumentation.ts`, which now only branches on `process.env.NEXT_RUNTIME` (written fresh, owner decision 2026-11-19), so the Edge bundle drops them. |
+| `src/lib/audit-redact.ts` | `src/lib/audit-redact.ts` (a re-export of `@rodnapamet/scanent-contract` at this commit) | PATTERN | Pattern only, no code copied: written fresh against the copied `tests/unit/audit-trail-redact.test.ts` (map, option "rewrite"). |
+| `src/lib/audit/audit-outbox.ts` | `src/lib/audit/audit-outbox.ts` | COPY | None. |
+| `src/lib/audit/audit-writer.ts` | `src/lib/audit/audit-writer.ts` | COPY+EDIT | `import type { PrismaClient }`; `noUncheckedIndexedAccess` guards (`lastRows[0]?.entryHash ?? null`, the verify loop); comment examples re-pointed. The `hashtext(tenantId)` key and the lazy stream import kept. |
+| `src/lib/audit/canonical-hash.ts` | `src/lib/audit/canonical-hash.ts` | COPY | None. |
+| `src/lib/audit/erasure-record.ts` | `src/lib/audit/erasure-record.ts` | COPY+EDIT | A comment re-pointed at the 8.3 erasure writer. |
+| `src/lib/audit/event-builder.ts` | `src/lib/audit/event-builder.ts` | COPY+EDIT | Comment examples re-pointed. |
+| `src/lib/audit/event-schema.ts` | `src/lib/audit/event-schema.ts` | COPY | None. |
+| `src/lib/audit/org-canonical-hash.ts` | `src/lib/audit/org-canonical-hash.ts` | COPY | None. |
+| `src/lib/audit/types.ts` | `src/lib/audit/types.ts` | COPY+EDIT | Comment examples re-pointed. |
+| `src/lib/audit/verify.ts` | `src/lib/audit/verify.ts` | COPY+EDIT | `import type { PrismaClient }`. |
+| `src/lib/billing/billing-mode.ts` | `src/lib/billing/billing-mode.ts` | COPY+EDIT | The mode only; entitlements are 8.1. |
+| `src/lib/db/encryption-middleware.ts` | `src/lib/db/encryption-middleware.ts` | COPY+EDIT | The deprecated `$use` stubs deleted; imports; comments. |
+| `src/lib/observability/observable-registry.ts` | `src/lib/observability/observable-registry.ts` | COPY+EDIT | The docblock's measured example replaced by Islestone's first gauge. |
+| `src/lib/observability/tracing.ts` | `src/lib/observability/tracing.ts` | COPY+EDIT | Tracer name `islestone`; the docblock example re-pointed at work items. |
+| `src/lib/rate-limit/apiReadRateLimit.ts` | `src/lib/rate-limit/apiReadRateLimit.ts` | COPY+EDIT | Upstash client built from the env module (`new Redis({ url, token })`); the API-key bucket cut (5.2); a `noUncheckedIndexedAccess` guard. |
+| `src/lib/rate-limit/authRateLimit.ts` | `src/lib/rate-limit/authRateLimit.ts` | COPY+EDIT | Upstash client built from the env module; a `noUncheckedIndexedAccess` guard. |
+| `src/lib/security/cidr.ts` | `src/lib/security/cidr.ts` (a re-export of `@rodnapamet/scanent-contract` at this commit) | PATTERN | Pattern only, no code copied: written fresh against `tests/guards/egress-allowlist.test.ts`. |
+| `src/lib/security/cors.ts` | `src/lib/security/cors.ts` | COPY+EDIT | Provenance header only. |
+| `src/lib/security/csp.ts` | `src/lib/security/csp.ts` | COPY+EDIT | No `report-uri`/`report-to` (the violation sink is not ported) and no Google Fonts hosts. |
+| `src/lib/security/egress-allowlist.ts` | `src/lib/security/egress-allowlist.ts` | COPY+EDIT | `cidr` and `billing-mode` imports; comments. |
+| `src/lib/security/encrypted-fields.ts` | `src/lib/security/encrypted-fields.ts` | COPY+EDIT | Rewritten manifest: one entry, `TenantSecuritySettings.auditStreamSecretEncrypted`; the helpers kept; the compliance list moved to a test fixture. |
+| `src/lib/security/encryption-constants.ts` | `src/lib/security/encryption-constants.ts` | COPY+EDIT | The dev fallback string reads `islestone-…`. |
+| `src/lib/security/encryption.ts` | `src/lib/security/encryption.ts` | COPY+EDIT | HKDF info, salt and HMAC domain literals renamed `islestone-*` (a one-way choice before the first stored value); `import type`. |
+| `src/lib/security/pii-middleware.ts` | `src/lib/security/pii-middleware.ts` | COPY+EDIT | The field map is `User` (`email`/`emailHash`, `name`, columns keep their names: no `@map`, ADR 0006) and `Account` (dual-write tokens); the 8.3 and 1.6 models noted; `PII_ENCRYPTED_COLUMNS` derived. |
+| `src/lib/security/safe-url.ts` | `src/lib/security/safe-url.ts` | COPY+EDIT | Comment examples. |
+| `src/lib/security/startup-encryption-check.ts` | `src/lib/security/startup-encryption-check.ts` | COPY+EDIT | Takes a read-only record; sentinel `islestone-startup-sentinel`; worker and scheduler callers are 1.6. |
+| `src/lib/security/startup-rate-limit-check.ts` | — | Islestone-owned | Issue #17: refuses a production start with `RATE_LIMIT_MODE=upstash` and no Upstash credentials (pattern of `startup-encryption-check.ts`). |
+| `src/lib/security/tenant-key-manager.ts` | `src/lib/security/tenant-key-manager.ts` | COPY+EDIT | 1.5a cut: the `enqueue` import and the rotation block (`rotateTenantDek` and its types) removed for 1.5b. |
+| `src/lib/security/tenant-keys.ts` | `src/lib/security/tenant-keys.ts` | COPY | None. |
+| `tests/guards/api-read-rate-limit.test.ts` | `tests/guardrails/api-read-rate-limit.test.ts` | COPY+EDIT | Paths re-pointed; the API-key and anonymous-surface cases cut; the Upstash double built as a constructor; doc comments. |
+| `tests/guards/audit-chain-order-is-total.test.ts` | `tests/guards/audit-chain-order-is-total.test.ts` | COPY | None. |
+| `tests/guards/audit-immutability-guardrails.test.ts` | `tests/guards/audit-immutability-guardrails.test.ts` | COPY+EDIT | Population from `gitFiles()`; floors are known files; the DSAR and tenant-purge carve-outs removed (8.3); the migration selected by function; the GRANT check bound to the two logs. |
+| `tests/guards/audit-stream-observability.test.ts` | `tests/guards/audit-stream-observability.test.ts` | COPY | None. |
+| `tests/guards/audit-structured-events.test.ts` | `tests/guards/audit-structured-events.test.ts` | COPY+EDIT | Population from `gitFiles()`, with a planted repository. |
+| `tests/guards/audit-system-principal-never-reaches-the-fk.test.ts` | `tests/guards/audit-system-principal-never-reaches-the-fk.test.ts` | COPY+EDIT | The `system` literal asserted directly (1.6 brings `SYSTEM_PRINCIPAL`). |
+| `tests/guards/csp-request-header-bridge.test.ts` | `tests/guards/csp-request-header-bridge.test.ts` | COPY | None. |
+| `tests/guards/csp-webpack-nonce-bridge.test.ts` | `tests/guards/csp-webpack-nonce-bridge.test.ts` | COPY | None. |
+| `tests/guards/egress-allowlist.test.ts` | `tests/guards/egress-allowlist.test.ts` | COPY+EDIT | Re-import through `jest.requireActual`; imports. |
+| `tests/guards/encryption-key-enforcement.test.ts` | `tests/guardrails/encryption-key-enforcement.test.ts` | COPY+EDIT | Trimmed to the env schema and the instrumentation hook (no worker, scheduler or Compose files yet); a block for issue #17's two checks. |
+| `tests/guards/encryption-manifest-coverage.test.ts` | `tests/guardrails/encryption-manifest-coverage.test.ts` | COPY+EDIT | `NOT_SENSITIVE` for Islestone's free-text columns, with reasons; the floor is the known keys. |
+| `tests/guards/integration-suite-audit-teardown.test.ts` | `tests/guards/integration-suite-audit-teardown.test.ts` | COPY+EDIT | Population from `gitFiles()`, `GRANDFATHERED` empty, a planted repository; floors name Islestone suites. |
+| `tests/guards/no-secrets.test.ts` | `tests/guardrails/no-secrets.test.ts` | COPY+EDIT | Root parametrised and proved on a planted repository; `REPO_BASELINE` for Islestone's placeholders. |
+| `tests/guards/pii-hash-not-null.test.ts` | `tests/guardrails/pii-hash-not-null.test.ts` | COPY+EDIT | Rewritten for `User.emailHash` and Islestone's residue file. |
+| `tests/guards/pii-rotation-coverage.test.ts` | `tests/guardrails/pii-rotation-coverage.test.ts` | COPY+EDIT | Floor: `User` and `Account` classified global. |
+| `tests/guards/sanitize-rich-text-coverage.test.ts` | `tests/guardrails/sanitize-rich-text-coverage.test.ts` | COPY+EDIT | Empty coverage maps; `TenantSecuritySettings` in `NON_RICH_TEXT_MODELS`. |
+| `tests/guards/ssrf-egress-coverage.test.ts` | `tests/guards/ssrf-egress-coverage.test.ts` | COPY+EDIT | Rewritten for Islestone's one sink (the audit stream). |
+| `tests/helpers/audit-cleanup.ts` | `tests/helpers/audit-cleanup.ts` | COPY | None. |
+| `tests/helpers/binary-extensions.ts` | `tests/helpers/binary-extensions.ts` | COPY | None. |
+| `tests/helpers/encrypted-fields-fixture.ts` | `src/lib/security/encrypted-fields.ts` (its manifest, as test data) | COPY+EDIT | The parent's manifest kept as a fixture for the traversal suites; `fixtureManifestModule()`. |
+| `tests/helpers/run-env-script.ts` | — | Islestone-owned | Runs `scripts/print-env-ok.ts` under `tsx` with a clean env, for the env tests. |
+| `tests/integration/audit-chain-stored-form-and-order.test.ts` | `tests/integration/audit-chain-stored-form-and-order.test.ts` | COPY | None. |
+| `tests/integration/audit-hash-chain.test.ts` | `tests/integration/audit-hash-chain.test.ts` | COPY+EDIT | Mechanical: imports point at Islestone modules, `import type`, `noUncheckedIndexedAccess` guards. |
+| `tests/integration/audit-immutability.test.ts` | `tests/integration/audit-immutability.test.ts` | COPY+EDIT | Mechanical: imports point at Islestone modules, `import type`, `noUncheckedIndexedAccess` guards. |
+| `tests/integration/audit-middleware.test.ts` | `tests/integration/audit-middleware.test.ts` | COPY+EDIT | The written model is `TenantCustomRole` where the source wrote `Risk`; regex fixtures. |
+| `tests/integration/audit-tables-isolation.test.ts` | — | Islestone-owned | Two-tenant isolation for `AuditLog` and `AuditOutbox` as `app_user`; the privilege refusals through the cleanup helper's probes. |
+| `tests/integration/audit-writer.test.ts` | `tests/unit/audit-trail/audit-writer.test.ts` | COPY+EDIT | Moved to the integration project (it needs a database); imports; a select alias. |
+| `tests/integration/epic-b-encryption.test.ts` | `tests/integration/epic-b-encryption.test.ts` | COPY+EDIT | Rewritten on `TenantSecuritySettings.auditStreamSecretEncrypted`; rotation cases left for 1.5b; audit cleanup. |
+| `tests/integration/log-event-chain.test.ts` | — | Islestone-owned | `logEvent` inside `runInTenantContext` writes a chained row; a malformed payload writes nothing. |
+| `tests/integration/org-audit-immutability.test.ts` | `tests/integration/org-audit-immutability.test.ts` | COPY+EDIT | `"subjectUserId"` in the raw insert. |
+| `tests/integration/org-audit-writer.test.ts` | `tests/unit/audit-trail/org-audit-writer.test.ts` | COPY+EDIT | Moved to the integration project; imports; `subjectUserId`. |
+| `tests/integration/pii-encryption.test.ts` | `tests/integration/pii-encryption.test.ts` | COPY+EDIT | Raw reads alias `email`/`name` (no `*Encrypted` columns). |
+| `tests/integration/pii-relation-decrypt.test.ts` | `tests/integration/pii-relation-decrypt.test.ts` | REWRITE | Written fresh to the map: a membership's and an audit row's `user` decrypt; the raw-read precondition. |
+| `tests/integration/tenant-dek-schema.test.ts` | `tests/integration/tenant-dek-schema.test.ts`; the CHECK case of `tests/integration/tenant-dek-rotation.test.ts` (L165–185) | COPY+EDIT | The CHECK case added, and a new `pg_indexes` case for `Tenant_rotation_in_flight_idx`. |
+| `tests/unit/api-read-rate-limit-upstash.test.ts` | `tests/unit/api-read-rate-limit-upstash.test.ts` | COPY+EDIT | Paths; the Redis constructor mock; `import type`. |
+| `tests/unit/api-read-rate-limit.test.ts` | `tests/unit/api-read-rate-limit.test.ts` | COPY+EDIT | Paths `/api/t/<slug>/work-items`; API-key cases cut. |
+| `tests/unit/api-version-header.test.ts` | `tests/unit/api-version-header.test.ts` | COPY+EDIT | Version `2026-11-19`. |
+| `tests/unit/audit-diff-never-carries-encrypted-plaintext.test.ts` | `tests/unit/audit-diff-never-carries-encrypted-plaintext.test.ts` | COPY+EDIT | Mechanical: imports point at Islestone modules, `import type`, `noUncheckedIndexedAccess` guards. |
+| `tests/unit/audit-diff-reads-prior-state.test.ts` | `tests/unit/audit-diff-reads-prior-state.test.ts` | COPY+EDIT | Mechanical: imports point at Islestone modules, `import type`, `noUncheckedIndexedAccess` guards. |
+| `tests/unit/audit-trail-canonical-hash.test.ts` | `tests/unit/audit-trail-canonical-hash.test.ts` | COPY+EDIT | Mechanical: imports point at Islestone modules, `import type`, `noUncheckedIndexedAccess` guards. |
+| `tests/unit/audit-trail-chain-verify.test.ts` | `tests/unit/audit-trail-chain-verify.test.ts` | COPY+EDIT | Mechanical: imports point at Islestone modules, `import type`, `noUncheckedIndexedAccess` guards. |
+| `tests/unit/audit-trail-event-schema.test.ts` | `tests/unit/audit-trail-event-schema.test.ts` | COPY+EDIT | Mechanical: imports point at Islestone modules, `import type`, `noUncheckedIndexedAccess` guards. |
+| `tests/unit/audit-trail-guardrails.test.ts` | `tests/unit/audit-trail-guardrails.test.ts` | COPY+EDIT | Mechanical: imports point at Islestone modules, `import type`, `noUncheckedIndexedAccess` guards. |
+| `tests/unit/audit-trail-middleware.test.ts` | `tests/unit/audit-trail-middleware.test.ts` | COPY+EDIT | Mechanical: imports point at Islestone modules, `import type`, `noUncheckedIndexedAccess` guards. |
+| `tests/unit/audit-trail-org-canonical-hash.test.ts` | `tests/unit/audit-trail-org-canonical-hash.test.ts` | COPY | None. |
+| `tests/unit/audit-trail-redact.test.ts` | `tests/unit/audit-trail-redact.test.ts` | COPY+EDIT | Header names the fresh module; typing of the nested result. |
+| `tests/unit/audit-trail-stream.test.ts` | `tests/unit/audit-trail-stream.test.ts` | COPY+EDIT | `X-Islestone-*` headers. |
+| `tests/unit/audit-trail-verify.test.ts` | `tests/unit/audit-trail-verify.test.ts` | COPY+EDIT | Mechanical: imports point at Islestone modules, `import type`, `noUncheckedIndexedAccess` guards. |
+| `tests/unit/auth-flow/auth-ratelimit.test.ts` | `tests/integration/auth-ratelimit.test.ts` | COPY+EDIT | Placed under `tests/unit/auth-flow/` (it needs no database, and every integration suite must be DB-gated); imports. |
+| `tests/unit/auth-flow/middleware-csp.test.ts` | — (pattern of `tests/guards/csp-request-header-bridge.test.ts`) | Islestone-owned | Runs the real middleware: a nonce policy on the response and the request, fresh per request, on self-answered responses, report-only. |
+| `tests/unit/authRateLimit.test.ts` | `tests/unit/authRateLimit.test.ts` | COPY | None. |
+| `tests/unit/cors.test.ts` | `tests/unit/cors.test.ts` | COPY | None. |
+| `tests/unit/csp-refinement.test.ts` | `tests/unit/csp-refinement.test.ts` | COPY+EDIT | Asserts no third-party style host and no report endpoint. |
+| `tests/unit/csp.test.ts` | `tests/unit/csp.test.ts` | COPY+EDIT | Asserts no Google Fonts host and no report endpoint. |
+| `tests/unit/db/audit-concurrency-limits.test.ts` | `tests/unit/db/audit-concurrency-limits.test.ts` | COPY+EDIT | The 1.5 half (the audit writer's budgets); the cleanup case moved into `pool-and-tenant-tx-limits.test.ts`. |
+| `tests/unit/db/encryption-extension-branches.test.ts` | `tests/unit/db/encryption-extension-branches.test.ts` | COPY+EDIT | Fixture manifest. |
+| `tests/unit/db/org-audit-concurrency-limits.test.ts` | `tests/unit/db/org-audit-concurrency-limits.test.ts` | COPY | None. |
+| `tests/unit/db/prisma-audit-extension.test.ts` | `tests/unit/db/prisma-audit-extension.test.ts` | COPY+EDIT | A `Widget` model; a hoisted config store (TDZ under @swc/jest); slow-query parts cut (1.6). |
+| `tests/unit/encryption-dual-key.test.ts` | `tests/unit/encryption-dual-key.test.ts` | COPY+EDIT | `islestone-*` subkey purposes. |
+| `tests/unit/encryption-dual-tenant-dek.test.ts` | `tests/unit/encryption-dual-tenant-dek.test.ts` | COPY | None. |
+| `tests/unit/encryption-middleware.perf.test.ts` | `tests/unit/encryption-middleware.perf.test.ts` | COPY+EDIT | Fixture manifest; module mocked as an `__esModule` spread so `jest.spyOn` works under @swc/jest. |
+| `tests/unit/encryption-middleware.tenant-dek.test.ts` | `tests/unit/encryption-middleware.tenant-dek.test.ts` | COPY+EDIT | Fixture manifest; `jest.requireActual` for the re-import; doc references. |
+| `tests/unit/encryption-middleware.test.ts` | `tests/unit/encryption-middleware.test.ts` | COPY+EDIT | Runs over the fixture manifest. |
+| `tests/unit/encryption.test.ts` | `tests/unit/encryption.test.ts` | COPY+EDIT | The data-classification registry cases cut (not ported); `islestone-*` literals. |
+| `tests/unit/env-encryption-key.test.ts` | `tests/unit/env.test.ts` (the `DATA_ENCRYPTION_KEY` cases) | COPY+EDIT | The encryption-key cases only, through `run-env-script`. |
+| `tests/unit/env-rate-limit-mode.test.ts` | — | Islestone-owned | Issue #17: both states of the production refusal, each missing value, `memory`, non-production and `NEXT_TEST_MODE`. |
+| `tests/unit/progressive-rate-limit.test.ts` | `tests/unit/progressive-rate-limit.test.ts` | COPY | None. |
+| `tests/unit/rate-limit-holds-no-timer.test.ts` | `tests/unit/rate-limit-holds-no-timer.test.ts` | COPY | None. |
+| `tests/unit/rate-limit-middleware.test.ts` | `tests/unit/rate-limit-middleware.test.ts` | COPY+EDIT | Presets Islestone has; doc references. |
+| `tests/unit/rate-limit-rollout.test.ts` | `tests/unit/rate-limit-rollout.test.ts` | COPY | None. |
+| `tests/unit/safe-url.test.ts` | `tests/unit/safe-url.test.ts` | COPY | None. |
+| `tests/unit/security-cors.test.ts` | `tests/unit/security-cors.test.ts` | COPY | None. |
+| `tests/unit/security/detect-secrets.test.ts` | `tests/unit/security/detect-secrets.test.ts` | COPY+EDIT | Temp prefix `islestone-secret-scan-`. |
+| `tests/unit/security/encryption-write-tenant-context.test.ts` | `tests/unit/security/encryption-write-tenant-context.test.ts` | COPY+EDIT | Fixture manifest. |
+| `tests/unit/security/pii-middleware-bulk-and-nested.test.ts` | `tests/unit/security/pii-middleware-bulk-and-nested.test.ts` | COPY+EDIT | `User` and `Account` shapes; the Account dual-write cases kept. |
+| `tests/unit/security/pii-middleware-every-relation.test.ts` | `tests/unit/security/pii-middleware-every-relation.test.ts` | COPY+EDIT | Controls: `TenantMembership.user`, `AuditLog.user`, `OrgAuditLog.actor`/`subject`, `OrgMembership.user`. |
+| `tests/unit/security/pii-middleware-hash-rewriter.test.ts` | `tests/unit/security/pii-middleware-hash-rewriter.test.ts` | COPY+EDIT | Mapped `User` columns. |
+| `tests/unit/security/sanitize.test.ts` | `tests/unit/security/sanitize.test.ts` | COPY+EDIT | `sanitizePolicyContent` cases cut (no policy content). |
+| `tests/unit/security/startup-encryption-check.test.ts` | `tests/unit/security/startup-encryption-check.test.ts` | COPY | None. |
+| `tests/unit/security/startup-rate-limit-check.test.ts` | — | Islestone-owned | Issue #17: the startup twin of the schema refusal. |
+| `tests/unit/system-actor-context.test.ts` | `tests/unit/system-actor-context.test.ts` | COPY+EDIT | The `logEvent` half; the literal `system` principal. |
+| `tests/unit/tenant-key-manager.test.ts` | `tests/unit/tenant-key-manager.test.ts` | COPY+EDIT | The prisma mock through getters (TDZ under @swc/jest); rotation cases left for 1.5b. |
+| `tests/unit/tenant-keys.test.ts` | `tests/unit/tenant-keys.test.ts` | COPY | None. |
+| `tests/unit/webhook-crypto.test.ts` | `tests/integration/webhook.test.ts` | COPY+EDIT | The HMAC cases only, moved to the unit project (no database); the payload-extraction cases cut. |
+| `tests/unit/webhook-headers.test.ts` | `tests/unit/webhook-headers.test.ts` | COPY+EDIT | `X-Islestone-*` headers and User-Agent. |
+| `tests/unit/webhook-safety-dispatcher-egress.test.ts` | `tests/unit/webhook-safety-dispatcher-egress.test.ts` | COPY | None. |
+| `tests/unit/webhook-safety.test.ts` | `tests/unit/webhook-safety.test.ts` | COPY | None. |
+
+</details>
+
+Files from earlier sub-phases edited in 1.5 (their rows are in the sections above; Islestone's own configuration files — `package.json`, `package-lock.json`, `README.md`, the Jest, Playwright and ESLint configs, `next.config.ts`, `jest.setup.ts`, `.env.example` — are not ports and carry no row):
+
+<details>
+<summary>All 56 files</summary>
+
+| File | Changed in 1.5 |
+|---|---|
+| `prisma/fresh-db-schema-drift.expected.sql` | One deliberate line: `User.emailHash` NOT NULL in the database, nullable in the schema (GAP-21), with its reason. |
+| `prisma/schema/README.md` | Layout table gains `auth.prisma` and `audit-trail.prisma`; the residue line noted. |
+| `prisma/schema/auth.prisma` | `TenantSecuritySettings.auditStreamUrl` and `auditStreamSecretEncrypted` (source `auth.prisma`). |
+| `prisma/schema/enums.prisma` | `AuditOutboxStatus` (source `enums.prisma`); an `OrgAuditAction` comment. |
+| `prisma/schema/tenancy.prisma` | `Tenant.encryptedDek`/`previousEncryptedDek` and the audit back-relations; `User.email` holds ciphertext, `emailHash String? @unique`, `name` encrypted; the audit back-relations on `User` and `Organization` (source `auth.prisma`). |
+| `src/app-layer/events/audit.ts` | `logEvent` now appends a real chained row through `appendAuditEntry`, validating `detailsJson` first (source `src/app-layer/events/audit.ts`). |
+| `src/app-layer/types.ts` | `ActorType` imported from `@/lib/audit/types` and re-exported. |
+| `src/app-layer/usecases/custom-roles.ts` | Name and description sanitised with `sanitizePlainText` before storage. |
+| `src/app-layer/usecases/org-invites.ts` | Lookups by `emailHash: hashForLookup(x)`. |
+| `src/app-layer/usecases/tenant-invites.ts` | Lookups by `emailHash`. |
+| `src/app/api/auth/register/route.ts` | The workspace is created with its wrapped DEK inside the transaction (as the source); name and workspace name sanitised; the unique-violation target is `User_emailHash_key`; lookup by `emailHash`. |
+| `src/app/api/auth/verify-email/resend/route.ts` | Lookup by `emailHash`. |
+| `src/app/layout.tsx` | Async; reads the `x-csp-nonce` request header and sets `__webpack_nonce__` through a nonced inline script (source `src/app/layout.tsx`). |
+| `src/auth.ts` | Lookups by `emailHash`. |
+| `src/env.ts` | The 1.5 variables (encryption keys, lookup and subkey keys, fail-closed lever, audit-stream retry, egress allowlist, CSP report-only, CORS origins, Stripe key, Upstash); `DATA_ENCRYPTION_KEY` refused in production when missing, short or the fallback; `RATE_LIMIT_MODE` refused in production as `upstash` without both Upstash values (issue #17, new). |
+| `src/lib/api-version.ts` | Version `2026-11-19`; the docblock's route list re-pointed. |
+| `src/lib/audit/index.ts` | The 1.4 stub replaced by the source barrel (COPY). |
+| `src/lib/audit/org-audit-writer.ts` | The 1.4 stub replaced by the source writer (COPY+EDIT: `import type`, `noUncheckedIndexedAccess` guards, the `subjectUserId` column under the `targetUserId` input and hash key). |
+| `src/lib/auth/credentials.ts` | Lookup by `emailHash`. |
+| `src/lib/auth/email-lookup.ts` | Docblock: the normal form is now the input to `hashForLookup`. |
+| `src/lib/auth/email-verification.ts` | Lookup by `emailHash`. |
+| `src/lib/auth/password-management.ts` | Lookup by `emailHash`. |
+| `src/lib/errors/api.ts` | The tracing span and request metrics restored (source); Sentry stays 1.6. |
+| `src/lib/observability/metrics.ts` | The 1.4 stub replaced by the source's encryption, audit-stream, rate-limit and request metrics (COPY+EDIT: compliance, agent and job metrics cut). |
+| `src/lib/prisma.ts` | The audit extension (source L26–406) restored, then field encryption and PII, then the RLS tripwire; `import * as auditWriterModule`. |
+| `src/lib/security-headers.ts` | The static `Content-Security-Policy` removed (the middleware sends the nonce policy); `applySecurityHeaders` for responses the middleware answers itself. |
+| `src/lib/security/rate-limit-middleware.ts` | The MCP and agent-question presets cut from the re-exports (6.x); a comment. |
+| `src/lib/security/rate-limit.ts` | `MCP_PER_KEY_LIMIT`, `MCP_IP_CEILING_LIMIT` and `AGENT_QUESTION_LIMIT` cut (6.x). |
+| `src/lib/security/sanitize.ts` | The rest of the source module: `sanitizeRichTextHtml` and `sanitizeUrlText` (COPY+EDIT: `sanitizePolicyContent` cut, no policy content). |
+| `src/lib/security/totp-crypto.ts` | Salt and issuer renamed `Islestone`. |
+| `src/middleware.ts` | The per-request nonce CSP on request and response, CORS preflight and headers, the auth tier on `/api/auth/**`, the read tier after the org gate, the baseline headers on self-answered responses (source `src/middleware.ts`). |
+| `tests/e2e/smoke.spec.ts` | A nonce-policy case: scripts carry the nonce, no CSP violation, a fresh nonce per request. |
+| `tests/guards/enum-member-order-matches-migrations.test.ts` | Enum denominator raised to seven. |
+| `tests/guards/schema-index-coverage.test.ts` | Model list gains the three audit models. |
+| `tests/guards/schema-vocabulary.test.ts` | Model list and enum count for the 1.5 schema. |
+| `tests/guards/tenant-isolation-forward-lock.test.ts` | `ISOLATION_TESTED` gains `AuditLog` and `AuditOutbox` (`audit-tables-isolation.test.ts`). |
+| `tests/helpers/db.ts` | `prismaTestClient()` wrapped in the PII extension (lazy require, as the source); `RESET_TABLES` gains the audit tables; the direct-URL helper fixed. |
+| `tests/helpers/tenant-fixture.ts` | Lookup by `emailHash`. |
+| `tests/integration/api-security-layers.test.ts` | Audit rows cleared before teardown deletes. |
+| `tests/integration/auth-signin-no-auto-join.test.ts` | Audit rows cleared before teardown deletes; lookups by `emailHash`. |
+| `tests/integration/invite-redemption.test.ts` | Audit rows cleared before teardown deletes; lookups by `emailHash`. |
+| `tests/integration/invite-routes.test.ts` | Audit rows cleared before teardown deletes; lookups by `emailHash`. |
+| `tests/integration/jwt-claims-refresh.test.ts` | Lookups by `emailHash`. |
+| `tests/integration/last-owner-usecase-guard.test.ts` | Audit rows cleared before teardown deletes. |
+| `tests/integration/multi-tenant-jwt.test.ts` | Lookups by `emailHash`. |
+| `tests/integration/per-tenant-role-resolution.test.ts` | Lookups by `emailHash`. |
+| `tests/integration/prisma-enum-values-exist-in-pg.test.ts` | Denominators raised to seven enums and 28 values. |
+| `tests/integration/rls-coverage.test.ts` | Inventory gains `AuditLog` and `AuditOutbox`; `APPEND_ONLY_TABLES`; a test of the append-only privileges. |
+| `tests/integration/user-session-rls.test.ts` | Audit rows cleared before teardown deletes. |
+| `tests/setup/disconnect-after-suite.ts` | Drops the audit-stream buffers before disconnecting, so no flush timer outlives the file. |
+| `tests/unit/credentials-auth.test.ts` | A TDZ-safe env mock; the lookup asserted on `emailHash`. |
+| `tests/unit/db/pool-and-tenant-tx-limits.test.ts` | The audit-cleanup case from `audit-concurrency-limits.test.ts`; identity mocks for the encryption and PII extensions. |
+| `tests/unit/jwt-update-trigger-refresh.test.ts` | `emailHash` in the lookup. |
+| `tests/unit/register-refusal-codes.test.ts` | A production encryption key for the production cases; the `emailHash` unique violation; a case for the DEK written with the workspace. |
+| `tests/unit/security-headers.test.ts` | No static CSP; `applySecurityHeaders`. |
+| `tests/unit/totp-crypto.test.ts` | `issuer=Islestone`. |
 
 </details>
 

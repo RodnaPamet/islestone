@@ -1,0 +1,265 @@
+/**
+ * Tests for the data protection encryption abstraction.
+ *
+ * Covers:
+ * - AES-256-GCM encrypt/decrypt roundtrip
+ * - Tamper detection (modified ciphertext, truncated payload)
+ * - Versioned payload format parsing
+ * - HMAC-SHA256 deterministic lookup hashes
+ * - Edge cases: empty strings, unicode, emoji
+ * - IV randomness (same input → different ciphertexts)
+ */
+
+import {
+    encryptField,
+    decryptField,
+    hashForLookup,
+    keyedChangeDigest,
+    isEncryptedValue,
+    _resetKeyCache,
+} from '../../src/lib/security/encryption';
+
+
+// ─── Setup ──────────────────────────────────────────────────────────
+
+beforeEach(() => {
+    _resetKeyCache();
+    // Use a stable test key
+    process.env.DATA_ENCRYPTION_KEY = 'test-encryption-key-for-unit-tests-minimum-32-chars!!!';
+});
+
+afterEach(() => {
+    _resetKeyCache();
+    delete process.env.DATA_ENCRYPTION_KEY;
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  Encryption / Decryption
+// ═══════════════════════════════════════════════════════════════════
+
+describe('encryptField / decryptField', () => {
+    it('roundtrips a simple string', () => {
+        const plain = 'user@example.com';
+        const encrypted = encryptField(plain);
+        expect(decryptField(encrypted)).toBe(plain);
+    });
+
+    it('roundtrips an empty string', () => {
+        const encrypted = encryptField('');
+        expect(decryptField(encrypted)).toBe('');
+    });
+
+    it('roundtrips unicode / emoji', () => {
+        const plain = 'José García 🔐 données™';
+        const encrypted = encryptField(plain);
+        expect(decryptField(encrypted)).toBe(plain);
+    });
+
+    it('roundtrips a long string', () => {
+        const plain = 'a'.repeat(10_000);
+        const encrypted = encryptField(plain);
+        expect(decryptField(encrypted)).toBe(plain);
+    });
+
+    it('produces different ciphertexts for the same input (random IV)', () => {
+        const plain = 'same-input';
+        const a = encryptField(plain);
+        const b = encryptField(plain);
+        expect(a).not.toBe(b); // Different IVs
+        expect(decryptField(a)).toBe(plain);
+        expect(decryptField(b)).toBe(plain);
+    });
+
+    it('output starts with version prefix "v1:"', () => {
+        const encrypted = encryptField('test');
+        expect(encrypted.startsWith('v1:')).toBe(true);
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  Tamper Detection
+// ═══════════════════════════════════════════════════════════════════
+
+describe('tamper detection', () => {
+    it('detects modified ciphertext payload', () => {
+        const encrypted = encryptField('sensitive data');
+        // Flip a byte in the base64 payload
+        const parts = encrypted.split(':');
+        const payload = parts[1];
+        const buf = Buffer.from(payload, 'base64');
+        buf[14] ^= 0xFF; // Flip byte in the ciphertext region
+        const tampered = 'v1:' + buf.toString('base64');
+
+        expect(() => decryptField(tampered)).toThrow();
+    });
+
+    it('detects modified auth tag', () => {
+        const encrypted = encryptField('sensitive data');
+        const parts = encrypted.split(':');
+        const buf = Buffer.from(parts[1], 'base64');
+        buf[buf.length - 1] ^= 0xFF; // Flip last byte (in auth tag)
+        const tampered = 'v1:' + buf.toString('base64');
+
+        expect(() => decryptField(tampered)).toThrow();
+    });
+
+    it('rejects truncated ciphertext', () => {
+        const encrypted = encryptField('sensitive data');
+        const truncated = encrypted.slice(0, 20);
+        expect(() => decryptField(truncated)).toThrow();
+    });
+
+    it('rejects missing version prefix', () => {
+        expect(() => decryptField('not-versioned')).toThrow(/version prefix/i);
+    });
+
+    it('rejects null/undefined/empty input', () => {
+        expect(() => decryptField('')).toThrow();
+        expect(() => decryptField(null as unknown as string)).toThrow();
+        expect(() => decryptField(undefined as unknown as string)).toThrow();
+    });
+
+    it('rejects null/undefined plaintext for encryption', () => {
+        expect(() => encryptField(null as unknown as string)).toThrow();
+        expect(() => encryptField(undefined as unknown as string)).toThrow();
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  Key Management
+// ═══════════════════════════════════════════════════════════════════
+
+describe('key management', () => {
+    it('throws in production without DATA_ENCRYPTION_KEY', () => {
+        _resetKeyCache();
+        delete process.env.DATA_ENCRYPTION_KEY;
+        const origEnv = process.env.NODE_ENV;
+        // @ts-expect-error — process.env.NODE_ENV is typed as read-only but we need to override for testing
+        process.env.NODE_ENV = 'production';
+
+        expect(() => encryptField('test')).toThrow(/DATA_ENCRYPTION_KEY.*required/i);
+
+        // @ts-expect-error — restoring original value
+        process.env.NODE_ENV = origEnv;
+    });
+
+    it('uses dev fallback key in test environment', () => {
+        _resetKeyCache();
+        delete process.env.DATA_ENCRYPTION_KEY;
+        // NODE_ENV is 'test' in jest — should use fallback without throwing
+        const encrypted = encryptField('test-value');
+        expect(decryptField(encrypted)).toBe('test-value');
+    });
+
+    it('data encrypted with one key cannot be decrypted with another', () => {
+        const encrypted = encryptField('secret');
+
+        _resetKeyCache();
+        process.env.DATA_ENCRYPTION_KEY = 'completely-different-key-for-testing-minimum-32-chars!!!';
+
+        expect(() => decryptField(encrypted)).toThrow();
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  Lookup Hashes
+// ═══════════════════════════════════════════════════════════════════
+
+describe('hashForLookup', () => {
+    it('produces a 64-character hex string', () => {
+        const hash = hashForLookup('user@example.com');
+        expect(hash).toHaveLength(64);
+        expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('is deterministic — same input gives same hash', () => {
+        const a = hashForLookup('user@example.com');
+        const b = hashForLookup('user@example.com');
+        expect(a).toBe(b);
+    });
+
+    it('normalises case and whitespace', () => {
+        const a = hashForLookup('User@Example.COM');
+        const b = hashForLookup('user@example.com');
+        const c = hashForLookup('  user@example.com  ');
+        expect(a).toBe(b);
+        expect(b).toBe(c);
+    });
+
+    it('different inputs give different hashes', () => {
+        const a = hashForLookup('alice@example.com');
+        const b = hashForLookup('bob@example.com');
+        expect(a).not.toBe(b);
+    });
+
+    it('rejects null/undefined', () => {
+        expect(() => hashForLookup(null as unknown as string)).toThrow();
+        expect(() => hashForLookup(undefined as unknown as string)).toThrow();
+    });
+
+    it('hash changes when key changes', () => {
+        const hash1 = hashForLookup('user@example.com');
+
+        _resetKeyCache();
+        process.env.DATA_ENCRYPTION_KEY = 'a-completely-different-key-for-hash-testing-min32!!!';
+        const hash2 = hashForLookup('user@example.com');
+
+        expect(hash1).not.toBe(hash2);
+    });
+});
+
+describe('keyedChangeDigest', () => {
+    const URL_A = 'https://mcp.vendor.test/s/sk_live_canary/mcp';
+
+    it('is a deterministic 64-character hex digest that does not contain the value', () => {
+        const a = keyedChangeDigest('test-domain', URL_A);
+        expect(a).toMatch(/^[0-9a-f]{64}$/);
+        expect(keyedChangeDigest('test-domain', URL_A)).toBe(a);
+        expect(a).not.toContain('sk_live_canary');
+    });
+
+    it('uses the value exactly: case and surrounding space are changes', () => {
+        // hashForLookup folds both, which would hide a moved URL path.
+        const a = keyedChangeDigest('test-domain', URL_A);
+        expect(keyedChangeDigest('test-domain', URL_A.replace('canary', 'CANARY'))).not.toBe(a);
+        expect(keyedChangeDigest('test-domain', ` ${URL_A}`)).not.toBe(a);
+    });
+
+    it('is separated by domain, and is never the lookup hash of the same value', () => {
+        const lower = URL_A.toLowerCase();
+        expect(keyedChangeDigest('one', lower)).not.toBe(keyedChangeDigest('two', lower));
+        expect(keyedChangeDigest('one', lower)).not.toBe(hashForLookup(lower));
+    });
+
+    it('is keyed: another master key gives another digest', () => {
+        const a = keyedChangeDigest('test-domain', URL_A);
+        _resetKeyCache();
+        process.env.DATA_ENCRYPTION_KEY = 'a-completely-different-key-for-hash-testing-min32!!!';
+        expect(keyedChangeDigest('test-domain', URL_A)).not.toBe(a);
+    });
+
+    it('refuses an empty domain or one carrying NUL, the separator', () => {
+        expect(() => keyedChangeDigest('', URL_A)).toThrow();
+        expect(() => keyedChangeDigest('a\u0000b', URL_A)).toThrow();
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  isEncryptedValue
+// ═══════════════════════════════════════════════════════════════════
+
+describe('isEncryptedValue', () => {
+    it('recognises encrypted values', () => {
+        const encrypted = encryptField('test');
+        expect(isEncryptedValue(encrypted)).toBe(true);
+    });
+
+    it('rejects plain strings', () => {
+        expect(isEncryptedValue('user@example.com')).toBe(false);
+    });
+
+    it('handles null/undefined safely', () => {
+        expect(isEncryptedValue(null)).toBe(false);
+        expect(isEncryptedValue(undefined)).toBe(false);
+    });
+});

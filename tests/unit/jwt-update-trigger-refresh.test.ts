@@ -136,12 +136,12 @@ describe('jwt callback — the claims re-read is gated on the session row, not t
      *
      * The two reads are told apart by their ARGUMENTS, not by a call count
      * alone: the revocation check is `where: { id }` selecting `sessionVersion`,
-     * and the claims read is `where: { email }` with includes.
+     * and the claims read is `where: { emailHash }` with includes.
      */
     const claimsReads = () =>
         findUnique.mock.calls.filter((c) => {
             const arg = c[0] as { where?: Record<string, unknown> } | undefined;
-            return Boolean(arg?.where && 'email' in arg.where);
+            return Boolean(arg?.where && 'emailHash' in arg.where);
         }).length;
 
     const tokenWithOldCheck = () => ({

@@ -77,6 +77,7 @@ jest.mock('@/app-layer/usecases/tenant-invites', () => ({
 import { POST } from '@/app/api/auth/register/route';
 import { REGISTER_REFUSALS } from '@/lib/auth/register-refusals';
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from '@/lib/auth/passwords';
+import { isWrappedDek } from '@/lib/security/tenant-keys';
 
 const en = jest.requireActual('../../messages/en.json');
 
@@ -136,6 +137,13 @@ describe('POST /api/auth/register refusal codes', () => {
         expect((await res.json()).tenant).toEqual({ id: 't-1', name: 'Acme', slug: 'acme-x' });
     });
 
+    it('creates the workspace with its wrapped data key, in the same write (sub-phase 1.5)', async () => {
+        const res = await post({ ...base, orgName: 'Acme' });
+        expect(res.status).toBe(200);
+        const [[arg]] = mockCreateTenant.mock.calls as [[{ data: { encryptedDek?: string } }]];
+        expect(isWrappedDek(arg.data.encryptedDek)).toBe(true);
+    });
+
     it('every code has a sentence in each catalogue', () => {
         for (const catalogue of [en]) {
             for (const code of REGISTER_REFUSALS) {
@@ -186,11 +194,10 @@ describe('POST /api/auth/register without a workspace name (#4689)', () => {
 /** The unique violation the losing half of a racing duplicate registration gets. */
 function emailHashTaken() {
     const { Prisma } = jest.requireActual<typeof PrismaClientModule>('@prisma/client');
-    // Islestone's unique column is `email` until sub-phase 1.5 adds `emailHash`.
-    return new Prisma.PrismaClientKnownRequestError('Unique constraint failed on the fields: (`email`)', {
+    return new Prisma.PrismaClientKnownRequestError('Unique constraint failed on the fields: (`emailHash`)', {
         code: 'P2002',
         clientVersion: 'test',
-        meta: { target: ['email'] },
+        meta: { target: ['emailHash'] },
     });
 }
 
@@ -226,14 +233,23 @@ describe('POST /api/auth/register — a racing duplicate leaves no workspace beh
 });
 
 describe('POST /api/auth/register — the public sign-up switch (ADR 0006)', () => {
-    const saved = { signup: process.env.AUTH_PUBLIC_SIGNUP, nodeEnv: process.env.NODE_ENV };
+    const saved = {
+        signup: process.env.AUTH_PUBLIC_SIGNUP,
+        nodeEnv: process.env.NODE_ENV,
+        key: process.env.DATA_ENCRYPTION_KEY,
+    };
     const setEnv = (key: string, value: string | undefined) => {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
     };
+    // The lookup hash (`emailHash`, sub-phase 1.5) derives from the master
+    // key, which production refuses to fall back on; a production case needs
+    // a real one, as a production deployment does.
+    beforeEach(() => setEnv('DATA_ENCRYPTION_KEY', 'register-test-key-at-least-32-characters-long')); // pragma: allowlist secret
     afterEach(() => {
         setEnv('AUTH_PUBLIC_SIGNUP', saved.signup);
         setEnv('NODE_ENV', saved.nodeEnv);
+        setEnv('DATA_ENCRYPTION_KEY', saved.key);
     });
 
     it('is CLOSED by default in production: a new workspace is refused, and nothing is written', async () => {

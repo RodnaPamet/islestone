@@ -126,8 +126,8 @@ export function checkRateLimit(
         // The request fits once enough of the oldest attempts have left the
         // window to make room for all `units`. For one unit that is the oldest
         // attempt, as it always was. A charge larger than the whole budget can
-        // never fit; callers bound that before asking (the MCP route refuses
-        // such a batch with a 400), and the window is the honest answer here.
+        // never fit; a caller charging a batch bounds it first (6.2's MCP
+        // route), and the window is the honest answer here.
         const freeingIndex = entry.timestamps.length + units - config.maxAttempts - 1;
         const freeingAt = entry.timestamps[Math.max(0, freeingIndex)];
         return {
@@ -242,8 +242,8 @@ export const API_MUTATION_LIMIT: RateLimitConfig = {
  * iterating filter combinations, or a compromised credential
  * scraping data. The limit is roughly 2× the mutation budget because
  * reads are cheaper, idempotent, and a normal page load can fan
- * out to 5-10 list endpoints (controls + risks + evidence + counts
- * + traceability + …); 120/min comfortably covers that for a single
+ * out to 5-10 list endpoints (work items + projects + counts
+ * + activity + …); 120/min comfortably covers that for a single
  * actor while still tripping a real scraper within seconds.
  *
  * Bucketing: per (IP, userId, tenantSlug) so a single user with a
@@ -263,57 +263,6 @@ export const API_READ_LIMIT: RateLimitConfig = {
 };
 
 /**
- * `/api/mcp`, per API KEY: 60 JSON-RPC messages per minute per key.
- *
- * The MCP endpoint used to ride the default mutation tier, keyed
- * `api-mutation:ip:<ip>:anon` — one bucket per caller IP, shared with every
- * other default mutation route. That is the wrong unit for this surface. A
- * hosted MCP client (Anthropic's Managed Agents, the Messages API's MCP
- * connector) calls from its provider's egress addresses, so every customer
- * agent hosted there would share one 60/min budget, and one busy agent would
- * throttle every other customer's.
- *
- * So the budget belongs to the key. The bucket is the VERIFIED
- * `apiKeyId`, charged once `verifyMcpCredential` succeeds and before the
- * invocation is built (#4205) — never a digest
- * of the presented token, which is the thing an unauthenticated caller varies
- * (see `docs/rate-limiting.md` → *API-key callers*). An exchanged token
- * resolves to its issuing key, so exchange cannot multiply the budget. The
- * bucket carries no IP: a key calling from many addresses gets one budget, not
- * one per address.
- *
- * Charged per JSON-RPC MESSAGE, not per HTTP request, because one POST can
- * carry a batch; a per-request budget would let a single call carry any number
- * of tool calls. 60 keeps the per-caller figure the mutation tier always gave
- * this endpoint, and a batch larger than it is refused outright.
- */
-export const MCP_PER_KEY_LIMIT: RateLimitConfig = {
-    maxAttempts: 60,
-    windowMs: 60 * 1000,
-};
-
-/**
- * `/api/mcp`, per caller IP, BEFORE authentication: a ceiling, not a budget.
- *
- * Containment for the unauthenticated case, which the per-key budget above
- * cannot cover: a request with a made-up key never reaches it, and each one
- * still costs a key lookup before its 401. This is the same split the edge
- * makes for `iflk_` callers on `/api/t/**` — fairness keyed on the key,
- * containment keyed on the IP — with the fairness half moved to after
- * verification.
- *
- * Sized at ten keys' worth (600/min) so legitimate callers sharing an
- * address — every customer agent hosted at one provider — do not meet it in
- * ordinary use, while one address still cannot drive more than ten key lookups
- * a second. Its own scope (`mcp-ip`), so MCP traffic no longer shares a bucket
- * with every other mutation route called from the same address.
- */
-export const MCP_IP_CEILING_LIMIT: RateLimitConfig = {
-    maxAttempts: 600,
-    windowMs: 60 * 1000,
-};
-
-/**
  * API key creation: 5 per hour per (tenant, creator user).
  *
  * Threat model: post-compromise lateral movement. A user with a
@@ -321,50 +270,6 @@ export const MCP_IP_CEILING_LIMIT: RateLimitConfig = {
  * that chain and leave a denser audit trail. Legitimate churn (a
  * user rotating a handful of keys) is comfortably under 5/hr.
  */
-/**
- * Asking the workspace a question: 20 per hour, PER USER (#3869).
- *
- * The first preset in this file intended to bind a PERSON rather than an IP,
- * and it only works because the route supplies the `getUserId` resolver the
- * middleware has always accepted and no route has ever passed. Without it the
- * key is `<scope>:ip:<ip>:anon` and co-NAT'd colleagues share one budget —
- * which for a question endpoint means one busy user silently starves a floor.
- *
- * ── WHY A PER-USER LIMIT AT ALL, GIVEN THE MONTHLY BUDGET ───────────────────
- *
- * `assertWithinMonthlyBudget` already bounds what a TENANT spends, and it
- * pre-flights every run start. It does not bound who spends it: one person can
- * exhaust a whole workspace's month, and the others learn about it from a
- * refusal that names a budget they did not use. The two limits answer different
- * questions and neither replaces the other.
- *
- * ── WHAT 20/HOUR IS AND IS NOT ──────────────────────────────────────────────
- *
- * A person asking in earnest asks a handful of questions an hour; twenty is
- * comfortably above that and far below a script's rate. It is NOT a cost
- * control — a model call's cost varies by orders of magnitude with context, so
- * bounding request COUNT cannot bound spend. The monthly budget is the cost
- * control, and this is the one that keeps a single caller from monopolising it.
- *
- * No lockout beyond the window: a person who asks too fast should wait, not be
- * shut out for an hour. Compare `API_KEY_CREATE_LIMIT` below, where the lockout
- * is deliberate because minting credentials is not something to retry at speed.
- *
- * `lockoutMs` is OMITTED rather than set to 0. The check is
- * `if (config.lockoutMs && …)`, so the two behave identically — and an explicit
- * zero reads like a configured duration that happens to be short, where absence
- * says there is no lockout at all.
- *
- * Note the storage this rides on is an in-process Map, so with N app instances
- * the effective ceiling is N x 20. That is a property of the mutation tier
- * rather than of this preset, and it is recorded here because a reader checking
- * whether 20 is enforceable deserves to find it.
- */
-export const AGENT_QUESTION_LIMIT: RateLimitConfig = {
-    maxAttempts: 20,
-    windowMs: 60 * 60 * 1000,
-};
-
 export const API_KEY_CREATE_LIMIT: RateLimitConfig = {
     maxAttempts: 5,
     windowMs: 60 * 60 * 1000,

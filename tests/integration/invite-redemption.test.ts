@@ -2,18 +2,16 @@
  * Integration tests for the token-redemption invite flow (Epic 1, PR 3).
  *
  * Covers the full lifecycle: createInviteToken → previewInviteByToken →
- * redeemInvite → audit, plus the security edge cases enumerated
+ * redeemInvite → audit chain, plus the security edge cases enumerated
  * in the PR brief.
  *
  * All tests run against a real PostgreSQL instance. They are skipped
  * automatically when the DB is not available.
  */
 
-jest.mock('@/lib/audit', () => jest.requireActual('../helpers/audit-recorder').auditModuleMock());
-
 import { DB_AVAILABLE } from './db-helper';
-import { auditEntries } from '../helpers/audit-recorder';
 import { prismaTestClient } from '../helpers/db';
+import { deleteAuditRowsForTenants, deleteAuditRowsForUsers } from '../helpers/audit-cleanup';
 import { makeRequestContext } from '../helpers/make-context';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { PrismaClient } from '@prisma/client';
@@ -25,7 +23,8 @@ import {
     redeemPendingInvitesByEmail,
 } from '@/app-layer/usecases/tenant-invites';
 import { createTenantWithOwner } from '../helpers/tenant-fixture';
-import { lookupEmail } from '@/lib/auth/email-lookup';
+import { hashForLookup } from '@/lib/security/encryption';
+import { verifyAuditChain } from '@/lib/audit';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -49,6 +48,9 @@ describeFn('invite-redemption usecases', () => {
                 select: { id: true },
             });
             const ids = tenants.map((t) => t.id);
+            // Audit rows block the tenant delete (AuditLog_tenantId_fkey is
+            // RESTRICT) and outlive their users; clear them first (sub-phase 1.5).
+            await deleteAuditRowsForTenants(prisma, ids);
             if (ids.length > 0) {
                 await prisma.tenantInvite.deleteMany({ where: { tenantId: { in: ids } } });
                 await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: ids } } });
@@ -58,6 +60,8 @@ describeFn('invite-redemption usecases', () => {
             await prisma.tenant.deleteMany({ where: { slug: { in: tenantSlugs } } });
         } catch { /* best effort */ }
         try {
+            const users = await prisma.user.findMany({ where: { email: { in: userEmails } }, select: { id: true } });
+            await deleteAuditRowsForUsers(prisma, users.map((u) => u.id));
             await prisma.user.deleteMany({ where: { email: { in: userEmails } } });
         } catch { /* best effort */ }
         await prisma.$disconnect();
@@ -101,7 +105,7 @@ describeFn('invite-redemption usecases', () => {
     /** Create a User row with just an email (mirrors OAuth first-sign-in placeholder). */
     async function createUser(email: string) {
         return prisma.user.upsert({
-            where: { email: lookupEmail(email) },
+            where: { emailHash: hashForLookup(email) },
             create: { email, name: email.split('@')[0] },
             update: {},
         });
@@ -376,7 +380,7 @@ describeFn('invite-redemption usecases', () => {
         expect(await redeemPendingInvitesByEmail({ userId: user.id, userEmail: inviteeEmail })).toHaveLength(0);
     });
 
-    it('10. audit — MEMBER_INVITED, MEMBER_INVITE_ACCEPTED, MEMBER_INVITE_REVOKED all written', async () => {
+    it('10. audit chain — MEMBER_INVITED, MEMBER_INVITE_ACCEPTED, MEMBER_INVITE_REVOKED all written + chain valid', async () => {
         const { tenantId, ownerCtx } = await setupTenant('audit-chain');
         const inviteeEmail = emailFor('invitee-audit');
         const user = await createUser(inviteeEmail);
@@ -393,15 +397,21 @@ describeFn('invite-redemption usecases', () => {
             userEmail: inviteeEmail,
         });
 
-        // Until sub-phase 1.5 adds the AuditLog table, the entries the audit
-        // writer received (tests/helpers/audit-recorder.ts) stand in for rows.
-        const actions = auditEntries({ tenantId }).map((a) => a.action);
+        const audit = await prisma.auditLog.findMany({
+            where: { tenantId },
+            select: { action: true },
+            orderBy: { createdAt: 'asc' },
+        });
+        const actions = audit.map((a) => a.action);
 
         expect(actions).toContain('MEMBER_INVITED');
         expect(actions).toContain('MEMBER_INVITE_REVOKED');
         expect(actions).toContain('MEMBER_INVITE_ACCEPTED');
 
-        // The hash-chain check (verifyAuditChain) returns with the chain in 1.5.
+        // Verify hash chain integrity.
+        const chainResult = await verifyAuditChain(tenantId, prisma);
+        expect(chainResult.valid).toBe(true);
+        expect(chainResult.hashedEntries).toBe(chainResult.totalEntries);
     });
 
     // ── redeemPendingInvitesByEmail (verified-email sign-in path) ────────

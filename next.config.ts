@@ -19,8 +19,10 @@ const nextConfig: NextConfig = {
     agentRules: false,
     // The logger's pino-pretty transport (src/lib/observability/logger.ts)
     // runs in a worker thread, which bundling breaks; keep these three out of
-    // the server bundle and load them from node_modules.
-    serverExternalPackages: ['pino', 'pino-pretty', 'thread-stream'],
+    // the server bundle and load them from node_modules. The OpenTelemetry
+    // API keeps its global registry in one module instance, so it stays
+    // external too (sub-phase 1.6 registers the SDK against it).
+    serverExternalPackages: ['pino', 'pino-pretty', 'thread-stream', '@opentelemetry/api'],
     async headers() {
         return [{ source: '/:path*', headers: securityHeaders({ production: env.NODE_ENV === 'production' }) }];
     },

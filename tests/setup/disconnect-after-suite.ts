@@ -10,11 +10,19 @@
  *      them, and each holds a Postgres pool open until disconnected.
  *
  * Both calls are no-ops when the underlying client was never materialised.
- * Sub-phases 1.5 and 1.6 add the Redis and queue drains here.
+ *
+ * First, the audit stream's buffers are dropped (sub-phase 1.5). Every
+ * committed audit row is handed to `streamAuditEvent`, whose 5-second flush
+ * timer would otherwise fire after this file's environment is torn down and
+ * try to load `@/lib/prisma` to read a stream configuration no suite sets.
+ * Sub-phase 1.6 adds the queue drain here.
  */
+import { __resetAuditStreamForTests } from '@/app-layer/events/audit-stream';
+
 import { disconnectTestClient } from '../helpers/db';
 
 afterAll(async () => {
+    __resetAuditStreamForTests();
     await disconnectTestClient();
     // Reach for app-layer singletons only if they're already loaded —
     // don't force a fresh import and thereby create a new connection

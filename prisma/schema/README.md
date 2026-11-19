@@ -9,8 +9,10 @@ The schema lives in this directory, not in a single `prisma/schema.prisma`. `pri
 | `base.prisma` | `generator client` + `datasource db` (the only ones; Prisma rejects duplicates across the folder) |
 | `enums.prisma` | Every enum |
 | `tenancy.prisma` | `Organization`, `OrgMembership`, `Tenant` (a workspace), `TenantMembership`, `User` |
+| `auth.prisma` | The NextAuth, session, MFA, invite, custom-role and password-reset models, and `TenantSecuritySettings` (sub-phase 1.4; 1.5 adds the audit-stream columns) |
+| `audit-trail.prisma` | `AuditLog`, `OrgAuditLog`, `AuditOutbox` (sub-phase 1.5, [docs/audit-trail.md](../../docs/audit-trail.md)) |
 
-Sub-phase 1.4 adds `auth.prisma` for the NextAuth and session models; later sub-phases add one file per domain.
+Later sub-phases add one file per domain.
 
 ## Conventions
 
@@ -32,7 +34,7 @@ Names follow [ADR 0006](../../docs/adr/0006-vocabulary.md). No `@map` or `@@map`
 
 ### Migration discipline
 
-`prisma/migrations` is the only apply path. A database built from it must reproduce this folder exactly, both ways: `npm run db:check-schema-drift` (`scripts/check-fresh-db-schema-drift.mjs`) runs `prisma migrate diff` against a freshly migrated database in CI and compares the result with `prisma/fresh-db-schema-drift.expected.sql`, which is empty. A migration that creates a tenant table carries its RLS policies and its `GRANT … TO app_user` (see [docs/rls-tenant-isolation.md](../../docs/rls-tenant-isolation.md)).
+`prisma/migrations` is the only apply path. A database built from it must reproduce this folder exactly, both ways: `npm run db:check-schema-drift` (`scripts/check-fresh-db-schema-drift.mjs`) runs `prisma migrate diff` against a freshly migrated database in CI and compares the result with `prisma/fresh-db-schema-drift.expected.sql`, which holds one deliberate line (`User.emailHash`, nullable in the schema and NOT NULL in the database; see [docs/encryption.md](../../docs/encryption.md)). A migration that creates a tenant table carries its RLS policies and its `GRANT … TO app_user` (see [docs/rls-tenant-isolation.md](../../docs/rls-tenant-isolation.md)).
 
 ## Running Prisma
 

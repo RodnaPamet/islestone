@@ -92,6 +92,12 @@ export default defineConfig({
             // `next start` is production, where public sign-up is closed by
             // default (ADR 0006); the specs register their own workspaces.
             AUTH_PUBLIC_SIGNUP: '1',
+            // Sub-phase 1.5: a production start refuses to run without a
+            // real field-encryption key (src/env.ts and the startup check in
+            // src/instrumentation.ts). A throwaway test value, never a real key.
+            DATA_ENCRYPTION_KEY: process.env.DATA_ENCRYPTION_KEY ?? 'e2e-data-encryption-key-not-a-real-secret-0001', // pragma: allowlist secret
+            // In-memory counters, said explicitly: production refuses the
+            // Upstash default without Upstash credentials (issue #17).
             RATE_LIMIT_MODE: 'memory',
             NEXT_TELEMETRY_DISABLED: '1',
         },

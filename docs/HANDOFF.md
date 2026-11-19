@@ -38,6 +38,9 @@ porting maps now record them (next step 2); the last column says where.
 | 25 | ADR 0005 as recommended: no sync engine now (E0) with section 7's reopen thresholds; canvas persistence C1 and transport T1; TanStack Query as the client cache; item presence R1; stored Yjs state and snapshots encrypted, page text searched under ADR 0002's S1 for now; one audit entry per person per page per 10 minutes; a 60-second token lifetime, a 60-second stream re-check and the caps as written. ADR 0005 is Accepted; open questions 8 (long-lived connections on the hosting target) and 9 (offline PWA quick capture) stay open, not blocking. Decided 2026-11-19. | "Accept all" | ADR 0005 |
 | 26 | The words ADR 0005 added are confirmed: change notice, collaboration server, collaboration token, page content and projection. Decided 2026-11-19. | "Accept all" | ADR 0006 (decided rows); ADR 0005 open question 11 |
 | 27 | The Prisma CLI's tree: BlueOak-1.0.0 joins the licence allowlist, and `elkjs` (EPL-2.0) and the second `@visx/vendor` are exempted, pinned. Decided 2026-11-19. | "BlueOak + 2 exemptions" | ADR 0007 E7; `scripts/licence-exemptions.json` |
+| 28 | `src/instrumentation.ts` may read `process.env.NEXT_RUNTIME` and nothing else raw: the Node-only startup checks move to `src/instrumentation-node.ts`, imported behind that literal, so the Edge bundle drops them. Decided 2026-11-19. | "One named exception" | `tests/guards/no-raw-process-env.test.ts`; CLAUDE.md "Rules that apply now" |
+| 29 | `RATE_LIMIT_MODE` defaults to `upstash`, and production refuses to start without both Upstash values (issue #17); per-process limits are an explicit `RATE_LIMIT_MODE=memory`. The 1.5 map's "default to memory" is not taken. Decided 2026-11-19. | "Upstash + refuse" | `src/env.ts`; `docs/rate-limiting.md` |
+| 30 | The CSP violation-report sink comes back with observability in 1.6; until then the policy names no report endpoint. Decided 2026-11-19. | "With 1.6" | `docs/porting/maps/1.6.md`; `docs/security-perimeter.md` |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
@@ -233,5 +236,33 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      placeholder workspace page at `/t/<slug>` that 1.7 replaces.
    Open for the owner: whether `/` and `/gallery` stay public (they are, as before 1.4);
    a seed tenant for E2E (roadmap 1.8 or H1); ADR 0004 open question 7 (the `next-auth`
-   overrides entry for nodemailer) is still open, and no override was added. 1.5 is
-   next.
+   overrides entry for nodemailer) is still open, and no override was added.
+   **1.5a (the security perimeter) has landed** on branch `wt/p15` (PR #16, not pushed
+   from this session), by `docs/porting/maps/1.5.md` (`PROVENANCE.md`, "Copied: security
+   perimeter"):
+   - Field encryption with per-workspace DEKs (`Tenant.encryptedDek`, wrapped in the
+     register transaction), fail-closed decryption, and a one-entry manifest
+     (`TenantSecuritySettings.auditStreamSecretEncrypted`). Production refuses to start
+     without a real `DATA_ENCRYPTION_KEY` (schema and startup check).
+   - The PII extension: `User.email` and `name` hold ciphertext under their own names
+     (ADR 0006 forbids `@map`), every lookup is by `emailHash`, nullable in the schema and
+     NOT NULL in the database (one residue line); `Account` tokens dual-written. The
+     migration refuses a database with existing `User` rows.
+   - The hash-chained `AuditLog` and `OrgAuditLog` (`subjectUserId`, ADR 0006 bans
+     "Target") with immutability triggers and SELECT/INSERT-only grants, `AuditOutbox`,
+     the erasure record, `logEvent` writing real rows from every 1.4 mutation, the audit
+     stream through `safeFetch`, and `scripts/verify-audit-chain.ts`.
+   - The edge read and auth rate-limit tiers, and issue #17: production refuses
+     `RATE_LIMIT_MODE=upstash` (the default) without both Upstash values.
+   - A per-request nonce CSP (request-header and `__webpack_nonce__` bridges), CORS,
+     sanitisation profiles, the egress allowlist, and secret detection (Husky hook plus
+     `tests/guards/no-secrets.test.ts`).
+   - Docs: `docs/encryption.md`, `docs/audit-trail.md`, `docs/rate-limiting.md`,
+     `docs/security-perimeter.md`.
+   Left for **1.5b**, after 1.6 brings the job queue: the master-key and per-tenant DEK
+   rotation jobs and routes, `scripts/rotate-global-pii.ts` and the audit-outbox drain.
+   Decided on review (rows 28 to 30): the startup checks are in
+   `src/instrumentation-node.ts`, behind a literal `process.env.NEXT_RUNTIME` branch, so
+   `next build` no longer warns; `upstash` stays the default with the production refusal;
+   the CSP violation-report sink is ported in 1.6. The 1.4 integration suites now read
+   real audit rows and the recorder is gone (issue #18). 1.5b is issue #19. 1.6 is next.
