@@ -32,12 +32,17 @@ export interface CanonicalParent {
 }
 
 /**
- * Subpage pattern → canonical parent. Empty until Phase 2 brings the first
- * subpages (a project's page, a work item's page); each then gets its
- * parent here, and `tests/guards/back-affordance-no-cycles.test.ts` walks
+ * Subpage pattern → canonical parent. Phase 2 brought the first subpages
+ * (a project's page and a work item's page, sub-phase 2.3); each new one
+ * gets its parent here, and `tests/guards/back-affordance-no-cycles.test.ts` walks
  * the map.
  */
-const PARENT_MAP: Record<string, CanonicalParent> = {};
+const PARENT_MAP: Record<string, CanonicalParent> = {
+    // Sub-phase 2.3. A work item's page falls back to the workspace list (its
+    // project is in the URL only by key, so the list is the stable parent).
+    '/work-items/[workItemKey]': { href: '/work-items', label: 'Work items' },
+    '/projects/[projectKey]': { href: '/projects', label: 'Projects' },
+};
 
 /**
  * Resolve the canonical parent for a runtime pathname. Returns `null` for

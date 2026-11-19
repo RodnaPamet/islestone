@@ -70,7 +70,7 @@ function Chevron({ dir }: { dir: 'up' | 'down' }) {
  * `t.has` call crashes every page-level suite that mounts a detail page
  * carrying this nav. A slug added here needs its `ui.recordStepper` pair.
  */
-export const STEPPER_ENTITIES: ReadonlySet<string> = new Set<string>([]);
+export const STEPPER_ENTITIES: ReadonlySet<string> = new Set<string>(['workItem']);
 
 export function EntityPrevNextNav({
     ids,

@@ -42,6 +42,7 @@ type CommonTranslate = ReturnType<typeof useTranslations<'common'>>;
 const SECTION_LABELS: Record<string, string> = {
     '/my-work': 'myWork',
     '/inbox': 'inbox',
+    '/work-items': 'workItems',
     '/views': 'views',
     '/projects': 'projects',
     '/settings': 'settings',

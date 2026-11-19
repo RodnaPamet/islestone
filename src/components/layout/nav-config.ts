@@ -16,7 +16,7 @@
 import type { Role } from '@prisma/client';
 import { useTranslations } from 'next-intl';
 
-import { Bell, Folder, UserCheck, Views } from '@inflect/ui/components/ui/icons/nucleo';
+import { Bell, Folder, GridLayoutRows, UserCheck, Views } from '@inflect/ui/components/ui/icons/nucleo';
 import { membershipOpensAdminConsole } from '@/lib/auth/edge-admin-roles';
 import type { PermissionSet } from '@/lib/permissions';
 import { usePermissions, useTenantContext, useTenantHref } from '@/lib/tenant-context-provider';
@@ -27,6 +27,7 @@ import type { NavGlyph } from './nav-item';
 export const NAV_PATHS = {
     myWork: '/my-work',
     inbox: '/inbox',
+    workItems: '/work-items',
     projects: '/projects',
     views: '/views',
     settings: '/settings',
@@ -67,10 +68,11 @@ export interface NavSectionDef {
  * The sidebar's sections.
  *
  *   (untitled)   My Work, Inbox — the member's own work and notifications
- *   Workspace    Projects, Views
+ *   Workspace    Work items, Projects, Views
  *
- * Settings is the footer gear, not a row. Per-project rows arrive with
- * projects (sub-phases 2.1 and 2.3); the Inbox unread badge with 2.7.
+ * Settings is the footer gear, not a row. Work items (the workspace-wide
+ * list and board) and Projects arrived with 2.3; the Inbox unread badge
+ * arrives with 2.7.
  */
 export function useNavSections(): NavSectionDef[] {
     const tenantHref = useTenantHref();
@@ -86,6 +88,7 @@ export function useNavSections(): NavSectionDef[] {
         {
             title: t('workspace'),
             items: [
+                { key: 'workItems', href: tenantHref(NAV_PATHS.workItems), label: t('workItems'), icon: GridLayoutRows },
                 { key: 'projects', href: tenantHref(NAV_PATHS.projects), label: t('projects'), icon: Folder },
                 { key: 'views', href: tenantHref(NAV_PATHS.views), label: t('views'), icon: Views },
             ],

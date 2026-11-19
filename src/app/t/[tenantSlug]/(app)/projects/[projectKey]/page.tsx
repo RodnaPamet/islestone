@@ -1,0 +1,28 @@
+import { notFound } from 'next/navigation';
+
+import { WorkConfigProvider } from '@/components/work-items/data/use-work-config';
+import { WorkItemsView } from '@/components/work-items/WorkItemsView';
+import { workItemPageContext } from '@/lib/server/work-item-pages.server';
+
+/**
+ * A project's work items, as a list or as the board whose columns are its
+ * team's workflow states (sub-phase 2.3). The URL names the project by its
+ * key prefix (`/projects/ISL`); an unknown or invisible prefix is a 404.
+ */
+export default async function ProjectPage({ params }: { params: Promise<{ tenantSlug: string; projectKey: string }> }) {
+    const { tenantSlug, projectKey } = await params;
+    const { config } = await workItemPageContext(tenantSlug);
+    const prefix = decodeURIComponent(projectKey).toUpperCase();
+    const project = config.projects.find((p) => p.keyPrefix === prefix);
+    if (!project) notFound();
+    return (
+        <WorkConfigProvider config={config}>
+            <WorkItemsView
+                scope={{ projectId: project.id, teamId: project.teamId }}
+                title={project.name}
+                description={project.keyPrefix}
+                viewKey={`project:${project.id}`}
+            />
+        </WorkConfigProvider>
+    );
+}
