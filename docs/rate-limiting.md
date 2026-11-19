@@ -93,6 +93,13 @@ These paths are **never** read-throttled:
 | `/api/readyz` | Readiness probe. |
 | `/api/docs` | Not a route today; listing it means a future docs surface ships unthrottled. |
 
+One path outside `/api/t/` is read-throttled at the same tier: GET and HEAD
+on the CSP report sink (`/api/security/csp-report`, `/api/csp-report`,
+sub-phase 1.6), keyed by IP alone and checked before the public-path
+allowlist, because the GET is guarded only by the platform operator's key.
+The sink's POST keeps its own per-IP limiter inside the handler
+(`docs/security-perimeter.md`, "CSP violation reports").
+
 The match is prefix-with-slash (`path === excluded ||
 path.startsWith(excluded + '/')`), so `/api/health` matches and
 `/api/healthcheck` does not. `tests/unit/api-read-rate-limit.test.ts`

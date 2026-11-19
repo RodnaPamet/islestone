@@ -1,0 +1,105 @@
+# Background jobs
+
+Sub-phase 1.6. Work that does not belong in a request runs on a BullMQ queue
+backed by Redis, in a separate worker process.
+
+Copied and edited from inflect-compliance's job layer at
+`5528464fc54a8681956f3b9ce23ca9c075f0420e` and its `docs/worker-autoscaling.md`
+(`PROVENANCE.md`, "Copied: jobs, notifications and observability"). Two jobs
+are registered; every later job is an addition to the registry, the payload
+map and the schedule (sub-phase 1.5b's key-rotation and outbox-drain jobs are
+the next).
+
+## The pieces
+
+```
+enqueue(name, payload)            scripts/scheduler.ts (once per deploy)
+  src/app-layer/jobs/queue.ts       registers SCHEDULED_JOBS as repeatables
+           │                                    │
+           ▼                                    ▼
+      Redis: BullMQ queue `islestone-jobs` (noeviction)
+           │
+           ▼
+scripts/worker.ts  ──►  executorRegistry.execute(name, payload)
+  (concurrency 5)        src/app-layer/jobs/executor-registry.ts
+                              │
+                              ▼
+                        registered executors
+```
+
+| File | What |
+|---|---|
+| `src/app-layer/jobs/types.ts` | `JobPayloadMap` (the job names and their typed payloads), `JOB_DEFAULTS` (attempts, backoff, retention per job), `JobRunResult`, `QUEUE_NAME`, the due-item shapes for 2.2's reminders, and `NamesEveryField`. |
+| `queue.ts` | `enqueue(name, payload, options?)`: typed, refuses a custom job id BullMQ would reject (`:` and the like), carries the caller's trace context in the payload. `closeQueue()` closes the queue and quits its connection. |
+| `executor-registry.ts` | One executor per job name, registered once (a duplicate throws). `execute` never throws: a failure becomes a `JobRunResult` with `success: false`, and a `NonRetryableJobError` also sets `noRetry`. |
+| `schedules.ts` | `SCHEDULED_JOBS` (the cron table) and `RETIRED_SCHEDULER_NAMES`. |
+| `register-schedules.ts` | Upserts every scheduled job and removes schedulers this app defines but no longer schedules, never one it does not know. |
+| `non-retryable.ts` | `NonRetryableJobError(message, 'terminal' \| 'rate_limited')`: thrown by a job whose retry cannot succeed. The worker turns it into BullMQ's `UnrecoverableError` and `job.queue.retry_bypassed` counts it. 5.3's integration errors extend it, so the registry never imports integration code. |
+| `fan-out.ts`, `drain-pages.ts`, `tenant-job-lookup.ts` | Helpers for jobs that fan out per workspace: deterministic, BullMQ-valid job ids per time bucket; a paged read that cannot skip rows; finding a workspace's job by id. Unused by the two jobs today. |
+| `worker-heartbeat.ts` | The worker writes `islestone:worker:heartbeat` with an 8-minute TTL after each completed job; `scripts/worker-healthcheck.ts` exits non-zero when the key is gone. The `health-check` job's two-minute cadence keeps it fresh on an idle worker. |
+
+## The jobs
+
+| Job | Schedule | Attempts | What |
+|---|---|---|---|
+| `health-check` | every 2 minutes | 1 | Answers `pong` with its payload. Proves the queue, the worker and the registry agree, and keeps the heartbeat fresh. |
+| `notification-outbox-flush` | every 10 minutes | 1 | Drains the email outbox (`processOutbox`, `docs/notifications.md`). Every workspace by default; a payload naming `tenantId` drains only that one. One attempt, because the next tick is the retry and each row has its own three. |
+
+Each executor names the payload fields it forwards (`NamesEveryField`), so a
+field added to a payload fails `tsc` until it is forwarded or left out on
+purpose: a dropped `tenantId` would turn a one-workspace run into a drain of
+every workspace. `tests/guards/executor-payload-forwarding.test.ts` refuses an
+executor that ignores its payload.
+
+## Adding a job
+
+1. A key in `JobPayloadMap` with its payload interface, and its
+   `JOB_DEFAULTS` entry (`tsc` requires both).
+2. `executorRegistry.register('<name>', async (payload) => …)` in
+   `executor-registry.ts`, the body wrapped in `runJob` (below) and the
+   payload fields named.
+3. Either an entry in `SCHEDULED_JOBS`, or an `ON_DEMAND_JOBS` entry with its
+   reason in `tests/guards/runtime-wiring-coverage.test.ts`. A job that is
+   neither fails CI: it would never run.
+4. A job that resolves people to mail must check that their workspace is
+   live (`tests/guards/cross-tenant-recipient-liveness.test.ts`).
+5. Nothing the worker reaches may import the NextAuth seam or import
+   `next/headers`, `next/navigation` or `server-only` statically
+   (`tests/guards/worker-import-graph.test.ts`): the worker is plain Node.
+
+A job that writes rows needing a `User` foreign key and acts for nobody uses
+`buildTenantSystemJobContext` (`src/app-layer/context-system.ts`): the
+workspace's system user, `sys_<tenantId>`, which the database refuses as a
+sign-in, membership, credential or session. A job that does what a person
+asked resolves that person's membership again when it runs
+(`resolveInitiatorContext`, `resolveMemberContext`); a `null` is a refusal,
+never a reason to fall back to a system context.
+
+## Running it
+
+```bash
+docker compose up -d          # Redis with noeviction and a password, Postgres
+npm run scheduler             # register the repeatable jobs once (tsx)
+npm run worker                # the long-running worker (tsx)
+npm run build:worker          # bundle worker, scheduler and healthcheck into dist/ (esbuild)
+node dist/worker-healthcheck.mjs   # exit 0 when the heartbeat is fresh
+```
+
+The worker reads `REDIS_URL` and the database variables from the
+environment (`.env.local` is not loaded by `tsx`; export it first). It also
+registers the schedules itself at boot, so a skipped scheduler step does not
+leave the crons unregistered. On SIGTERM it stops taking jobs, waits for the
+running ones, flushes the audit-stream buffers and the telemetry, and exits.
+
+## Redis
+
+- **`REDIS_URL` is required in production and must carry a password**:
+  `src/env.ts` refuses the value, and `src/instrumentation-node.ts` refuses
+  the start, naming the variable.
+- **The eviction policy must be `noeviction`**: an evicting Redis drops
+  queued jobs under memory pressure. `docker-compose.yml` sets it, and the web
+  process checks it at boot (`verifyRedisEvictionPolicy`): an error in the log
+  in production, a warning elsewhere, never a refusal to start, because a
+  managed Redis may not answer `CONFIG GET`.
+- The rate limiter's Upstash store (`RATE_LIMIT_MODE`) is a separate service
+  and is not this Redis.

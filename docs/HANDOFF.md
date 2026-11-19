@@ -266,3 +266,30 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    `next build` no longer warns; `upstash` stays the default with the production refusal;
    the CSP violation-report sink is ported in 1.6. The 1.4 integration suites now read
    real audit rows and the recorder is gone (issue #18). 1.5b is issue #19. 1.6 is next.
+   **1.6 (jobs, notifications and observability) has landed** on branch `wt/p16`, by
+   `docs/porting/maps/1.6.md` (`PROVENANCE.md`, "Copied: jobs, notifications and
+   observability"):
+   - The BullMQ queue (`islestone-jobs`), the executor registry with two jobs
+     (`health-check` every 2 minutes, `notification-outbox-flush` every 10), the worker,
+     scheduler and healthcheck scripts and their esbuild bundle (`npm run build:worker`),
+     `NonRetryableJobError`, the heartbeat, and the per-workspace system user
+     (`sys_<tenantId>`, refused by CHECKs as a sign-in, membership or session). Production
+     refuses to start without an authenticated `REDIS_URL`; Redis runs `noeviction`.
+     `docs/jobs.md`.
+   - Notifications: `Notification`, `NotificationOutbox` and `TenantNotificationSettings`
+     (RLS, two-workspace test; no DELETE for `app_user` on the last two), the outbox with
+     its claim-before-send lease, the due-digest dispatcher, the two bell writers with
+     in-app mutes, the bell routes and SSE stream, the settings routes and a workspace
+     drain. No SMTP transport: mail goes to the console sink. `docs/notifications.md`.
+   - Observability: the OpenTelemetry SDK (off unless `OTEL_ENABLED=true`), the metrics
+     and fifteen business KPIs, job trace propagation, web vitals, shutdown handlers with
+     the audit-stream flush, the `observable-gauge-rebinds` lint rule. Sentry is a no-op
+     stub. `docs/observability.md`.
+   - The CSP violation sink (`/api/security/csp-report`, the legacy `/api/csp-report`
+     delegating in-process), `report-uri` and `report-to` in the policy, and the three
+     beacons as `MACHINE_CALLER_PREFIXES` (row 30).
+   - CI: a Redis service in Integration and E2E, and the worker bundle in Build.
+   Open for the owner: the SMTP transport (`nodemailer` is MIT-0) and the Sentry SDK
+   (`sentry` is FSL-1.1-Apache-2.0), neither on the licence allowlist (ADR 0007); the
+   column names `Notification.body` and `TenantNotificationSettings.bccMailbox` for the
+   ADR 0006 record. 1.5b (issue #19) can now use the queue; 1.7 is next.
