@@ -502,6 +502,11 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    overridden version. Remove the override once Prisma ships an
    `@prisma/config` that depends on `effect` ≥3.22.1 (CLAUDE.md, "package.json
    overrides").
+   CodeQL's unpinned-action alerts (same review): every third-party action
+   (anything outside `actions/*`) in every workflow is pinned to the full
+   commit SHA of its tag, the tag in a trailing comment;
+   `tests/guards/workflow-action-pinning.test.ts` fails on one that is not.
+   `actions/*` stay on their major tags, as the existing workflows had them.
    Still open for the owner: whether the H1 "dependency audit blocking" item
    needs more than CI's existing `Audit` job (it already fails on a moderate
    advisory).
