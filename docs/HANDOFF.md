@@ -4,7 +4,7 @@ State of the roadmap work when it paused, the owner decisions taken so far, and 
 steps in order. Read this first, then `CLAUDE.md`, `docs/ROADMAP.md` and `docs/adr/`.
 Delete this file when everything under "Next steps" is done.
 
-## Owner decisions, 2026-11-18
+## Owner decisions, 2026-11-18 and 2026-11-19
 
 Given in the working session by the repository owner. The ADRs, the roadmap and the
 porting maps now record them (next step 2); the last column says where.
@@ -30,6 +30,13 @@ porting maps now record them (next step 2); the last column says where.
 | 17 | Islestone's agents have no risk tier: every agent is governed by its grants and its autonomy rung alone. inflect-compliance's tier and what it drives (autonomy cap, policy-card defaults, approval count, readiness checks, re-assessment) are not ported. | "Drop it" | ADR 0003 section 4; porting maps `6.1.md` (section G, which names each replacement) and `6.2.md` |
 | 18 | Automation rules get an action that starts an agent run, added in Phase 6: 5.1 ships without it, and 6.3 adds it once the agent engine and its kill switch exist. | "Add it in Phase 6" | `docs/ROADMAP.md` 5.1 and 6.3; porting map `5.1.md`, open decision 7 |
 | 19 | The Unlicense joins the licence allowlist (first needed by visx's `robust-predicates`, sub-phase 1.2). Decided 2026-11-19. | "Allow the Unlicense" | ADR 0007 E6; `scripts/licence-gate.mjs` |
+| 20 | Authentication: port the parent's auth layer on NextAuth v4 (option A), with the ADR's scope, pin, seam, exit criteria and contract. Decided 2026-11-19. | "Port NextAuth v4" | ADR 0004 A1 |
+| 21 | SSO and SCIM wait for sub-phase 8.3. Roadmap 1.4 ports credentials, Google, Microsoft, sign-in sessions, MFA and invites. Decided 2026-11-19. | "Wait for 8.3" | ADR 0004 A2, open question 3 |
+| 22 | ADR 0004's exit thresholds T1 to T3 as written (open question 2), and the parent's fail-open on a database error during the session check is kept (contract item 6, open question 4). ADR 0004 is Accepted; open questions 5 (passkeys), 6 (the maintenance claim) and 7 (the `next-auth` overrides entry) stay open, not blocking. Decided 2026-11-19. | "Accept all" | ADR 0004 A4, A5 |
+| 23 | Search versus encryption: S1 now (titles, keys and unencrypted fields), until a search ADR, due before roadmap 2.7, chooses between S2 and S3. Decided 2026-11-19. | "S1 now, decide later" | ADR 0002 section 11 |
+| 24 | The rest of ADR 0002 as recommended: an in-house fractional-index module with property tests (F1); a 30-day soft-delete window; depth caps of 5 levels of sub-items and 3 of goals; moving a sub-item on its own to another project is refused. ADR 0002 is Accepted. Decided 2026-11-19. | "Accept all" | ADR 0002 sections 2, 5 and 8 |
+| 25 | ADR 0005 as recommended: no sync engine now (E0) with section 7's reopen thresholds; canvas persistence C1 and transport T1; TanStack Query as the client cache; item presence R1; stored Yjs state and snapshots encrypted, page text searched under ADR 0002's S1 for now; one audit entry per person per page per 10 minutes; a 60-second token lifetime, a 60-second stream re-check and the caps as written. ADR 0005 is Accepted; open questions 8 (long-lived connections on the hosting target) and 9 (offline PWA quick capture) stay open, not blocking. Decided 2026-11-19. | "Accept all" | ADR 0005 |
+| 26 | The words ADR 0005 added are confirmed: change notice, collaboration server, collaboration token, page content and projection. Decided 2026-11-19. | "Accept all" | ADR 0006 (decided rows); ADR 0005 open question 11 |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
@@ -118,7 +125,9 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
 
 1. **Finish Phase 0 + 1.1.** Done on the branch: the skeleton is there, and PR #1's first
    completed CI run, on `3ffb78a`, was green. Roadmap 0.2's "Done when: five ADRs merged"
-   still waits: PR #1 is a draft, and ADRs 0002 to 0006 await the owner's sign-off.
+   PR #1 merged on 2026-11-19. Roadmap 0.2's five ADRs: 0001, 0002, 0004, 0005 and 0007
+   are Accepted; 0003 and 0006 record the owner's decisions in place and stay Proposed for
+   their remaining open questions.
 2. **Record the owner decisions.** Done. What landed:
    - ADR 0001 is Accepted. It records D1 (copying allowed), D2 (BUSL-1.1, licensor
      Inflect Ltd.), D3 (tldraw 3.x with the watermark) and a new D4 (Dub/Nucleo taken as
@@ -127,8 +136,8 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      and other licence notices.
    - ADR 0007 is Accepted (decisions 11 and 12). ADR 0003 records decisions 13 and 14 in
      place; ADR 0006 records decisions 7 to 9. Both stay Proposed, because their other
-     open questions are unanswered. ADRs 0002, 0004 and 0005 stay Proposed; their
-     references to the retired interim rule were corrected.
+     open questions are unanswered. ADRs 0002, 0004 and 0005 were
+     Accepted on 2026-11-19 (decisions 20 to 26).
    - `package.json` says `"license": "BUSL-1.1"`.
    - The licence gate allows 0BSD, the `tslib` exemption is gone, an exemption must cite
      an Accepted ADR that names the package, and a workspace holding `UPSTREAM.json` is

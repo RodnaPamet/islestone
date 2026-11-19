@@ -1,6 +1,6 @@
 # 0002 — Work item model
 
-Status: Proposed — awaiting owner sign-off (2026-11-18 drafted)
+Status: Accepted (owner decisions, 2026-11-19)
 
 ## Context
 
@@ -8,7 +8,9 @@ Roadmap principle 3 says Islestone has one work-item table, and that views, cycl
 
 This ADR fixes the shape of that model before 2.1 writes it. It uses the words in ADR 0006. Column names follow that ADR's recommended option W1 (`tenantId`); if the owner chooses W2, they become `workspaceId` and nothing else here changes. The schema sketch below is illustrative, not final.
 
-How to read this ADR: a line marked **Verified** was read in the named file on 2026-11-18. Everything else is a recommendation or an open question.
+This ADR was drafted on 2026-11-18. The repository owner decided its open questions in the working session on 2026-11-19: search titles, keys and unencrypted fields until a search ADR chooses (S1, section 11); an in-house fractional index (F1, section 5); a 30-day soft-delete window (section 8); depth caps of 5 and 3 (section 2); and moving a sub-item on its own to another project is refused (section 2). Each records the owner's choice where it is made.
+
+How to read this ADR: a line marked **Verified** was read in the named file on 2026-11-18. A line marked **Decision** records an owner decision of 2026-11-19. Everything else is the design this ADR fixes, or is labelled as an inference.
 
 ### What inflect-compliance's task engine does
 
@@ -49,7 +51,8 @@ Rules:
 
 - **Each link is single-parent.** So every item has exactly one ancestry, and "why does this exist" has one answer (roadmap 2.2, idea 2). A many-to-many link would make ancestry a set.
 - **A sub-item is in the same project as its parent**, held by a composite foreign key (see section 10). This keeps the ancestry unique and the key prefix meaningful. Moving a parent to another project moves its subtree in the same transaction.
-- **Depth is capped**, so the ancestry query is bounded. Recommended caps: 5 levels of sub-items, 3 levels of goals. The usecase refuses a write past the cap.
+- **Moving a sub-item on its own to another project is refused.** It would leave its parent. A sub-item moves to another project only with its parent's subtree (the rule above). **Decision:** owner decision, 2026-11-19 (open question 5); the owner chose "Accept all", accepting this ADR's recommendation.
+- **Depth is capped**, so the ancestry query is bounded: 5 levels of sub-items, 3 levels of goals. The usecase refuses a write past the cap. **Decision:** owner decision, 2026-11-19 (open question 4); the owner chose "Accept all", accepting the recommended caps.
 - **No cycles in `parentId`.** Re-parenting runs the same locked check as blocking relations (section 6).
 - **Ancestry is one query**: a recursive common table expression up `WorkItem.parentId`, then joins to project, initiative and the goal chain (roadmap 3.2).
 - Cycles and milestones are scopes, not ancestors. An item has at most one of each (`cycleId`, `milestoneId`).
@@ -93,9 +96,9 @@ Rules:
 - Keys grow when many inserts land in the same gap. A job rebalances a project's keys when any key passes a length bound (recommended: 64 characters).
 - **`sortKey` is not part of the item's version** (section 9). Order belongs to the list. Live updates (roadmap 4.3) report order changes as their own message.
 - **Every manually ordered list uses the same column, `sortKey`, under the same rules:** work item types, workflow states, milestones, custom fields and their options. One name and one implementation, so the collation and the rebalance apply to all of them.
-- Implementation, needs an owner decision:
-  - **F1. In-house pure module with property tests.** Recommended. The algorithm is small and well described in public writing.
-  - **F2. The `fractional-indexing` package.** **Verified** on the npm registry today: version 4.0.0, licence `CC0-1.0`. CC0 is not on roadmap 0.3's allowlist, nor on the licence gate's (`scripts/licence-gate.mjs`), so F2 needs CC0-1.0 added (ADR 0007, E4) or a recorded exemption.
+- Implementation:
+  - **F1. In-house pure module with property tests.** The algorithm is small and well described in public writing. **Decision: F1.** Owner decision, 2026-11-19 (open question 1); the owner chose "Accept all", accepting the recommendation.
+  - **F2. The `fractional-indexing` package.** Not chosen. **Verified** on the npm registry on 2026-11-18: version 4.0.0, licence `CC0-1.0`. CC0 is not on roadmap 0.3's allowlist, nor on the licence gate's (`scripts/licence-gate.mjs`), so F2 would have needed CC0-1.0 added (ADR 0007, E4) or a recorded exemption.
 
 ### 6. Relations
 
@@ -137,7 +140,7 @@ Common rules: a CHECK refuses `fromId = toId`; `@@unique([tenantId, type, fromId
 - Reads filter `deletedAt IS NULL` explicitly in the repository, including nested reads and counts. A global extension misses nested reads (the inflect-compliance finding above); a test checks the repository's queries.
 - Deleted rows keep their number, relations and comments. They are hidden from lists, search, the scheduler and agents.
 - A restore is refused while the item's project is deleted.
-- A purge job hard-deletes after a retention window. inflect-compliance purges its soft-deleted models after 90 days (its `CLAUDE.md`, "Data Retention"). Islestone's window is an owner decision; this ADR recommends 30 days in a visible trash.
+- A purge job hard-deletes after a retention window of **30 days**, during which deleted items sit in a visible trash. inflect-compliance purges its soft-deleted models after 90 days (its `CLAUDE.md`, "Data Retention"). **Decision:** 30 days, owner decision, 2026-11-19 (open question 3); the owner chose "Accept all", accepting the recommendation.
 
 ### 9. Optimistic concurrency
 
@@ -170,12 +173,12 @@ Common rules: a CHECK refuses `fromId = toId`; `@@unique([tenantId, type, fromId
 - `WorkItem.description` and `Comment.body` are in the field-encryption manifest (roadmap 2.2), as their counterparts are in inflect-compliance.
 - `title` stays plaintext. It is searched, shown in notifications, and quoted in commit messages and calendar events.
 - Audit entries for an encrypted field record that it changed, not its text. The Activity view shows "edited the description" and fetches the current text through the authorised API.
-- **Consequence for search, needs an owner decision before roadmap 2.7.** Postgres full-text search and pgvector (roadmap 2.7 and 6.5) need plaintext or something derived from it. Options:
+- **Consequence for search.** Postgres full-text search and pgvector (roadmap 2.7 and 6.5) need plaintext or something derived from it. Options:
   - **S1. Search titles, keys and unencrypted fields only.** inflect-compliance's choice. Keeps encryption whole; search is weaker.
   - **S2. Store a search index derived from the plaintext** (a `tsvector` or embeddings). Full search, but the derived data reveals the words or meaning of the encrypted text, and it must itself be protected by RLS and excluded from exports.
   - **S3. Store keyed hashes of normalised words**, keyed per workspace. Exact-word search without readable words; no ranking by prefix or meaning.
   - **S4. Do not encrypt descriptions and comments.** Simplest; drops roadmap 2.2's requirement.
-  - Recommendation: S1 until a search ADR decides between S2 and S3. That ADR lands before roadmap 2.7, because 2.7 asks for full-text search over items and comments, and comment bodies are encrypted: under S1 alone, comments cannot be searched. Embeddings (6.5) are S2 by nature, so 6.5 needs that decision too.
+  - **Decision: S1 now; a search ADR chooses between S2 and S3 later.** Owner decision, 2026-11-19 (open question 2); the owner chose "S1 now, decide later". This is the recommendation. Until that ADR, search covers titles, keys and unencrypted fields only. The search ADR is due before roadmap 2.7, because 2.7 asks for full-text search over items and comments, and comment bodies are encrypted: under S1 alone, comments cannot be searched. Embeddings (6.5) are S2 by nature, so 6.5 needs that decision too. S4 was not chosen: descriptions and comments stay encrypted.
 
 ### 12. Schema sketch (illustrative, not final)
 
@@ -472,11 +475,13 @@ List queries also filter `deletedAt IS NULL`. If the pinned Prisma version canno
 
 ### Open questions for the owner
 
-1. Fractional-index implementation: F1 (in-house) or F2 (`fractional-indexing`, CC0-1.0, which needs CC0-1.0 on the allowlist or an exemption; ADR 0007, E4).
-2. Search versus encryption: S1 to S4 (section 11).
-3. Soft-delete retention window. Recommendation: 30 days.
-4. Depth caps. Recommendation: 5 levels of sub-items, 3 levels of goals.
-5. Should moving a sub-item to another project be allowed (it would leave its parent) or refused? This ADR refuses it.
+All five were answered on 2026-11-19 in the working session.
+
+1. Answered: fractional-index implementation. F1, in-house, with property tests (section 5). The owner chose "Accept all".
+2. Answered: search versus encryption. S1 now; a search ADR, due before roadmap 2.7, chooses between S2 and S3 (section 11). The owner chose "S1 now, decide later".
+3. Answered: soft-delete retention window. 30 days (section 8). The owner chose "Accept all".
+4. Answered: depth caps. 5 levels of sub-items, 3 levels of goals (section 2). The owner chose "Accept all".
+5. Answered: moving a sub-item on its own to another project is refused (section 2). The owner chose "Accept all".
 
 ## Consequences
 
@@ -497,7 +502,7 @@ List queries also filter `deletedAt IS NULL`. If the pinned Prisma version canno
 - Customers need workspace-wide custom fields for cross-project reporting.
 - Customers need a different manual order per view. A `(viewId, workItemId, sortKey)` table would then replace the single key for those views.
 - Field-level conflicts become common enough that the client retry is not enough. Per-field versions, or Yjs for descriptions under ADR 0005, would replace the single version for those fields.
-- The owner chooses S2, S3 or S4 for search, or a retention window other than the recommendation.
+- The search ADR chooses S2 or S3, which adds a derived search store alongside the encrypted fields; or the owner later chooses S4, or a retention window other than 30 days.
 - Per-team transition rules or review gates become a requirement.
 - Measurement at H2 shows a listed index unused, or a query without one.
 

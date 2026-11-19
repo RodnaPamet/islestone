@@ -2,7 +2,7 @@
 
 Islestone is an AI-enabled project-management SaaS: one work-item table with many views, planning and forecasting computed in code, and agents that work as delegates of accountable people, writing through proposals a person approves unless a workspace owner raises a rung and the item's assignee started the session (ADR 0003).
 
-**Status:** repository skeleton (roadmap sub-phase 1.1). There is no product yet: a placeholder home page, health endpoints, the env modules, the test and CI tooling, and a local service stack. What gets built, in which order, and the gate that closes each phase are in [docs/ROADMAP.md](docs/ROADMAP.md). Architecture decisions are in [docs/adr/](docs/adr/) ([index](docs/adr/README.md)). ADR 0001 (provenance and licences) and ADR 0007 (licence exceptions) are accepted. ADRs 0002 to 0006 are proposed and await the owner's sign-off, though 0003 and 0006 already record some owner decisions.
+**Status:** repository skeleton and the shared UI package (roadmap sub-phase 1.1 and 1.2 part A). There is no product yet: a placeholder home page, health endpoints, the env modules, the test and CI tooling, and a local service stack. What gets built, in which order, and the gate that closes each phase are in [docs/ROADMAP.md](docs/ROADMAP.md). Architecture decisions are in [docs/adr/](docs/adr/) ([index](docs/adr/README.md)). ADRs 0001, 0002, 0004, 0005 and 0007 are accepted. ADRs 0003 and 0006 record the owner's decisions in place and stay proposed for their remaining open questions.
 
 ## Prerequisites
 

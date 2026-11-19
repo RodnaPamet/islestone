@@ -1,14 +1,14 @@
 # 0004 — Authentication path
 
-Status: Proposed — awaiting owner sign-off (2026-11-18 drafted)
+Status: Accepted (owner decisions, 2026-11-19)
 
 ## Context
 
 Roadmap 2.3 (Auth row) and 0.2 item 4 propose: port NextAuth v4 with SSO, MFA and SCIM now, and plan a move to Better Auth later. Roadmap 1.4 lists what the port covers. Roadmap 9.3 lists "the move from NextAuth v4 to Better Auth, per ADR 0004". Section 7, open decision 4, leaves the choice to the owner.
 
-This ADR records what the files and the registry say, the options, a recommendation, the criteria that would start a move to Better Auth, and what such a move must preserve. **Nothing here is decided.** Each decision waits for the owner's sign-off.
+This ADR records what the files and the registry say, the options, the criteria that would start a move to Better Auth, and what such a move must preserve. It was drafted on 2026-11-18 with a recommendation for each decision. The repository owner decided them in the working session on 2026-11-19: option A, porting the parent's auth layer on NextAuth v4 (A1), with SSO and SCIM waiting for sub-phase 8.3 (A2), and the exit thresholds and the session check's fail-open as recommended (A4, A5). Each decision below records the option chosen and the owner's words. The options not chosen are kept, because "What would change this decision" points back to them. Open questions 5 to 7 remain open, and none of them blocks roadmap 1.4.
 
-How to read this ADR: a line marked **Verified** was read on 2026-11-18 in the named file, or in the output of the named command. Everything else is a recommendation, an inference or an open question, and says so.
+How to read this ADR: a line marked **Verified** was read on 2026-11-18 in the named file, or in the output of the named command. A line marked **Decision** records an owner decision of 2026-11-19. Everything else is an inference or an open question, and says so.
 
 ### What was read
 
@@ -150,7 +150,7 @@ Inferences:
 
 ## Decision
 
-The options and their consequences follow. The recommendation is a proposal for the owner, not a decision.
+The options and their consequences follow, with the owner's decision on each (owner decisions, 2026-11-19).
 
 ### A1 — Which path
 
@@ -171,11 +171,13 @@ The options and their consequences follow. The recommendation is a proposal for 
 - D1 is decided (ADR 0001: copying allowed), so the recommendation is **A**, with the scope, the pin, the seam, the exit criteria and the contract below.
 - Had D1 ended at 1d (port nothing), it would have been **B**: the case for A is reuse, and without reuse B is the better trade. Do not start D.
 
-Owner sign-off: ____  Date: ____
+**Decision: option A. Islestone ports the parent's auth layer on NextAuth v4, pinned exactly, with the scope (A2), the pin and the seam (A3), the exit criteria (A4) and the contract (A5) below.** Owner decision, 2026-11-19. The owner chose "Port NextAuth v4". This is the recommendation. Options B to E were not chosen. Better Auth stays the planned target of a later move, started when an exit criterion fires (A4).
 
-### A2 — Scope of the port (applies under A)
+### A2 — Scope of the port
 
-Ported in 1.4, as the roadmap lists:
+**Decision: roadmap 1.4 ports credentials, Google and Microsoft sign-in, sign-in sessions, MFA and invites, with the rest of the list below. SSO and SCIM wait for sub-phase 8.3.** Owner decision, 2026-11-19 (open question 3). The owner chose "Wait for 8.3". The draft had ported SSO and SCIM in 1.4 behind a feature flag, leaving the flag in 8.3; they are now ported in 8.3 itself, so 1.4 ports no SSO or SCIM code and carries no flag for them.
+
+Ported in 1.4:
 
 - credentials, with the lockout ladder and the breach check on every route that sets a password;
 - Google and Microsoft sign-in, with the OAuth email-trust rule;
@@ -183,10 +185,12 @@ Ported in 1.4, as the roadmap lists:
 - MFA per workspace;
 - password change and reset;
 - invites, with the token burnt on an email mismatch;
-- the edge tenant-access gate, with the bounded membership claim and its database fallback;
-- SSO (SAML and OIDC, through the hand-off) and SCIM, behind a feature flag. They leave the flag in roadmap 8.3.
+- the edge tenant-access gate, with the bounded membership claim and its database fallback.
 
-Ported later: API keys, in roadmap 5.2.
+Ported later:
+
+- API keys, in roadmap 5.2;
+- SSO (SAML and OIDC, through the hand-off), "Enforce SSO" with break-glass, and SCIM, in roadmap 8.3. The seam (A3) and the contract (A5) already cover them, so 8.3 adds them behind the same seam.
 
 Left out:
 
@@ -196,16 +200,18 @@ Left out:
 
 Every ported file gets its `PROVENANCE.md` entry and takes Islestone's names (ADR 0006).
 
-### A3 — Pin and seam (applies under A; the seam also under B)
+### A3 — Pin and seam
+
+**Decision:** decided with A1 (owner decision, 2026-11-19): the pin, the pinning guard, the change rule and the single seam below.
 
 - Pin `next-auth` at `4.24.15` and `@next-auth/prisma-adapter` at `1.0.7`, exact. Islestone's `.npmrc` already saves exact versions.
 - Add a guard that fails if either package leaves v4 or takes a pre-release. The parent has such a guard (`tests/guardrails/auth-stack-pinning.test.ts`). ADR 0001 D1 (owner decision, 2026-11-18) allows copying it and editing it for Islestone (COPY+EDIT), with its `PROVENANCE.md` row; the 1.4 porting map lists its edits.
 - Treat a `next-auth` version bump as a significant change (the change-management document arrives in roadmap 1.8). Review it against the contract below.
-- **Recommendation: one seam.** Only the modules under one folder (for example `src/lib/auth/provider/`) import `next-auth` or `better-auth`. Everything else, the edge gate included, calls Islestone's own functions. Enforce it with a lint rule. The parent did not do this: about fifteen server components import its `auth()` shim (`src/auth.ts` lines 14–19). The seam is what makes a later move a bounded change.
+- **One seam.** Only the modules under one folder (for example `src/lib/auth/provider/`) import `next-auth` or `better-auth`. Everything else, the edge gate included, calls Islestone's own functions. Enforce it with a lint rule. The parent did not do this: about fifteen server components import its `auth()` shim (`src/auth.ts` lines 14–19). The seam is what makes a later move a bounded change.
 
-### A4 — Exit criteria: when to start a move to Better Auth (applies under A)
+### A4 — Exit criteria: when to start a move to Better Auth
 
-Each trigger is checked by a command or a test. When one fires, open a new ADR that supersedes this one and plans the move. A trigger starts the planning; it does not switch libraries by itself. The numbers are proposals for the owner.
+Each trigger is checked by a command or a test. When one fires, open a new ADR that supersedes this one and plans the move. A trigger starts the planning; it does not switch libraries by itself. The numbers are decided (below).
 
 - **T1. Unpatched advisory.** A high or critical advisory affects `next-auth` 4.24.x, or a package it holds at a major that no longer gets releases (`jose` 4, `openid-client` 5, `oauth`). No fixed 4.x release exists 30 days after the advisory is published. Islestone cannot neutralise it in its own code, or with an override that passes the contract suite. Check: the dependency audit that H1 makes blocking, plus a weekly scheduled run.
 - **T2. Framework major.** A Next.js or React major that Islestone needs is missing from `next-auth`'s peer dependencies 90 days after that major's stable release. Or the contract suite fails on it and no 4.x fix lands in those 90 days. Check: `npm view next-auth@latest peerDependencies`, and the suite run on the candidate.
@@ -227,11 +233,13 @@ Before a move, the target must also pass:
 - **P5.** Telemetry proved off by a test or a network check, or registered as a data recipient (H6, 8.6).
 - **P6.** The contract suite below passes against it, unchanged.
 
-Owner sign-off: ____  Date: ____
+**Decision: the triggers T1 to T6 and the preconditions P1 to P6 as written, with T1 to T3's numbers (30 days, 90 days, twelve months, six months) as written.** Owner decision, 2026-11-19 (open question 2). The owner chose "Accept all", accepting the recommendation.
 
-### A5 — The contract a move must preserve (applies under A and B)
+### A5 — The contract a move must preserve
 
-Each item is a behavioural test, written in 1.4 and H1 against Islestone's own seam (A3), not against a library API. Under A, the suite must pass unchanged before and after any move. Under B, it is the acceptance test for 1.4. The parent's sources are cited for each rule; read for the pattern, write fresh.
+**Decision:** decided with A1 (owner decision, 2026-11-19), with item 6 settled by open question 4 (below).
+
+Each item is a behavioural test, written in 1.4 and H1 against Islestone's own seam (A3), not against a library API. The suite must pass unchanged before and after any move. Items 8 to 10, and the SCIM half of item 15, cover code that arrives in 8.3 (A2), so 8.3 writes their tests. The parent's sources are cited for each rule; read for the pattern, write fresh.
 
 Sign-in sessions and revocation:
 
@@ -240,7 +248,7 @@ Sign-in sessions and revocation:
 3. "Sign out other sessions" keeps the caller's own session.
 4. A password change or reset revokes every session.
 5. The per-workspace session age limit and concurrent-session cap hold.
-6. The parent fails open when the session check cannot read the database (`src/auth.ts` lines 1130 and 1262). A move keeps that, or changes it by a recorded decision, never by accident.
+6. The parent fails open when the session check cannot read the database (`src/auth.ts` lines 1130 and 1262). **Decision: Islestone keeps that fail-open.** Owner decision, 2026-11-19 (open question 4). The owner chose "Accept all", accepting the recommendation. A move keeps it, or changes it by a recorded decision, never by accident.
 
 Workspace scoping:
 
@@ -272,19 +280,20 @@ Data and cookies:
 ### Open questions for the owner
 
 1. Answered: "Will D1 be signed before roadmap 1.4 starts?" ADR 0001 D1 was decided on 2026-11-18 (copying allowed).
-2. Are the numbers in T1 to T3 (30 days, 90 days, twelve months, six months) acceptable?
-3. Do SSO and SCIM need to be ported in 1.4 behind a flag, or can they wait for 8.3? This changes how much 1.4 ports.
-4. Should Islestone keep the parent's fail-open on a database error during the session check (contract item 6)?
-5. Are passkeys on the product plan (T5)?
-6. Should the "security-only maintenance" claim be confirmed with the Auth.js maintainers or the blog post before anyone relies on it? This environment could not read the post.
-7. Should Islestone keep the parent's `overrides` entry for `next-auth` (`package.json` lines 344–347)? Its reason was not found.
+2. Answered: "Are the numbers in T1 to T3 (30 days, 90 days, twelve months, six months) acceptable?" Yes, as written. Owner decision, 2026-11-19; the owner chose "Accept all" (A4).
+3. Answered: "Do SSO and SCIM need to be ported in 1.4 behind a flag, or can they wait for 8.3?" They wait for 8.3. Owner decision, 2026-11-19; the owner chose "Wait for 8.3" (A2).
+4. Answered: "Should Islestone keep the parent's fail-open on a database error during the session check (contract item 6)?" Yes. Owner decision, 2026-11-19; the owner chose "Accept all" (A5, item 6).
+5. Open, not blocking. Are passkeys on the product plan (T5)?
+6. Open, not blocking. Should the "security-only maintenance" claim be confirmed with the Auth.js maintainers or the blog post before anyone relies on it? This environment could not read the post.
+7. Open, not blocking. Should Islestone keep the parent's `overrides` entry for `next-auth` (`package.json` lines 344–347)? Its reason was not found. Decide when 1.4 adds `next-auth` to `package.json`.
 
 ## Consequences
 
-- Under A, 1.4 is mostly a port with renames: ADR 0001 D1 allows the copying. Each later sync of the parent's auth fixes is a new copy, pinned to the commit read.
-- Under A, the tree carries `jose` 4 and `openid-client` 5 until the move. T1 watches them.
-- Under B, 1.4 is a fresh write and grows. Roadmap 9.3's "move to Better Auth" item disappears.
-- Under either path:
+- 1.4 is mostly a port with renames: ADR 0001 D1 allows the copying. Each later sync of the parent's auth fixes is a new copy, pinned to the commit read.
+- 1.4 is smaller than the draft planned: SSO, "Enforce SSO" and SCIM, and their tests (contract items 8 to 10 and the SCIM half of item 15), move to 8.3, which ports them rather than taking them out of a flag. Roadmap 1.4's prompt still says "Port SSO and SCIM behind a feature flag"; this decision overrides it.
+- The tree carries `jose` 4 and `openid-client` 5 until the move. T1 watches them.
+- Option B was not chosen, so roadmap 9.3's "move to Better Auth" item stays, and happens when a trigger fires.
+- In addition:
   - the contract suite becomes part of H1's auth abuse tests (lockout, revocation that signs out, invite burn, cross-tenant slug refusal);
   - the single seam is a lint rule from the first auth commit;
   - the libraries pass the 0.3 licence allowlist as they stand.
