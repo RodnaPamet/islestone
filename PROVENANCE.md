@@ -1168,7 +1168,7 @@ Field encryption with per-workspace data keys, the PII extension and `User.email
 - **Licence:** BUSL-1.1, licensor Inflect Ltd. Copying is allowed by [ADR 0001](docs/adr/0001-code-provenance-and-licences.md) decision D1. The source files carry no per-file notice, so none is added, and `NOTICE` takes no entry: no third-party material came with them.
 - **What every port changed:** one-way literals (HKDF info and salt, the HMAC domain, the dev fallback key, the startup sentinel, the TOTP salt and issuer, the audit-stream User-Agent and the `X-Islestone-*` webhook headers) are Islestone's, chosen before the first stored value; `User.email` and `User.name` hold ciphertext under their own names, because ADR 0006 rule 3 bans `@map` (the parent maps them to `emailEncrypted`/`nameEncrypted`); `OrgAuditLog.targetUserId` is `subjectUserId` (ADR 0006 bans "Target"); compliance models, entities and examples are replaced by Islestone's; the CSP names no report endpoint and no Google Fonts host; the API-key, MCP and agent parts are cut (5.2, 6.x).
 - **Action** is COPY (byte for byte), COPY+EDIT (the source text, edited as the Changes column says), REWRITE (written fresh to the source's design), PATTERN (pattern only, no code copied), or Islestone-owned (written fresh, no source).
-- **Not taken (1.5b):** `src/app-layer/jobs/key-rotation.ts`, `tenant-dek-rotation.ts`, `audit-outbox-flush.ts`, `scripts/rotate-global-pii.ts`, `rotateTenantDek`, the key-rotation admin routes and their tests: each needs 1.6's job queue. **Not taken (other):** the CSP violation sink (`src/lib/security/csp-violations.ts`, `/api/security/csp-report`; with 1.6 observability), `src/lib/security/headers.ts` (Islestone's `security-headers.ts` holds the baseline), the data-classification registry (`src/lib/security/classification.ts`), and the backfill scripts `encrypt-existing-data.ts` and `generate-tenant-deks.ts` (no pre-existing data).
+- **Not taken in 1.5a, taken in 1.5b** (section "Copied: rotation and outbox drain (sub-phase 1.5b)" below): `src/app-layer/jobs/key-rotation.ts`, `tenant-dek-rotation.ts`, `audit-outbox-flush.ts`, `scripts/rotate-global-pii.ts`, `rotateTenantDek`, the key-rotation admin routes and their tests: each needed 1.6's job queue. **Not taken (other):** the CSP violation sink (`src/lib/security/csp-violations.ts`, `/api/security/csp-report`; with 1.6 observability), `src/lib/security/headers.ts` (Islestone's `security-headers.ts` holds the baseline), the data-classification registry (`src/lib/security/classification.ts`), and the backfill scripts `encrypt-existing-data.ts` and `generate-tenant-deks.ts` (no pre-existing data).
 - **Read, not copied** (historical implementation notes the map cites): `docs/implementation-notes/2026-08-09-decrypt-failure-three-outcomes.md`, `2026-07-10-encryption-manifest-coverage-guard.md`, `2026-04-27-implement-rotate-tenant-dek.md`, `2026-04-29-gap-22-rotate-tenant-dek-finalisation.md`, `2026-04-29-gap-21-pii-encrypted-only.md`, `2026-10-26-pii-relation-decrypt-from-schema.md`, `2026-04-30-epic-b-org-audit-trail.md`, `2026-05-21-audit-stream-observability.md`, `2026-07-03-ssrf-egress-coverage.md`, `2026-08-18-undici-dispatcher-version-coupling.md`, `2026-05-22-structural-sanitizer-coverage.md`, `2026-11-13-write-once-triggers-admit-the-dek-rewrap.md`, `2026-11-13-scanent-contract-dependency.md`.
 
 <details>
@@ -1220,7 +1220,7 @@ Field encryption with per-workspace data keys, the PII extension and `User.email
 | `src/lib/security/safe-url.ts` | `src/lib/security/safe-url.ts` | COPY+EDIT | Comment examples. |
 | `src/lib/security/startup-encryption-check.ts` | `src/lib/security/startup-encryption-check.ts` | COPY+EDIT | Takes a read-only record; sentinel `islestone-startup-sentinel`; worker and scheduler callers are 1.6. |
 | `src/lib/security/startup-rate-limit-check.ts` | — | Islestone-owned | Issue #17: refuses a production start with `RATE_LIMIT_MODE=upstash` and no Upstash credentials (pattern of `startup-encryption-check.ts`). |
-| `src/lib/security/tenant-key-manager.ts` | `src/lib/security/tenant-key-manager.ts` | COPY+EDIT | 1.5a cut: the `enqueue` import and the rotation block (`rotateTenantDek` and its types) removed for 1.5b. |
+| `src/lib/security/tenant-key-manager.ts` | `src/lib/security/tenant-key-manager.ts` | COPY+EDIT | 1.5a cut: the `enqueue` import and the rotation block (`rotateTenantDek` and its types) removed for 1.5b. 1.5b restored both: the file is now a byte-for-byte COPY (its 1.5b row). |
 | `src/lib/security/tenant-keys.ts` | `src/lib/security/tenant-keys.ts` | COPY | None. |
 | `tests/guards/api-read-rate-limit.test.ts` | `tests/guardrails/api-read-rate-limit.test.ts` | COPY+EDIT | Paths re-pointed; the API-key and anonymous-surface cases cut; the Upstash double built as a constructor; doc comments. |
 | `tests/guards/audit-chain-order-is-total.test.ts` | `tests/guards/audit-chain-order-is-total.test.ts` | COPY | None. |
@@ -1387,7 +1387,7 @@ The BullMQ queue, worker and scheduler with two jobs, the notification outbox, d
 - **What every port changed:** `inflect` names (queue, meters, tracers, Redis keys and connection names, the sender domain) are Islestone's; compliance jobs, templates, kinds and entities are cut or replaced by work items; `Notification.message` is `body` and `complianceMailbox` is `bccMailbox` (ADR 0006); env reads go through `@/env` / `@/env-client`; `import type` where an import is type-only.
 - **Action** is COPY (byte for byte), COPY+EDIT (the source text, edited as the Changes column says), REWRITE (written fresh to the source's design), PATTERN (pattern only, no code copied), or Islestone-owned (written fresh, no source).
 - **Licences:** `nodemailer` is MIT-0 (ADR 0007 E8) and the Sentry SDK brings `sentry`, FSL-1.1-Apache-2.0 (E9), both allowed by owner decision of 2026-11-19. No `NOTICE` entry: neither is copied code.
-- **Not taken, by sub-phase:** the due reminders (2.2), the agent-run automation action (6.3), the key-rotation, DEK-sweep, global-PII and audit-outbox jobs (1.5b), `UserNotificationPreference` (2.7), the flat `/api/notifications*` routes (they used a context 1.3 deleted), the bell UI and the admin notifications page (1.7, 2.7).
+- **Not taken, by sub-phase:** the due reminders (2.2), the agent-run automation action (6.3), the key-rotation, DEK-sweep, global-PII and audit-outbox jobs (1.5b, now taken: see the next section), `UserNotificationPreference` (2.7), the flat `/api/notifications*` routes (they used a context 1.3 deleted), the bell UI and the admin notifications page (1.7, 2.7).
 
 <details>
 <summary>All 164 rows</summary>
@@ -1604,6 +1604,73 @@ Files from earlier sub-phases edited in 1.6 (their rows are in the sections abov
 | `tests/unit/auth-flow/middleware-mfa-gate.test.ts` | The beacons pass untouched. |
 | `tests/unit/csp-refinement.test.ts` | The report directives. |
 | `tests/unit/csp.test.ts` | The report directives. |
+
+</details>
+
+## Copied: rotation and outbox drain (sub-phase 1.5b)
+
+The master-key rotation job and its admin route, `rotateTenantDek` with the per-workspace DEK sweep and its OWNER-only route, the global PII sweep script, and the audit-outbox drain, ported by [`docs/porting/maps/1.5.md`](docs/porting/maps/1.5.md) ("1.5b — Rotation and outbox drain") onto 1.6's job layer. These facts hold for every row below:
+
+- **Source:** inflect-compliance at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`, at the path in the row's Source column (`same` means the same path).
+- **Licence:** BUSL-1.1, licensor Inflect Ltd. Copying is allowed by [ADR 0001](docs/adr/0001-code-provenance-and-licences.md) decision D1. The source files carry no per-file notice, so none is added, and `NOTICE` takes no entry: no third-party material came with them.
+- **What every port changed:** compliance models in comments and tests (`Risk`, `Finding`, `EvidenceReview`, `AuditorAccount`) are replaced by Islestone's (`TenantSecuritySettings`, `NotificationOutbox`); the API-key parts (`resolveApiKeyForJob`, the `apiKeyId` payload field and its tests) are cut until API keys exist (5.2); route handlers parse, call a usecase and respond (CLAUDE.md, "Layer rules"), so the source routes' enqueue, audit and lookup moved into `src/app-layer/usecases/key-rotation.ts`.
+- **Action** is COPY (byte for byte), COPY+EDIT (the source text, edited as the Changes column says), REWRITE (written fresh to the source's design), or Islestone-owned (written fresh, no source).
+- **Not taken:** `src/app/api/t/[tenantSlug]/admin/rotate-dek/route.ts` (an alias of `tenant-dek-rotation`) and, with it, the shared `admin/_lib/rotate-dek-handlers.ts`, whose logic is in the usecase; `scripts/generate-tenant-deks.ts` (every Islestone workspace gets its DEK at creation); `tests/unit/jobs/tenant-dek-rotation.test.ts` as a file (its cases are in `tests/integration/tenant-dek-rotation.test.ts`).
+
+<details>
+<summary>All 21 rows</summary>
+
+| File | Source | Action | Changes |
+|---|---|---|---|
+| `scripts/rotate-global-pii.ts` | same | COPY+EDIT | Relative imports (as `scripts/verify-audit-chain.ts`); the `#!` line; comments name Islestone's columns and both pinned keys. |
+| `src/app-layer/jobs/audit-outbox-flush.ts` | same | COPY+EDIT | Code unchanged; an ORDER section and the provenance note in the header. |
+| `src/app-layer/jobs/key-rotation.ts` | same | COPY+EDIT | `resolveApiKeyForJob`, its liveness block and `apiKeyId` cut (5.2); one index read made explicit; comments for Islestone's manifest and PII columns, the stale `rotateTenantDek` "stub" paragraph rewritten, the misplaced `@internal` moved. |
+| `src/app-layer/jobs/tenant-dek-rotation.ts` | same | COPY+EDIT | Code unchanged but for two index reads made explicit; the `/admin/rotate-dek` alias and GAP-22 references cut from comments; a "What it sweeps in Islestone" section. |
+| `src/app-layer/schemas/key-rotation.schemas.ts` | — | Islestone-owned | `RotationJobStatusQuery` (the status routes' `jobId`). |
+| `src/app-layer/usecases/key-rotation.ts` | `src/app/api/t/[tenantSlug]/admin/key-rotation/route.ts`, `admin/_lib/rotate-dek-handlers.ts` | REWRITE | The source routes' bodies as four usecases behind the two policies; `logEvent` inside `runInTenantContext` with a `detailsJson`; a refused in-flight rotation is a 409 (`conflict`) rather than the source's 500. |
+| `src/app/api/t/[tenantSlug]/admin/key-rotation/route.ts` | same | COPY+EDIT | The handlers call the usecase; `jobId` parsed with Zod; `import type { NextRequest }`, `jsonResponse`; the `apiKeyId` payload spread deleted. |
+| `src/app/api/t/[tenantSlug]/admin/tenant-dek-rotation/route.ts` | same; `admin/_lib/rotate-dek-handlers.ts` | COPY+EDIT | The handlers inline (no alias route to share them with), calling the usecase; `jobId` parsed with Zod. |
+| `src/lib/security/tenant-key-manager.ts` | same | COPY | None: 1.5a's cut (the `enqueue` import and `rotateTenantDek`) restored, so the file is byte-identical to the source. |
+| `tests/guards/tenant-dek-rotation-fallback.test.ts` | `tests/guardrails/tenant-dek-rotation-fallback.test.ts` | COPY | None (moved from `tests/guardrails/` to `tests/guards/`). |
+| `tests/integration/audit-outbox-drain-order.test.ts` | — | Islestone-owned | The drain appends a backlog in event order after the existing chain, each entry linked to the one before it, and `verifyAuditChain` reads the chain as valid; run through the registered executor. |
+| `tests/integration/audit-outbox-no-silent-drop.test.ts` | same | COPY | None. |
+| `tests/integration/key-rotation.test.ts` | — | Islestone-owned | A master-key rotation played out against a real database: every value it owns reads mid-flight, is rewritten, and reads under the new key alone; the teardown rotates the global PII rows back. |
+| `tests/integration/tenant-dek-rotation.test.ts` | same; `tests/unit/jobs/tenant-dek-rotation.test.ts` | COPY+EDIT | On `TenantSecuritySettings` (one row per workspace, so one ciphertext per lifecycle); the unit file's DB-backed branch cases merged in, the "rewritten and skipped in one run" case split in two; a mid-flight read through the app's client and a second rotation after the sweep added; the CHECK case left to `tenant-dek-schema.test.ts`. |
+| `tests/unit/key-rotation-admin-api.test.ts` | same | COPY+EDIT | `makeRequestContext` (VIEWER for READER); a strict `@/lib/audit` mock and a `runInTenantContext` stub; `any` removed; the two `apiKeyId` cases replaced by one pinning the payload's three fields. |
+| `tests/unit/key-rotation-job.test.ts` | same | COPY+EDIT | `TenantSecuritySettings` for `Risk`; a planted manifest model without `tenantId` for the ownership-chained case; the tenant-scoped PII case on `NotificationOutbox.toEmail` (the map moved it to 1.4 while that list was empty; 1.6 filled it); the API-key cases cut (5.2); `any` removed. |
+| `tests/unit/tenant-dek-rotation-admin-api.test.ts` | — | Islestone-owned | The DEK route: ADMIN refused on both verbs, an OWNER's swap through the real `rotateTenantDek`, both in-flight refusals as 409 with no audit entry, the status GET's 400 and 404s. |
+| `tests/unit/tenant-key-manager.rotate.test.ts` | same | COPY+EDIT | The prisma mock through getters (TDZ under @swc/jest); one call read checked. |
+| `docs/encryption.md` | `docs/epic-b-encryption.md` (rotation runbook); `docs/epic-f-finishing-touches.md` §F.2 | COPY+EDIT | "Rotating the master key" rewritten for the job, the route and the script; "Rotating a workspace's data key" added; the rotation signals. |
+| `docs/audit-trail.md` | `src/app-layer/jobs/audit-outbox-flush.ts` docblock | COPY+EDIT | "The drain" section. |
+| `docs/jobs.md` | the job-layer docblocks | COPY+EDIT | The three jobs and the on-demand rotations. |
+
+</details>
+
+Files from earlier sub-phases edited in 1.5b (their rows are in the sections above):
+
+<details>
+<summary>All 18 files</summary>
+
+| File | Changed in 1.5b |
+|---|---|
+| `CLAUDE.md` | Current state, the commands, and the "Security perimeter" bullets for key rotation and the drain. |
+| `docs/HANDOFF.md` | The 1.5b entry and its open questions. |
+| `scripts/worker.ts` | A comment. |
+| `src/app-layer/jobs/executor-registry.ts` | `keyRotationOutcome` (source L374–385) and the three registrations (source L771–804, L916–950, L952–992), each naming its payload fields with `NamesEveryField`; `apiKeyId` not forwarded; `audit-outbox-flush` also forwards `maxAttempts`, which the source dropped; the comments that said BullMQ retries a failed rotation corrected (one attempt). |
+| `src/app-layer/jobs/fan-out.ts` | A comment. |
+| `src/app-layer/jobs/register-schedules.ts` | The deletable set's comment names the two rotations. |
+| `src/app-layer/jobs/schedules.ts` | `audit-outbox-flush` every five minutes (source L419–445). |
+| `src/app-layer/jobs/types.ts` | `AuditOutboxFlushPayload`, `KeyRotationPayload` (without `apiKeyId`) and `TenantDekRotationPayload` (source L350–355, L459–519), their `JobPayloadMap` keys and `JOB_DEFAULTS` (source L1794–1810, L1839–1860). |
+| `src/app-layer/policies/admin.policies.ts` | `assertCanRotateMasterKey` (`admin.manage` on the admin tier) and `assertCanRotateTenantDek` (`admin.tenant_lifecycle`), the usecase-layer twins of the route gates (Islestone-owned). |
+| `src/lib/security/route-permissions.ts` | The two rules (source L898–906, L1229–1238). |
+| `tests/guards/executor-payload-forwarding.test.ts` | Five registrations. |
+| `tests/guards/runtime-wiring-coverage.test.ts` | `ON_DEMAND_JOBS`: the two rotations, with their enqueue sites. |
+| `tests/guards/schema-index-coverage.test.ts` | `AuditOutbox` triaged. |
+| `tests/integration/epic-b-encryption.test.ts` | The two rotation cases restored (re-wrap; read after rotation). |
+| `tests/unit/audit-trail-guardrails.test.ts` | The raw-SQL scan reads whole statements and refuses an interpolated table outside a named exception (the two sweeps); `ensureTenantSystemUser`'s raw insert listed with its reason; planted fixtures for both. |
+| `tests/unit/executor-registry.test.ts` | Five registrations. |
+| `tests/unit/jobs/job-contract-completeness.test.ts` | Three scheduled jobs. |
+| `PROVENANCE.md` | This section; the 1.5 and 1.6 "Not taken" lines and the 1.5a `tenant-key-manager.ts` row. |
 
 </details>
 

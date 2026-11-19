@@ -300,3 +300,28 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    mailer that logs only address hashes. Open: whether to initialise Sentry in the
    browser (the source never did; it would be a new data flow for the sub-processor
    register). 1.5b (issue #19) can now use the queue; 1.7 is next.
+   **1.5b (key rotation and the audit-outbox drain) has landed** on branch `wt/p15b`
+   (issue #19, not pushed from this session), by `docs/porting/maps/1.5.md`
+   (`PROVENANCE.md`, "Copied: rotation and outbox drain"):
+   - `rotateTenantDek` restored in `tenant-key-manager.ts` (byte-identical to the source
+     again), and three jobs: `key-rotation` (master key: re-wrap the workspace DEK,
+     re-encrypt its `v1:` values and the outbox recipient), `tenant-dek-rotation` (the
+     per-workspace DEK sweep, with progress) and `audit-outbox-flush` (every five minutes,
+     oldest event first). The two rotations are on-demand jobs; `scripts/rotate-global-pii.ts`
+     sweeps `User` and `Account`.
+   - `POST`/`GET /api/t/<slug>/admin/key-rotation` (`admin.manage`) and
+     `/admin/tenant-dek-rotation` (`admin.tenant_lifecycle`, OWNER-only), with their
+     route-permission rules; the logic is in `usecases/key-rotation.ts`. A second DEK
+     rotation while a sweep is in flight is a 409. No admin page yet (1.7).
+   - The raw-SQL audit guard now reads whole statements and refuses an interpolated table
+     outside a named exception. It found `ensureTenantSystemUser`'s raw `INSERT INTO
+     "User"` (1.6), now listed with its reason.
+   - Docs: `docs/encryption.md` (both runbooks), `docs/audit-trail.md` ("The drain"),
+     `docs/jobs.md`.
+   Open for the owner, not decided here: (a) the rotations attribute their audit entries
+   to the admin who started them and do not re-resolve that admin when the job runs,
+   as inflect-compliance decided, although CLAUDE.md's job-identity rule says a job
+   doing what a person asked re-resolves them; (b) the master-key rotation stays at the
+   ADMIN tier (`admin.manage`), as in the source, while the DEK rotation is OWNER-only;
+   (c) whether the system user's creation (a raw insert, no audit entry) should write
+   an audit entry. The API-key liveness check in `key-rotation` returns with 5.2.

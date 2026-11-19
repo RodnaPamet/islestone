@@ -5,10 +5,11 @@ backed by Redis, in a separate worker process.
 
 Copied and edited from inflect-compliance's job layer at
 `5528464fc54a8681956f3b9ce23ca9c075f0420e` and its `docs/worker-autoscaling.md`
-(`PROVENANCE.md`, "Copied: jobs, notifications and observability"). Two jobs
-are registered; every later job is an addition to the registry, the payload
-map and the schedule (sub-phase 1.5b's key-rotation and outbox-drain jobs are
-the next).
+(`PROVENANCE.md`, "Copied: jobs, notifications and observability"). Five jobs
+are registered: 1.6's two, and sub-phase 1.5b's audit-outbox drain and two key
+rotations (`PROVENANCE.md`, "Copied: rotation and outbox drain"). Every later
+job is an addition to the registry, the payload map and the schedule or the
+on-demand list.
 
 ## The pieces
 
@@ -35,7 +36,7 @@ scripts/worker.ts  ──►  executorRegistry.execute(name, payload)
 | `schedules.ts` | `SCHEDULED_JOBS` (the cron table) and `RETIRED_SCHEDULER_NAMES`. |
 | `register-schedules.ts` | Upserts every scheduled job and removes schedulers this app defines but no longer schedules, never one it does not know. |
 | `non-retryable.ts` | `NonRetryableJobError(message, 'terminal' \| 'rate_limited')`: thrown by a job whose retry cannot succeed. The worker turns it into BullMQ's `UnrecoverableError` and `job.queue.retry_bypassed` counts it. 5.3's integration errors extend it, so the registry never imports integration code. |
-| `fan-out.ts`, `drain-pages.ts`, `tenant-job-lookup.ts` | Helpers for jobs that fan out per workspace: deterministic, BullMQ-valid job ids per time bucket; a paged read that cannot skip rows; finding a workspace's job by id. Unused by the two jobs today. |
+| `fan-out.ts`, `drain-pages.ts`, `tenant-job-lookup.ts` | Helpers for jobs that fan out per workspace: deterministic, BullMQ-valid job ids per time bucket; a paged read that cannot skip rows; finding a workspace's job by id. `findTenantJob` serves the two rotation status routes; the other two are unused today. |
 | `worker-heartbeat.ts` | The worker writes `islestone:worker:heartbeat` with an 8-minute TTL after each completed job; `scripts/worker-healthcheck.ts` exits non-zero when the key is gone. The `health-check` job's two-minute cadence keeps it fresh on an idle worker. |
 
 ## The jobs
@@ -44,6 +45,16 @@ scripts/worker.ts  ──►  executorRegistry.execute(name, payload)
 |---|---|---|---|
 | `health-check` | every 2 minutes | 1 | Answers `pong` with its payload. Proves the queue, the worker and the registry agree, and keeps the heartbeat fresh. |
 | `notification-outbox-flush` | every 10 minutes | 1 | Drains the email outbox (`processOutbox`, `docs/notifications.md`). Every workspace by default; a payload naming `tenantId` drains only that one. One attempt, because the next tick is the retry and each row has its own three. |
+| `audit-outbox-flush` | every 5 minutes | 1 | Replays queued audit entries onto the hash chain, oldest event first (`docs/audit-trail.md`, "The drain"). Every workspace by default, or the `tenantId` the payload names; `limit` and `maxAttempts` per pass. One attempt, because the next tick is the retry and each row has its own five. |
+| `key-rotation` | on demand | 1 | Master-key rotation for one workspace: re-wraps its DEK and re-encrypts its `v1:` ciphertexts under the new `DATA_ENCRYPTION_KEY` (`docs/encryption.md`). Enqueued by `POST /api/t/:slug/admin/key-rotation`. A run with errors is a failed job; the operator reads it and re-enqueues (the sweep is idempotent). |
+| `tenant-dek-rotation` | on demand | 1 | The per-workspace DEK sweep: re-encrypts every `v2:` ciphertext from the previous DEK to the new one, then clears `Tenant.previousEncryptedDek`. Enqueued by `rotateTenantDek` (`POST /api/t/:slug/admin/tenant-dek-rotation`). Reports progress (`phase`, counts) through the job, which the route's GET returns. |
+
+The two rotations are listed in `ON_DEMAND_JOBS`
+(`tests/guards/runtime-wiring-coverage.test.ts`) with the code that enqueues
+them, which the guard checks. Both act for the person who started them: the
+payload carries `initiatedByUserId`, and the job's STARTED and COMPLETED audit
+entries name that user with `actorType: 'SYSTEM'`. They do not re-resolve the
+initiator's membership when they run; see `docs/encryption.md`.
 
 Each executor names the payload fields it forwards (`NamesEveryField`), so a
 field added to a payload fails `tsc` until it is forwarded or left out on

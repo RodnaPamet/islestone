@@ -163,10 +163,40 @@ more available than the chain, not the same write retried: the chain append
 waits on a per-workspace advisory lock and can fail to start under
 contention, while the outbox insert takes no lock. When both fail, the
 database is down. The outbox is a queue, not a second store: a row leaves it
-by becoming a chain entry. The drain job arrives with sub-phase 1.5b (it
-needs 1.6's queue); until then a queued row waits in `PENDING`, and the
-write that queued it logged `audit: entry queued to outbox after chain write
-failed` at `warn`.
+by becoming a chain entry. The write that queued it logged `audit: entry
+queued to outbox after chain write failed` at `warn`.
+
+### The drain
+
+`audit-outbox-flush` (`src/app-layer/jobs/audit-outbox-flush.ts`, sub-phase
+1.5b) runs every five minutes, over every workspace (`docs/jobs.md`). A pass:
+
+1. **Parks stranded rows.** A row claimed for its last attempt whose outcome
+   was never recorded (the process died mid-append, or the status update
+   failed too) is moved to `FAILED` once its claim lease
+   (`AUDIT_OUTBOX_CLAIM_LEASE_MS`, ten minutes) has expired.
+2. **Reads the oldest event first.** Up to 200 `PENDING` rows whose
+   `nextAttemptAt` has come, ordered by `occurredAt`, so a backlog reaches the
+   chain in the order its events happened, after whatever the chain already
+   holds.
+3. **Claims each row, then appends it.** The claim is a conditional
+   `updateMany` on the `attempts` it read (one pass wins, another sees zero
+   rows), and pushes `nextAttemptAt` out by the lease. The append is an
+   ordinary `appendAuditEntry` under the per-workspace chain lock, so the
+   entry is linked to the one before it like any other. Its `detailsJson`
+   gains `occurredAt` (when the event happened; the chain's own `createdAt` is
+   the drain time) and `replayedFromOutbox: true`. The row becomes `APPLIED`
+   and names the `AuditLog` id it became (`appliedAuditId`).
+4. **Backs off a failure.** A failed replay keeps the row `PENDING` with
+   `lastError` and a delay (5 s, 30 s, 2 min, then 10 min). After five attempts
+   it is `FAILED` and logged at `error`. A `FAILED` row is never deleted: the
+   terminal bad state is a row someone can query, not an absence.
+
+An operator drains one workspace by enqueuing the job with its `tenantId`.
+`tests/integration/audit-outbox-drain-order.test.ts` proves the order, the
+links and that `verifyAuditChain` still reads the chain as valid;
+`tests/integration/audit-outbox-no-silent-drop.test.ts` proves the three
+outcomes and the parking.
 
 ## Erasure without breaking the chain
 
