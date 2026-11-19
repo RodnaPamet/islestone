@@ -1,0 +1,36 @@
+# A pull request's title must be a Conventional Commit subject (owner
+# decision 51, 2026-11-19). Pull requests are squash-merged, and the squash
+# commit's subject is the title, which semantic-release reads on main to cut
+# versions (.github/workflows/release.yml). The rule and the allowed types are
+# in docs/change-management-policy.md ("Versioning"); the pattern is
+# scripts/check-pr-title.mjs, tested in tests/unit/pr-title.test.mjs.
+#
+# `edited` re-runs the check when the title is changed. The title reaches the
+# script as an environment variable, never interpolated into the command, so
+# a title cannot inject shell.
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+permissions: {}
+
+jobs:
+  title:
+    name: PR title
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: The title is a Conventional Commit subject
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/check-pr-title.mjs

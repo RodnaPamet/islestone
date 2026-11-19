@@ -1,8 +1,10 @@
 import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
 
-// Validate both env modules whenever Next loads this config (dev, build and
-// start), so a bad environment fails at boot rather than on first use.
+// Validate both env modules whenever Next loads this config (dev and build),
+// so a bad environment fails at once rather than on first use. The standalone
+// server does not load this file; it validates at start through
+// src/instrumentation-node.ts, which imports `@/env`.
 // `SKIP_ENV_VALIDATION=1` switches this off for CI builds and for
 // `npm run typecheck`; see src/env-skip.ts and scripts/next-typegen.mjs.
 import { env } from './src/env';
@@ -12,6 +14,10 @@ import { securityHeaders } from './src/lib/security-headers';
 const nextConfig: NextConfig = {
     reactStrictMode: true,
     poweredByHeader: false,
+    // A self-contained server in .next/standalone with only the packages it
+    // loads: the app image runs it (Dockerfile, sub-phase 1.8), and so do
+    // `npm run start` and the Playwright suite (scripts/start-standalone.mjs).
+    output: 'standalone',
     // Next 16 writes an AGENTS.md at the repository root when `next dev` runs
     // inside an AI-agent session, and its text asks to be committed. Agents
     // read CLAUDE.md here; an untracked file the dev server creates would only

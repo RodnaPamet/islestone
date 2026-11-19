@@ -16,7 +16,7 @@ The workspace is the `Tenant` model in code and the database ("Workspace" in eve
 
 `FORCE ROW LEVEL SECURITY` is enabled on every tenant-scoped table, so policies apply to the table owner too, which is why `superuser_bypass` exists to re-admit trusted non-app paths.
 
-The migration creates `app_user` if it is missing, and grants it, but never names a login role. Making the login role a member of `app_user` (without which `SET ROLE app_user` fails) is done outside migrations: by `prisma/init-roles.sh`, which `docker-compose.yml` mounts into the Postgres image, and by the CI `Integration` job, which runs the same script. Production (sub-phase 1.8) must connect as a role that is neither a superuser nor `BYPASSRLS` and is a member of `app_user`.
+The migration creates `app_user` if it is missing, and grants it, but never names a login role. Making the login role a member of `app_user` (without which `SET ROLE app_user` fails) is done outside migrations: by `prisma/init-roles.sh`, which `docker-compose.yml` mounts into the Postgres image, and by the CI `Integration` job, which runs the same script. Production must connect as a role that is neither a superuser nor `BYPASSRLS` and is a member of `app_user`. Since sub-phase 1.8 it does: the app, the worker and PgBouncer use `islestone_app`, created by `deploy/postgres/init-runtime-role.sh` on the production volume's first start, while migrations run as the superuser that owns the tables (`docs/deployment.md`, "Database roles"; `tests/integration/runtime-role.test.ts`). The runtime role inherits exactly `app_user`'s grants, so a table `app_user` cannot read, it cannot read either.
 
 ## The canonical API
 
@@ -89,7 +89,7 @@ CREATE POLICY superuser_bypass ON "NewModel"
 GRANT SELECT, INSERT, UPDATE, DELETE ON "NewModel" TO app_user;
 ```
 
-Keep the per-table `GRANT`. `ALTER DEFAULT PRIVILEGES` covers only tables later created by the role that ran it, so once migrations run as a separate migrator role (1.8), a table created without its own grant is invisible to `app_user`, and RLS on a table `app_user` cannot read is a 500, not isolation.
+Keep the per-table `GRANT`. `ALTER DEFAULT PRIVILEGES` covers only tables later created by the role that ran it, so if migrations ever run as a role other than the one that ran the first migration, a table created without its own grant is invisible to `app_user` (and to the production runtime role, which reads through it), and RLS on a table `app_user` cannot read is a 500, not isolation.
 
 The model also needs a `tenantId`-leading index and a two-tenant behavioural test listed in `ISOLATION_TESTED` (`tests/guards/tenant-isolation-forward-lock.test.ts`). CI catches a forgotten piece:
 

@@ -1,0 +1,182 @@
+name: DAST (ZAP baseline)
+
+# Nightly OWASP ZAP baseline (passive) scan of the built app (sub-phase 1.8,
+# Hardening H1, owner decision 47). The runtime complement to the static gates
+# (CodeQL, npm audit, the Trivy image scan): missing headers, cookie flags,
+# information disclosure, cacheable sensitive responses.
+#
+# It boots the production build the image runs (`npm run start`, the
+# standalone server) against Postgres and Redis, registers a workspace through
+# the real sign-up route, signs in through NextAuth's credentials flow, and
+# hands ZAP the session cookie, so the scan reaches the signed-in surface.
+#
+# REPORT-ONLY for now. Neither the scan step nor the HIGH+ gate fails the job
+# until the date in the marker below; after two clean weeks they become
+# blocking (`fail_action: true`, no `continue-on-error`, marker deleted).
+# tests/guards/security-scan-deferral.test.ts compares the marker with the
+# real clock and fails CI the day after it passes while the scan is still
+# non-blocking: a deferral cannot outlive its date.
+# DAST-NON-BLOCKING-UNTIL: 2026-12-03
+#
+# Adapted from inflect-compliance `.github/workflows/dast.yml` at
+# 5528464fc54a8681956f3b9ce23ca9c075f0420e (PROVENANCE.md): one role (the
+# workspace owner the run registers) instead of four seeded ones, and
+# Islestone's services and start command.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 03:17 UTC: off the hour, outside the busy morning window.
+    - cron: '17 3 * * *'
+
+permissions: {}
+
+jobs:
+  zap-baseline:
+    name: ZAP baseline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # The SARIF upload; the action may open or update an issue with findings.
+      security-events: write
+      issues: write
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg17-trixie
+        env:
+          POSTGRES_USER: islestone
+          POSTGRES_PASSWORD: islestone_ci
+          POSTGRES_DB: islestone_dast
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U islestone -d islestone_dast"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7.4.12-alpine3.22
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      DATABASE_URL: postgresql://islestone:islestone_ci@127.0.0.1:5432/islestone_dast
+      DIRECT_DATABASE_URL: postgresql://islestone:islestone_ci@127.0.0.1:5432/islestone_dast
+      REDIS_URL: redis://:islestone_ci@127.0.0.1:6379
+      NEXT_PUBLIC_APP_URL: http://localhost:3106
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Create the app_user role (prisma/init-roles.sh)
+        run: >-
+          docker exec -i -e POSTGRES_USER=islestone -e POSTGRES_DB=islestone_dast
+          ${{ job.services.postgres.id }} bash -s < prisma/init-roles.sh
+      - name: Configure Redis (noeviction, password)
+        run: |
+          docker exec ${{ job.services.redis.id }} redis-cli CONFIG SET maxmemory-policy noeviction
+          docker exec ${{ job.services.redis.id }} redis-cli CONFIG SET requirepass islestone_ci
+      - run: npm run migrate:deploy
+      - name: Build
+        env:
+          SKIP_ENV_VALIDATION: '1'
+        run: npm run build
+      # The production server with throwaway values. Sign-up is opened for the
+      # one registration below; the rate limits stay on, in memory.
+      - name: Start the app
+        env:
+          PORT: '3106'
+          HOSTNAME: 127.0.0.1
+          AUTH_SECRET: dast-auth-secret-not-a-real-secret-0001 # pragma: allowlist secret
+          NEXTAUTH_URL: http://localhost:3106
+          APP_URL: http://localhost:3106
+          DATA_ENCRYPTION_KEY: dast-data-encryption-key-not-a-real-secret-0001 # pragma: allowlist secret
+          RATE_LIMIT_MODE: memory
+          AUTH_PUBLIC_SIGNUP: '1'
+        run: |
+          nohup npm run start > /tmp/app.log 2>&1 &
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:3106/api/readyz > /dev/null 2>&1; then echo "ready after ${i}s"; exit 0; fi
+            sleep 1
+          done
+          echo "the app did not become ready; last lines of its log:"; tail -n 100 /tmp/app.log; exit 1
+      # action-baseline authenticates only by header injection, so the run
+      # signs in itself: register a workspace owner, then NextAuth's CSRF
+      # token and credentials callback, and hands ZAP the session cookie.
+      - name: Register a workspace owner and sign in
+        run: |
+          set -euo pipefail
+          base=http://localhost:3106
+          email="dast-$(date +%s)@example.com"
+          password="Dast!$(openssl rand -hex 16)"
+          echo "::add-mask::$password"
+          curl -fsS -X POST "$base/api/auth/register" -H 'Content-Type: application/json' \
+            --data "{\"action\":\"register\",\"email\":\"$email\",\"password\":\"$password\",\"name\":\"DAST Owner\",\"orgName\":\"DAST\"}" -o /dev/null
+          jar="$(mktemp)"
+          csrf="$(curl -fsS -c "$jar" "$base/api/auth/csrf" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>process.stdout.write(JSON.parse(d).csrfToken))')"
+          curl -fsS -c "$jar" -b "$jar" -X POST "$base/api/auth/callback/credentials" \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            --data-urlencode "csrfToken=$csrf" --data-urlencode "email=$email" \
+            --data-urlencode "password=$password" --data-urlencode "callbackUrl=$base/" \
+            --data-urlencode "json=true" -o /dev/null
+          session="$(awk '$6=="next-auth.session-token"{print $7}' "$jar")"
+          if [ -z "$session" ]; then echo "::error::sign-in produced no session cookie"; exit 1; fi
+          echo "::add-mask::$session"
+          {
+            echo "ZAP_AUTH_HEADER=Cookie"
+            echo "ZAP_AUTH_HEADER_SITE=localhost:3106"
+            echo "ZAP_AUTH_HEADER_VALUE=next-auth.session-token=$session"
+          } >> "$GITHUB_ENV"
+      - name: ZAP baseline scan
+        # Non-blocking until the DAST-NON-BLOCKING-UNTIL date above.
+        continue-on-error: true
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: http://localhost:3106
+          rules_file_name: .zap/rules.tsv
+          cmd_options: '-z "-config api.disablekey=true"'
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue_title: ZAP baseline findings (nightly)
+          allow_issue_writing: true
+          artifact_name: zap_scan
+          fail_action: false
+      # Reads the report's live AND allowlisted alerts and names every High,
+      # because a rules.tsv IGNORE silences a rule at every risk. Under the
+      # same deferral as the scan.
+      - name: HIGH+ alerts (report-only until the deferral ends)
+        if: always()
+        continue-on-error: true
+        run: node .zap/assert-no-high-risk.mjs report_json.json
+      - name: Convert the ZAP report to SARIF
+        if: always()
+        run: |
+          node .zap/zap-json-to-sarif.mjs report_json.json > zap-results.sarif || \
+            printf '{"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[{"tool":{"driver":{"name":"OWASP ZAP Baseline","rules":[]}},"results":[]}]}\n' > zap-results.sarif
+      - name: Upload the ZAP SARIF to GitHub Security
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: zap-results.sarif
+          category: zap-baseline
+      - name: Upload the ZAP report (triage artifact)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: zap-baseline-report
+          path: |
+            report_html.html
+            report_md.md
+            report_json.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: App log (on failure)
+        if: failure()
+        run: tail -n 200 /tmp/app.log || true

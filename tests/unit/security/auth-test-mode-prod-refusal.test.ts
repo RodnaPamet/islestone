@@ -9,9 +9,10 @@
  * Copied from inflect-compliance `tests/unit/security/auth-test-mode-prod-refusal.test.ts`
  * (5528464fc54a8681956f3b9ce23ca9c075f0420e) and cut to the surface sub-phase
  * 1.4 has: the env schema's refusal and its `next start` exemption. The
- * parent's second surface, the startup hook in `src/instrumentation.ts`, and
- * its deploy templates and CI harness checks arrive with sub-phases 1.6 and
- * 1.8.
+ * parent's second surface, the startup hook in `src/instrumentation.ts`,
+ * arrived with sub-phase 1.6; the deploy template's half (the production
+ * compose file never sets the test switches) is in
+ * `tests/unit/deploy/compose-prod.test.ts` (sub-phase 1.8).
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';

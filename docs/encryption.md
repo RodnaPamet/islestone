@@ -3,7 +3,7 @@
 Sub-phase 1.5. Islestone encrypts personal data and secrets at rest in the
 application, below Prisma, so a database dump, a backup or a read replica
 holds ciphertext. Transport encryption, disk encryption and backup
-encryption belong to the operations docs (1.8).
+encryption belong to the operations docs (`docs/deployment.md`, sub-phase 1.8).
 
 Copied and edited from inflect-compliance's `docs/epic-b-encryption.md`,
 Layer 1 of `docs/encryption-data-protection.md` and §F.2 of

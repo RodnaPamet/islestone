@@ -4,8 +4,8 @@
  * In inflect-compliance the log shipper forwarded a container line only when
  * its text contained `requestId` and `msg`; the worker logged through a bare
  * `pino()` with no `requestId`, so none of its job lines, failures included,
- * ever left the VM. Islestone's shipper arrives with sub-phase 1.8, and these
- * tests hold every line of the shared process logger to the same two fields,
+ * ever left the VM. Islestone ships no logs yet (sub-phase 1.8 keeps them in
+ * rotated container logs), and these tests hold every line of the shared process logger to the same two fields,
  * so the shipper can rely on them.
  *
  * Copied from inflect-compliance `tests/unit/observability/process-logger.test.ts`

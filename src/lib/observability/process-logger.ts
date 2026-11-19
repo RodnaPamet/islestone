@@ -8,8 +8,9 @@
  * shipper forwards a container line only if its text contains `requestId`
  * (how it tells the app's Pino JSON from other containers' plain text), so
  * every line the worker wrote about a job stayed in a container log that was
- * discarded on every new image. Islestone's shipper (sub-phase 1.8) can rely
- * on the same field.
+ * discarded on every new image. Islestone ships no logs yet (sub-phase 1.8
+ * keeps them in rotated json-file container logs, docs/deployment.md); a
+ * shipper added later can rely on the same field.
  *
  * Every line from this logger carries `requestId`, set to the process name,
  * the way `log()` sets `'unknown'` outside a request. A field passed to a call

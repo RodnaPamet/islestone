@@ -1,0 +1,189 @@
+# Release and publish (sub-phase 1.8, owner decision 45, 2026-11-19).
+#
+# On every push to `main`:
+#   1. `version` runs semantic-release, which reads the Conventional Commit
+#      subjects since the last `v*` tag, and when they call for one, tags the
+#      commit `vX.Y.Z` and writes a GitHub Release. It commits nothing back to
+#      main (no changelog or package.json commit), so the token needs no way
+#      past branch protection; the version lives in the tag and the release.
+#   2. `publish` builds the app and worker images (Dockerfile targets `app`
+#      and `worker`), scans them, and pushes each to GHCR as `:sha-<short>`,
+#      `:<version>` when step 1 made one, and `:latest`, in that order: the
+#      immutable names first, so the moving tag never names an image that has
+#      no immutable name to roll back to.
+#
+# Watchtower on the VM follows `:latest` (deploy/docker-compose.prod.yml), so
+# a push here reaches production within its poll interval. There is no
+# staging environment and no preview deployment (owner decision 43); the pull
+# request's required checks are the gate (docs/change-management-policy.md).
+#
+# The build loads the images into this runner and Trivy reads them before
+# anything reaches the registry (inflect-compliance's ghcr-publish.yml order).
+# The scan is report-only until its dated deferral ends, exactly as in
+# ci.yml's Image job; the SARIF is ci.yml's to upload (that job runs on the
+# same push), so this workflow holds no security-events permission beside its
+# registry write.
+#
+# The token is GITHUB_TOKEN with `packages: write`, never a personal token.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+# A running release is never cancelled: a cancelled publish leaves `:latest`
+# on an older image while main has moved on. GitHub keeps only the newest
+# pending run, so the newest commit is always the next one built.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  APP_IMAGE: ghcr.io/rodnapamet/islestone
+  WORKER_IMAGE: ghcr.io/rodnapamet/islestone-worker
+
+jobs:
+  version:
+    name: Version
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      # Push the tag and write the GitHub Release. No issue or pull-request
+      # comments (.releaserc.json turns them off).
+      contents: write
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      # Pinned here rather than in package.json: semantic-release runs only in
+      # this job, and its tree has no business in the lockfile the app ships.
+      - name: Run semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          npx --yes
+          -p semantic-release@25.0.9
+          -p conventional-changelog-conventionalcommits@10.4.1
+          semantic-release
+      - name: Read the version this commit carries
+        id: tag
+        run: |
+          tag="$(git tag --points-at HEAD --list 'v[0-9]*' | sort -V | tail -n 1)"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "version: ${tag:-none}"
+
+  publish:
+    name: Publish images
+    needs: version
+    # A failed version step still publishes `:sha-` and `:latest`: deploys do
+    # not wait for a release note. A cancelled one publishes nothing.
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Built under local, registry-less names: a typo can then never scan an
+      # image pulled from GHCR in place of the one just built.
+      - name: Build the app image (load locally, no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          target: app
+          push: false
+          load: true
+          tags: islestone:publish-${{ github.sha }}
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=BUSL-1.1
+          cache-from: type=gha,scope=islestone-image
+          cache-to: type=gha,scope=islestone-image,mode=max,ignore-error=true
+      - name: Build the worker image (load locally, no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          target: worker
+          push: false
+          load: true
+          tags: islestone-worker:publish-${{ github.sha }}
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=BUSL-1.1
+          cache-from: type=gha,scope=islestone-image
+          cache-to: type=gha,scope=islestone-image,mode=max,ignore-error=true
+      # Report-only until the date below, like ci.yml's Image job (owner
+      # decision 47). When it becomes blocking, exit-code "1" here stops the
+      # push, and `:latest` stays on the last image that passed.
+      # TRIVY-NON-BLOCKING-UNTIL: 2026-12-03
+      - name: Trivy scan of the app image (CRITICAL, HIGH)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: islestone:publish-${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          vuln-type: os,library
+          exit-code: '0'
+          timeout: 15m
+      - name: Trivy scan of the worker image (CRITICAL, HIGH)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: islestone-worker:publish-${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          vuln-type: os,library
+          exit-code: '0'
+          timeout: 15m
+      - name: Push the scanned images to GHCR
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          short="${SHA:0:7}"
+          push() { docker tag "$1" "$2"; docker push "$2"; }
+          # Immutable names first, for both images.
+          for pair in "islestone:publish-${SHA} ${APP_IMAGE}" "islestone-worker:publish-${SHA} ${WORKER_IMAGE}"; do
+            set -- $pair
+            push "$1" "$2:sha-${short}"
+            if [ -n "${VERSION}" ]; then push "$1" "$2:${VERSION}"; fi
+          done
+          # The moving tag last, worker (and migrate) before app: Watchtower
+          # may roll either first, and both wait for the migrations.
+          push "islestone-worker:publish-${SHA}" "${WORKER_IMAGE}:latest"
+          push "islestone:publish-${SHA}" "${APP_IMAGE}:latest"
+          {
+            echo "### Published"
+            echo "- \`${APP_IMAGE}\` and \`${WORKER_IMAGE}\`: \`sha-${short}\`${VERSION:+, \`${VERSION}\`}, \`latest\`"
+          } >> "$GITHUB_STEP_SUMMARY"

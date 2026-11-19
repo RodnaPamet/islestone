@@ -1,0 +1,67 @@
+# Islestone's site on the shared Caddy (owner decision 44, 2026-11-19).
+#
+# One Caddy container, `agrent-caddy`, owns ports 80 and 443 on the VM and
+# reads Agrent's Caddyfile. Islestone never edits that file. It carries one
+# line, `import /etc/caddy/sites/*.caddy`, and Caddy mounts the host's
+# /opt/caddy-sites read-only at /etc/caddy/sites. `deploy/apply.sh` installs
+# this file as /opt/caddy-sites/islestone.caddy, validates the whole
+# configuration inside `agrent-caddy`, then reloads it gracefully
+# (docs/deployment.md, "The shared Caddy").
+#
+# Everything here must be a complete site block: an imported file's snippets
+# and global options would land inside Agrent's configuration. Certificates
+# for both names are issued by Caddy's automatic HTTPS on first request; DNS
+# for both must point at the VM first.
+#
+# Adapted from inflect-compliance `deploy/caddy/Caddyfile` (PROVENANCE.md).
+# `tests/unit/deploy/caddy-snippet.test.ts` holds the hostnames, the upstream,
+# the HSTS value (equal to src/lib/security-headers.ts) and the body limit.
+
+# The apex is canonical: www answers with a permanent redirect to it, keeping
+# the path and the query.
+www.islestone.cloud {
+	redir https://islestone.cloud{uri} permanent
+}
+
+islestone.cloud {
+	encode zstd gzip
+
+	# No upload feature exists yet; the largest body the app takes is a JSON
+	# request, and the CSP report sink caps its own at 16 KB. Raise this with
+	# the feature that needs it.
+	request_body {
+		max_size 10MB
+	}
+
+	header {
+		# Two years with subdomains, equal to the app's own header
+		# (HSTS_MAX_AGE_SECONDS); Caddy sets it here so a response Caddy itself
+		# answers (a 502 during a restart) carries it too.
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+		-X-Powered-By
+	}
+
+	# Hashed build assets are immutable; everything else carries a session.
+	@nextStatic path /_next/static/*
+	header @nextStatic Cache-Control "public, max-age=31536000, immutable"
+
+	reverse_proxy islestone-app:3000 {
+		# Ride out a container swap: Watchtower stops the old app before the
+		# new one listens, and the new one waits for its migrations first.
+		lb_try_duration 60s
+		lb_try_interval 250ms
+
+		# The app reads the client address from the first X-Forwarded-For
+		# entry (rate limits, session records), so it is set here from the
+		# connection, never passed through from the client.
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
+}
