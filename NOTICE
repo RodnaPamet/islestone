@@ -17,19 +17,25 @@ its source and commit as recorded in PROVENANCE.md, its copyright line and its
 licence. A component under Apache-2.0 also brings the contents of its own
 NOTICE file.
 
-Shared UI: packages/ui (@inflect/ui)
--------------------------------------
+Shared UI: packages/ui (@inflect/ui) and src/components/ui
+-----------------------------------------------------------
 
 packages/ui is a byte-for-byte copy of inflect-compliance's packages/ui at
 commit 5528464fc54a8681956f3b9ce23ca9c075f0420e (BUSL-1.1, Inflect Ltd.).
-Code copied from inflect-compliance is not third-party code: it is BUSL-1.1
-from the same Licensor (ADR 0001, decision D1), and PROVENANCE.md records each
-copied file. Two third-party components are inside it, taken as they are with
-the licence risk accepted (ADR 0001, decision D4):
+The generic UI files under src/components/ui and src/lib/hooks (and the few
+files they need, listed in ui-mirror.json) are byte-for-byte copies of the
+same paths in inflect-compliance at the same commit, apart from three files
+Islestone forked (PROVENANCE.md says how). Code copied from
+inflect-compliance is not third-party code: it is BUSL-1.1 from the same
+Licensor (ADR 0001, decision D1), and PROVENANCE.md records each copied file.
+Two third-party components are inside it, taken as they are with the licence
+risk accepted (ADR 0001, decision D4):
 
 - Dub (github.com/dubinc/dub). Many of the package's charts, hooks, utilities
-  and icons derive from Dub's packages/ui and packages/utils; PROVENANCE.md
-  marks each such file.
+  and icons, and some of the src/components/ui primitives (the filter system,
+  the combobox, the date-picker types, the table types, label and
+  animated-size-container among them), derive from Dub's packages/ui and
+  packages/utils; PROVENANCE.md marks each such file.
   Copyright (c) 2024-present Dub Technologies, Inc.
   Licensed under the GNU Affero General Public License, version 3 (AGPL-3.0),
   outside Dub's (ee) folders. The licence text is at
