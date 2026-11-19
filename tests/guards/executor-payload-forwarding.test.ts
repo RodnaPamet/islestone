@@ -51,7 +51,13 @@ describe('GUARD: executors read their payload', () => {
         // As many parsed as the file registers: a registration the pattern
         // cannot read would otherwise escape the check.
         const calls = code.match(/executorRegistry\.register\(/g) ?? [];
-        expect(regs.map((r) => r.job).sort()).toEqual(['health-check', 'notification-outbox-flush']);
+        expect(regs.map((r) => r.job).sort()).toEqual([
+            'audit-outbox-flush',
+            'health-check',
+            'key-rotation',
+            'notification-outbox-flush',
+            'tenant-dek-rotation',
+        ]);
         expect(regs).toHaveLength(calls.length);
     });
 

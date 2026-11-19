@@ -45,6 +45,9 @@ porting maps now record them (next step 2); the last column says where.
 | 32 | FSL-1.1-Apache-2.0 joins the licence allowlist (source-available, Apache-2.0 after two years), accepted for the Sentry SDK; `@sentry/nextjs` 11.11.0 is installed and the real `sentry.ts` ported, off unless `SENTRY_DSN` is set. Decided 2026-11-19, approved as row 31. Applied. | "Allow FSL for Sentry" | ADR 0007 E9; `scripts/licence-gate.mjs`; `src/lib/observability/sentry.ts` |
 | 33 | ADR 0006 gains decided rows for `Notification.body` (a notification's text, replacing the banned "Message") and `TenantNotificationSettings.bccMailbox` (a workspace's copy-to address). Decided 2026-11-19, relayed. | relayed | ADR 0006 "Notification column names — decided" |
 | 34 | The mailer's log lines never carry a recipient's address: they log `hashForLookup` of each address and the template name. Decided 2026-11-19, relayed. | relayed | `src/lib/mailer.ts` (`recipientLogFields`); `tests/unit/mailer.test.ts` |
+| 35 | A key rotation (master key or workspace DEK) re-resolves the person who started it when the job runs. Still an ACTIVE member holding the route's key: it acts as them. Otherwise it still finishes, as the workspace system user, and its audit entries and result record who asked (`requestedByUserId`), `authority: 'SYSTEM'` and the refusal; a departed person is never named as the actor. The owner-decided exception to the job-identity rule. Decided 2026-11-19, relayed. | relayed | `src/app-layer/jobs/rotation-actor.ts`; CLAUDE.md ("Job identity"); `docs/encryption.md` ("Who a rotation acts as") |
+| 36 | The master-key rotation is OWNER-only: its route, rule and policy use `admin.tenant_lifecycle`, as the DEK rotation does (inflect-compliance admitted ADMIN). Decided 2026-11-19, relayed. | relayed | `src/lib/security/route-permissions.ts`; `src/app-layer/policies/admin.policies.ts`; `docs/encryption.md` |
+| 37 | Creating the workspace system user is audited: one `SYSTEM_USER_CREATED` entry, as the system actor, in the same transaction as the insert; a later call that finds the row writes nothing. Decided 2026-11-19, relayed. | relayed | `src/app-layer/context-system.ts` (`ensureTenantSystemUser`); `docs/audit-trail.md` |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
@@ -300,3 +303,26 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    mailer that logs only address hashes. Open: whether to initialise Sentry in the
    browser (the source never did; it would be a new data flow for the sub-processor
    register). 1.5b (issue #19) can now use the queue; 1.7 is next.
+   **1.5b (key rotation and the audit-outbox drain) has landed** on branch `wt/p15b`
+   (issue #19, not pushed from this session), by `docs/porting/maps/1.5.md`
+   (`PROVENANCE.md`, "Copied: rotation and outbox drain"):
+   - `rotateTenantDek` restored in `tenant-key-manager.ts` (byte-identical to the source
+     again), and three jobs: `key-rotation` (master key: re-wrap the workspace DEK,
+     re-encrypt its `v1:` values and the outbox recipient), `tenant-dek-rotation` (the
+     per-workspace DEK sweep, with progress) and `audit-outbox-flush` (every five minutes,
+     oldest event first). The two rotations are on-demand jobs; `scripts/rotate-global-pii.ts`
+     sweeps `User` and `Account`.
+   - `POST`/`GET /api/t/<slug>/admin/key-rotation` and `/admin/tenant-dek-rotation`,
+     both `admin.tenant_lifecycle` (OWNER-only, row 36), with their
+     route-permission rules; the logic is in `usecases/key-rotation.ts`. A second DEK
+     rotation while a sweep is in flight is a 409. No admin page yet (1.7).
+   - The raw-SQL audit guard now reads whole statements and refuses an interpolated table
+     outside a named exception. It found `ensureTenantSystemUser`'s raw `INSERT INTO
+     "User"` (1.6), now listed with its reason and audited (row 37).
+   - Docs: `docs/encryption.md` (both runbooks), `docs/audit-trail.md` ("The drain"),
+     `docs/jobs.md`.
+   The three questions this left open were decided on 2026-11-19 (rows 35 to 37) and
+   are applied: a rotation re-resolves its initiator and, if they no longer resolve,
+   finishes as the workspace system user with who asked recorded; the master-key
+   rotation is OWNER-only; creating the system user writes `SYSTEM_USER_CREATED` in the
+   same transaction. The API-key liveness check in `key-rotation` returns with 5.2.

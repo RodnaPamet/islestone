@@ -126,17 +126,18 @@ export interface ScheduleRegLogger {
  * ═══ WHAT IS ACTUALLY DELETABLE, AND WHY THE COUNT IS NOT WRITTEN HERE ═══
  *
  * The removable set is `Object.keys(JOB_DEFAULTS) ∪ RETIRED_SCHEDULED_JOB_NAMES`
- * MINUS `SCHEDULED_JOBS`: any job in `JOB_DEFAULTS` that a dispatcher enqueues
- * per unit rather than schedules. Islestone has none yet; sub-phase 1.5b's
- * `key-rotation` is the first.
+ * MINUS `SCHEDULED_JOBS`: any job in `JOB_DEFAULTS` that something enqueues
+ * per unit rather than schedules. Today that is sub-phase 1.5b's two key
+ * rotations, `key-rotation` and `tenant-dek-rotation`, each enqueued one
+ * workspace at a time by its admin route.
  *
  * Those belong in `JOB_DEFAULTS` because they carry retry policy, and they are
- * absent from `SCHEDULED_JOBS` because they are ENQUEUED PER UNIT by a
- * dispatcher rather than scheduled. So a scheduler bearing one of their names is
+ * absent from `SCHEDULED_JOBS` because they are ENQUEUED PER UNIT (by a
+ * dispatcher, or by an operator's request) rather than scheduled. So a scheduler bearing one of their names is
  * by definition an orphan — somebody scheduled a fan-out target directly, most
  * likely while debugging — and removing it is correct. But "correct" is not
- * "small": once 1.5b lands this sweep can delete a scheduler for a key-rotation
- * job, and whoever reviews a change to the triage rule should know that before
+ * "small": this sweep can delete a scheduler for a key-rotation job, and
+ * whoever reviews a change to the triage rule should know that before
  * they reason about blast radius.
  *
  * NO NUMBER IS RECORDED IN THIS COMMENT ON PURPOSE. It is derived from two

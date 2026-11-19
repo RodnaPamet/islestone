@@ -4,8 +4,9 @@
  *
  * Copied from inflect-compliance `src/app-layer/jobs/fan-out.ts` at
  * 5528464fc54a8681956f3b9ce23ca9c075f0420e; its failure counter now lives in
- * `metrics.ts`. Islestone has no dispatcher yet (1.5b's key rotation is the
- * first), so the bucket constants wait for one.
+ * `metrics.ts`. Islestone has no dispatcher yet (1.5b's key rotations are
+ * enqueued one workspace at a time by their admin routes, not fanned out), so
+ * the bucket constants wait for one.
  *
  * ## Two defects, and they compound
  *

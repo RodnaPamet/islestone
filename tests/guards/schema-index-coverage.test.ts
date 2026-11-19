@@ -84,6 +84,11 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     NotificationOutbox:
         'The drain reads PENDING rows due now (@@index([status, sendAfter])), narrowed to one workspace ' +
         'by @@index([tenantId]) for the manual drain; capped by the pass limit.',
+    // Sub-phase 1.5b.
+    AuditOutbox:
+        'The drain reads PENDING rows due now (@@index([status, nextAttemptAt])), oldest event first, ' +
+        'narrowed to one workspace by @@index([tenantId, status]) for an operator re-run; capped by the ' +
+        'pass limit, and the queue is empty but for lock contention.',
 };
 
 const isTenantModel = (m: SchemaModel) => m.scalarFieldNames.includes('tenantId');

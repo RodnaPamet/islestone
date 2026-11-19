@@ -41,7 +41,13 @@ const reg = executorRegistry as unknown as {
 
 describe('executorRegistry — default registrations', () => {
     it('auto-registers exactly the built-in executors at import time', () => {
-        expect(reg.listRegistered().sort()).toEqual(['health-check', 'notification-outbox-flush']);
+        expect(reg.listRegistered().sort()).toEqual([
+            'audit-outbox-flush',
+            'health-check',
+            'key-rotation',
+            'notification-outbox-flush',
+            'tenant-dek-rotation',
+        ]);
     });
 
     it('has() / getExecutor() resolve known + unknown names', () => {

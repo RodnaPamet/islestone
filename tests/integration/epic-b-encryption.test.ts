@@ -10,11 +10,14 @@
  *   4. A read via `runInTenantContext` returns plaintext.
  *   5. The OTHER tenant's DEK cannot decrypt the first tenant's ciphertext —
  *      the per-tenant isolation guarantee.
+ *   6. `runKeyRotation` re-wraps the DEK under the current primary KEK: the
+ *      wrapped-DEK ciphertext changes, the DEK bytes do not.
+ *   7. A read after the rotation still produces plaintext.
  *
  * Copied from inflect-compliance `tests/integration/epic-b-encryption.test.ts`
  * at 5528464fc54a8681956f3b9ce23ca9c075f0420e, against Islestone's one
  * manifest field, `TenantSecuritySettings.auditStreamSecretEncrypted`. The
- * key-rotation cases (`runKeyRotation`) return with sub-phase 1.5b. The
+ * key-rotation cases (`runKeyRotation`) returned with sub-phase 1.5b. The
  * encryption extension is composed onto the app client in `src/lib/prisma.ts`,
  * so nothing is registered here.
  */
@@ -25,7 +28,8 @@ import { deleteAuditRowsForTenants, deleteAuditRowsForUsers } from '../helpers/a
 import type { PrismaClient } from '@prisma/client';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { createTenantWithDek, getTenantDek, clearTenantDekCache } from '@/lib/security/tenant-key-manager';
-import { isWrappedDek } from '@/lib/security/tenant-keys';
+import { isWrappedDek, unwrapDek } from '@/lib/security/tenant-keys';
+import { runKeyRotation } from '@/app-layer/jobs/key-rotation';
 import { getCiphertextVersion, decryptWithKey } from '@/lib/security/encryption';
 import type { RequestContext } from '@/app-layer/types';
 
@@ -143,5 +147,45 @@ describeFn('Epic B — encryption and tenant DEKs end-to-end', () => {
         // Sanity: tenant A's OWN DEK decrypts it.
         const dekA = await getTenantDek(tenantA);
         expect(decryptWithKey(dekA, cipher)).toBe(SECRET);
+    });
+
+    test('key rotation re-wraps the DEK (ciphertext changes, DEK bytes preserved)', async () => {
+        // Capture the pre-rotation DEK + its wrapped form.
+        const before = await testPrisma.tenant.findUnique({
+            where: { id: tenantA },
+            select: { encryptedDek: true },
+        });
+        const wrappedBefore = before!.encryptedDek!;
+        const dekBefore = unwrapDek(wrappedBefore);
+
+        const result = await runKeyRotation({
+            tenantId: tenantA,
+            initiatedByUserId: adminUserId,
+            requestId: 'epic-b-rotation',
+        });
+        expect(result.dekRewrapped).toBe(true);
+        expect(result.totalErrors).toBe(0);
+
+        const after = await testPrisma.tenant.findUnique({
+            where: { id: tenantA },
+            select: { encryptedDek: true },
+        });
+        const wrappedAfter = after!.encryptedDek!;
+
+        // Envelope changed — new IV + fresh wrap.
+        expect(wrappedAfter).not.toBe(wrappedBefore);
+
+        // Underlying DEK bytes unchanged — existing ciphertexts stay readable.
+        const dekAfter = unwrapDek(wrappedAfter);
+        expect(dekAfter.equals(dekBefore)).toBe(true);
+    });
+
+    test('reads still decrypt cleanly after rotation', async () => {
+        // The key-manager cache was invalidated by the rotation job —
+        // the next request re-resolves from the freshly-wrapped DEK row.
+        const found = await runInTenantContext(ctxFor(tenantA, adminUserId), (db) =>
+            db.tenantSecuritySettings.findFirst({ where: { tenantId: tenantA } }),
+        );
+        expect(found!.auditStreamSecretEncrypted).toBe(SECRET);
     });
 });

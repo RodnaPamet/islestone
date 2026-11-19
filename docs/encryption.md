@@ -151,7 +151,7 @@ a bare `Tenant`; `getTenantDek` then creates the key on first use
 (`ensureTenantDek`, which tolerates a concurrent writer).
 
 `Tenant.previousEncryptedDek` holds the old wrapped DEK while a per-tenant
-rotation (1.5b) re-encrypts the workspace's rows, and the read path falls
+rotation re-encrypts the workspace's rows (below), and the read path falls
 back to it (`decryptWithKeyOrPrevious`). The migration adds two things
 Prisma's schema cannot express, each tested in
 `tests/integration/tenant-dek-schema.test.ts`:
@@ -193,11 +193,38 @@ it early turns those rows' reads into 500s.
 
 ## Rotating the master key
 
-The dual-key fallback is in place now; the per-tenant re-encryption job
-(`POST /api/t/<slug>/admin/key-rotation`) and the global PII sweep
-(`scripts/rotate-global-pii.ts`) arrive with sub-phase 1.5b, once 1.6 brings
-the job queue. Until then a rotation can be started but not finished, so do
-not start one unless a key is compromised.
+Three pieces, sub-phase 1.5b:
+
+- **`key-rotation`** (`src/app-layer/jobs/key-rotation.ts`), one workspace per
+  run, started by `POST /api/t/<slug>/admin/key-rotation`
+  (`admin.tenant_lifecycle`: OWNER-only, owner decision 2026-11-19; 5 per
+  hour). It re-wraps `Tenant.encryptedDek` under the
+  primary key, then rewrites every `v1:` value the workspace owns: the
+  manifest fields of every model with a `tenantId` column, and the
+  tenant-scoped PII columns (`PII_TENANT_SCOPED_MODELS`, today the outbox
+  recipient). `v2:` values are under the workspace DEK, whose bytes do not
+  change, so they are untouched.
+- **`scripts/rotate-global-pii.ts`**, once per rotation, for the PII columns
+  of tables with no `tenantId` (`User.email`, `User.name`, the `Account`
+  token copies): no per-workspace run reaches them. Without `--execute` it
+  only counts; with it, it rewrites and exits non-zero if any row failed.
+- **`GET /api/t/<slug>/admin/key-rotation?jobId=…`**: the job's state and
+  result (counts, never key material). Another workspace's job, another kind
+  of job, or an unknown id is a 404.
+
+Each sweep reads `v1:%` rows in pages keyed on `id` (a rewritten row is still
+`v1:`, so the prefix cannot mark progress), decrypts with the dual-key
+`decryptField`, re-encrypts under the primary and writes with an `UPDATE`
+conditional on the value it read, so a user's newer write is never
+overwritten with the old plaintext. It is idempotent: a second run rewrites
+the same rows again, harmlessly. A model probe that fails for any reason but a
+missing column fails the run rather than skipping the model. The job writes
+`KEY_ROTATION_STARTED` and `KEY_ROTATION_COMPLETED` (with the counts) to the
+workspace's chain, under the authority described in "Who a rotation acts as"
+below; the route writes
+`KEY_ROTATION_INITIATED` naming the job. A run with any error, or a DEK that
+did not re-wrap, is a failed job (`keyRotationOutcome`), and it is not retried
+by the queue: the operator reads it and re-enqueues.
 
 Pre-flight:
 
@@ -206,25 +233,116 @@ Pre-flight:
   before the new key goes anywhere.** No backfill is needed: the material
   does not change, so every stored hash still resolves.
 - [ ] A new `DATA_ENCRYPTION_KEY` is generated (`openssl rand -base64 48`).
-- [ ] Every replica has the new key as `DATA_ENCRYPTION_KEY` and the old one
-  as `DATA_ENCRYPTION_KEY_PREVIOUS`; a rolling restart is done and reads and
-  writes still work.
+- [ ] Every replica, the worker included, has the new key as
+  `DATA_ENCRYPTION_KEY` and the old one as `DATA_ENCRYPTION_KEY_PREVIOUS`; a
+  rolling restart is done and reads and writes still work. From here on,
+  reads try the new key first and fall back to the old one, and every write
+  uses the new one.
 
-Then (1.5b): run the per-tenant rotation for every workspace and the global
-PII sweep once (`User` and `Account` carry no `tenantId`, so no per-tenant
-run reaches them). Only when **both** report zero rows left under the old
-key, remove `DATA_ENCRYPTION_KEY_PREVIOUS` and restart. Never remove the
-previous key while a rotation is in flight.
+Then:
+
+1. For every workspace, `POST /api/t/<slug>/admin/key-rotation` and wait for
+   the job to complete with zero errors (`GET …?jobId=`).
+2. Once: `npx tsx scripts/rotate-global-pii.ts --execute` (with the app's
+   environment exported), until it reports zero errors.
+3. Only when **both** report zero errors, remove
+   `DATA_ENCRYPTION_KEY_PREVIOUS` and restart. Never remove the previous key
+   while a rotation is in flight: a value still under it would no longer
+   read.
+
+`tests/integration/key-rotation.test.ts` plays this runbook against a real
+database: every value the rotation owns reads mid-flight, is rewritten, and
+reads under the new key alone after the old one is removed.
+
+The API-key liveness check inflect-compliance makes before the work (a key
+revoked while the job waited) returns with API keys in 5.2.
+
+### Who a rotation acts as
+
+Owner decision, 2026-11-19, for both rotations
+(`src/app-layer/jobs/rotation-actor.ts`). When the job runs, the person who
+started it is resolved again (`resolveInitiatorContext`):
+
+- **Still an ACTIVE member holding `admin.tenant_lifecycle`:** the job acts as
+  them. Its STARTED and COMPLETED entries name them (`actorType: 'USER'`) with
+  `authority: 'INITIATOR'`.
+- **Anything else** (removed from the workspace, deactivated, demoted below the
+  key, or the workspace soft-deleted): the rotation **still finishes**, as the
+  workspace's system user (`sys_<tenantId>`, `buildTenantSystemJobContext`,
+  `actorType: 'JOB'`). The entries' `detailsJson` and the job result's `actor`
+  carry `authority: 'SYSTEM'`, `requestedByUserId` (who asked) and `refusal`
+  (`NOT_A_MEMBER`, `NOT_ACTIVE` with the status, `LACKS_PERMISSION`, or
+  `TENANT_DELETED`). The person who asked is never written as the actor.
+
+A rotation is not stopped because the person who asked has gone: that would
+leave a workspace's keys half-moved (a previous master key that cannot be
+retired, or a compromised DEK still kept as the previous one). This is the one
+exception to the rule that a job doing what a person asked stops when that
+person no longer resolves (CLAUDE.md, "Job identity").
+`tests/integration/rotation-initiator.test.ts` proves both branches for both
+jobs.
 
 ### Key compromise
 
 1. **Do not delete the old key**: existing ciphertext needs it.
 2. Deploy the new key as primary and the compromised one as previous.
-3. Rotate every workspace and sweep the global PII columns (1.5b).
-4. When all report zero rows under the old key, remove it.
+3. Rotate every workspace and sweep the global PII columns (above).
+4. When all report zero errors, remove the old key.
 5. Verify the audit chain over the window (`npx tsx
    scripts/verify-audit-chain.ts`): a valid chain shows nobody rewrote the
    trail during the incident.
+
+## Rotating a workspace's data key
+
+The response to a suspected compromise of ONE workspace's DEK, without
+touching the master key. OWNER-only (`admin.tenant_lifecycle`), 5 per hour.
+
+`POST /api/t/<slug>/admin/tenant-dek-rotation` calls `rotateTenantDek`
+(`src/lib/security/tenant-key-manager.ts`):
+
+1. **The swap.** A fresh DEK, wrapped under the master key, is written to
+   `encryptedDek` and the old wrapped DEK to `previousEncryptedDek`, in one
+   `UPDATE … WHERE previousEncryptedDek IS NULL`. A rotation already in
+   flight, or a concurrent one that won the swap, is refused: the route
+   answers **409** and nothing changes. The CHECK
+   `Tenant_previousEncryptedDek_differs` refuses the same key in both columns.
+2. **The caches.** This process primes its cache with the new DEK and keeps
+   the old one as the previous.
+3. **The sweep.** `tenant-dek-rotation` is enqueued (`TENANT_DEK_ROTATED` is
+   written naming the job). If the enqueue fails after the swap, the call
+   throws; reads keep working through the previous DEK, and the operator
+   re-enqueues `tenant-dek-rotation` with the same payload.
+
+While the sweep runs, reads stay correct: the extension tries the new DEK
+first and falls back to the previous one (`decryptWithKeyOrPrevious`), and
+new writes use the new DEK. The sweep (`src/app-layer/jobs/tenant-dek-rotation.ts`):
+
+- resolves BOTH keys from the row, after dropping its own process's caches: the
+  swap happened in the web process, and the worker may still hold the old DEK
+  as the current one;
+- walks every `v2:` value of every manifest field of the workspace, in pages
+  keyed on `id`; decrypts under the previous DEK only; re-encrypts under the
+  new; writes conditionally on the value it read;
+- counts a row that already reads under the new DEK as skipped, and a row that
+  reads under neither key as an error;
+- clears `previousEncryptedDek` only when the run had **zero errors**. With
+  any error the previous DEK stays, reads keep working, and the job fails for
+  the operator to investigate and re-enqueue;
+- reports progress (`phase`: `starting`, `sweeping`, `finalising`, `complete`
+  or `noop`, with counts) through the job, which
+  `GET /api/t/<slug>/admin/tenant-dek-rotation?jobId=…` returns, and writes
+  `TENANT_DEK_ROTATION_STARTED` and `_COMPLETED` to the chain, under the
+  authority described in "Who a rotation acts as" above.
+
+A second rotation is accepted once the sweep has cleared the previous slot.
+`tests/integration/tenant-dek-rotation.test.ts` proves the swap, the 409's
+condition, the mid-flight reads through the app's client and the sweep;
+`tests/guards/tenant-dek-rotation-fallback.test.ts` holds the fallback wiring
+and the OWNER-only gate.
+
+Any future write-once trigger on an encrypted column must admit the sweep's
+ciphertext-to-`v2:` re-wrap with every other column unchanged, or the sweep
+fails on that table and the rotation never finishes.
 
 ## Signals
 
@@ -236,6 +354,9 @@ previous key while a rotation is in flight.
 | `encryption-middleware.write_unscoped`, `.write_tenant_mismatch`; metric `encryption.write.tenant_context_mismatch` | encryption middleware | A manifest write ran with no tenant context, or under another workspace's. |
 | `pii.decrypt_failure` | PII extension | A personal-data column could not decrypt. |
 | `tenant-key-manager.tenant_created_with_dek`, `.dek_backfilled`, `.dek_backfill_raced` | key manager | A workspace got its key at creation, lazily, or lost a harmless race to another writer. |
+| `tenant-key-manager.dek_rotated`, `.dek_rotated_but_enqueue_failed` | key manager | A workspace's DEK was swapped; or swapped and its sweep could not be enqueued (re-enqueue `tenant-dek-rotation`). |
+| `key-rotation.complete` (`error` level when `totalErrors > 0`), `.decrypt_failed`, `.update_failed`, `.model_probe_failed`, `.global_pii_swept` | master-key rotation | A run's counts; a row it could not rewrite (`model`, `field`, `id`; never a value). |
+| `tenant-dek-rotation.complete` (`error` level when `totalErrors > 0`), `.row_unreadable`, `.concurrent_write_unreadable`, `.no_previous_dek` | DEK sweep | A sweep's counts; a row that reads under neither key, so the previous DEK was kept. |
 
 ## Caveats
 

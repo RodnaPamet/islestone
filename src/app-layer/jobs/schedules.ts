@@ -8,6 +8,10 @@
  * Schedule semantics:
  *   - health-check:              every 2 min (drives the worker heartbeat)
  *   - notification-outbox-flush: every 10 min (drain the email outbox)
+ *   - audit-outbox-flush:        every 5 min (replay queued audit entries onto the chain)
+ *
+ * The two key rotations (`key-rotation`, `tenant-dek-rotation`) are started by
+ * an operator through their admin routes and have no schedule.
  *
  * Times are UTC unless the entry sets a `tz`. BullMQ uses standard
  * cron syntax and evaluates the `pattern` in `tz` when supplied.
@@ -23,7 +27,8 @@
  * double-fire MUST carry its own durable idempotency key, not lean on the jobId.
  *
  * Copied from inflect-compliance `src/app-layer/jobs/schedules.ts` at
- * 5528464fc54a8681956f3b9ce23ca9c075f0420e, with two of its entries.
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e, with three of its entries
+ * (`audit-outbox-flush` since sub-phase 1.5b).
  *
  * @module app-layer/jobs/schedules
  */
@@ -97,6 +102,35 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         // Empty: no tenantId means drain every tenant's queue, which is what a
         // platform-level job must do. A tenant-scoped drain is the admin button
         // on the notification-settings page, which passes its own tenantId.
+        defaultPayload: {},
+    },
+    {
+        name: 'audit-outbox-flush',
+        pattern: '*/5 * * * *',   // every 5 minutes
+        // The audit trail's own drain, and why it exists at all.
+        //
+        // An audit write that cannot reach the hash chain (an AUTHZ_DENIED
+        // under per-workspace lock contention, say) goes to `AuditOutbox`
+        // instead of being swallowed, so the record is durable before the
+        // response. That makes the entry SAFE; it does not yet make it
+        // EVIDENCE. Without this schedule the outbox is a table that only
+        // grows and the entry never appears in the trail — the original
+        // defect, moved one table over.
+        //
+        // FIVE minutes rather than the notification drain's ten. The failure
+        // being backed up is per-tenant advisory-lock contention, which clears
+        // in seconds, so the queue should be short-lived. And the cost profile
+        // is different: a pass is one indexed query when empty, and each
+        // non-empty row is a local database append rather than an SMTP round
+        // trip to a third party, so a shorter cadence does not risk the retry
+        // storm that argument was about.
+        //
+        // Not one minute: a security entry arriving up to five minutes after
+        // the event is a bound an operator can state plainly, and polling the
+        // table twelve times an hour for a queue that is empty almost always
+        // is the right trade against a worker slot.
+        description: 'Replay queued audit entries onto the hash chain, oldest event first. A row that exhausts its attempts is parked FAILED, never deleted.',
+        // Empty: every workspace's queue, as a platform-level drain must.
         defaultPayload: {},
     },
 ];

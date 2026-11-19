@@ -54,12 +54,14 @@ import {
 } from '@/lib/permissions';
 import type { PermissionSet } from '@/lib/permissions';
 import prisma from '@/lib/prisma';
+import { AUDIT_APPEND_TX_OPTIONS } from '@/lib/db/concurrency-limits';
 import {
     TENANT_SYSTEM_USER_NAME,
     tenantSystemUserEmail,
     tenantSystemUserEmailHash,
     tenantSystemUserId,
 } from '@/lib/tenant-system-user';
+import { logEvent } from './events/audit';
 import type { RequestContext } from './types';
 
 
@@ -167,14 +169,45 @@ export function buildSystemContext(input: {
  * this user authored. The row's shape, and its inability to sign in or hold
  * standing anywhere, are CHECK constraints (migration
  * `20261119150000_notifications_and_system_user`).
+ *
+ * THE CREATION IS AUDITED (owner decision, 2026-11-19). The call that inserts
+ * the row writes one `SYSTEM_USER_CREATED` entry to the workspace's chain, as
+ * the system user itself (`actorType: 'JOB'`), in the SAME transaction, so the
+ * row and its record commit together or not at all. A call that finds the row
+ * already there (`ON CONFLICT DO NOTHING` inserted nothing) writes nothing: a
+ * concurrent first call waits on the unique index until the winner commits,
+ * then sees the row, so there is exactly one entry per workspace. A workspace
+ * that does not exist refuses at the entry's foreign key, and the insert rolls
+ * back with it.
  */
 export async function ensureTenantSystemUser(tenantId: string): Promise<string> {
     const id = tenantSystemUserId(tenantId);
-    await prisma.$executeRaw`
-        INSERT INTO "User" ("id", "email", "emailHash", "name", "emailVerified", "updatedAt")
-        VALUES (${id}, ${tenantSystemUserEmail(tenantId)}, ${tenantSystemUserEmailHash(tenantId)},
-                ${TENANT_SYSTEM_USER_NAME}, now(), now())
-        ON CONFLICT DO NOTHING`;
+    await prisma.$transaction(async (tx) => {
+        const inserted = await tx.$executeRaw`
+            INSERT INTO "User" ("id", "email", "emailHash", "name", "emailVerified", "updatedAt")
+            VALUES (${id}, ${tenantSystemUserEmail(tenantId)}, ${tenantSystemUserEmailHash(tenantId)},
+                    ${TENANT_SYSTEM_USER_NAME}, now(), now())
+            ON CONFLICT DO NOTHING`;
+        if (inserted === 0) return;
+        const ctx = buildSystemContext({ tenantId, job: 'tenant-system-user', principal: id });
+        await logEvent(
+            tx,
+            ctx,
+            {
+                action: 'SYSTEM_USER_CREATED',
+                entityType: 'User',
+                entityId: id,
+                details: 'The workspace system user was created for background jobs that act for nobody',
+                detailsJson: {
+                    category: 'entity_lifecycle',
+                    entityName: 'User',
+                    operation: 'created',
+                    summary: 'workspace system user created',
+                },
+            },
+            { withinTransaction: true },
+        );
+    }, AUDIT_APPEND_TX_OPTIONS);
     return id;
 }
 

@@ -21,7 +21,11 @@ import { SCHEDULED_JOBS } from '@/app-layer/jobs/schedules';
  * removing a scheduled job is a visible edit here; the length test derives
  * from this list rather than a literal.
  */
-const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = ['health-check', 'notification-outbox-flush'];
+const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
+    'audit-outbox-flush',
+    'health-check',
+    'notification-outbox-flush',
+];
 
 function readPackageJson(): {
     dependencies?: Record<string, string>;

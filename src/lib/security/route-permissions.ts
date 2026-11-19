@@ -185,6 +185,28 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'admin.manage',
         note: 'Drains this workspace\'s email outbox now (OWNER + ADMIN).',
     },
+
+    // ── Master-KEK rotation (sub-phase 1.5b) ─────────────────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/key-rotation(\\/.*)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Re-wraps the workspace DEK + re-encrypts v1 ciphertexts ' +
+            'after the operator stages a new DATA_ENCRYPTION_KEY. ' +
+            'OWNER-only, the same key as the DEK rotation (owner decision, ' +
+            '2026-11-19; inflect-compliance gated it at admin.manage).',
+    },
+
+    // ── Per-workspace DEK rotation (sub-phase 1.5b) ──────────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/tenant-dek-rotation(\\/.*)?$`),
+        permission: 'admin.tenant_lifecycle',
+        note:
+            'Generates a fresh per-workspace DEK + sweeps every v2 ' +
+            'ciphertext under the new key. Response to a per-workspace ' +
+            'compromise — destructive on the timeline that matters ' +
+            'and OWNER-only per the role model (src/lib/permissions.ts).',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────
