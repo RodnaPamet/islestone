@@ -7,6 +7,12 @@ updates:
     # .npmrc sets save-exact; keep every version pinned.
     versioning-strategy: increase
     open-pull-requests-limit: 10
+    # Pull request titles are Conventional Commits (owner decision 51): the
+    # PR title check fails any other. "build(deps): bump …".
+    commit-message:
+      prefix: build
+      prefix-development: build
+      include: scope
     groups:
       minor-and-patch:
         update-types: [minor, patch]
@@ -16,10 +22,30 @@ updates:
       # @types/node follows the runtime major and moves with .nvmrc.
       - dependency-name: '@types/node'
         versions: ['>=25']
+      # Owner decision, 2026-11-19: hold these majors.
+      # TypeScript 7 is the Go rewrite; tsc, next typegen and @swc/jest move
+      # to it together, as a decision, not a weekly bump.
+      - dependency-name: typescript
+        versions: ['>=7']
+      # BullMQ depends on ioredis 5; a second major would put two clients in
+      # the tree.
+      - dependency-name: ioredis
+        versions: ['>=6']
+      # Imported by the shared UI mirrored byte for byte from inflect-compliance
+      # (packages/ui, src/components/ui). Those files cannot be edited here, so
+      # their dependencies follow inflect's pins and move with a mirror re-pin
+      # (docs/porting/shared-ui.md).
+      - dependency-name: motion
+        versions: ['>=14']
+      - dependency-name: react-resizable
+        versions: ['>=4']
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    commit-message:
+      prefix: ci
+      include: scope
     groups:
       actions:
         patterns: ['*']
@@ -30,7 +56,19 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    commit-message:
+      prefix: build
+      include: scope
   - package-ecosystem: docker-compose
     directory: /deploy
     schedule:
       interval: weekly
+    commit-message:
+      prefix: build
+      include: scope
+    ignore:
+      # Owner decision, 2026-11-19: Redis stays on 7.x, the last BSD-3-Clause
+      # line. Redis 8 is RSALv2/SSPLv1/AGPLv3; moving to it, or to a fork such
+      # as Valkey, is a licence decision, not a weekly bump.
+      - dependency-name: redis
+        versions: ['>=8']
