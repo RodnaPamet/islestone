@@ -262,15 +262,30 @@ describe('the detector, against a planted repository', () => {
         expect(report.clientEntries).not.toContain('tests/unit/env.test.ts');
     });
 
-    it("reports a client import of the repository's own workspace package, which it cannot follow yet", () => {
+    it("follows a client import into the repository's own workspace package through its exports map", () => {
         plant({
-            'packages/ui/package.json': JSON.stringify({ name: '@acme/ui', version: '0.0.0' }),
+            'packages/ui/package.json': JSON.stringify({
+                name: '@acme/ui',
+                version: '0.0.0',
+                exports: { '.': './src/index.ts', './*': ['./src/*', './src/*.ts', './src/*.tsx', './src/*/index.ts'] },
+            }),
+            'packages/ui/src/index.ts': "export const version = '0';\n",
+            // Reaches the server env module through a relative path out of the package.
             'packages/ui/src/button.tsx': "import { env } from '../../../src/env';\nexport const Button = env;\n",
+            // Resolves through the directory-index arm of the pattern; clean.
+            'packages/ui/src/menu/index.ts': "export const Menu = 'menu';\n",
             'src/components/toolbar.tsx': "'use client';\nimport { Button } from '@acme/ui/button';\nimport React from 'react';\nexport const T = [Button, React];\n",
+            'src/components/nav.tsx': "'use client';\nimport { version } from '@acme/ui';\nimport { Menu } from '@acme/ui/menu';\nexport const N = [version, Menu];\n",
+            // A subpath the exports map does not resolve is a hole, reported rather than ignored.
+            'src/components/broken.tsx': "'use client';\nimport { X } from '@acme/ui/missing';\nexport const B = X;\n",
         });
 
         const report = checkClientEnvBoundary(root);
-        expect(report.workspaceImports).toEqual([{ from: 'src/components/toolbar.tsx', specifier: '@acme/ui/button' }]);
+        const chains = Object.fromEntries(report.violations.map((v) => [v.entry, v.chain]));
+        expect(chains['src/components/toolbar.tsx']).toEqual(['src/components/toolbar.tsx', 'packages/ui/src/button.tsx', 'src/env.ts']);
+        expect(chains['src/components/nav.tsx']).toBeUndefined();
+        expect([...report.reached]).toEqual(expect.arrayContaining(['packages/ui/src/index.ts', 'packages/ui/src/menu/index.ts']));
+        expect(report.workspaceImports).toEqual([{ from: 'src/components/broken.tsx', specifier: '@acme/ui/missing' }]);
     });
 
     it("stops at a 'use server' module, whose imports stay on the server, and at nothing else", () => {

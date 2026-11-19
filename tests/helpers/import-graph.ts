@@ -43,9 +43,11 @@
  * packages. A bare specifier that names one of this repository's own
  * workspace packages (a git-listed `package.json` below the root) is NOT a
  * third-party package: its source is part of the client bundle. The walker
- * cannot follow one yet, so it reports each such import in
- * `workspaceImports` and the guard fails on it. Sub-phase 1.2, which adds the
- * first workspace package, teaches the walker to resolve them to source.
+ * resolves it through the package's `exports` map, as Node and the bundler
+ * do (the `.` entry, exact subpaths, and `./*` patterns whose targets may be
+ * an array tried in order), and walks the file it names. A workspace import
+ * the `exports` map cannot resolve is reported in `workspaceImports`, and the
+ * guard fails on it: an edge it cannot follow is a hole in the graph.
  *
  * WHAT IS REPORTED RATHER THAN GUESSED. A local specifier that resolves to no
  * file, and an `import()` / `require()` whose argument is not a literal. Both
@@ -210,19 +212,78 @@ export function packageNameOf(specifier: string): string | null {
     return parts[0] ?? null;
 }
 
-/** The names of this work tree's own workspace packages: every git-listed package.json below the root. */
-export function workspacePackageNames(root: string, population: readonly string[]): Set<string> {
-    const names = new Set<string>();
+/** A workspace package: its directory and its `exports` map, if any. */
+export interface WorkspacePackage {
+    readonly dir: string;
+    readonly exports: unknown;
+}
+
+/** This work tree's own workspace packages, keyed by name: every git-listed package.json below the root. */
+export function workspacePackages(root: string, population: readonly string[]): Map<string, WorkspacePackage> {
+    const packages = new Map<string, WorkspacePackage>();
     for (const rel of population) {
         if (!rel.endsWith('/package.json') || rel.startsWith('tests/')) continue;
         try {
-            const manifest = JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8')) as { name?: unknown };
-            if (typeof manifest.name === 'string' && manifest.name !== '') names.add(manifest.name);
+            const manifest = JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8')) as { name?: unknown; exports?: unknown; main?: unknown };
+            if (typeof manifest.name !== 'string' || manifest.name === '') continue;
+            const exports = manifest.exports ?? (typeof manifest.main === 'string' ? { '.': manifest.main } : undefined);
+            packages.set(manifest.name, { dir: path.join(root, path.dirname(rel)), exports });
         } catch {
             // An unreadable manifest names no package; the build would fail on it first.
         }
     }
-    return names;
+    return packages;
+}
+
+/** The names of this work tree's own workspace packages. */
+export function workspacePackageNames(root: string, population: readonly string[]): Set<string> {
+    return new Set(workspacePackages(root, population).keys());
+}
+
+/**
+ * Resolve a bare specifier that names a workspace package through its
+ * `exports` map: the `.` entry, an exact subpath, or a `./*` pattern. A target
+ * may be a string, an array tried in order, or a conditions object (its
+ * `types`, `import`, `default` or `require` branch). Returns the file, or null.
+ */
+export function resolveWorkspaceSpecifier(specifier: string, name: string, pkg: WorkspacePackage): string | null {
+    const subpath = specifier === name ? '.' : `.${specifier.slice(name.length)}`;
+    const exportsMap: Record<string, unknown> =
+        typeof pkg.exports === 'string' || Array.isArray(pkg.exports)
+            ? { '.': pkg.exports }
+            : pkg.exports && typeof pkg.exports === 'object'
+              ? (pkg.exports as Record<string, unknown>)
+              : {};
+    const targetsOf = (value: unknown, star: string | null): string[] => {
+        if (typeof value === 'string') return [star === null ? value : value.split('*').join(star)];
+        if (Array.isArray(value)) return value.flatMap((v) => targetsOf(v, star));
+        if (value && typeof value === 'object') {
+            const conditions = value as Record<string, unknown>;
+            for (const key of ['types', 'import', 'default', 'require']) {
+                if (key in conditions) return targetsOf(conditions[key], star);
+            }
+        }
+        return [];
+    };
+    let targets: string[] = [];
+    if (subpath in exportsMap) targets = targetsOf(exportsMap[subpath], null);
+    else {
+        for (const [key, value] of Object.entries(exportsMap)) {
+            const star = key.indexOf('*');
+            if (star < 0) continue;
+            const prefix = key.slice(0, star);
+            const suffix = key.slice(star + 1);
+            if (subpath.startsWith(prefix) && subpath.endsWith(suffix) && subpath.length >= prefix.length + suffix.length) {
+                targets = targetsOf(value, subpath.slice(prefix.length, subpath.length - suffix.length));
+                break;
+            }
+        }
+    }
+    for (const target of targets) {
+        const file = path.resolve(pkg.dir, target);
+        if (file.startsWith(pkg.dir + path.sep) && isFile(file)) return file;
+    }
+    return null;
 }
 
 export interface BoundaryViolation {
@@ -244,7 +305,7 @@ export interface BoundaryReport {
     readonly unresolved: ReadonlyArray<{ readonly from: string; readonly specifier: string }>;
     /** Non-literal `import()` / `require()` calls in the client graph. */
     readonly opaque: ReadonlyArray<{ readonly from: string; readonly call: string }>;
-    /** Imports of this repository's own workspace packages, which the walk cannot follow yet. */
+    /** Imports of this repository's own workspace packages that their `exports` map cannot resolve. */
     readonly workspaceImports: ReadonlyArray<{ readonly from: string; readonly specifier: string }>;
     /**
      * Edges from the client graph into a `'use server'` module: see "WHAT IS A
@@ -275,7 +336,7 @@ export function checkClientEnvBoundary(root: string, serverEnvModule = 'src/env.
         return facts;
     };
 
-    const workspaces = workspacePackageNames(root, population);
+    const workspaces = workspacePackages(root, population);
     const unresolved: Array<{ from: string; specifier: string }> = [];
     const opaque: Array<{ from: string; call: string }> = [];
     const workspaceImports: Array<{ from: string; specifier: string }> = [];
@@ -299,7 +360,17 @@ export function checkClientEnvBoundary(root: string, serverEnvModule = 'src/env.
                         serverBoundaries.push({ from: rel(file), to: rel(r.file) });
                     } else edges.push(r.file);
                 } else if (r.kind === 'missing') unresolved.push({ from: rel(file), specifier });
-                else if (workspaces.has(packageNameOf(specifier) ?? '')) workspaceImports.push({ from: rel(file), specifier });
+                else {
+                    const name = packageNameOf(specifier) ?? '';
+                    const pkg = workspaces.get(name);
+                    if (pkg) {
+                        const resolved = resolveWorkspaceSpecifier(specifier, name, pkg);
+                        if (resolved === null) workspaceImports.push({ from: rel(file), specifier });
+                        else if (resolved !== target && isSourceFile(resolved) && factsOf(resolved).isServerReference) {
+                            serverBoundaries.push({ from: rel(file), to: rel(resolved) });
+                        } else edges.push(resolved);
+                    }
+                }
             }
         }
         edgesCache.set(file, edges);

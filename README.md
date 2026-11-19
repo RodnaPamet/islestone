@@ -29,7 +29,9 @@ npm run dev                  # http://localhost:3000
 | `npm run build` | Production build |
 | `npm run start` | Serve the production build |
 | `npm run lint` | ESLint, zero warnings allowed |
-| `npm run typecheck` | `next typegen` with env validation off (`scripts/next-typegen.mjs`), then `tsc --noEmit`; needs no `.env.local` |
+| `npm run typecheck` | `next typegen` with env validation off (`scripts/next-typegen.mjs`), then `tsc --noEmit`, then `typecheck:ui`; needs no `.env.local` |
+| `npm run typecheck:ui` | type-checks the shared UI mirror through `packages/ui/tsconfig.json` |
+| `npm run ui:verify` | checks every file in `packages/ui` against `packages/ui/UPSTREAM.json` |
 | `npm test` | Jest, both projects |
 | `npm run test:unit` | Jest `node` project: `tests/unit`, `tests/guards` |
 | `npm run test:rendered` | Jest `jsdom` project: `tests/rendered` |
@@ -44,7 +46,7 @@ For Playwright with a Chromium already on the machine, set `PW_CHROMIUM_PATH` to
 
 Every pull request, and every push to `main`, runs:
 
-- `CI` (`.github/workflows/ci.yml`): Lint, Audit (`npm audit --omit=dev --audit-level=moderate`), Typecheck, Test, Licence, Build and E2E.
+- `CI` (`.github/workflows/ci.yml`): Lint, Audit (`npm audit --omit=dev --audit-level=moderate`), Typecheck, Test, Licence, Shared UI (the `packages/ui` mirror against its manifest and upstream), Build and E2E.
 - `CodeQL` (`.github/workflows/codeql.yml`): the `security-extended` queries over JavaScript/TypeScript and the workflow files. It also runs weekly.
 
 Dependabot (`.github/dependabot.yml`) proposes npm and GitHub Actions updates weekly, keeping versions exact. Branch protection on `main` is a repository setting, not a file: require a pull request and these checks to pass before merging.
@@ -58,9 +60,9 @@ Dependabot (`.github/dependabot.yml`) proposes npm and GitHub Actions updates we
 Roadmap sub-phase 0.3 sets the intake policy. Three files hold it:
 
 - [`PROVENANCE.md`](PROVENANCE.md) records everything taken from another project: source, commit, licence and changes. It also lists the roadmap's port candidates, each unpinned until first use.
-- [`NOTICE`](NOTICE) carries the attributions that copied code requires. There are none yet; Dub's and Nucleo's arrive with the shared UI in sub-phase 1.2 (ADR 0001 decision D4).
+- [`NOTICE`](NOTICE) carries the attributions that copied code requires: Dub's and Nucleo's, for the shared UI in `packages/ui` (ADR 0001 decision D4).
 - `scripts/licence-gate.mjs` (`npm run licence:check`, and the `Licence` job in CI) fails the build when:
-  - a **production** dependency's licence is not on the allowlist. The allowlist is roadmap 0.3's: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, PostgreSQL, and MPL-2.0 for unmodified use only; plus 0BSD, added by ADR 0007 (decision E2). `L WITH X` passes only when `X` is an SPDX exception that adds permissions ("MIT WITH Commons-Clause" fails). Widening the list is an owner decision, recorded in [ADR 0007](docs/adr/0007-third-party-licence-exceptions.md).
+  - a **production** dependency's licence is not on the allowlist. The allowlist is roadmap 0.3's: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, PostgreSQL, and MPL-2.0 for unmodified use only; plus 0BSD and the Unlicense, added by ADR 0007 (decisions E2 and E6). `L WITH X` passes only when `X` is an SPDX exception that adds permissions ("MIT WITH Commons-Clause" fails). Widening the list is an owner decision, recorded in [ADR 0007](docs/adr/0007-third-party-licence-exceptions.md).
   - any source file in the repository, except the gate's own test fixtures, imports from an `ee` folder (or n8n's `.ee.` files) or from a deny-listed package: n8n and its `n8n-*` and `@n8n/*` libraries, windmill-components, task-master-ai, @liveblocks/server, hyperformula, handsontable and `@handsontable/*`, planby, `@blocknote/xl-*`. The scan reads JavaScript, TypeScript, stylesheets and MDX, decodes escapes, and follows `#` imports and tsconfig aliases.
   - code that can ship imports test code, or the scanner cannot read a file to the end.
 
@@ -75,14 +77,16 @@ The policy is written out at the top of the script. The production tree is walke
 - `adr`: the decision record, which must exist, must name the package, and must be accepted: the line right after its `# ` title reads `Status: Accepted`, optionally followed by ` (…)`, ` — …` or `.`, and does not qualify the acceptance ("superseded", "in part", "partly", "pending" and the like make it not accepted).
 - `version`: when given, the exemption covers only that version. It is required when the package's declaration is not an SPDX expression (`SEE LICENSE IN …`, `UNLICENSED`, missing), because there is then nothing else to bind the entry to.
 
-An exemption applies only while the package still declares the licence it was granted for. The gate reports an exemption that is stale (the package has left the tree) or not needed (the licence is already allowed). An exemption cannot lift a deny-listed package. A workspace that holds an `UPSTREAM.json`, such as the `packages/ui` mirror sub-phase 1.2 adds, is checked like any dependency rather than as Islestone's own code, so it needs an exemption too.
+An exemption applies only while the package still declares the licence it was granted for. The gate reports an exemption that is stale (the package has left the tree) or not needed (the licence is already allowed). An exemption cannot lift a deny-listed package. A workspace that holds an `UPSTREAM.json`, such as the `packages/ui` mirror, is checked like any dependency rather than as Islestone's own code, so it needs an exemption too.
 
-Today the file holds 15 exemptions, all decided in [ADR 0007](docs/adr/0007-third-party-licence-exceptions.md) (accepted on 2026-11-18), and all reached through `next`:
+Today the file holds 17 exemptions:
 
-- the 14 `@img/sharp-*` packages: prebuilt libvips binaries under LGPL-3.0-or-later, which `next` installs through its optional `sharp` dependency for image optimisation. Each names the version whose README and integrity hash were checked.
-- `caniuse-lite` (CC-BY-4.0, a browser-support database), bound to its declared licence rather than to a version.
+- the 14 `@img/sharp-*` packages ([ADR 0007](docs/adr/0007-third-party-licence-exceptions.md) E1): prebuilt libvips binaries under LGPL-3.0-or-later, which `next` installs through its optional `sharp` dependency for image optimisation. Each names the version whose README and integrity hash were checked.
+- `caniuse-lite` (ADR 0007 E3; CC-BY-4.0, a browser-support database), bound to its declared licence rather than to a version.
+- `@visx/vendor` (ADR 0007 E6), whose declaration `"MIT and ISC"` is not valid SPDX; the entry reads it as `MIT AND ISC`, pinned to 4.0.0.
+- `@inflect/ui` ([ADR 0001](docs/adr/0001-code-provenance-and-licences.md) D1; BUSL-1.1), the shared UI mirror in `packages/ui`.
 
-`tslib` (0BSD) needs no exemption, because 0BSD is on the allowlist.
+`tslib` (0BSD) and `robust-predicates` (Unlicense) need no exemption, because both licences are on the allowlist.
 
 **Planned, not live: a tldraw exception.** [ADR 0001](docs/adr/0001-code-provenance-and-licences.md) decision D3 records the owner's choice of 2026-11-18: tldraw 3.x with the watermark visible (option 3a; the draft had recommended against it). Both `tldraw` and `@tldraw/editor` declare `SEE LICENSE IN LICENSE.md`, so each needs an entry like the one below once it is installed, with `version` pinned. This example is not in the exemptions file, because tldraw is not installed, and the gate would report the entry as stale:
 

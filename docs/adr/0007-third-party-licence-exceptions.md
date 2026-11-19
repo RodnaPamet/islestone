@@ -1,6 +1,6 @@
 # 0007 — Third-party licence exceptions
 
-Status: Accepted (owner decisions, 2026-11-18)
+Status: Accepted (owner decisions, 2026-11-18 and 2026-11-19)
 
 ## Context
 
@@ -94,9 +94,24 @@ MIT-0, BlueOak-1.0.0, CC0-1.0, the Unlicense and Python-2.0 are permissive or pu
 
 The gate accepts `L WITH X` only when `L` is allowed and `X` is on `ALLOWED_EXCEPTIONS`. That list holds SPDX exceptions that only add permissions, such as `LLVM-exception` and `Classpath-exception-2.0`. Any other text after `WITH` fails with `UNKNOWN_EXCEPTION`. "MIT WITH Commons-Clause" is refused by name: it is how `task-master-ai` declares itself, and roadmap 2.5 lists task-master as a licence trap. `task-master-ai` is also on the deny list. This only narrows the policy, so it needed no decision. It is recorded here so the policy has one written source.
 
+### E6 — The Unlicense, and `@visx/vendor`'s declaration (sub-phase 1.2)
+
+The shared UI (`@inflect/ui`, roadmap 1.2) draws its charts with visx 4.0.0, which brings two packages the allowlist did not admit.
+
+**Verified** on 2026-11-19 in the installed tree:
+
+- `robust-predicates` 3.0.3 (reached through `@visx/scale` > `@visx/vendor` > `d3-delaunay` > `delaunator`) declares `Unlicense`. Its `LICENSE` begins "This is free and unencumbered software released into the public domain": a public-domain dedication with no conditions.
+- `@visx/vendor` 4.0.0 declares `"MIT and ISC"`, which is not a valid SPDX expression (the operator must be upper-case `AND`), so the gate reads it as `INVALID`. The package bundles d3 modules (ISC) beside visx's own code, and its `LICENSE` is the MIT licence, "Copyright (c) 2017-2018 Harrison Shoff". Both licences are already on the allowlist.
+
+Options for the Unlicense were: exempt `robust-predicates` alone; add the Unlicense to `ALLOWED_LICENCES`; or refuse visx, which would stop the shared UI's charts compiling and so stop the byte-for-byte copy landing.
+
+**Decision: add `Unlicense` to `ALLOWED_LICENCES`.** Owner decision, 2026-11-19; the owner chose "Allow the Unlicense". This is the E4 path, taken for the first dependency that needs it.
+
+**`@visx/vendor`** needs no new licence: its exemption in `scripts/licence-exemptions.json` reads the declaration as `MIT AND ISC`, pinned to version 4.0.0 because the declaration is not SPDX. A visx upgrade fails the gate until a person re-reads the new version.
+
 ## Consequences
 
-- The state of the gate: `ALLOWED_LICENCES` holds roadmap 0.3's list plus `0BSD`. `scripts/licence-exemptions.json` holds 15 entries, each citing this ADR: the 14 sharp packages (E1a) and `caniuse-lite` (E3a). There is no `tslib` entry (E2b).
+- The state of the gate: `ALLOWED_LICENCES` holds roadmap 0.3's list plus `0BSD` (E2b) and `Unlicense` (E6). `scripts/licence-exemptions.json` holds 17 entries: 16 cite this ADR (the 14 sharp packages, E1a; `caniuse-lite`, E3a; `@visx/vendor`, E6) and one cites ADR 0001 (`@inflect/ui`, the BUSL-1.1 mirror). There is no `tslib` entry (E2b).
 - The gate accepts an exemption only when the ADR it cites exists, names the package, and has an Accepted status line. An exemption that cites a Proposed ADR fails the gate.
 - The LGPL entries are pinned to versions, so a `next` or `sharp` upgrade that moves them fails the gate until a person re-reads the new versions.
 - The `caniuse-lite` entry is bound to its declared licence. A licence change fails the gate; a version change does not.
@@ -114,4 +129,4 @@ The gate accepts `L WITH X` only when `L` is allowed and `X` is on `ALLOWED_EXCE
 - Roadmap (`docs/ROADMAP.md`): 0.3 and H0; 2.5 (licence traps); 1.8 (container build).
 - `scripts/licence-gate.mjs` (the policy constants at the top) and `scripts/licence-exemptions.json`.
 - ADR 0001 (provenance and the tldraw exception), ADR 0002 (option F2, `fractional-indexing`).
-- npm packages as installed from `package-lock.json`: `tslib` 2.9.1, `caniuse-lite` 1.0.30001826, `sharp` 0.35.5 and the `@img/*` packages listed in E1.
+- npm packages as installed from `package-lock.json`: `robust-predicates` 3.0.3 and `@visx/vendor` 4.0.0 (E6), `tslib` 2.9.1, `caniuse-lite` 1.0.30001826, `sharp` 0.35.5 and the `@img/*` packages listed in E1.

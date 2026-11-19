@@ -25,6 +25,10 @@ export default defineConfig([
         // Test inputs, some deliberately broken (they import packages that
         // do not exist). Tests read them as data.
         'tests/fixtures/**',
+        // The byte-for-byte mirror of @inflect/ui (UPSTREAM.json). It is
+        // linted upstream and may not be edited here; `npm run typecheck:ui`
+        // and `node scripts/ui-drift.mjs verify` check it instead.
+        'packages/ui/**',
     ]),
 
     // Everything TypeScript, application and tests alike.

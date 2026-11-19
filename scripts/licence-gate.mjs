@@ -124,16 +124,18 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * Licences a production dependency may carry, as canonical SPDX identifiers:
- * roadmap 0.3's list, plus 0BSD. "BSD" means the 2- and 3-clause forms; the
- * 4-clause advertising clause is not on it. 0BSD (Zero-Clause BSD, which
- * grants every right and asks for nothing) was added by owner decision of
- * 2026-11-18, ADR 0007 E2b. Anything else (CC0-1.0, the Unlicense, CC-BY-4.0
- * data, LGPL) passes only through a recorded exemption, and ADR 0007 E4 adds
- * no other licence until a dependency needs one. Widening this list is an
+ * roadmap 0.3's list, plus 0BSD and the Unlicense. "BSD" means the 2- and
+ * 3-clause forms; the 4-clause advertising clause is not on it. 0BSD
+ * (Zero-Clause BSD, which grants every right and asks for nothing) was added
+ * by owner decision of 2026-11-18, ADR 0007 E2b. The Unlicense (a
+ * public-domain dedication with no conditions) was added by owner decision of
+ * 2026-11-19, ADR 0007 E6, when visx brought `robust-predicates`. Anything else
+ * (CC0-1.0, CC-BY-4.0 data, LGPL) passes only through a recorded exemption,
+ * and ADR 0007 E4 adds no other licence until a dependency needs one. Widening this list is an
  * owner decision, recorded in an ADR, never a change made to get a build
  * through.
  */
-export const ALLOWED_LICENCES = Object.freeze(['MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MPL-2.0', 'PostgreSQL', '0BSD']);
+export const ALLOWED_LICENCES = Object.freeze(['MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MPL-2.0', 'PostgreSQL', '0BSD', 'Unlicense']);
 
 /** Allowed licences whose condition the report repeats on every run. */
 export const NOTICE_LICENCES = Object.freeze({

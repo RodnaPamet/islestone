@@ -190,10 +190,12 @@ The other sub-phases need these facts, which the copy itself cannot provide.
     build fails.
   - **`NOTICE`.** Dub's copyright and AGPL-3.0 statement and the Nucleo notice
     (ADR 0001 D4, "What the decision requires").
-  - **`PROVENANCE.md`.** The rows drafted in `docs/porting/provenance-shared-ui.md`,
-    naming the Dub origin of the files the measurement links to Dub and the Nucleo
-    terms; one row per copied file unless the owner approves the grouping.
-- **Root `tsconfig.json`.** `packages/ui/tsconfig.json` extends `../../tsconfig.json`
+  - **`PROVENANCE.md`.** One row per copied file ("Copied: `@inflect/ui`"), naming the
+    Dub origin of the files the measurement links to Dub and the Nucleo terms.
+- **Root `tsconfig.json`.** Islestone's root config drops `noUncheckedIndexedAccess`
+  (24 errors in six chart and hook files otherwise) and excludes `packages/ui`, which
+  `npm run typecheck:ui` checks through the package's own config.
+  `packages/ui/tsconfig.json` extends `../../tsconfig.json`
   and resets only `baseUrl`, `paths`, `rootDir`, `include` and `exclude`. Everything
   else is inherited from Islestone's root config. inflect's values are `strict`,
   `jsx: react-jsx`, `module: esnext`, `moduleResolution: bundler`, `isolatedModules`,
@@ -349,6 +351,6 @@ inflect-compliance, which then arrives through a sync.
 5. **Nucleo icons and Dub-derived files: accepted risk, ADR 0001 D4** (owner decision,
    2026-11-18: "Copy as is, accept risk"). The package is copied as it is. Its
    `PROVENANCE.md` rows name the Dub origin and the Nucleo terms
-   (`docs/porting/provenance-shared-ui.md`), and `NOTICE` names both from the change
+   (`PROVENANCE.md`, "Copied: `@inflect/ui`"), and `NOTICE` names both from the change
    that lands it. Removing the risk later is a change upstream (the finding's option
    1), which then arrives through a sync.
