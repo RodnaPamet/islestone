@@ -55,7 +55,16 @@ Every write to the BLOCKS graph or to `parentId` takes `lockWorkItemGraph` (`pg_
 
 ## Usecases and API (2.2)
 
-Routes live under `/api/t/<slug>/work-items`, `/projects`, `/teams`, `/work-item-types` and `/labels`. Every method is a literal `requirePermission` with a rule in `route-permissions.ts`, so a refusal writes an `AUTHZ_DENIED` row; `tests/guards/tenant-crud-authz-coverage.test.ts` pins each key and `tests/integration/work-items-api.test.ts` drives every route as a VIEWER, a MEMBER and a GUEST.
+Routes live under `/api/t/<slug>/work-items`, `/projects`, `/teams`, `/work-item-types` and `/labels`.
+
+### Who may do what
+
+Work items use 1.4's `work_items.*` keys; delete and restore take `work_items.delete` (OWNER and ADMIN), and the Deleted view takes it too because it is the restore surface. The work configuration is decided by the owner (2026-11-19), kept as built:
+
+- **Teams, workflow states, work item types and labels** are changed under `admin.manage` and read under `projects.view`. They shape every project of the workspace, so admins configure them; a workspace that wants others to configure grants `admin.manage` through a custom role, with no new key to learn. 1.4's `PermissionSet` has no domain for them, and none was added.
+- **Projects** use their own keys: `projects.create`, `projects.edit` (rename, re-prefix) and `projects.archive` for archive, unarchive, delete and restore, the one destructive project key.
+
+**Comments** (owner decision, 2026-11-19; `src/app-layer/policies/comment.policies.ts`): only the author edits a comment, because an admin never rewrites someone else's words. The author or a workspace admin deletes one, the admin for moderation; an admin's delete of someone else's comment is audited as `COMMENT_MODERATED`, naming the author, where the author's own is `COMMENT_DELETED`. Both sit behind `work_items.comment`; a refusal past that key is decided in the usecase, which writes the same `AUTHZ_DENIED` entry a `requirePermission` denial writes and answers 403. Every method is a literal `requirePermission` with a rule in `route-permissions.ts`, so a refusal writes an `AUTHZ_DENIED` row; `tests/guards/tenant-crud-authz-coverage.test.ts` pins each key and `tests/integration/work-items-api.test.ts` drives every route as a VIEWER, a MEMBER and a GUEST.
 
 ### Optimistic concurrency
 

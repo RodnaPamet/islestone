@@ -3,12 +3,14 @@
  * item types, labels and projects (sub-phase 2.1).
  *
  * 1.4's `PermissionSet` has a `projects` domain and no domain for teams,
- * workflows, types or labels. Until the owner decides otherwise (reported
- * with sub-phase 2.1), they are workspace settings under `admin.manage`, the
- * key that already guards "change workspace settings", and every member who
- * can read projects (`projects.view`) can read them. Projects use their own
- * keys: `projects.create`, `projects.edit` (rename, prefix), and
- * `projects.archive` for archive, unarchive, delete and restore.
+ * workflows, types or labels. They are workspace settings under
+ * `admin.manage`, the key that already guards "change workspace settings",
+ * and every member who can read projects (`projects.view`) can read them.
+ * Projects use their own keys: `projects.create`, `projects.edit` (rename,
+ * prefix), and `projects.archive` for archive, unarchive, delete and restore.
+ * Owner decision, 2026-11-19: kept as built. Admins configure the workspace,
+ * and a workspace that wants others to configure grants `admin.manage`
+ * through a custom role.
  *
  * Same semantics as `work-item.policies.ts`: the coarse tier always applies,
  * and a present granular layer must also grant the key.

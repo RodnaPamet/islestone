@@ -62,6 +62,8 @@ porting maps now record them (next step 2); the last column says where.
 | 49 | The GHCR packages (`islestone`, `islestone-worker`) are public, set so after the first publish; no registry credential goes on the VM. Decided 2026-11-19, relayed. Applied: the `docker login` step and Watchtower's `config.json` mount are removed. | relayed | `deploy/docker-compose.prod.yml`; `docs/deployment.md`; `tests/unit/deploy/compose-prod.test.ts` |
 | 50 | Production uses `RATE_LIMIT_MODE=memory`: a single app container, so the limits are exact. Revisit when the app scales past one container. Decided 2026-11-19, relayed. Applied. | relayed | `deploy/.env.prod.example`; `docs/deployment.md` |
 | 51 | Pull request titles follow Conventional Commits from now on, so the squash-merge subject lets semantic-release cut versions; a CI check fails a title that does not. Decided 2026-11-19, relayed. Applied. | relayed | `.github/workflows/pr-title.yml`; `scripts/check-pr-title.mjs`; `CLAUDE.md` ("Delivery"); `docs/change-management-policy.md` ("Versioning") |
+| 52 | The work configuration's keys are kept as built: `admin.manage` changes teams, workflow states, work item types and labels; `projects.view` reads them; `projects.archive` covers project archive, delete and restore. Admins configure, and a custom role can grant `admin.manage`. Decided 2026-11-19, relayed. Applied. | relayed | `src/app-layer/policies/work-config.policies.ts`; `docs/work-items.md` ("Who may do what") |
+| 53 | Comments: only the author edits a comment (an admin never rewrites someone else's words); the author or a workspace admin deletes one, for moderation, and an admin's delete of someone else's comment is audited as a moderation action (`COMMENT_MODERATED`). Decided 2026-11-19, relayed. Applied. | relayed | `src/app-layer/policies/comment.policies.ts`; `src/app-layer/usecases/work-item-collab.ts`; `tests/integration/work-items-api.test.ts` |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
@@ -539,13 +541,11 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      sweeps.
    - `fast-check` 4.10.2 (MIT, dev). Kaneo moved to Adopted in `PROVENANCE.md` (pattern
      only).
+   The owner decided the two permission questions on 2026-11-19 (rows 52 and 53): the
+   configuration keys are kept as built, and a comment is edited by its author only and
+   deleted by its author or a workspace admin (moderation, audited). Both are applied.
+   The branch was rebased onto `origin/main` (3050d5b).
    Open for the owner (none blocks 2.3):
-   - **Keys for the work configuration.** 1.4's `PermissionSet` has no domain for teams,
-     workflow states, types or labels. They are changed under `admin.manage` and read
-     under `projects.view`; project archive, delete and restore take `projects.archive`
-     (`src/app-layer/policies/work-config.policies.ts`). Confirm, or name new keys.
-   - **Who edits and deletes a comment:** its author or a workspace admin
-     (`canAdmin`), as the map proposed.
    - **GUEST project grants** stay with 8.4 (the map's choice); until then a guest sees no
      project and no item.
    - **Retention classification** (`retention-policy-coverage`) waits for 8.3, which

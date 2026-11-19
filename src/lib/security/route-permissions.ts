@@ -317,7 +317,7 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/comments\\/[^\\/]+$`),
         methods: ['PATCH', 'DELETE'],
         permission: 'work_items.comment',
-        note: 'Edit or delete a comment (author or admin, in the usecase).',
+        note: 'Edit (author only) or delete (author, or an admin moderating) a comment; the usecase decides and audits the refusal.',
     },
     {
         path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/watchers$`),
@@ -359,7 +359,7 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         path: new RegExp(`^${T}\\/(teams|work-item-types|labels)$`),
         methods: ['POST'],
         permission: 'admin.manage',
-        note: 'Teams, types and labels are workspace settings (owner to confirm).',
+        note: 'Teams, types and labels are workspace settings under admin.manage (owner decision, 2026-11-19).',
     },
     {
         path: new RegExp(`^${T}\\/teams\\/[^\\/]+$`),

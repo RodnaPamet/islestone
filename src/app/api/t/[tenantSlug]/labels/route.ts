@@ -2,8 +2,8 @@
  * Labels: list (`?teamId=` adds that team's labels to the workspace ones) and create.
  *
  * Keys: reads take `projects.view`; changes take `admin.manage` (teams,
- * workflows, types and labels are workspace settings until the owner decides
- * otherwise; see src/app-layer/policies/work-config.policies.ts).
+ * workflows, types and labels are workspace settings; owner decision
+ * 2026-11-19, src/app-layer/policies/work-config.policies.ts).
  */
 import type { NextRequest } from 'next/server';
 
