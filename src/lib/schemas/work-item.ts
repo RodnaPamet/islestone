@@ -103,18 +103,22 @@ export const BulkWorkItemDeleteSchema = z.object({ workItemIds: BulkIds }).stric
 /**
  * The move route takes exactly one of `position` (reorder), `parentId`
  * (re-parent, `null` for the top level) or `projectId` (another project).
+ * A board drop (sub-phase 2.3) sends `stateId`, optionally with a
+ * `position` among the destination column's neighbours: the state change and
+ * the reorder are one transaction.
  */
 export const MoveWorkItemSchema = z
     .object({
         position: PositionSchema.optional(),
         parentId: Id.nullable().optional(),
         projectId: Id.optional(),
+        stateId: Id.optional(),
     })
     .strict()
     .refine((b) => {
-        const modes = (b.projectId !== undefined ? 1 : 0) + (b.parentId !== undefined ? 1 : 0);
+        const modes = (b.projectId !== undefined ? 1 : 0) + (b.parentId !== undefined ? 1 : 0) + (b.stateId !== undefined ? 1 : 0);
         return modes === 1 || (modes === 0 && b.position !== undefined);
-    }, 'Give exactly one of parentId or projectId, or a position alone to reorder.');
+    }, 'Give exactly one of parentId, projectId or stateId, or a position alone to reorder.');
 
 /** The list query (`GET /work-items`). */
 export const WorkItemQuerySchema = z.object({

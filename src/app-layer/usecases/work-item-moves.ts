@@ -19,6 +19,12 @@
  *     old team's labels are detached. Cycles and milestones (2.5) have
  *     nothing to clear yet; a guest assignee who cannot see the destination
  *     (8.4) has nothing to clear while guests are not assignable.
+ *   - A board drop (sub-phase 2.3) changes the state and the place among the
+ *     destination column's neighbours in ONE transaction, with the state
+ *     change's audit entry and effects as `setWorkItemState` writes them and
+ *     the reorder's own entry; after the COMMIT, the state change's
+ *     automation event and watcher fan-out. The state half is versioned
+ *     (`If-Match` optional, as for the state route); the place is not.
  *   - Source and destination sequences are locked in id order (Kaneo
  *     `move-task.ts` at fb890b4974e6dd6c232f1de6a6b70a591dfca0a3; pattern
  *     only), after the graph lock.
@@ -35,8 +41,9 @@ import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import { assertCanCreateWorkItem, assertCanEditWorkItems } from '../policies/work-item.policies';
 import { visibleProjects } from '../policies/project-visibility';
 import { formatKey } from '../domain/work-item-key';
+import { checkWorkflowStateTransition, formatStateTransitionError, stateTransitionEffects } from '../domain/workflow-state';
 import { lockWorkItemGraph } from './work-item-graph-lock';
-import { assertParentAllowed, getWorkItem, sortKeyForPosition } from './work-item';
+import { afterStateCommit, applyStateAudit, assertParentAllowed, getWorkItem, sortKeyForPosition } from './work-item';
 import { assertProjectWritable, emitWatcherActivity, keyOf, loadWritableItem, throwWriteConflict } from './work-item-shared';
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
@@ -66,6 +73,54 @@ export async function reorderWorkItem(ctx: RequestContext, id: string, position:
             metadata: { afterId: position.afterId ?? null, beforeId: position.beforeId ?? null },
         });
     });
+    return getWorkItem(ctx, id);
+}
+
+/**
+ * A board drop: move the item to `stateId` (a state of its team; a refusal
+ * names the reason) and, when a `position` is given, between the neighbours
+ * it names. A drop into the item's own column is a plain reorder.
+ */
+export async function moveWorkItemOnBoard(
+    ctx: RequestContext,
+    id: string,
+    input: { stateId: string; position?: Position },
+    expectedVersion?: number,
+) {
+    assertCanEditWorkItems(ctx);
+    const outcome = await runInTenantContext(ctx, async (db) => {
+        const v = await visibleProjects(ctx, db);
+        const item = await loadWritableItem(db, ctx, v, id);
+        let change: Parameters<typeof afterStateCommit>[1][number] | null = null;
+        if (item.stateId !== input.stateId) {
+            const [from, to] = await Promise.all([TeamRepository.getState(db, ctx, item.stateId), TeamRepository.getState(db, ctx, input.stateId)]);
+            if (!to) throw notFound('Workflow state not found');
+            const err = checkWorkflowStateTransition(from!, to);
+            if (err) throw badRequest(formatStateTransitionError(err), { reason: err.kind });
+            const count = await WorkItemRepository.updateVersioned(db, ctx, v, id, expectedVersion, {
+                stateId: to.id,
+                stateCategory: to.category,
+                ...stateTransitionEffects(from!.category, to.category, item),
+            });
+            if (count === 0) await throwWriteConflict(db, ctx, v, id);
+            await applyStateAudit(db, ctx, item, from!, to);
+            change = { item, from: from!, to };
+        }
+        if (input.position && (input.position.afterId || input.position.beforeId)) {
+            await ProjectRepository.lockSequences(db, ctx, [item.projectId]);
+            await WorkItemRepository.setSortKey(db, ctx, v, id, await sortKeyForPosition(db, ctx, item.projectId, input.position, id));
+            await logEvent(db, ctx, {
+                action: 'WORK_ITEM_REORDERED',
+                entityType: 'WorkItem',
+                entityId: id,
+                details: `Reordered ${keyOf(item)}`,
+                detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'updated', changedFields: ['sortKey'] },
+                metadata: { afterId: input.position.afterId ?? null, beforeId: input.position.beforeId ?? null },
+            });
+        }
+        return change;
+    });
+    if (outcome) await afterStateCommit(ctx, [outcome]);
     return getWorkItem(ctx, id);
 }
 

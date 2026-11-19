@@ -39,6 +39,9 @@
     "secret-scan": "bash scripts/detect-secrets.sh --all"
   },
   "dependencies": {
+    "@atlaskit/pragmatic-drag-and-drop": "4.0.0",
+    "@atlaskit/pragmatic-drag-and-drop-auto-scroll": "3.2.1",
+    "@atlaskit/pragmatic-drag-and-drop-hitbox": "3.0.0",
     "@next-auth/prisma-adapter": "1.0.7",
     "@number-flow/react": "0.6.2",
     "@opentelemetry/api": "1.10.0",
