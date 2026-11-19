@@ -198,3 +198,12 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    `docs/porting/maps/`. Each map gives the files, what to cut, the npm packages and the
    tests that come along, and the copy order. Every copied file gets a `PROVENANCE.md` row
    pinned to `5528464fc54a8681956f3b9ce23ca9c075f0420e`.
+   **1.3 (tenancy and data core) has landed**: the Prisma 7 schema and the tenancy
+   migration with RLS and both last-owner triggers, `runInTenantContext`,
+   `RequestContext`, `getTenantCtx`, the stubs for 1.4, the `integration` Jest project and
+   the CI `Integration` job (`PROVENANCE.md`, "Copied: tenancy and data core"). Two owner
+   items came out of it: ADR 0006 W1 (`Tenant`/`tenantId` in code) is applied but not
+   signed, and the `prisma` CLI's dependency tree fails `npm run licence:check`
+   (`elkjs` EPL-2.0 and `@visx/vendor` 4.0.0-alpha.0 through Prisma Studio, `graceful-fs`
+   4.2.12 BlueOak-1.0.0), which needs an ADR 0007 decision; no exemption was added.
+   1.4 is next.
