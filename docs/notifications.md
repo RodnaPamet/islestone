@@ -40,12 +40,13 @@ in identifiers), and the settings' BCC column is `bccMailbox`, inflect's
 
 ## The bell
 
-Two writers, both in `src/app-layer/notifications/`:
+Three writers, all in `src/app-layer/notifications/`:
 
 | Writer | Type | Dedupe key |
 |---|---|---|
 | `createAssignmentNotification` (`assignment.ts`) | `WORK_ITEM_ASSIGNED` | `tenant:TYPE:item:user:YYYY-MM-DD` |
 | `createWatcherNotifications` (`watcher.ts`) | `WORK_ITEM_WATCH_UPDATE` | per watcher, item, kind, discriminator and day |
+| `createWorkItemDueNotification(s)` (`work-item-due.ts`, 2.2) | `WORK_ITEM_DUE` | `tenant:WORK_ITEM_DUE:window:item:user:YYYY-MM-DD` (the run day in `NOTIFICATIONS_TZ`) |
 
 Each one, in order:
 
@@ -59,12 +60,20 @@ Each one, in order:
    (`src/lib/notifications/notification-bus.ts`), filtered by workspace AND
    user. The event carries the row id, which the bell needs to mark it read.
 
-`in-app-types.ts` lists the mutable types, built from the two writers' copy
+`in-app-types.ts` lists the mutable types, built from the writers' copy
 tables, so a listed type always has a writer that honours its mute
 (`tests/unit/notifications/in-app-types.test.ts`). The links are the caller's:
 2.3 owns the work-item route and its path helper.
 
-Neither writer has a caller yet; 2.2 calls them from the work-item usecases.
+The work-item usecases (sub-phase 2.2, `docs/work-items.md`) call them after
+their transaction commits, each in a short transaction of its own, swallowing
+errors: an assignment rings the assignee (the email is an outbox row written
+inside the transaction; a bulk assign sends one digest); a state change, a
+comment, an assignment and a material edit ring the item's ACTIVE watchers,
+never the actor; and a due date on the 7, 1 or 0-day window rings the
+assignee, as does the daily `work-item-due-notification` job. A due date is
+date-only: its day is read from the value's UTC date parts and never shifted
+by a zone; only "today" is computed in `NOTIFICATIONS_TZ`.
 
 ### Routes
 

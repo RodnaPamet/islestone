@@ -51,9 +51,16 @@ tripwire.
 | Model | Field | Why |
 |---|---|---|
 | `TenantSecuritySettings` | `auditStreamSecretEncrypted` | The HMAC secret that signs the workspace's audit-stream deliveries. |
+| `WorkItem` | `description` | A work item's description (sub-phase 2.2, ADR 0002 §11). The title stays plaintext: it is searched and quoted. |
+| `Comment` | `body` | A comment's text (2.2). |
 
-Every work-item and comment field joins the manifest in the sub-phase that
-creates its model (2.2 on). `tests/guards/encryption-manifest-coverage.test.ts`
+Both are sanitised before they are stored, and an audit entry records that
+the description changed, never its text. A top-level write encrypts only the
+manifest fields of its own model; the by-name fan-out applies to nested writes,
+whose target model the payload does not name. (Until 2.2 the top level fanned
+out too, which would have sealed `Notification.body` and
+`TenantCustomRole.description` once `Comment.body` joined the manifest, outside
+the rotation sweeps.) `tests/guards/encryption-manifest-coverage.test.ts`
 fails on a free-text column that is neither in the manifest nor classified
 as not sensitive, with its reason.
 
