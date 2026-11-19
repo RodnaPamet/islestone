@@ -212,7 +212,7 @@ services:
 
   # ── Redis (BullMQ, the worker heartbeat) ──────────────────────────────
   redis:
-    image: redis:7.4.12-alpine3.22
+    image: redis:8.4.8-alpine3.22
     container_name: islestone-redis
     restart: unless-stopped
     logging: *default-logging
