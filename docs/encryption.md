@@ -196,8 +196,9 @@ it early turns those rows' reads into 500s.
 Three pieces, sub-phase 1.5b:
 
 - **`key-rotation`** (`src/app-layer/jobs/key-rotation.ts`), one workspace per
-  run, started by `POST /api/t/<slug>/admin/key-rotation` (`admin.manage`:
-  OWNER and ADMIN; 5 per hour). It re-wraps `Tenant.encryptedDek` under the
+  run, started by `POST /api/t/<slug>/admin/key-rotation`
+  (`admin.tenant_lifecycle`: OWNER-only, owner decision 2026-11-19; 5 per
+  hour). It re-wraps `Tenant.encryptedDek` under the
   primary key, then rewrites every `v1:` value the workspace owns: the
   manifest fields of every model with a `tenantId` column, and the
   tenant-scoped PII columns (`PII_TENANT_SCOPED_MODELS`, today the outbox
@@ -219,7 +220,8 @@ overwritten with the old plaintext. It is idempotent: a second run rewrites
 the same rows again, harmlessly. A model probe that fails for any reason but a
 missing column fails the run rather than skipping the model. The job writes
 `KEY_ROTATION_STARTED` and `KEY_ROTATION_COMPLETED` (with the counts) to the
-workspace's chain, attributed to the admin who started it; the route writes
+workspace's chain, under the authority described in "Who a rotation acts as"
+below; the route writes
 `KEY_ROTATION_INITIATED` naming the job. A run with any error, or a DEK that
 did not re-wrap, is a failed job (`keyRotationOutcome`), and it is not retried
 by the queue: the operator reads it and re-enqueues.
@@ -252,12 +254,33 @@ Then:
 database: every value the rotation owns reads mid-flight, is rewritten, and
 reads under the new key alone after the old one is removed.
 
-The master-key rotation does not re-resolve the admin who started it when the
-job runs: it reads no permission and does one fixed thing, and a rotation
-that stopped because its initiator had since left would leave keys
-unrotated (inflect-compliance's reasoning, kept). The API-key liveness check
-inflect-compliance makes before the work (a key revoked while the job
-waited) returns with API keys in 5.2.
+The API-key liveness check inflect-compliance makes before the work (a key
+revoked while the job waited) returns with API keys in 5.2.
+
+### Who a rotation acts as
+
+Owner decision, 2026-11-19, for both rotations
+(`src/app-layer/jobs/rotation-actor.ts`). When the job runs, the person who
+started it is resolved again (`resolveInitiatorContext`):
+
+- **Still an ACTIVE member holding `admin.tenant_lifecycle`:** the job acts as
+  them. Its STARTED and COMPLETED entries name them (`actorType: 'USER'`) with
+  `authority: 'INITIATOR'`.
+- **Anything else** (removed from the workspace, deactivated, demoted below the
+  key, or the workspace soft-deleted): the rotation **still finishes**, as the
+  workspace's system user (`sys_<tenantId>`, `buildTenantSystemJobContext`,
+  `actorType: 'JOB'`). The entries' `detailsJson` and the job result's `actor`
+  carry `authority: 'SYSTEM'`, `requestedByUserId` (who asked) and `refusal`
+  (`NOT_A_MEMBER`, `NOT_ACTIVE` with the status, `LACKS_PERMISSION`, or
+  `TENANT_DELETED`). The person who asked is never written as the actor.
+
+A rotation is not stopped because the person who asked has gone: that would
+leave a workspace's keys half-moved (a previous master key that cannot be
+retired, or a compromised DEK still kept as the previous one). This is the one
+exception to the rule that a job doing what a person asked stops when that
+person no longer resolves (CLAUDE.md, "Job identity").
+`tests/integration/rotation-initiator.test.ts` proves both branches for both
+jobs.
 
 ### Key compromise
 
@@ -308,7 +331,8 @@ new writes use the new DEK. The sweep (`src/app-layer/jobs/tenant-dek-rotation.t
 - reports progress (`phase`: `starting`, `sweeping`, `finalising`, `complete`
   or `noop`, with counts) through the job, which
   `GET /api/t/<slug>/admin/tenant-dek-rotation?jobId=…` returns, and writes
-  `TENANT_DEK_ROTATION_STARTED` and `_COMPLETED` to the chain.
+  `TENANT_DEK_ROTATION_STARTED` and `_COMPLETED` to the chain, under the
+  authority described in "Who a rotation acts as" above.
 
 A second rotation is accepted once the sweep has cleared the previous slot.
 `tests/integration/tenant-dek-rotation.test.ts` proves the swap, the 409's

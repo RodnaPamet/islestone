@@ -145,6 +145,19 @@ stored: secret-shaped keys become `[REDACTED]`, long blobs become a length
 and a hash prefix, and deep or large structures are cut
 (`src/lib/audit-redact.ts`).
 
+## Appending inside a transaction
+
+`logEvent(db, ctx, payload, { withinTransaction: true })` appends inside the
+transaction `db` belongs to (`appendAuditEntryWithin`), so the entry commits or
+rolls back with the work it records. The default appends in a transaction of
+its own. An in-transaction entry is not streamed to the SIEM (the writer
+cannot know whether the caller's transaction commits) and holds the
+workspace's chain lock until that transaction ends, so keep the transaction
+short. The first caller is `ensureTenantSystemUser`, whose
+`SYSTEM_USER_CREATED` entry (`entity_lifecycle`, written as the system user)
+must not exist without the row it describes, nor the row without it (owner
+decision, 2026-11-19).
+
 ## The outbox: an entry is recorded, queued, or the request fails
 
 `appendAuditEntryOrQueue` (`src/lib/audit/audit-outbox.ts`) is for the entries

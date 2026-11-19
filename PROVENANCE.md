@@ -1618,26 +1618,29 @@ The master-key rotation job and its admin route, `rotateTenantDek` with the per-
 - **Not taken:** `src/app/api/t/[tenantSlug]/admin/rotate-dek/route.ts` (an alias of `tenant-dek-rotation`) and, with it, the shared `admin/_lib/rotate-dek-handlers.ts`, whose logic is in the usecase; `scripts/generate-tenant-deks.ts` (every Islestone workspace gets its DEK at creation); `tests/unit/jobs/tenant-dek-rotation.test.ts` as a file (its cases are in `tests/integration/tenant-dek-rotation.test.ts`).
 
 <details>
-<summary>All 21 rows</summary>
+<summary>All 24 rows</summary>
 
 | File | Source | Action | Changes |
 |---|---|---|---|
 | `scripts/rotate-global-pii.ts` | same | COPY+EDIT | Relative imports (as `scripts/verify-audit-chain.ts`); the `#!` line; comments name Islestone's columns and both pinned keys. |
 | `src/app-layer/jobs/audit-outbox-flush.ts` | same | COPY+EDIT | Code unchanged; an ORDER section and the provenance note in the header. |
-| `src/app-layer/jobs/key-rotation.ts` | same | COPY+EDIT | `resolveApiKeyForJob`, its liveness block and `apiKeyId` cut (5.2); one index read made explicit; comments for Islestone's manifest and PII columns, the stale `rotateTenantDek` "stub" paragraph rewritten, the misplaced `@internal` moved. |
-| `src/app-layer/jobs/tenant-dek-rotation.ts` | same | COPY+EDIT | Code unchanged but for two index reads made explicit; the `/admin/rotate-dek` alias and GAP-22 references cut from comments; a "What it sweeps in Islestone" section. |
+| `src/app-layer/jobs/key-rotation.ts` | same | COPY+EDIT | The run's actor re-resolved (`resolveRotationActor`, owner decision 2026-11-19): its entries carry the actor record in `detailsJson` and the result an `actor`, where the source wrote the initiator with `actorType: 'SYSTEM'`; `resolveApiKeyForJob`, its liveness block and `apiKeyId` cut (5.2); one index read made explicit; comments for Islestone's manifest and PII columns, the stale `rotateTenantDek` "stub" paragraph rewritten, the misplaced `@internal` moved. |
+| `src/app-layer/jobs/rotation-actor.ts` | — | Islestone-owned | `resolveRotationActor`: the initiator re-resolved at run time, the workspace system user and the named refusal when they no longer resolve (owner decision, 2026-11-19). |
+| `src/app-layer/jobs/tenant-dek-rotation.ts` | same | COPY+EDIT | The run's actor re-resolved, as in `key-rotation.ts` (owner decision 2026-11-19); otherwise code unchanged but for two index reads made explicit; the `/admin/rotate-dek` alias and GAP-22 references cut from comments; a "What it sweeps in Islestone" section. |
 | `src/app-layer/schemas/key-rotation.schemas.ts` | — | Islestone-owned | `RotationJobStatusQuery` (the status routes' `jobId`). |
 | `src/app-layer/usecases/key-rotation.ts` | `src/app/api/t/[tenantSlug]/admin/key-rotation/route.ts`, `admin/_lib/rotate-dek-handlers.ts` | REWRITE | The source routes' bodies as four usecases behind the two policies; `logEvent` inside `runInTenantContext` with a `detailsJson`; a refused in-flight rotation is a 409 (`conflict`) rather than the source's 500. |
-| `src/app/api/t/[tenantSlug]/admin/key-rotation/route.ts` | same | COPY+EDIT | The handlers call the usecase; `jobId` parsed with Zod; `import type { NextRequest }`, `jsonResponse`; the `apiKeyId` payload spread deleted. |
+| `src/app/api/t/[tenantSlug]/admin/key-rotation/route.ts` | same | COPY+EDIT | `admin.tenant_lifecycle` in place of `admin.manage` (OWNER-only, owner decision 2026-11-19); the handlers call the usecase; `jobId` parsed with Zod; `import type { NextRequest }`, `jsonResponse`; the `apiKeyId` payload spread deleted. |
 | `src/app/api/t/[tenantSlug]/admin/tenant-dek-rotation/route.ts` | same; `admin/_lib/rotate-dek-handlers.ts` | COPY+EDIT | The handlers inline (no alias route to share them with), calling the usecase; `jobId` parsed with Zod. |
 | `src/lib/security/tenant-key-manager.ts` | same | COPY | None: 1.5a's cut (the `enqueue` import and `rotateTenantDek`) restored, so the file is byte-identical to the source. |
 | `tests/guards/tenant-dek-rotation-fallback.test.ts` | `tests/guardrails/tenant-dek-rotation-fallback.test.ts` | COPY | None (moved from `tests/guardrails/` to `tests/guards/`). |
 | `tests/integration/audit-outbox-drain-order.test.ts` | — | Islestone-owned | The drain appends a backlog in event order after the existing chain, each entry linked to the one before it, and `verifyAuditChain` reads the chain as valid; run through the registered executor. |
 | `tests/integration/audit-outbox-no-silent-drop.test.ts` | same | COPY | None. |
-| `tests/integration/key-rotation.test.ts` | — | Islestone-owned | A master-key rotation played out against a real database: every value it owns reads mid-flight, is rewritten, and reads under the new key alone; the teardown rotates the global PII rows back. |
+| `tests/integration/key-rotation-routes.test.ts` | — | Islestone-owned | Both routes against a real database: an ADMIN gets 403 and an `AUTHZ_DENIED` row, an OWNER 202 and the start entry, a second DEK rotation in flight 409. |
+| `tests/integration/key-rotation.test.ts` | — | Islestone-owned | A master-key rotation played out against a real database, started by a member OWNER: every value it owns reads mid-flight, is rewritten, and reads under the new key alone; the teardown rotates the global PII rows back. |
+| `tests/integration/rotation-initiator.test.ts` | — | Islestone-owned | Both rotations with the initiator still an OWNER (acts as them) and removed before the run (finishes as the system user, records who asked); a demoted and a deactivated initiator. |
 | `tests/integration/tenant-dek-rotation.test.ts` | same; `tests/unit/jobs/tenant-dek-rotation.test.ts` | COPY+EDIT | On `TenantSecuritySettings` (one row per workspace, so one ciphertext per lifecycle); the unit file's DB-backed branch cases merged in, the "rewritten and skipped in one run" case split in two; a mid-flight read through the app's client and a second rotation after the sweep added; the CHECK case left to `tenant-dek-schema.test.ts`. |
-| `tests/unit/key-rotation-admin-api.test.ts` | same | COPY+EDIT | `makeRequestContext` (VIEWER for READER); a strict `@/lib/audit` mock and a `runInTenantContext` stub; `any` removed; the two `apiKeyId` cases replaced by one pinning the payload's three fields. |
-| `tests/unit/key-rotation-job.test.ts` | same | COPY+EDIT | `TenantSecuritySettings` for `Risk`; a planted manifest model without `tenantId` for the ownership-chained case; the tenant-scoped PII case on `NotificationOutbox.toEmail` (the map moved it to 1.4 while that list was empty; 1.6 filled it); the API-key cases cut (5.2); `any` removed. |
+| `tests/unit/key-rotation-admin-api.test.ts` | same | COPY+EDIT | Success cases as an OWNER and an ADMIN refused with an `AUTHZ_DENIED` entry (owner decision 2026-11-19); `makeRequestContext` (VIEWER for READER); a strict `@/lib/audit` mock and a `runInTenantContext` stub; `any` removed; the two `apiKeyId` cases replaced by one pinning the payload's three fields. |
+| `tests/unit/key-rotation-job.test.ts` | same | COPY+EDIT | `resolveRotationActor` stubbed, with a system-branch case; `TenantSecuritySettings` for `Risk`; a planted manifest model without `tenantId` for the ownership-chained case; the tenant-scoped PII case on `NotificationOutbox.toEmail` (the map moved it to 1.4 while that list was empty; 1.6 filled it); the API-key cases cut (5.2); `any` removed. |
 | `tests/unit/tenant-dek-rotation-admin-api.test.ts` | — | Islestone-owned | The DEK route: ADMIN refused on both verbs, an OWNER's swap through the real `rotateTenantDek`, both in-flight refusals as 409 with no audit entry, the status GET's 400 and 404s. |
 | `tests/unit/tenant-key-manager.rotate.test.ts` | same | COPY+EDIT | The prisma mock through getters (TDZ under @swc/jest); one call read checked. |
 | `docs/encryption.md` | `docs/epic-b-encryption.md` (rotation runbook); `docs/epic-f-finishing-touches.md` §F.2 | COPY+EDIT | "Rotating the master key" rewritten for the job, the route and the script; "Rotating a workspace's data key" added; the rotation signals. |
@@ -1649,24 +1652,28 @@ The master-key rotation job and its admin route, `rotateTenantDek` with the per-
 Files from earlier sub-phases edited in 1.5b (their rows are in the sections above):
 
 <details>
-<summary>All 18 files</summary>
+<summary>All 22 files</summary>
 
 | File | Changed in 1.5b |
 |---|---|
 | `CLAUDE.md` | Current state, the commands, and the "Security perimeter" bullets for key rotation and the drain. |
 | `docs/HANDOFF.md` | The 1.5b entry and its open questions. |
 | `scripts/worker.ts` | A comment. |
+| `src/app-layer/context-system.ts` | `ensureTenantSystemUser` writes `SYSTEM_USER_CREATED` in the insert's transaction when it creates the row (owner decision 2026-11-19). |
+| `src/app-layer/events/audit.ts` | `logEvent`'s `{ withinTransaction: true }` option (`appendAuditEntryWithin`). |
 | `src/app-layer/jobs/executor-registry.ts` | `keyRotationOutcome` (source L374–385) and the three registrations (source L771–804, L916–950, L952–992), each naming its payload fields with `NamesEveryField`; `apiKeyId` not forwarded; `audit-outbox-flush` also forwards `maxAttempts`, which the source dropped; the comments that said BullMQ retries a failed rotation corrected (one attempt). |
 | `src/app-layer/jobs/fan-out.ts` | A comment. |
 | `src/app-layer/jobs/register-schedules.ts` | The deletable set's comment names the two rotations. |
 | `src/app-layer/jobs/schedules.ts` | `audit-outbox-flush` every five minutes (source L419–445). |
 | `src/app-layer/jobs/types.ts` | `AuditOutboxFlushPayload`, `KeyRotationPayload` (without `apiKeyId`) and `TenantDekRotationPayload` (source L350–355, L459–519), their `JobPayloadMap` keys and `JOB_DEFAULTS` (source L1794–1810, L1839–1860). |
-| `src/app-layer/policies/admin.policies.ts` | `assertCanRotateMasterKey` (`admin.manage` on the admin tier) and `assertCanRotateTenantDek` (`admin.tenant_lifecycle`), the usecase-layer twins of the route gates (Islestone-owned). |
-| `src/lib/security/route-permissions.ts` | The two rules (source L898–906, L1229–1238). |
+| `src/app-layer/policies/admin.policies.ts` | `assertCanRotateMasterKey` and `assertCanRotateTenantDek`, both `admin.tenant_lifecycle`, the usecase-layer twins of the route gates (Islestone-owned). |
+| `src/lib/audit/index.ts` | Exports `appendAuditEntryWithin` and `AuditAppendClient`. |
+| `src/lib/security/route-permissions.ts` | The two rules (source L898–906, L1229–1238), both `admin.tenant_lifecycle` (the source's master-key rule was `admin.manage`). |
 | `tests/guards/executor-payload-forwarding.test.ts` | Five registrations. |
 | `tests/guards/runtime-wiring-coverage.test.ts` | `ON_DEMAND_JOBS`: the two rotations, with their enqueue sites. |
 | `tests/guards/schema-index-coverage.test.ts` | `AuditOutbox` triaged. |
 | `tests/integration/epic-b-encryption.test.ts` | The two rotation cases restored (re-wrap; read after rotation). |
+| `tests/integration/tenant-system-user.test.ts` | `SYSTEM_USER_CREATED`: one entry on the first call, none on a second or a concurrent one, none for a missing workspace. |
 | `tests/unit/audit-trail-guardrails.test.ts` | The raw-SQL scan reads whole statements and refuses an interpolated table outside a named exception (the two sweeps); `ensureTenantSystemUser`'s raw insert listed with its reason; planted fixtures for both. |
 | `tests/unit/executor-registry.test.ts` | Five registrations. |
 | `tests/unit/jobs/job-contract-completeness.test.ts` | Three scheduled jobs. |

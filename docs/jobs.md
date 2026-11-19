@@ -46,15 +46,20 @@ scripts/worker.ts  ──►  executorRegistry.execute(name, payload)
 | `health-check` | every 2 minutes | 1 | Answers `pong` with its payload. Proves the queue, the worker and the registry agree, and keeps the heartbeat fresh. |
 | `notification-outbox-flush` | every 10 minutes | 1 | Drains the email outbox (`processOutbox`, `docs/notifications.md`). Every workspace by default; a payload naming `tenantId` drains only that one. One attempt, because the next tick is the retry and each row has its own three. |
 | `audit-outbox-flush` | every 5 minutes | 1 | Replays queued audit entries onto the hash chain, oldest event first (`docs/audit-trail.md`, "The drain"). Every workspace by default, or the `tenantId` the payload names; `limit` and `maxAttempts` per pass. One attempt, because the next tick is the retry and each row has its own five. |
-| `key-rotation` | on demand | 1 | Master-key rotation for one workspace: re-wraps its DEK and re-encrypts its `v1:` ciphertexts under the new `DATA_ENCRYPTION_KEY` (`docs/encryption.md`). Enqueued by `POST /api/t/:slug/admin/key-rotation`. A run with errors is a failed job; the operator reads it and re-enqueues (the sweep is idempotent). |
+| `key-rotation` | on demand | 1 | Master-key rotation for one workspace: re-wraps its DEK and re-encrypts its `v1:` ciphertexts under the new `DATA_ENCRYPTION_KEY` (`docs/encryption.md`). Enqueued by `POST /api/t/:slug/admin/key-rotation` (OWNER-only). A run with errors is a failed job; the operator reads it and re-enqueues (the sweep is idempotent). |
 | `tenant-dek-rotation` | on demand | 1 | The per-workspace DEK sweep: re-encrypts every `v2:` ciphertext from the previous DEK to the new one, then clears `Tenant.previousEncryptedDek`. Enqueued by `rotateTenantDek` (`POST /api/t/:slug/admin/tenant-dek-rotation`). Reports progress (`phase`, counts) through the job, which the route's GET returns. |
 
 The two rotations are listed in `ON_DEMAND_JOBS`
 (`tests/guards/runtime-wiring-coverage.test.ts`) with the code that enqueues
-them, which the guard checks. Both act for the person who started them: the
-payload carries `initiatedByUserId`, and the job's STARTED and COMPLETED audit
-entries name that user with `actorType: 'SYSTEM'`. They do not re-resolve the
-initiator's membership when they run; see `docs/encryption.md`.
+them, which the guard checks. The payload carries `initiatedByUserId`, and the
+job resolves that person again when it runs (`resolveRotationActor`,
+`src/app-layer/jobs/rotation-actor.ts`): while they are an ACTIVE member holding
+`admin.tenant_lifecycle` the job acts as them; otherwise it still finishes, as
+the workspace system user, and its audit entries and result record who asked
+and why they were not acted for. That fallback is an owner decision
+(2026-11-19) for the two rotations only; every other job that does what a
+person asked stops when that person does not resolve (`docs/encryption.md`,
+"Who a rotation acts as").
 
 Each executor names the payload fields it forwards (`NamesEveryField`), so a
 field added to a payload fails `tsc` until it is forwarded or left out on
@@ -81,7 +86,9 @@ executor that ignores its payload.
 A job that writes rows needing a `User` foreign key and acts for nobody uses
 `buildTenantSystemJobContext` (`src/app-layer/context-system.ts`): the
 workspace's system user, `sys_<tenantId>`, which the database refuses as a
-sign-in, membership, credential or session. A job that does what a person
+sign-in, membership, credential or session. The call that first creates it
+writes one `SYSTEM_USER_CREATED` audit entry in the same transaction (owner
+decision, 2026-11-19). A job that does what a person
 asked resolves that person's membership again when it runs
 (`resolveInitiatorContext`, `resolveMemberContext`); a `null` is a refusal,
 never a reason to fall back to a system context.
