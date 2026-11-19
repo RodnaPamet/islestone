@@ -77,4 +77,14 @@ export default defineConfig([
             ],
         },
     },
+
+    // The edge logger writes structured JSON to `console.*`, the only I/O
+    // channel the Edge runtime has (pino needs Node). This one file holds the
+    // exception the application-code block above refuses.
+    {
+        files: ['src/lib/observability/edge-logger.ts'],
+        rules: {
+            'no-console': 'off',
+        },
+    },
 ]);

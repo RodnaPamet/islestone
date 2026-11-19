@@ -105,12 +105,12 @@ describe('Tenant isolation at context resolution', () => {
     });
 
     // ─── 4. Permission computation ───
-    describe('permission computation (provisional ladder until 1.4)', () => {
+    describe('permission computation (the coarse ladder of 1.4)', () => {
         it.each([
             ['OWNER', { canRead: true, canWrite: true, canAdmin: true, canExport: true }],
             ['ADMIN', { canRead: true, canWrite: true, canAdmin: true, canExport: true }],
-            ['MEMBER', { canRead: true, canWrite: true, canAdmin: false, canExport: true }],
-            ['VIEWER', { canRead: true, canWrite: false, canAdmin: false, canExport: true }],
+            ['MEMBER', { canRead: true, canWrite: true, canAdmin: false, canExport: false }],
+            ['VIEWER', { canRead: true, canWrite: false, canAdmin: false, canExport: false }],
             ['GUEST', { canRead: true, canWrite: false, canAdmin: false, canExport: false }],
         ] as const)('%s', (role, expected) => {
             expect(computePermissions(role)).toEqual(expected);

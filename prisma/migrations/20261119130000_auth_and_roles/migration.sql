@@ -12,7 +12,8 @@
 --   3. Canonical RLS on the direct tenant tables.
 --   4. The asymmetric single policy on UserSession (nullable tenantId).
 --   5. CHECKs: no custom role on an OWNER membership; no custom role built
---      on OWNER. Both VALID from the start: the tables are new.
+--      on OWNER. Both VALID from the start: the tables are new. And the
+--      partial unique index on live custom-role names.
 --   6. Account, VerificationToken, PasswordResetToken (global) and OrgInvite
 --      (org-scoped): no RLS.
 -- ═══════════════════════════════════════════════════════════════════
@@ -377,6 +378,15 @@ ALTER TABLE "TenantMembership"
 ALTER TABLE "TenantCustomRole"
     ADD CONSTRAINT "TenantCustomRole_base_role_not_built_in_scope"
     CHECK ("baseRole" <> 'OWNER');
+
+-- A live custom role's name is unique in its workspace; a deactivated one
+-- frees its name. Prisma cannot express a partial index, and `prisma migrate
+-- diff` ignores one, so it lives here only; `assertCustomRoleNameFree` in
+-- src/app-layer/usecases/custom-roles.ts mirrors it to give a readable 409.
+-- Source: inflect-compliance `20261029190000_custom_role_name_unique_among_live`.
+CREATE UNIQUE INDEX "TenantCustomRole_tenantId_name_key"
+    ON "TenantCustomRole"("tenantId", "name")
+    WHERE "isActive";
 
 -- ─── 6) No RLS on the global and org-scoped tables ────────────────
 --

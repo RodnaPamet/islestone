@@ -33,6 +33,15 @@ const ALLOWED_ROOT_PAGES = new Set([
     // The shared-UI gallery (sub-phase 1.2): static primitives with sample
     // data, no tenant data and no data access, so it needs no workspace.
     'gallery',
+    // Sub-phase 1.4: the pages a person reaches before, or outside, any one
+    // workspace. Each reads only the signed-in person's own rows, or nothing.
+    'login', // Sign in and register
+    'forgot-password', // Password-reset request (public)
+    'reset-password', // Password-reset confirm, from an emailed token (public)
+    'invite', // Invite preview, acceptance and result (public preview)
+    'no-tenant', // Landing for a person with no workspace
+    'tenants', // The workspace picker: the person's own memberships
+    'account', // The person's own profile and password, account-wide
 ]);
 
 /** Top-level directories of src/app/api that may hold routes outside /api/t/. */
@@ -41,6 +50,16 @@ const ALLOWED_API_DIRS = new Set([
     // reachable without a session.
     'livez',
     'readyz',
+    // Sub-phase 1.4. Sign-in, registration, password change and reset,
+    // email verification: before any workspace is chosen.
+    'auth',
+    // Tenant invite preview and redemption: the redeemer is not yet a member.
+    'invites',
+    // Organization invites and the org-admin invite routes, isolated by
+    // getOrgCtx rather than a tenant slug.
+    'org',
+    // The person's own profile, account-wide.
+    'account',
 ]);
 
 /** Global (non-tenant-scoped) API prefixes a tenant page may fetch with a flat path. */

@@ -37,10 +37,10 @@ export interface RequestContext {
     role: Role;
 
     /**
-     * The role on the caller's OWN membership row. In sub-phase 1.3 it
-     * always equals `role`; sub-phase 1.4 adds custom roles, after which
-     * `role` is a custom role's base and this stays the membership's own
-     * built-in role. It is not an authority for anything else.
+     * The role on the caller's OWN membership row. With a custom role, `role`
+     * is the custom role's base and this stays the membership's own built-in
+     * role. The edge admits the admin console by it; it is not an authority
+     * for anything else.
      */
     membershipRole?: Role;
 
@@ -52,8 +52,16 @@ export interface RequestContext {
         canExport: boolean;
     };
 
-    /** Granular permission set (sub-phase 1.4 writes it; empty in 1.3) */
+    /** Granular permission set, from the role or its custom role */
     appPermissions: PermissionSet;
+
+    /**
+     * The API key that authenticated the request. Always undefined until
+     * sub-phase 5.2 ports API keys; the policies and the MFA usecases that
+     * refuse a credential-borne context already read it, so they need no
+     * second edit then.
+     */
+    apiKeyId?: string;
 }
 
 export interface PaginatedResult<T> {

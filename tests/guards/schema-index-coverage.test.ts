@@ -67,7 +67,18 @@ interface CompositeIndex {
 const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [];
 
 /** Tenant models whose list queries are fully served by Layers A + B, with the reason. */
-const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {};
+const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // Sub-phase 1.4. Every list is a small per-workspace set read whole (or
+    // capped), filtered by tenantId and at most a status or an equality.
+    TenantMembership:
+        'The members list (tenantId, status) and the custom-role carrier lookups (customRoleId): ' +
+        '@@index([tenantId, status]) and @@index([customRoleId]) serve both; a workspace roster is small.',
+    TenantInvite:
+        'Pending invites per workspace, filtered by tenantId and acceptedAt/revokedAt/expiresAt: ' +
+        '@@index([tenantId]) narrows to one workspace, whose invites are few.',
+    TenantCustomRole:
+        "A workspace's custom roles, filtered by tenantId and isActive: @@index([tenantId, isActive]).",
+};
 
 const isTenantModel = (m: SchemaModel) => m.scalarFieldNames.includes('tenantId');
 

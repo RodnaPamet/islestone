@@ -1,28 +1,183 @@
 /**
- * Permission sets — SUB-PHASE 1.3 STUB.
+ * Islestone's permission set (sub-phase 1.4, roadmap 1.4).
  *
- * Sub-phase 1.4 (authentication and roles) replaces this file with
- * Islestone's `PermissionSet` for the five roles of ADR 0006. Until then:
+ * The MECHANISM is inflect-compliance's `src/lib/permissions.ts` at
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e: the `PermissionSet` shape,
+ * `PERMISSION_SCHEMA`, the exhaustive `getPermissionsForRole`, the
+ * custom-role validator and parser, `DERIVED_FROM`, `permissionsForMembership`
+ * and `permissionsExceeding`. The CONTENT is new: project-management domains
+ * (docs/porting/maps/1.4.md, "Permission set: mechanism and key list") for
+ * the five roles of ADR 0006, Owner > Admin > Member > Viewer > Guest.
  *
- *   • `getPermissionsForRole` grants NOTHING for every role (fail closed),
- *     so no code path can come to depend on a placeholder grant.
- *   • `getOrgPermissions` keeps the organization roles' mapping from
- *     inflect-compliance (`src/lib/permissions.ts`), with its
- *     compliance-only flags removed.
+ * A key is a typed dotted literal, `domain.action` (`PermissionKey` in
+ * `@/lib/security/permission-key`), and `requirePermission` takes it.
  *
  * Client-safe: the only Prisma dependency is an `import type`.
  */
 import type { OrgRole, Role } from '@prisma/client';
 
-/** Placeholder until 1.4 writes Islestone's PermissionSet. Fail-closed. */
-export type PermissionSet = Readonly<Record<string, boolean>>;
+import type { PermissionKey } from '@/lib/security/permission-key';
 
-const NO_PERMISSIONS: PermissionSet = Object.freeze({});
+export type PermissionSet = {
+    workspace: { view: boolean; export: boolean };
+    projects: { view: boolean; create: boolean; edit: boolean; archive: boolean; manage_members: boolean };
+    work_items: { view: boolean; create: boolean; edit: boolean; assign: boolean; comment: boolean; delete: boolean };
+    views: { view: boolean; create: boolean; edit: boolean; share: boolean };
+    cycles: { view: boolean; manage: boolean };
+    docs: { view: boolean; create: boolean; edit: boolean };
+    canvas: { view: boolean; edit: boolean };
+    automations: { view: boolean; manage: boolean };
+    integrations: { view: boolean; manage: boolean };
+    /** Consumed from Phase 6 (ADR 0003): read, delegate work to, manage agents. */
+    agents: { view: boolean; delegate: boolean; manage: boolean };
+    billing: { view: boolean; manage: boolean };
+    admin: {
+        /** Open the admin console and read workspace settings. */
+        view: boolean;
+        /** Change workspace settings (security settings, MFA policy, custom roles). */
+        manage: boolean;
+        /** Invite, change, deactivate and remove members; revoke their sessions. */
+        members: boolean;
+        /** Enterprise SSO configuration (sub-phase 8.3). */
+        sso: boolean;
+        /** SCIM provisioning (sub-phase 8.3). */
+        scim: boolean;
+        /** Delete the workspace, rotate its keys, transfer ownership. OWNER only. */
+        tenant_lifecycle: boolean;
+        /** Invite, change or remove OWNERs, and assign the OWNER role. OWNER only. */
+        owner_management: boolean;
+    };
+};
 
-/** Returns the empty permission set for every role in sub-phase 1.3. */
-export function getPermissionsForRole(_role: Role): PermissionSet {
-    return NO_PERMISSIONS;
+/**
+ * The denominator: every domain and its actions. Client-safe. Validation,
+ * parsing and the escalation guard all iterate it, so a key added to
+ * `PermissionSet` must be added here (the `satisfies` below fails otherwise).
+ */
+export const PERMISSION_SCHEMA = {
+    workspace: ['view', 'export'],
+    projects: ['view', 'create', 'edit', 'archive', 'manage_members'],
+    work_items: ['view', 'create', 'edit', 'assign', 'comment', 'delete'],
+    views: ['view', 'create', 'edit', 'share'],
+    cycles: ['view', 'manage'],
+    docs: ['view', 'create', 'edit'],
+    canvas: ['view', 'edit'],
+    automations: ['view', 'manage'],
+    integrations: ['view', 'manage'],
+    agents: ['view', 'delegate', 'manage'],
+    billing: ['view', 'manage'],
+    admin: ['view', 'manage', 'members', 'sso', 'scim', 'tenant_lifecycle', 'owner_management'],
+} as const satisfies { [D in keyof PermissionSet]: readonly (keyof PermissionSet[D])[] } as unknown as Record<
+    keyof PermissionSet,
+    string[]
+>;
+
+type Grants = { [D in keyof PermissionSet]?: readonly (keyof PermissionSet[D])[] | 'all' };
+
+/** Builds a complete set: every listed action true, every other false. */
+function permissionSetOf(grants: Grants): PermissionSet {
+    const out = {} as Record<string, Record<string, boolean>>;
+    for (const domain of Object.keys(PERMISSION_SCHEMA) as (keyof PermissionSet)[]) {
+        const granted = grants[domain];
+        out[domain] = Object.fromEntries(
+            PERMISSION_SCHEMA[domain].map((action) => [
+                action,
+                granted === 'all' || (granted as readonly string[] | undefined)?.includes(action) === true,
+            ]),
+        );
+    }
+    return out as unknown as PermissionSet;
 }
+
+const ALL_DOMAINS: Grants = Object.fromEntries(
+    (Object.keys(PERMISSION_SCHEMA) as (keyof PermissionSet)[]).map((d) => [d, 'all']),
+) as Grants;
+
+/**
+ * Returns the static, granular PermissionSet for a built-in role.
+ *
+ * Role matrix (docs/porting/maps/1.4.md, "Permission set"):
+ *
+ *   OWNER   everything.
+ *   ADMIN   everything except `admin.tenant_lifecycle` and
+ *           `admin.owner_management`, which are stated false explicitly.
+ *   MEMBER  does the work: projects view/create/edit, work items
+ *           view/create/edit/assign/comment, views view/create/edit/share,
+ *           cycles, docs view/create/edit, canvas view/edit, automations and
+ *           integrations view, agents view/delegate, workspace view.
+ *   VIEWER  reads every project: `view` on the work domains and agents.
+ *   GUEST   not assignable until sub-phase 8.4 scopes it to named projects:
+ *           `view` on the work domains, plus creating and commenting on work
+ *           items. No agents, automations or integrations.
+ *
+ * Backend authorisation must still verify the key at the route
+ * (`requirePermission`) or in the usecase.
+ */
+export function getPermissionsForRole(role: Role): PermissionSet {
+    switch (role) {
+        case 'OWNER':
+            return permissionSetOf(ALL_DOMAINS);
+        case 'ADMIN': {
+            // ADMIN holds every admin flag but the two OWNER-only ones, stated
+            // explicitly so a reader of this branch sees them refused. The
+            // custom-role path, which CAN express them, is re-checked at write
+            // time by `permissionsExceeding`.
+            const set = permissionSetOf(ALL_DOMAINS);
+            set.admin.tenant_lifecycle = false;
+            set.admin.owner_management = false;
+            return set;
+        }
+        case 'MEMBER':
+            return permissionSetOf({
+                workspace: ['view'],
+                projects: ['view', 'create', 'edit'],
+                work_items: ['view', 'create', 'edit', 'assign', 'comment'],
+                views: ['view', 'create', 'edit', 'share'],
+                cycles: ['view', 'manage'],
+                docs: ['view', 'create', 'edit'],
+                canvas: ['view', 'edit'],
+                automations: ['view'],
+                integrations: ['view'],
+                agents: ['view', 'delegate'],
+            });
+        case 'VIEWER':
+            return viewerPermissions();
+        case 'GUEST':
+            return permissionSetOf({
+                workspace: ['view'],
+                projects: ['view'],
+                work_items: ['view', 'create', 'comment'],
+                views: ['view'],
+                cycles: ['view'],
+                docs: ['view'],
+                canvas: ['view'],
+            });
+        default: {
+            // Prisma's enum is closed; an unknown value gets the least
+            // privileged set with workspace-wide standing (ADR 0006: the
+            // fallback is Viewer, never Guest).
+            const _exhaustive: never = role;
+            void _exhaustive;
+            return viewerPermissions();
+        }
+    }
+}
+
+/** VIEWER: reads every project and agent; writes nothing. */
+function viewerPermissions(): PermissionSet {
+    return permissionSetOf({
+        workspace: ['view'],
+        projects: ['view'],
+        work_items: ['view'],
+        views: ['view'],
+        cycles: ['view'],
+        docs: ['view'],
+        canvas: ['view'],
+        agents: ['view'],
+    });
+}
+
+// ─── Organization permissions ──────────────────────────────────────────────
 
 /** The organization-level flags, derived from `OrgRole`. */
 export type OrgPermissionSet = {
@@ -86,4 +241,177 @@ export function getOrgPermissions(role: OrgRole): OrgPermissionSet {
             };
         }
     }
+}
+
+// ─── Custom Role Helpers ───────────────────────────────────────────────────
+
+/**
+ * Validates that a JSON value conforms to the PermissionSet shape.
+ * Returns a list of error strings; empty list = valid.
+ *
+ * Used at write-time (creating/updating custom roles) to prevent
+ * saving malformed grant blobs.
+ */
+export function validatePermissionsJson(json: unknown): string[] {
+    const errors: string[] = [];
+
+    if (typeof json !== 'object' || json === null || Array.isArray(json)) {
+        return ['grantsJson must be a non-null object'];
+    }
+
+    const obj = json as Record<string, unknown>;
+    const expectedDomains = Object.keys(PERMISSION_SCHEMA) as (keyof PermissionSet)[];
+    const actualDomains = Object.keys(obj);
+
+    // Check for missing domains
+    for (const domain of expectedDomains) {
+        if (!(domain in obj)) {
+            errors.push(`Missing permission domain: "${domain}"`);
+            continue;
+        }
+
+        const domainValue = obj[domain];
+        if (typeof domainValue !== 'object' || domainValue === null) {
+            errors.push(`Permission domain "${domain}" must be an object`);
+            continue;
+        }
+
+        const domainObj = domainValue as Record<string, unknown>;
+        const expectedActions = PERMISSION_SCHEMA[domain];
+
+        for (const action of expectedActions) {
+            if (!(action in domainObj)) {
+                errors.push(`Missing action "${domain}.${action}"`);
+            } else if (typeof domainObj[action] !== 'boolean') {
+                errors.push(`"${domain}.${action}" must be boolean, got ${typeof domainObj[action]}`);
+            }
+        }
+
+        // Check for unexpected actions
+        for (const action of Object.keys(domainObj)) {
+            if (!expectedActions.includes(action)) {
+                errors.push(`Unexpected action "${domain}.${action}"`);
+            }
+        }
+    }
+
+    // Check for unexpected domains
+    for (const domain of actualDomains) {
+        if (!expectedDomains.includes(domain as keyof PermissionSet)) {
+            errors.push(`Unexpected permission domain: "${domain}"`);
+        }
+    }
+
+    return errors;
+}
+
+/**
+ * Keys a stored custom-role blob that predates them takes from ANOTHER key of
+ * the same blob rather than from its base role.
+ *
+ * A key that splits a read off an existing key would otherwise widen any custom
+ * role that had switched the existing key off: the base role's default is
+ * `true` wherever the base holds the existing key. So when a later sub-phase
+ * splits a key, it names the new key here with the key it was split from, and
+ * a blob saved before the split reads the new key exactly as it read the old.
+ * Empty: no key has been split yet.
+ */
+const DERIVED_FROM: Readonly<Record<string, Readonly<Record<string, string>>>> = {};
+
+/**
+ * Safely parses a custom role's `grantsJson` blob from the database into a typed PermissionSet.
+ * Falls back to the baseRole's defaults for any missing or invalid fields.
+ *
+ * Used at read-time to ensure the runtime always has a complete, valid PermissionSet
+ * even if the stored JSON is partially malformed (defensive programming). A key
+ * named in `DERIVED_FROM` falls back to its source key in the blob first.
+ */
+export function parsePermissionsJson(json: unknown, baseRole: Role): PermissionSet {
+    const defaults = getPermissionsForRole(baseRole);
+
+    if (typeof json !== 'object' || json === null || Array.isArray(json)) {
+        return defaults;
+    }
+
+    const obj = json as Record<string, Record<string, unknown>>;
+    const result = { ...defaults };
+
+    for (const domain of Object.keys(PERMISSION_SCHEMA) as (keyof PermissionSet)[]) {
+        if (domain in obj && typeof obj[domain] === 'object' && obj[domain] !== null) {
+            const actions = PERMISSION_SCHEMA[domain];
+            const domainResult: Record<string, boolean> = { ...defaults[domain] };
+
+            for (const action of actions) {
+                if (action in obj[domain] && typeof obj[domain][action] === 'boolean') {
+                    domainResult[action] = obj[domain][action] as boolean;
+                    continue;
+                }
+                const source = DERIVED_FROM[domain]?.[action];
+                if (source !== undefined && typeof obj[domain][source] === 'boolean') {
+                    domainResult[action] = obj[domain][source] as boolean;
+                }
+            }
+
+            (result as Record<keyof PermissionSet, Record<string, boolean>>)[domain] = domainResult;
+        }
+    }
+
+    return result;
+}
+
+/**
+ * The permission set a MEMBERSHIP resolves to — the custom role's, parsed over
+ * its base role, when it has one; the built-in role's otherwise.
+ *
+ * The same expression `getTenantCtx` (via `src/lib/tenant-context.ts`) builds
+ * `appPermissions` from, for a principal who is not the caller: a usecase that
+ * must predict what ANOTHER member will be allowed to do reads it.
+ */
+export function permissionsForMembership(membership: {
+    role: Role;
+    customRole: { grantsJson: unknown; baseRole: Role } | null;
+}): PermissionSet {
+    return membership.customRole
+        ? parsePermissionsJson(membership.customRole.grantsJson, membership.customRole.baseRole)
+        : getPermissionsForRole(membership.role);
+}
+
+// ─── Privilege-escalation guard ──────────────────────────────────────
+
+/**
+ * Which permissions in `granted` exceed `held` — i.e. are `true` in the
+ * set being handed out while `false` for the person handing it out.
+ *
+ * ─── Why this exists ────────────────────────────────────────────────
+ *
+ * Custom roles resolve through `parsePermissionsJson`, which merges the
+ * role's JSON over its base-role defaults. `PERMISSION_SCHEMA.admin`
+ * includes `tenant_lifecycle` and `owner_management` — the two flags that
+ * separate OWNER from ADMIN and gate deleting the tenant, rotating the
+ * tenant DEK, and managing OWNERs.
+ *
+ * Every custom-role entrypoint is gated on `assertCanAdmin`, so an ADMIN
+ * could otherwise mint a role setting those two true, assign it to
+ * themselves, and hold OWNER-only powers on the next request. The enum
+ * path makes that impossible
+ * (`getPermissionsForRole('ADMIN').admin.tenant_lifecycle` is `false`); the
+ * custom-role path would bypass it entirely.
+ *
+ * The invariant is the ordinary one for delegated authority: you cannot
+ * grant what you do not hold. Revoking is always allowed — handing out
+ * LESS than you hold is not escalation.
+ */
+export function permissionsExceeding(
+    granted: PermissionSet,
+    held: PermissionSet,
+): PermissionKey[] {
+    const exceeded: PermissionKey[] = [];
+    for (const domain of Object.keys(PERMISSION_SCHEMA) as (keyof PermissionSet)[]) {
+        for (const action of PERMISSION_SCHEMA[domain]) {
+            const wants = (granted[domain] as Record<string, boolean> | undefined)?.[action];
+            const has = (held[domain] as Record<string, boolean> | undefined)?.[action];
+            if (wants === true && has !== true) exceeded.push(`${domain}.${action}` as PermissionKey);
+        }
+    }
+    return exceeded;
 }

@@ -20,8 +20,9 @@
  * `not_a_member`). Operators reading the application logs see the
  * real cause; external callers only see 404.
  *
- * SUB-PHASE 1.3: gate-free, like its API-side twin `getOrgCtx`. Sub-phase
- * 1.4 restores the SSO-scoped-session refusal in BOTH, together.
+ * Gate-free beyond membership, like its API-side twin `getOrgCtx`. The one
+ * gate inflect-compliance adds here, the SSO-scoped-session refusal, is
+ * restored in BOTH, together, by sub-phase 8.3 with SSO (ADR 0004 A2).
  */
 
 import type { OrgRole } from '@prisma/client';

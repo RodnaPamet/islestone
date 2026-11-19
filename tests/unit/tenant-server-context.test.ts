@@ -123,7 +123,7 @@ describe('getTenantServerContext', () => {
         mockPrisma.tenant.findUnique.mockResolvedValue(TENANT);
         mockPrisma.tenantMembership.findUnique.mockResolvedValue(MEMBERSHIP_ADMIN);
 
-        const ctx = await getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'user-1' });
+        const ctx = await getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'user-1', session: {} });
 
         expect(ctx.tenant).toEqual({
             id: 'tenant-1',
@@ -141,7 +141,7 @@ describe('getTenantServerContext', () => {
         mockPrisma.tenant.findUnique.mockResolvedValue(TENANT);
         mockPrisma.tenantMembership.findUnique.mockResolvedValue(MEMBERSHIP_MEMBER);
 
-        const ctx = await getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'user-1' });
+        const ctx = await getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'user-1', session: {} });
 
         expect(ctx.role).toBe('MEMBER');
         expect(ctx.permissions.canWrite).toBe(true);
@@ -151,7 +151,7 @@ describe('getTenantServerContext', () => {
     it('throws for unknown tenant slug', async () => {
         mockPrisma.tenant.findUnique.mockResolvedValue(null);
 
-        await expect(getTenantServerContext({ tenantSlug: 'ghost', userId: 'user-1' })).rejects.toThrow(
+        await expect(getTenantServerContext({ tenantSlug: 'ghost', userId: 'user-1', session: {} })).rejects.toThrow(
             'Tenant not found',
         );
     });
@@ -160,7 +160,7 @@ describe('getTenantServerContext', () => {
         mockPrisma.tenant.findUnique.mockResolvedValue({ ...TENANT, deletedAt: new Date() });
         mockPrisma.tenantMembership.findUnique.mockResolvedValue(MEMBERSHIP_ADMIN);
 
-        await expect(getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'user-1' })).rejects.toThrow(
+        await expect(getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'user-1', session: {} })).rejects.toThrow(
             'Tenant not found',
         );
     });
@@ -169,7 +169,7 @@ describe('getTenantServerContext', () => {
         mockPrisma.tenant.findUnique.mockResolvedValue(TENANT);
         mockPrisma.tenantMembership.findUnique.mockResolvedValue(null);
 
-        await expect(getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'outsider' })).rejects.toThrow(
+        await expect(getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'outsider', session: {} })).rejects.toThrow(
             'Not a member of this tenant',
         );
     });
@@ -178,7 +178,7 @@ describe('getTenantServerContext', () => {
         mockPrisma.tenant.findUnique.mockResolvedValue(TENANT);
         mockPrisma.tenantMembership.findUnique.mockResolvedValue(MEMBERSHIP_DEACTIVATED);
 
-        await expect(getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'user-1' })).rejects.toThrow(
+        await expect(getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'user-1', session: {} })).rejects.toThrow(
             /deactivated/i,
         );
     });
@@ -187,7 +187,7 @@ describe('getTenantServerContext', () => {
         mockPrisma.tenant.findUnique.mockResolvedValue(TENANT);
         mockPrisma.tenantMembership.findUnique.mockResolvedValue(MEMBERSHIP_ADMIN);
 
-        const ctx = await getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'user-1' });
+        const ctx = await getTenantServerContext({ tenantSlug: 'acme-corp', userId: 'user-1', session: {} });
 
         // The tenant field must be a plain object, not a Prisma model.
         // It should only contain id, slug, name — no createdAt, updatedAt, etc.

@@ -1,8 +1,8 @@
 /**
- * `getTenantCtx` — the session-only, gate-free request-context builder of
- * sub-phase 1.3.
+ * `getTenantCtx` — the request-context builder (sub-phase 1.3, with the
+ * workspace MFA gate of 1.4, covered in `workspace-mfa-beyond-claim-gate`).
  *
- * Refusals: 401 with no session (the 1.3 stub always refuses), 404 for an
+ * Refusals: 401 with no session, 404 for an
  * unknown or soft-deleted workspace, 403 for a non-member and for a
  * DEACTIVATED or REMOVED member. The happy path returns `role`,
  * `membershipRole`, `permissions` and `tenantSlug`, honours `x-request-id`,
@@ -43,6 +43,7 @@ import type { NextRequest } from 'next/server';
 
 import { getTenantCtx } from '@/app-layer/context';
 import { AppError } from '@/lib/errors/types';
+import { getPermissionsForRole } from '@/lib/permissions';
 
 const TENANT = { id: 'tenant-1', slug: 'acme', name: 'Acme', organizationId: null, deletedAt: null };
 const MEMBERSHIP = { id: 'm-1', tenantId: 'tenant-1', userId: 'user-1', role: 'MEMBER', status: 'ACTIVE' };
@@ -69,13 +70,14 @@ describe('getTenantCtx', () => {
             tenantSlug: 'acme',
             role: 'MEMBER',
             membershipRole: 'MEMBER',
-            permissions: { canRead: true, canWrite: true, canAdmin: false, canExport: true },
-            appPermissions: {},
+            permissions: { canRead: true, canWrite: true, canAdmin: false, canExport: false },
+            appPermissions: getPermissionsForRole('MEMBER'),
         });
         expect(ctx.requestId.length).toBeGreaterThan(0);
         expect(tenantFindUnique).toHaveBeenCalledWith({ where: { slug: 'acme' } });
         expect(membershipFindUnique).toHaveBeenCalledWith({
             where: { tenantId_userId: { tenantId: 'tenant-1', userId: 'user-1' } },
+            include: { customRole: true },
         });
         expect(mergeRequestContextMock).toHaveBeenCalledWith({ tenantId: 'tenant-1', userId: 'user-1' });
     });
@@ -122,14 +124,16 @@ describe('getTenantCtx', () => {
         await expect(getTenantCtx({ tenantSlug: 'acme' }, req())).rejects.toMatchObject({ status: 403 });
     });
 
-    it('an INVITED membership is not refused here (invitation acceptance is 1.4)', async () => {
+    it('an INVITED membership is not refused here (redemption writes ACTIVE rows; nothing writes INVITED)', async () => {
         membershipFindUnique.mockResolvedValue({ ...MEMBERSHIP, status: 'INVITED', role: 'VIEWER' });
         await expect(getTenantCtx({ tenantSlug: 'acme' }, req())).resolves.toMatchObject({ role: 'VIEWER' });
     });
 });
 
-describe('the 1.3 session stub', () => {
-    it('always refuses with 401, so getTenantCtx cannot succeed outside tests until 1.4', async () => {
+describe('the session seam', () => {
+    it('getSessionOrThrow refuses with 401 when NextAuth holds no session', async () => {
+        jest.resetModules();
+        jest.doMock('@/auth', () => ({ __esModule: true, auth: async () => null }));
         const { getSessionOrThrow } = jest.requireActual<{ getSessionOrThrow: () => Promise<unknown> }>(
             '@/lib/auth/session',
         );
