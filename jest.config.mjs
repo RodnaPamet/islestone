@@ -15,7 +15,17 @@
  * @t3-oss/env-nextjs is ESM-only, so both env modules map to one mock in BOTH
  * projects. Specific mappings come before the general `@/` alias: Jest takes
  * the first pattern that matches.
+ *
+ * The jsdom project carries what the shared UI's rendered tests need
+ * (sub-phase 1.2, docs/porting/maps/1.2.md section 5.1): co-located
+ * `__tests__` under src/ and packages/, a transform for the ESM-only packages
+ * the UI reaches at runtime, three module mocks, and `__mocks__/next-intl.js`
+ * (applied automatically from the root `__mocks__`), which resolves every key
+ * against messages/en.json.
  */
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 /** @type {[string, Record<string, unknown>]} */
 const swc = [
@@ -45,10 +55,30 @@ const swc = [
 const swcEsm = [
     '@swc/jest',
     {
-        jsc: { parser: { syntax: 'ecmascript' }, target: 'es2022' },
+        jsc: { parser: { syntax: 'ecmascript', jsx: true }, target: 'es2022' },
         module: { type: 'commonjs' },
         sourceMaps: 'inline',
     },
+];
+
+/**
+ * Packages under node_modules that ship ESM only and that the shared UI
+ * reaches at runtime in a rendered test. Jest loads node_modules through its
+ * CommonJS path, so these are compiled like our own code; everything else in
+ * node_modules is required as it is. TanStack Table v9 has no `require`
+ * condition at all; visx re-exports d3 modules (and `internmap`, d3-array's
+ * dependency); react-grid-layout v2 ships ESM at its main entry.
+ */
+const ESM_PACKAGES = [
+    '@tanstack/(?:react-table|table-core)',
+    '@visx/[^/]+',
+    'd3-[^/]+',
+    'internmap',
+    'delaunator',
+    'robust-predicates',
+    'react-grid-layout',
+    'react-resizable',
+    'react-draggable',
 ];
 
 const moduleNameMapper = {
@@ -59,13 +89,23 @@ const moduleNameMapper = {
     // package's subpath imports are mapped to its source directly.
     '^@inflect/ui/(.*)$': '<rootDir>/packages/ui/src/$1',
     '^@inflect/ui$': '<rootDir>/packages/ui/src/index.ts',
+    // The package's `exports` map sends this subpath to dist/legacy.js, which
+    // Jest's CommonJS resolver does not follow; Node's resolver here does.
+    '^react-grid-layout/legacy$': require.resolve('react-grid-layout/legacy'),
+    // vaul's drawer measures pointer gestures jsdom cannot produce; the mock
+    // renders the same Radix Dialog structure without the drag maths.
+    '^vaul$': '<rootDir>/tests/rendered/vaul-mock.tsx',
+    // NumberFlow animates through Web Animations and a custom element jsdom
+    // only partly supports; the mock renders the settled Intl.NumberFormat text.
+    '^@number-flow/react$': '<rootDir>/tests/rendered/number-flow-mock.tsx',
     '\\.css$': '<rootDir>/tests/mocks/style.ts',
 };
 
 /** @type {import('jest').Config} */
 const shared = {
     rootDir: '.',
-    transform: { '^.+\\.(t|j)sx?$': swc, '^.+\\.mjs$': swcEsm },
+    transform: { '^.+\\.tsx?$': swc, '^.+\\.(m|c)?jsx?$': swcEsm },
+    transformIgnorePatterns: [`node_modules/(?!(?:${ESM_PACKAGES.join('|')})/)`],
     moduleNameMapper,
     setupFiles: ['<rootDir>/jest.setup.ts'],
     clearMocks: true,
@@ -84,8 +124,14 @@ const config = {
             ...shared,
             displayName: 'jsdom',
             testEnvironment: 'jsdom',
-            // Co-located tests inside workspace packages run here, in jsdom.
-            testMatch: ['<rootDir>/tests/rendered/**/*.test.tsx', '<rootDir>/packages/*/src/**/__tests__/**/*.test.{ts,tsx}'],
+            // Co-located tests, in src/ and inside workspace packages, run
+            // here, in jsdom. The node project's patterns are anchored at
+            // tests/unit and tests/guards, so it never matches them too.
+            testMatch: [
+                '<rootDir>/tests/rendered/**/*.test.{ts,tsx}',
+                '<rootDir>/src/**/__tests__/**/*.test.{ts,tsx}',
+                '<rootDir>/packages/*/src/**/__tests__/**/*.test.{ts,tsx}',
+            ],
             setupFilesAfterEnv: ['<rootDir>/tests/setup/rendered.ts'],
         },
     ],

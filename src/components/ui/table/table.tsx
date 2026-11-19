@@ -1,0 +1,1863 @@
+/* eslint-disable react-hooks/exhaustive-deps -- Various useEffect/useMemo dep arrays in this file deliberately omit identity-unstable callbacks (handlers recreated each render) or use selector functions whose change-detection happens elsewhere. Adding the deps would either trigger unnecessary re-runs OR cause infinite render loops; the proper structural fix is to wrap parent-level callbacks in useCallback. Tracked as follow-up. */
+/*
+ * Tanstack-react-table primitive wrapper.
+ *
+ * This file carries no `any` of its own any more. The one `any` the platform
+ * still needs — the `TValue` default that keeps `getValue()` usable in a cell
+ * renderer — lives in `./types` with its rationale; the v8-era
+ * `T extends any` generic bounds here became `T extends TableRowData`, which
+ * v9 requires. The `ColumnMeta` fields (disableTruncate / headerTooltip) are
+ * typed via the module augmentation in `src/types/tanstack-table.d.ts`.
+ */
+import { useTranslations } from "next-intl";
+
+import { cn, deepEqual, isClickOnInteractiveChild } from "./table-utils";
+// v9 renamed the hook `useReactTable` → `useTable`, which collides with THIS
+// module's own `useTable` export (the platform's props-shaping hook, exported
+// below and consumed by `<DataTable>`). Aliasing at the import keeps both
+// names unambiguous and keeps the collision from ever reaching a call site.
+import { flexRender, useTable as useTanstackTable } from "@tanstack/react-table";
+import { dataTableFeatures } from "./features";
+import type {
+  Cell,
+  Column,
+  ColumnDef,
+  ColumnVisibilityState,
+  ExpandedState,
+  Row,
+  RowSelectionState,
+  TableInstance,
+  TableRowData,
+} from "./types";
+import { AnimatePresence, motion } from "motion/react";
+import Link from "next/link";
+import {
+  CSSProperties,
+  Fragment,
+  HTMLAttributes,
+  memo,
+  MouseEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type ReactNode,
+} from "react";
+import { Button } from "../button";
+import { Checkbox } from "../checkbox";
+import { ErrorState } from "../error-state";
+import { LoadingSpinner } from "@inflect/ui/components/ui/icons/loading-spinner";
+import { SortOrder } from "@inflect/ui/components/ui/icons/sort-order";
+import { ChevronRight } from "@inflect/ui/components/ui/icons/nucleo/chevron-right";
+import { Tooltip } from "../tooltip";
+import { SelectionToolbar } from "./selection-toolbar";
+import { InfiniteScrollSentinel } from "./infinite-scroll-sentinel";
+import { TableProps, UseTableProps } from "./types";
+
+const SELECT_COLUMN_WIDTH = 48;
+const MENU_COLUMN_WIDTH = 40;
+// v2-PR-12 follow-through (2026-05-13) — the trailing chevron-right
+// affordance for clickable rows. Renders only when the consumer
+// passes `onRowClick`; the column is invisible by default and the
+// chevron fades in on `group-hover/row`. 32 px keeps the column
+// narrow enough that it reads as decoration, not a data cell. The
+// header cell stays empty — adding "→" or similar would make the
+// column read as semantic which it is not.
+const CHEVRON_COLUMN_WIDTH = 32;
+const FIXED_UTILITY_COLUMN_IDS = new Set(["select", "menu"]);
+
+const tableCellClassName = (
+  columnId: string,
+  clickable?: boolean,
+  hasSelectBefore?: boolean,
+  isFirstContent?: boolean,
+) =>
+  cn([
+    "py-2.5 text-left text-sm leading-6 whitespace-nowrap border-border-subtle relative",
+    "border-l border-b",
+    columnId === "select" && "w-12 min-w-12 max-w-12 px-0 py-0",
+    columnId === "menu" && "bg-bg-page border-l-transparent py-0 px-1",
+    !["select", "menu"].includes(columnId) &&
+      (hasSelectBefore ? "pl-1 pr-4" : "px-4"),
+    // PR-7 row hover — bg-bg-muted is the solid hover surface (was
+    // bg-bg-subtle, ~7% alpha which read as nearly invisible on dark
+    // theme). Pairs with `cursor-pointer` on the row itself to make
+    // clickability unambiguous.
+    clickable && "group-hover/row:bg-bg-muted transition-colors duration-75",
+    // Brand-coloured 2-px left-edge accent on hover + selected.
+    //
+    // History:
+    //   - Originally lived on the `<tr>` as `hover:shadow-...`.
+    //     CSS table painting paints cell backgrounds on top of
+    //     row-level shadows → flicker (R13-PR13 diagnosis).
+    //   - R13-PR13 moved it to cells via `first-of-type:`. That
+    //     selector matches the first `<td>` in each row — which
+    //     became the SELECT column once R12-PR1 made selection
+    //     default-on. The rule excluded the select column, so it
+    //     never fired anywhere → no hover edge at all.
+    //   - R13-PR15 gated the shadow on an explicit
+    //     `isFirstContent` boolean — first non-utility column id.
+    //     The accent then sat at the left of the second column
+    //     (the data column) with the select circle in column 1
+    //     to its left.
+    //   - 2026-05-19 — moved to the row's TRUE leftmost cell so
+    //     the accent reads as "this row" rather than "the data
+    //     starts here". When the select column is mounted, the
+    //     select cell carries the accent (`columnId === "select"`).
+    //     When it's not (selectionEnabled={false} on a list page),
+    //     the first content cell carries it (`isFirstContent &&
+    //     !hasSelectBefore`).
+    (columnId === "select" || (isFirstContent && !hasSelectBefore)) &&
+      clickable &&
+      "group-hover/row:shadow-[inset_2px_0_0_var(--brand-default)]",
+    // PR-7 selected-row signal — left-edge brand accent via inset
+    // box-shadow. Same leftmost-cell rule as the hover accent
+    // above so hover + selected speak in one voice. Was
+    // `isFirstContent` before; moved 2026-05-19 alongside hover.
+    "group-data-[selected=true]/row:bg-[var(--brand-subtle)]",
+    (columnId === "select" || (isFirstContent && !hasSelectBefore)) &&
+      "group-data-[selected=true]/row:shadow-[inset_2px_0_0_var(--brand-default)]",
+  ]);
+
+const resizingClassName = cn([
+  "absolute right-0 top-0 h-full w-1 cursor-col-resize select-none touch-none",
+  "bg-border-emphasis/50",
+  "opacity-0 group-hover/resize:opacity-100 hover:opacity-100",
+  "group-hover/resize:bg-border-emphasis hover:bg-content-muted",
+  "transition-all duration-200",
+  "-mr-px",
+  "after:absolute after:right-0 after:top-0 after:h-full after:w-4 after:translate-x-1/2",
+]);
+
+export function useTable<T extends TableRowData>(
+  props: UseTableProps<T>,
+): TableProps<T> & { table: TableInstance<T> } {
+  const {
+    data,
+    rowCount,
+    columns,
+    defaultColumn,
+    columnPinning,
+    pagination,
+    onPaginationChange,
+    getRowId,
+    getRowCanExpand,
+    enableColumnResizing = false,
+    columnResizeMode = "onChange",
+  } = props;
+
+  const t = useTranslations("common");
+
+  // R12-PR1 — select column is default-on. Pages opt out via
+  // `selectionEnabled={false}`. The previous gating (require either
+  // `onRowSelectionChange` or `selectionControls`) made the select
+  // column appear on exactly one list page and absent everywhere
+  // else — the structural inconsistency the round closes.
+  const selectionEnabled = props.selectionEnabled ?? true;
+
+  const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>(
+    props.columnVisibility ?? {},
+  );
+
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>(
+    props.selectedRows ?? {},
+  );
+
+  // Expandable rows (default off — `getRowCanExpand` undefined → no row
+  // expands, no chevron, no behaviour change for existing tables).
+  const [expanded, setExpanded] = useState<ExpandedState>({});
+
+  const lastSelectedRowId = useRef<string | null>(null);
+
+  // Manually unset row selection if the row is no longer in the data
+  // There doesn't seem to be a proper solution for this: https://github.com/TanStack/table/issues/4498
+  useEffect(() => {
+    if (!getRowId || !data) return;
+
+    const entries = Object.entries(rowSelection);
+    if (entries.length > 0) {
+      const newEntries = entries.filter(([key]) =>
+        data.find((row) => getRowId?.(row) === key),
+      );
+
+      if (newEntries.length !== entries.length)
+        setRowSelection(Object.fromEntries(newEntries));
+    }
+  }, [data, rowSelection, getRowId]);
+
+  useEffect(() => {
+    if (props.selectedRows && !deepEqual(props.selectedRows, rowSelection)) {
+      setRowSelection(props.selectedRows ?? {});
+    }
+  }, [props.selectedRows]);
+
+  useEffect(() => {
+    props.onRowSelectionChange?.(table.getSelectedRowModel().rows);
+  }, [rowSelection]);
+
+  // Update internal columnVisibility when prop value changes
+  useEffect(() => {
+    if (
+      props.columnVisibility &&
+      !deepEqual(props.columnVisibility, columnVisibility)
+    )
+      setColumnVisibility(props.columnVisibility ?? {});
+  }, [props.columnVisibility]);
+
+  // Call onColumnVisibilityChange when internal columnVisibility changes
+  useEffect(() => {
+    props.onColumnVisibilityChange?.(columnVisibility);
+  }, [columnVisibility]);
+
+  const normalizedColumns = useMemo(
+    () =>
+      columns.map((column) =>
+        column?.id === "menu"
+          ? {
+              ...column,
+              minSize: MENU_COLUMN_WIDTH,
+              size: MENU_COLUMN_WIDTH,
+              maxSize: MENU_COLUMN_WIDTH,
+            }
+          : column,
+      ),
+    [columns],
+  );
+
+  const tableColumns = useMemo(
+    () => [
+      ...(selectionEnabled
+        ? [
+            {
+              id: "select",
+              enableHiding: false,
+              minSize: SELECT_COLUMN_WIDTH,
+              size: SELECT_COLUMN_WIDTH,
+              maxSize: SELECT_COLUMN_WIDTH,
+              // NB: outer wrapper is a <div>, not a <button>. Radix
+              // `Checkbox` renders an internal <button>, so nesting it
+              // inside <button> triggers a hydration mismatch
+              // ("<button> cannot be a descendant of <button>"). The
+              // inner Checkbox already owns keyboard focus; this
+              // wrapper exists only to widen the click target.
+              header: ({ table }: { table: TableInstance<T> }) => (
+                <div
+                  // GAP-CI-77: presentation role on the wrapping click
+                  // area — the actual focusable+labelled control is the
+                  // inner <Checkbox>. role="button" here was creating a
+                  // button-name violation because axe inspected both the
+                  // outer wrapper (had aria-label but no real button
+                  // semantics) and the inner Radix button (now correctly
+                  // labelled).
+                  role="presentation"
+                  tabIndex={-1}
+                  className="flex size-full cursor-pointer items-center justify-center"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    table.toggleAllRowsSelected();
+                  }}
+                  title={t("table.selectAll")}
+                >
+                  <Checkbox
+                    aria-label={t("table.selectAllRows")}
+                    className="border-border-emphasis pointer-events-none size-4 rounded-full data-[state=checked]:bg-[var(--brand-emphasis)] data-[state=indeterminate]:bg-[var(--brand-emphasis)]"
+                    checked={
+                      table.getIsAllRowsSelected()
+                        ? true
+                        : table.getIsSomeRowsSelected()
+                          ? "indeterminate"
+                          : false
+                    }
+                  />
+                </div>
+              ),
+              cell: ({ row, table }: { row: Row<T>; table: TableInstance<T> }) => {
+                const onSelectRow = (e: MouseEvent<HTMLDivElement>) => {
+                  e.stopPropagation();
+                  const currentId = getRowId?.(row.original);
+                  const rows = table.getRowModel().rows;
+                  const lastSelectedIndex =
+                    lastSelectedRowId.current !== null
+                      ? rows.findIndex(
+                          (row) =>
+                            getRowId?.(row.original) ===
+                            lastSelectedRowId.current,
+                        )
+                      : -1;
+
+                  if (
+                    e.shiftKey &&
+                    lastSelectedRowId.current !== null &&
+                    lastSelectedIndex !== -1
+                  ) {
+                    // Multi-select w/ shift key
+                    const currentIndex =
+                      currentId !== undefined
+                        ? rows.findIndex(
+                            (row) => getRowId?.(row.original) === currentId,
+                          )
+                        : -1;
+                    if (currentIndex === -1) {
+                      row.toggleSelected();
+                      lastSelectedRowId.current = currentId ?? null;
+                      return;
+                    }
+
+                    const start = Math.min(lastSelectedIndex, currentIndex);
+                    const end = Math.max(lastSelectedIndex, currentIndex);
+                    const rangeIds = rows
+                      .slice(start, end + 1)
+                      .map((row) => getRowId?.(row.original))
+                      .filter((id): id is string => id !== undefined);
+
+                    table.setRowSelection((rowSelection) => {
+                      const validRangeIds = rangeIds.filter(
+                        (id): id is string => id !== undefined,
+                      );
+                      const alreadySelected =
+                        currentId !== undefined &&
+                        (rowSelection?.[currentId] ?? false);
+
+                      // v9 narrowed `RowSelectionState` from
+                      // `Record<string, boolean>` to `Record<string, true>`:
+                      // a row is deselected by REMOVING its key, not by
+                      // writing `false`. Both encodings read the same
+                      // (`getIsSelected` is truthiness), so this is the same
+                      // behaviour with the absent-key spelling v9 requires.
+                      const next: RowSelectionState = { ...rowSelection };
+                      for (const id of validRangeIds) {
+                        if (alreadySelected) delete next[id];
+                        else next[id] = true;
+                      }
+                      return next;
+                    });
+
+                    lastSelectedRowId.current = currentId ?? null;
+                  } else {
+                    row.toggleSelected();
+                    lastSelectedRowId.current = currentId ?? null;
+                  }
+                };
+
+                return (
+                  <div
+                    // GAP-CI-77: see select-all wrapper above for the same
+                    // role="presentation" rationale.
+                    role="presentation"
+                    tabIndex={-1}
+                    className="flex size-full cursor-pointer items-center justify-center"
+                    onClick={onSelectRow}
+                    title={t("table.select")}
+                  >
+                    <Checkbox
+                      aria-label={t("table.selectRow")}
+                      className="border-border-emphasis pointer-events-none size-4 rounded-full data-[state=checked]:bg-[var(--brand-emphasis)] data-[state=indeterminate]:bg-[var(--brand-emphasis)]"
+                      checked={row.getIsSelected()}
+                    />
+                  </div>
+                );
+              },
+            },
+          ]
+        : []),
+      ...normalizedColumns,
+      // v2-PR-12 follow-through (2026-05-13) — render the trailing
+      // chevron affordance ONLY when the consumer wired
+      // `onRowClick`. Symmetric with the leading selection column:
+      // selection on left, navigate-affordance on right. The cell
+      // contents are decoration only — `aria-hidden`, no role.
+      // The chevron itself starts at opacity-0 and fades to
+      // opacity-60 on the row's `group-hover/row` (defined in the
+      // `<tr>` className). Transitions through `transition-opacity`
+      // — no compositor work, no layout shift. Disabled with
+      // pointer-events-none so the chevron can't intercept the
+      // row-click handler.
+      ...(props.onRowClick
+        ? [
+            {
+              id: "__row-chevron",
+              enableHiding: false,
+              enableSorting: false,
+              minSize: CHEVRON_COLUMN_WIDTH,
+              size: CHEVRON_COLUMN_WIDTH,
+              maxSize: CHEVRON_COLUMN_WIDTH,
+              header: () => null,
+              cell: () => (
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none flex size-full items-center justify-center text-content-muted opacity-0 transition-opacity duration-150 ease-out group-hover/row:opacity-60"
+                >
+                  <ChevronRight width={16} height={16} />
+                </div>
+              ),
+            } satisfies ColumnDef<T>,
+          ]
+        : []),
+    ],
+    [selectionEnabled, normalizedColumns, props.onRowClick],
+  );
+
+  // The column-pinning slice of table state, built ONCE per distinct
+  // `columnPinning` prop.
+  //
+  // This looks like a trivial allocation to hoist. It is not — it is
+  // the single reason `TableBodyRow`'s memo was inert. TanStack
+  // memoizes `row.getVisibleCells()` on
+  // `[getStartVisibleCells(), getCenterVisibleCells(),
+  // getEndVisibleCells()]`, and each of THOSE is memoized on
+  // `table.state.columnPinning.start` / `.end` compared by
+  // IDENTITY. Spelling the object inline here handed every row a
+  // brand-new `start: []` on every render, so all three cell memos
+  // missed, `getVisibleCells()` returned a new array, and the row's
+  // shallow props comparison saw a changed `cells` prop every single
+  // time. The row component was memoized and still re-rendered the
+  // whole table.
+  //
+  // Same rule applies to any nested state slice added below: TanStack
+  // compares most `state` sub-objects by identity, so a fresh literal
+  // there is a silent memo-killer, not a harmless allocation.
+  //
+  // v9 renamed the two pinned regions from the PHYSICAL `left` / `right` to
+  // the LOGICAL `start` / `end` (which swap under an RTL layout). The
+  // defaults spelled here move with it; the CSS offsets in
+  // `getCommonPinningStyles` still resolve to physical `left` / `right`
+  // because this product renders LTR only.
+  const columnPinningState = useMemo(
+    () => ({ start: [], end: [], ...columnPinning }),
+    [columnPinning],
+  );
+
+  const table = useTanstackTable({
+    // v9 composes capabilities explicitly instead of accepting a row-model
+    // factory per capability. `dataTableFeatures` (./features) is the single
+    // declaration of what this platform's tables can do — every method called
+    // on `table`, `row`, `column` and `header` below exists because a feature
+    // there put it on the instance.
+    features: dataTableFeatures,
+    data,
+    rowCount,
+    columns: tableColumns,
+    defaultColumn: {
+      // When resizing is on, the <Table> render seeds every column's
+      // measured content width into the sizing state on mount
+      // (measure-then-fix), so this `size` is only a transient
+      // placeholder for the one pre-measure frame. `minSize` is the
+      // floor a user can drag a column down to; no `maxSize` cap so
+      // the seed never clips a genuinely wide column and drags stay
+      // unconstrained.
+      minSize: enableColumnResizing ? 64 : 0,
+      size: enableColumnResizing ? 150 : 0,
+      maxSize: undefined,
+      enableResizing: enableColumnResizing,
+      ...defaultColumn,
+    },
+    // v8's `getCoreRowModel()` has no v9 successor — the core row model is
+    // always built. `getExpandedRowModel()` moved onto the feature set as the
+    // `expandedRowModel` slot (see ./features).
+    getRowCanExpand,
+    onExpandedChange: setExpanded,
+    onPaginationChange,
+    onColumnVisibilityChange: (visibility) => setColumnVisibility(visibility),
+    onRowSelectionChange: setRowSelection,
+    state: {
+      pagination,
+      columnVisibility,
+      columnPinning: columnPinningState,
+      rowSelection,
+      expanded,
+    },
+    manualPagination: true,
+    autoResetPageIndex: false,
+    manualSorting: true,
+    getRowId,
+    enableColumnResizing,
+    columnResizeMode,
+  });
+
+  return {
+    ...props,
+    columnVisibility,
+    table,
+    enableColumnResizing,
+  };
+}
+
+type ResizableTableRowProps<T extends TableRowData> = {
+  row: Row<T>;
+  rowProps?: HTMLAttributes<HTMLTableRowElement>;
+  table: TableInstance<T>;
+  selectionEnabled: boolean;
+  // Selection state captured at PARENT render time. The memo
+  // comparator below MUST compare this snapshot, not call
+  // `row.getIsSelected()` on both row objects — those read the LIVE
+  // table state, so post-toggle they're always equal and the row
+  // would never re-render (stale `data-selected` + unchecked box).
+  isSelected: boolean;
+} & Pick<
+  TableProps<T>,
+  "cellRight" | "tdClassName" | "onRowClick" | "onRowAuxClick"
+>;
+
+// Memoized row component to prevent re-renders during column resizing
+const ResizableTableRow = memo(
+  function ResizableTableRow<T extends TableRowData>({
+    row,
+    onRowClick,
+    onRowAuxClick,
+    rowProps,
+    cellRight,
+    tdClassName,
+    table,
+    selectionEnabled,
+    isSelected,
+  }: ResizableTableRowProps<T>) {
+    const { className, ...rest } = rowProps || {};
+
+    return (
+      <tr
+        key={row.id}
+        className={cn(
+          "group/row",
+          // v2-PR-12 — hover affordance for clickable rows. The
+          // `group/row` class above lets the chevron-cell rendering
+          // toggle on group hover. The brand-coloured 2-px left
+          // edge is rendered by the FIRST non-utility cell in
+          // `tableCellClassName` (R13-PR13) so it survives the
+          // cell's own bg-bg-muted hover paint — see the comment
+          // there. Row-level treatment here keeps just the
+          // cursor + colour-transition affordance.
+          //
+          // R13-PR14 — selection-enabled rows also get the
+          // cursor-pointer affordance even without onRowClick (the
+          // click toggles selection now, see onClick below).
+          (onRowClick || selectionEnabled) &&
+            "cursor-pointer select-none transition-colors duration-150 ease-out",
+          // hacky fix: if there are more than 8 rows, remove the bottom border from the last row
+          table.getRowModel().rows.length > 8 &&
+            row.index === table.getRowModel().rows.length - 1 &&
+            "[&_td]:border-b-0",
+          className,
+        )}
+        // R13-PR14 — single click on the row toggles selection
+        // (filled radio fills/empties in the leftmost cell). The
+        // existing select-column `onSelectRow` handler calls
+        // `e.stopPropagation()` so a click on the checkbox itself
+        // does not double-fire here. A real double-click fires
+        // onClick twice (toggle + toggle back to start) and then
+        // onDoubleClick once (navigate) — selection ends where it
+        // started while navigation still happens.
+        onClick={
+          selectionEnabled
+            ? (e) => {
+                if (isClickOnInteractiveChild(e)) return;
+                row.toggleSelected();
+              }
+            : // No selection to compete with → a single click runs the
+              // row action directly (e.g. the Tasks tab opens the task
+              // edit Sheet on click). When selection IS on, the row
+              // action stays on double-click (handler below) so single-
+              // click can own selection.
+              onRowClick
+              ? (e) => {
+                  if (isClickOnInteractiveChild(e)) return;
+                  onRowClick(row, e);
+                }
+              : undefined
+        }
+        onDoubleClick={
+          // Only when selection owns the single click does the row
+          // action need a double-click. With selection off it already
+          // fires on single click above.
+          selectionEnabled && onRowClick
+            ? (e) => {
+                if (isClickOnInteractiveChild(e)) return;
+                onRowClick(row, e);
+              }
+            : undefined
+        }
+        onAuxClick={
+          onRowAuxClick
+            ? (e) => {
+                if (isClickOnInteractiveChild(e)) return;
+                onRowAuxClick(row, e);
+              }
+            : undefined
+        }
+        data-selected={isSelected}
+        {...rest}
+      >
+        {row.getVisibleCells().map((cell, index, cells) => {
+          const isUtilityColumn = ["select", "menu"].includes(cell.column.id);
+          const isSelectColumn = cell.column.id === "select";
+          const isColumnAfterSelect = cells[index - 1]?.column.id === "select";
+          // R13-PR15 — the first NON-utility cell carries the brand-
+          // edge accent. CSS `:first-of-type` was the previous lever
+          // but it pointed at the select column once that became
+          // default-on; this boolean is unambiguous.
+          const firstContentId = cells.find(
+            (c) => !["select", "menu"].includes(c.column.id),
+          )?.column.id;
+          const isFirstContent = cell.column.id === firstContentId;
+          const disableTruncate = !!cell.column.columnDef.meta?.disableTruncate;
+
+          return (
+            <td
+              key={cell.id}
+              className={cn(
+                tableCellClassName(
+                  cell.column.id,
+                  !!onRowClick,
+                  isColumnAfterSelect,
+                  isFirstContent,
+                ),
+                "text-content-default group",
+                getCommonPinningClassNames(
+                  cell.column,
+                  row.index === table.getRowModel().rows.length - 1,
+                ),
+                typeof tdClassName === "function"
+                  ? tdClassName(cell.column.id, row)
+                  : tdClassName,
+              )}
+              style={{
+                width: cell.column.getSize(),
+                ...getCommonPinningStyles(cell.column),
+              }}
+            >
+              {isSelectColumn ? (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </div>
+              ) : (
+                <div
+                  className={cn(
+                    "flex items-center",
+                    isUtilityColumn
+                      ? "justify-center"
+                      : "w-full justify-between",
+                    !isUtilityColumn &&
+                      (disableTruncate
+                        ? "overflow-visible"
+                        : "overflow-hidden truncate"),
+                  )}
+                >
+                  <div
+                    className={cn(
+                      disableTruncate ? "whitespace-nowrap" : "truncate",
+                      isUtilityColumn ? "shrink-0" : "min-w-0 shrink grow",
+                      disableTruncate &&
+                        !isUtilityColumn &&
+                        "min-w-max shrink-0",
+                    )}
+                  >
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </div>
+                  {!isUtilityColumn && cellRight?.(cell)}
+                </div>
+              )}
+            </td>
+          );
+        })}
+      </tr>
+    );
+  },
+    // #3071 — equality is React's DEFAULT shallow comparison, for the
+    // reason `TableBodyRow` below records: "a bespoke comparator has to
+    // be re-checked every time a prop is added, and renders STALE ROWS
+    // when that check is missed; a stale row is far worse than a slow
+    // one." The comparator that stood here compared `row.original` and
+    // `isSelected` ONLY, so `onRowClick`, `onRowAuxClick`,
+    // `selectionEnabled`, `rowProps`, `cellRight` and `tdClassName`
+    // could all change without ever reaching the `<tr>`. A consumer
+    // that swapped its row-click handler after first paint kept firing
+    // the FIRST closure for the life of the row — while the row went
+    // on painting `cursor-pointer`, so it still advertised that it
+    // opens.
+    //
+    // Shallow comparison is affordable only because the call site now
+    // hands this row the SAME stable proxies `TableBodyRow` gets
+    // (`rowClickProxy` / `rowAuxClickProxy`, backed by
+    // `rowCallbacksRef`) rather than the consumer's raw arrow, which
+    // every list page rebuilds on some renders.
+) as <T extends TableRowData>(props: ResizableTableRowProps<T>) => JSX.Element;
+
+type TableBodyRowProps<T extends TableRowData> = {
+  row: Row<T>;
+  /**
+   * The row's visible cells, resolved ONCE by the parent.
+   *
+   * This is the single, precise signal for every column-derived render
+   * input. TanStack memoizes `row.getVisibleCells()` on
+   * `[left, center, right]` visible cells, which in turn depend on the
+   * leaf-column OBJECTS (so a consumer that rebuilds its `columns`
+   * array — new cell renderers, possibly closing over new state —
+   * yields a new array), on `columnVisibility`, and on `columnPinning`.
+   * A change in any of those hands the memo a new identity and the row
+   * re-renders. Deriving the cells inside the component instead would
+   * hide all three from the props comparison.
+   */
+  cells: Cell<T, unknown>[];
+  rowProps?: HTMLAttributes<HTMLTableRowElement>;
+  selectionEnabled: boolean;
+  /**
+   * STABLE proxies (see `Table`'s `rowCallbacksRef`) — never the
+   * consumer's raw callback. Every list page hands `<DataTable>` a
+   * fresh arrow on some renders; comparing that identity would drop
+   * the memo on every parent render and this component would buy
+   * nothing.
+   */
+  onRowClick?: (row: Row<T>, e: MouseEvent) => void;
+  onRowAuxClick?: (row: Row<T>, e: MouseEvent) => void;
+  // ── Live table state, SNAPSHOT at parent-render time ──
+  //
+  // Anything the row paints out of the live table state MUST arrive as
+  // a snapshot prop. A `row.getIsSelected()` read inside the body is
+  // invisible to the props comparison: the parent re-renders, the memo
+  // sees identical props, the row keeps its stale paint. That is the
+  // row-highlight-on-select bug the `isSelected` prop on
+  // `ResizableTableRow` was introduced to fix — same rule here, for
+  // selection AND expansion AND last-row position.
+  isSelected: boolean;
+  isExpanded: boolean;
+  canExpand: boolean;
+  /** `row.index === rows.length - 1` — drives the pinned-cell shadow. */
+  isLastRow: boolean;
+  /**
+   * The >8-rows last-row border trim. Derived from the row COUNT,
+   * which nothing else on this row would otherwise carry.
+   */
+  hideBottomBorder: boolean;
+  columnsAfterSelect: ReadonlySet<string>;
+  firstContentColumnId?: string;
+  /**
+   * `!!renderAlignedSubRows`. The sub-rows THEMSELVES stay in the
+   * parent, outside the memo, so an expanded row never freezes a
+   * render closure the consumer has since replaced.
+   */
+  expandable: boolean;
+  enableColumnResizing: boolean;
+  expandLabel: string;
+  collapseLabel: string;
+} & Pick<TableProps<T>, "cellRight" | "tdClassName">;
+
+/**
+ * The standard (non-fixed-layout) table row — memoized.
+ *
+ * `ResizableTableRow` above only ever mounts when
+ * `enableColumnResizing && sizingFrozen`, and column resizing has been
+ * default-off since 2026-06-04. So until this component existed EVERY
+ * production table re-rendered every `<tr>`, every `<td>`, both wrapper
+ * divs and every consumer cell renderer on any ancestor re-render —
+ * across the whole accumulated row set, which load-on-scroll grows
+ * past 400 on the heavy list pages.
+ *
+ * Equality is React's DEFAULT shallow props comparison — deliberately
+ * NOT a hand-written comparator. A bespoke comparator has to be
+ * re-checked every time a prop is added, and renders STALE ROWS when
+ * that check is missed; a stale row is far worse than a slow one. The
+ * invariant this component must hold instead is simpler and local:
+ * **everything the body reads must arrive as a prop**. Reading live
+ * table state (`row.getIsSelected()`, `row.getIsExpanded()`,
+ * `table.getRowModel()`) inside the body reintroduces exactly the
+ * staleness that the comparator can no longer be blamed for.
+ */
+const TableBodyRow = memo(function TableBodyRow<T extends TableRowData>({
+  row,
+  cells,
+  rowProps,
+  selectionEnabled,
+  onRowClick,
+  onRowAuxClick,
+  isSelected,
+  isExpanded,
+  canExpand,
+  isLastRow,
+  hideBottomBorder,
+  columnsAfterSelect,
+  firstContentColumnId,
+  expandable,
+  enableColumnResizing,
+  expandLabel,
+  collapseLabel,
+  cellRight,
+  tdClassName,
+}: TableBodyRowProps<T>) {
+  const { className, ...rest } = rowProps || {};
+
+  return (
+    <tr
+      className={cn(
+        "group/row",
+        // R13-PR13 — the brand-coloured 2-px left edge moved from
+        // row-level to the FIRST non-utility cell in
+        // `tableCellClassName` so it survives the cell's bg-bg-muted
+        // hover paint. Row keeps cursor + colour transition only.
+        //
+        // R13-PR14 — selection-enabled rows also get cursor-pointer
+        // because click toggles selection (see onClick below).
+        (onRowClick || selectionEnabled) &&
+          "cursor-pointer select-none transition-colors duration-150 ease-out",
+        // hacky fix: if there are more than 8 rows, remove the bottom
+        // border from the last row
+        hideBottomBorder && "[&_td]:border-b-0",
+        className,
+      )}
+      // R13-PR14 — single click toggles selection. See
+      // ResizableTableRow above for the full single-vs-double-click
+      // semantics comment.
+      onClick={
+        selectionEnabled
+          ? (e) => {
+              if (isClickOnInteractiveChild(e)) return;
+              row.toggleSelected();
+            }
+          : // Selection off → single click runs the row action
+            // (mirrors ResizableTableRow above).
+            onRowClick
+            ? (e) => {
+                if (isClickOnInteractiveChild(e)) return;
+                onRowClick(row, e);
+              }
+            : undefined
+      }
+      onDoubleClick={
+        selectionEnabled && onRowClick
+          ? (e) => {
+              if (isClickOnInteractiveChild(e)) return;
+              onRowClick(row, e);
+            }
+          : undefined
+      }
+      onAuxClick={
+        onRowAuxClick
+          ? (e) => {
+              if (isClickOnInteractiveChild(e)) return;
+              onRowAuxClick(row, e);
+            }
+          : undefined
+      }
+      data-selected={isSelected}
+      {...rest}
+    >
+      {cells.map((cell) => {
+        const isUtilityColumn = ["select", "menu"].includes(cell.column.id);
+        const isSelectColumn = cell.column.id === "select";
+        const isColumnAfterSelect = columnsAfterSelect.has(cell.column.id);
+        const disableTruncate = !!cell.column.columnDef.meta?.disableTruncate;
+        // Expand chevron rides the first content cell when the row can
+        // expand (renderAlignedSubRows opt-in only).
+        const showExpandChevron =
+          expandable && cell.column.id === firstContentColumnId && canExpand;
+
+        return (
+          <td
+            key={cell.id}
+            className={cn(
+              tableCellClassName(
+                cell.column.id,
+                !!onRowClick,
+                isColumnAfterSelect,
+                cell.column.id === firstContentColumnId,
+              ),
+              "text-content-default group",
+              getCommonPinningClassNames(cell.column, isLastRow),
+              typeof tdClassName === "function"
+                ? tdClassName(cell.column.id, row)
+                : tdClassName,
+            )}
+            style={{
+              minWidth: cell.column.columnDef.minSize,
+              maxWidth: cell.column.columnDef.maxSize,
+              // Utility columns pin min = size = max in their column
+              // def, so `getSize()` is a constant that cannot go stale
+              // behind the memo — which is why the parent's
+              // `getUtilityColumnWidth` (same number, read off the same
+              // Column object) is not threaded through as a prop.
+              width: FIXED_UTILITY_COLUMN_IDS.has(cell.column.id)
+                ? cell.column.getSize()
+                : enableColumnResizing
+                  ? cell.column.columnDef.size
+                  : "auto",
+              ...getCommonPinningStyles(cell.column),
+            }}
+          >
+            {isSelectColumn ? (
+              <div className="absolute inset-0 flex items-center justify-center">
+                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+              </div>
+            ) : (
+              <div
+                className={cn(
+                  "flex items-center",
+                  isUtilityColumn ? "justify-center" : "w-full justify-between",
+                  !isUtilityColumn &&
+                    (disableTruncate
+                      ? "overflow-visible"
+                      : "overflow-hidden truncate"),
+                )}
+              >
+                {showExpandChevron && (
+                  <button
+                    type="button"
+                    aria-label={isExpanded ? collapseLabel : expandLabel}
+                    aria-expanded={isExpanded}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      row.toggleExpanded();
+                    }}
+                    className="mr-1.5 -ml-1 flex size-5 shrink-0 items-center justify-center rounded text-content-muted transition-colors hover:bg-bg-muted hover:text-content-emphasis"
+                  >
+                    <ChevronRight
+                      width={14}
+                      height={14}
+                      className={cn(
+                        "transition-transform duration-150",
+                        isExpanded && "rotate-90",
+                      )}
+                    />
+                  </button>
+                )}
+                <div
+                  className={cn(
+                    disableTruncate ? "whitespace-nowrap" : "truncate",
+                    isUtilityColumn ? "shrink-0" : "min-w-0 shrink grow",
+                    disableTruncate && !isUtilityColumn && "min-w-max shrink-0",
+                  )}
+                >
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </div>
+                {!isUtilityColumn && cellRight?.(cell)}
+              </div>
+            )}
+          </td>
+        );
+      })}
+    </tr>
+  );
+}) as <T extends TableRowData>(props: TableBodyRowProps<T>) => JSX.Element;
+
+export function Table<T extends TableRowData>({
+  data,
+  loading,
+  error,
+  emptyState,
+  cellRight,
+  sortBy,
+  sortOrder,
+  onSortChange,
+  sortableColumns = [],
+  className,
+  containerClassName,
+  scrollWrapperClassName,
+  emptyWrapperClassName,
+  thClassName,
+  tdClassName,
+  table,
+  pagination,
+  paginationAllRowsHref, // to show all rows link in the pagination
+  resourceName,
+  onRowClick,
+  onRowAuxClick,
+  onRowSelectionChange,
+  selectionControls,
+  selectionEnabled: selectionEnabledProp,
+  rowProps,
+  rowCount,
+  children,
+  renderAlignedSubRows,
+  onReachEnd,
+  enableColumnResizing = false,
+}: TableProps<T>) {
+  const t = useTranslations("common");
+  const selectionEnabled = selectionEnabledProp ?? true;
+  const visibleColumns = table.getVisibleLeafColumns();
+  // Memoized on the (TanStack-memoized) visible-column array so the
+  // Set identity is stable across re-renders that did not change the
+  // columns — `TableBodyRow` compares its props shallowly, and a fresh
+  // Set every render would drop every row's memo.
+  const columnsAfterSelect = useMemo(() => {
+    const ids = new Set<string>();
+    for (let i = 1; i < visibleColumns.length; i++) {
+      if (visibleColumns[i - 1].id === "select") {
+        ids.add(visibleColumns[i].id);
+      }
+    }
+    return ids;
+  }, [visibleColumns]);
+  // R13-PR15 — id of the first NON-utility (non-select / non-menu)
+  // column. Carries the brand-edge hover/selected accent on its
+  // cells (CSS `:first-of-type` was the previous lever but it
+  // pointed at the select column once that became default-on).
+  const firstContentColumnId = visibleColumns.find(
+    (c) => !["select", "menu"].includes(c.id),
+  )?.id;
+  const scrollWrapperRef = useRef<HTMLDivElement>(null);
+
+  // ── Stable row-callback proxies ──
+  //
+  // `onRowClick` / `onRowAuxClick` fire from a DOM event, never during
+  // render, so the row does not need the CURRENT closure at render
+  // time — it needs the newest one at CLICK time. Handing the memoized
+  // row a proxy with a permanently stable identity keeps consumer
+  // callback churn (most list pages rebuild these arrows on some
+  // renders) from dropping every row's memo, while the ref guarantees
+  // the call lands on the latest closure. A stale closure is
+  // impossible: a click cannot be dispatched before the commit whose
+  // layout effect refreshed the ref.
+  const rowCallbacksRef = useRef({ onRowClick, onRowAuxClick });
+  useLayoutEffect(() => {
+    rowCallbacksRef.current = { onRowClick, onRowAuxClick };
+  });
+  const stableRowClick = useCallback((row: Row<T>, e: MouseEvent) => {
+    rowCallbacksRef.current.onRowClick?.(row, e);
+  }, []);
+  const stableRowAuxClick = useCallback((row: Row<T>, e: MouseEvent) => {
+    rowCallbacksRef.current.onRowAuxClick?.(row, e);
+  }, []);
+  // Presence still has to be reactive — it drives the clickable
+  // cursor, the single-vs-double-click split and the cell hover
+  // accent — so pass the proxy only when the real callback exists.
+  const rowClickProxy = onRowClick ? stableRowClick : undefined;
+  const rowAuxClickProxy = onRowAuxClick ? stableRowAuxClick : undefined;
+  const expandRowLabel = t("table.expandRow");
+  const collapseRowLabel = t("table.collapseRow");
+
+  // ── Column resizing: measure-then-fix ──
+  //
+  // `table-layout: fixed` (required for precise drag-resize) needs an
+  // explicit width per column, but a uniform default width would
+  // squish every table. So on mount we render ONE auto-layout frame
+  // (no per-column widths → the browser sizes each column to its
+  // content), measure the laid-out header widths, seed them into
+  // TanStack's column-sizing state, then flip to fixed layout. The
+  // result is visually identical to the non-resizable table, but
+  // every column now carries a drag handle and a concrete width the
+  // user can adjust.
+  //
+  // `sizingFrozen` gates the layout mode. `measuredColumnKey` tracks
+  // which visible-column set we last measured — when columns are
+  // shown/hidden the set changes and we re-measure (dropping back to
+  // auto for one frame first). A user drag updates TanStack's sizing
+  // state directly and leaves the key untouched, so resizes persist.
+  const tableElRef = useRef<HTMLTableElement>(null);
+  const [sizingFrozen, setSizingFrozen] = useState(false);
+  const measuredColumnKey = useRef<string | null>(null);
+  const visibleColumnKey = visibleColumns.map((c) => c.id).join("|");
+  const applyFixedLayout = enableColumnResizing && sizingFrozen;
+
+  useLayoutEffect(() => {
+    if (!enableColumnResizing) return;
+    if (measuredColumnKey.current === visibleColumnKey) return;
+    const tableEl = tableElRef.current;
+    if (!tableEl) return;
+    // Column set changed while frozen — drop to auto layout for one
+    // frame so the next pass measures true content widths, not the
+    // currently-pinned fixed widths.
+    if (sizingFrozen) {
+      setSizingFrozen(false);
+      return;
+    }
+    const headerCells = tableEl.querySelectorAll<HTMLTableCellElement>(
+      "thead th[data-column-id]",
+    );
+    if (!headerCells.length) return;
+    const sizing: Record<string, number> = {};
+    headerCells.forEach((th) => {
+      const id = th.dataset.columnId;
+      // Utility columns (select / row-menu / chevron) keep their
+      // explicit column-def widths — skip them so the measured value
+      // doesn't override the fixed affordance width.
+      if (!id || FIXED_UTILITY_COLUMN_IDS.has(id)) return;
+      sizing[id] = Math.round(th.getBoundingClientRect().width);
+    });
+    measuredColumnKey.current = visibleColumnKey;
+    table.setColumnSizing((prev) => ({ ...prev, ...sizing }));
+    setSizingFrozen(true);
+  }, [enableColumnResizing, visibleColumnKey, sizingFrozen, table]);
+
+  // Whole-row clip — clamp the scroll wrapper to a multiple of the
+  // row height so the bottom of the card never cuts a row in half.
+  // Without this, the card height is whatever the flex chain
+  // allocates (= viewport - chrome), which rarely divides evenly by
+  // row height and leaves the last visible row half-shown.
+  //
+  // Strategy: measure the outer card's height (= wrapper's intended
+  // height, set by flex-1 in the chain) and the first row's height,
+  // then set the wrapper's max-height to floor(avail / rowH) * rowH.
+  const bodyRows = table.getRowModel().rows;
+  const numRows = bodyRows.length;
+  const [maxScrollHeight, setMaxScrollHeight] = useState<number | undefined>();
+
+  // The clip pass reads three layout properties back to back — the
+  // first row's height, the allocation ancestor's height, the tbody's
+  // content height — and may then commit state. Running that
+  // synchronously on every row-count change is what made
+  // load-on-scroll stall: appending a batch happens WHILE the scroll
+  // gesture is live, and a layout effect runs after commit and before
+  // paint, so the browser was forced into a full re-layout in the
+  // middle of the gesture.
+  //
+  // So the pass is SCHEDULED onto an animation frame instead. At most
+  // one frame is in flight, which collapses a burst of appends into a
+  // single measurement that runs once layout has already settled
+  // rather than forcing it. The one deliberate exception is the FIRST
+  // pass (see the layout effect below): deferring that one would paint
+  // the card unclipped for a frame and then snap, which is the flicker
+  // the layout effect existed to remove.
+  const clipFrameRef = useRef<number | null>(null);
+  const clipMeasuredRef = useRef(false);
+  const clipObserverRef = useRef<ResizeObserver | null>(null);
+  const clipObservedCardRef = useRef<Element | null>(null);
+  const clipObservedRowRef = useRef<Element | null>(null);
+
+  const measureRowClip = useCallback(() => {
+    clipFrameRef.current = null;
+    const wrapper = scrollWrapperRef.current;
+    const card = wrapper?.parentElement;
+    if (!wrapper || !card) return;
+
+    const tbody = wrapper.querySelector("tbody");
+    const firstRow = tbody?.querySelector("tr") as HTMLElement | null;
+    if (!firstRow) {
+      // Empty state: no rows to clip against. Let CSS take over
+      // (min-h-96 floor on the empty-state container).
+      setMaxScrollHeight(undefined);
+      return;
+    }
+    const rowH = firstRow.offsetHeight;
+    if (rowH <= 0) return; // not yet laid out — wait for next RO tick
+    // A real measurement has landed, so every later pass can be
+    // deferred to a frame without risking a visible correction.
+    clipMeasuredRef.current = true;
+
+    // The viewport allocation lives on an ancestor up the chain
+    // (ListPageShell.Body, which is flex-1 of ListPageShell). Since
+    // the card has no flex-1 anymore, card.clientHeight = card's
+    // natural size (= content). Walk up to the ListPageShell.Body
+    // (the closest ancestor with the data-list-page-shell-body
+    // marker — fall back to the second ancestor if the marker is
+    // absent on a non-shell page).
+    const allocAncestor =
+      (wrapper.closest("[data-list-page-body]") as HTMLElement | null) ??
+      card.parentElement;
+    const availH = allocAncestor?.clientHeight ?? card.clientHeight;
+
+    // ── THE STICKY HEADER IS INSIDE THIS WRAPPER, SO IT COSTS ROWS (#3524) ──
+    //
+    // `maxHeight` is applied to the SCROLL WRAPPER, and that wrapper's content
+    // is `<thead>` followed by `<tbody>`. The header cells are `sticky top-0`,
+    // so the header holds the wrapper's first `headerH` pixels permanently —
+    // they are never available to a row. Dividing the WHOLE allocation by
+    // `rowH` therefore over-counts by exactly one header: the wrapper ends up
+    // `N * rowH` tall with only `N * rowH - headerH` of room for rows, so the
+    // last row is always partly underneath the header.
+    //
+    // That is not a cosmetic half-row. A row covered by the sticky header is
+    // still visible, enabled and stable to a hit test, so a click aimed at it
+    // lands on the `<th>` and NOTHING REPORTS AN ERROR — it retries until it
+    // gives up. For a person it is a row they can read and cannot click.
+    //
+    // It surfaced when #3518 added a panel above the table on `/agents`, which
+    // shrank `availH` enough to move the clipped row onto the one three E2E
+    // specs click. The arithmetic was wrong before that too; the panel only
+    // changed WHICH row paid for it, which is why the fix is here and not on
+    // that page.
+    const thead = wrapper.querySelector("thead") as HTMLElement | null;
+    const headerH = thead?.offsetHeight ?? 0;
+
+    // tbody.scrollHeight is the actual content height (sum of all
+    // rows + any borders/padding). If it fits within the
+    // allocation, no clip — CSS max-h-full naturally caps to
+    // parent and content is shorter than that.
+    //
+    // `+ headerH` for the reason above: the header's pixels are not available
+    // to content, so a table whose ROWS alone just fit would report "no clip"
+    // while the header pushes the last row out with nothing clamping it.
+    const contentH = tbody?.scrollHeight ?? 0;
+    if (contentH + headerH <= availH) {
+      setMaxScrollHeight((prev) => (prev === undefined ? prev : undefined));
+      return;
+    }
+
+    // Content overflows. Clip to the header PLUS whole rows, so the wrapper is
+    // exactly tall enough to show `rowsFit` rows with none of them half-covered.
+    //
+    // A `max(…, 1)` floor keeps one whole row visible even where the allocation
+    // is smaller than the header itself — the honest minimum, and better than a
+    // wrapper that shows a header and nothing else.
+    const rowsFit = Math.max(Math.floor((availH - headerH) / rowH), 1);
+    const newMax = headerH + rowsFit * rowH;
+    setMaxScrollHeight((prev) => (prev === newMax ? prev : newMax));
+  }, []);
+
+  const scheduleRowClip = useCallback(() => {
+    // SSR / bare-Node: measure inline so the clip never silently
+    // stops updating in an environment without a frame loop.
+    if (typeof requestAnimationFrame === "undefined") {
+      measureRowClip();
+      return;
+    }
+    // Already queued for this frame — the pending callback reads the
+    // freshest layout anyway, so a second frame would measure the
+    // same numbers twice.
+    if (clipFrameRef.current !== null) return;
+    clipFrameRef.current = requestAnimationFrame(measureRowClip);
+  }, [measureRowClip]);
+
+  // Teardown is unmount-only. Deliberately NOT the cleanup of the
+  // layout effect below: that effect re-runs on every row-count
+  // change, and disconnecting there is what made an append tear the
+  // observer down and rebuild it around the very same two elements.
+  useEffect(
+    () => () => {
+      clipObserverRef.current?.disconnect();
+      clipObserverRef.current = null;
+      clipObservedCardRef.current = null;
+      clipObservedRowRef.current = null;
+      if (
+        clipFrameRef.current !== null &&
+        typeof cancelAnimationFrame !== "undefined"
+      ) {
+        cancelAnimationFrame(clipFrameRef.current);
+      }
+      clipFrameRef.current = null;
+    },
+    [],
+  );
+
+  useLayoutEffect(() => {
+    const wrapper = scrollWrapperRef.current;
+    const card = wrapper?.parentElement;
+    if (!wrapper || !card) return;
+
+    // The ResizeObserver watches the OUTER CARD (not the wrapper) so
+    // the max-height write below can't loop — the card's size is
+    // fixed by the flex chain above it, independent of the wrapper's
+    // max-height. It is created once and kept: the card's height
+    // changes when the viewport resizes or the chrome above it
+    // changes, and neither of those is a row-count event.
+    let ro = clipObserverRef.current;
+    if (!ro) {
+      ro = new ResizeObserver(scheduleRowClip);
+      clipObserverRef.current = ro;
+    }
+    // Re-register a target only when it is genuinely a DIFFERENT
+    // element. Appending rows replaces neither the card nor the
+    // leading row, so an append re-registers nothing; a filter that
+    // swaps the leading row, or an empty list filling in, does.
+    if (card !== clipObservedCardRef.current) {
+      if (clipObservedCardRef.current) ro.unobserve(clipObservedCardRef.current);
+      ro.observe(card);
+      clipObservedCardRef.current = card;
+    }
+    // The first row's height changes when content reflows, e.g. a
+    // webfont landing.
+    const firstRow = wrapper.querySelector("tbody tr");
+    if (firstRow !== clipObservedRowRef.current) {
+      if (clipObservedRowRef.current) ro.unobserve(clipObservedRowRef.current);
+      if (firstRow) ro.observe(firstRow);
+      clipObservedRowRef.current = firstRow;
+    }
+
+    if (clipMeasuredRef.current) {
+      scheduleRowClip();
+    } else {
+      // First real pass stays synchronous — see the note above.
+      measureRowClip();
+    }
+  }, [numRows, scheduleRowClip, measureRowClip]);
+
+  const utilityColumnWidths = new Map(
+    visibleColumns.map((column) => [column.id, column.getSize()]),
+  );
+  const getUtilityColumnWidth = (columnId: string, fallback: number) =>
+    utilityColumnWidths.get(columnId) ?? fallback;
+
+  const As = paginationAllRowsHref ? Link : "span";
+
+  return (
+    <div
+      className={cn(
+        "border-border-subtle bg-bg-default relative z-0 rounded-lg border",
+        containerClassName,
+      )}
+    >
+      {(!error && !!data?.length) || loading ? (
+        <>
+          {/* Selection Toolbar Overlay.
+              z-30 (was z-10) so it sits ABOVE the sticky thead
+              (z-20). When rows are selected the toolbar covers the
+              top of the card; the sticky thead would otherwise
+              render on top of it because of source order + the
+              earlier z-20 bump. */}
+          {selectionEnabled && (
+            <SelectionToolbar
+              table={table}
+              controls={selectionControls}
+              className="absolute left-0 top-0 z-30 rounded-t-[inherit]"
+            />
+          )}
+          <div
+            ref={scrollWrapperRef}
+            // axe AA — `scrollable-region-focusable`: scrollable
+            // regions (containers with `overflow: auto/scroll` and
+            // content that exceeds the viewport) MUST be reachable
+            // by keyboard. `tabIndex=0` makes the wrapper part of
+            // the tab order so a keyboard-only user can focus it
+            // and use ↑↓ / PgUp/PgDn to scroll. The complementary
+            // `role="region"` + `aria-label` give assistive tech a
+            // meaningful announce-name for the table viewport.
+            tabIndex={0}
+            role="region"
+            aria-label={t("table.tableContents")}
+            className={cn(
+              "relative overflow-x-auto rounded-[inherit]",
+              // B6 (2026-06-07): the 400px floor is for the EMPTY state only
+              // (room for the "no rows" message). A POPULATED non-fillBody
+              // sub-table — e.g. a detail-page Tasks tab with a single task —
+              // sizes to content; the floor was leaving ~320px of empty,
+              // grid-less space below the row(s). fillBody list tables clamp
+              // to the viewport via their own md:min-h-0 / max-h-full and are
+              // unaffected (their rows are > 0 anyway when populated).
+              numRows === 0 && "min-h-[400px]",
+              // A SOLID ring. It was the accent at /40, which measured
+              // ~1.7:1 on a light card and ~2.2:1 on a dark one, under WCAG
+              // 1.4.11's 3:1 for a focus indicator; solid is 4.18:1 / 7.26:1.
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-default)]",
+              // NO scroll-snap here. Every row used to be a `snap-start`
+              // point inside a `snap-y snap-proximity` container — snap
+              // targets ~37px apart, which the browser re-evaluates
+              // continuously through a momentum scroll, so the list
+              // grabbed and settled instead of scrolling freely. The
+              // `scroll-pt-[37px]` padding did not match the real sticky
+              // header height either (py-2.5 + leading-6 + border-b is
+              // ~45px), so a snapped row landed ~8px UNDER the header —
+              // the alignment the snap existed to provide.
+              //
+              // Whole-row alignment is already handled, and handled
+              // correctly, by the max-height clip below: the wrapper is
+              // clamped to floor(avail / rowH) * rowH so the card never
+              // cuts a row in half at its bottom edge.
+              //
+              // `overscroll-contain` stops a wheel gesture that reaches
+              // either end from chaining out to AppShell's own
+              // `md:overflow-y-auto` content div.
+              "overscroll-contain",
+              // SCROLL PADDING FOR THE STICKY HEADER (#3524).
+              //
+              // Without it, anything that scrolls a row into view parks that row
+              // flush against this container's top edge — which is UNDER the
+              // `sticky top-0 z-20` header cells. The header then takes the
+              // click, and because the row is genuinely visible, enabled and
+              // stable, nothing reports an error: the click just retries until it
+              // gives up. Playwright named the intercepting `<th>` 373 times in
+              // one attempt before timing out at 180s.
+              //
+              // THIS IS THE SECOND OF TWO FIXES, AND IT WAS NOT THE CAUSE. The
+              // cause was in `measureRowClip` above, which sized this very
+              // container to `wholeRows * rowH` while the sticky header held its
+              // first `headerH` pixels — so its RESTING state always left one row
+              // partly under the header, with no scrolling involved. That is
+              // fixed there. This declaration covers the other way a row gets
+              // under the header: a scroll-into-view, from keyboard navigation,
+              // an anchor target or a programmatic click. Both are real; shipping
+              // only this one left the three agent E2E specs failing, which is
+              // how the clip arithmetic was found.
+              //
+              // THE HEADER IS 37px, NOT THE ~45px THE COMMENT ABOVE SAYS. That
+              // figure is the CELL height and the two differ, which is worth
+              // spelling out because the arithmetic is not local to either:
+              //
+              //   `cn` is `twMerge(clsx(...))`. The th composes the shared cell
+              //   base (`py-2.5 text-left text-sm leading-6 …`) and then adds
+              //   `text-xs`. Tailwind's `text-*` utilities set line-height as
+              //   well as font-size, so tailwind-merge DROPS the earlier
+              //   `leading-6`. The merged class carries no leading utility at
+              //   all — verified against the rendered `<th>` in the E2E log,
+              //   which matches character for character — so the line box is
+              //   text-xs's 16px:
+              //
+              //     py-2.5 (20px) + 16px + border-b (1px) = 37px
+              //
+              // Which means the long-removed `scroll-pt-[37px]` was RIGHT for
+              // this header, and the note above calling it "8px short" was
+              // measuring the cell. The bug was never a wrong value; it was the
+              // value being deleted along with the scroll-snap it happened to
+              // sit beside, for a purpose that had nothing to do with snapping.
+              //
+              // 45px IS DELIBERATE SLACK, not a recomputation: 37px of header
+              // plus 8px. A scrolled row sitting 8px below the header costs
+              // nothing visually, and it means a one-off border or rounding
+              // change cannot reintroduce a click-eating overlap in production
+              // before CI says so. `datatable-row-height-uniform` resolves the
+              // real height with `twMerge` and asserts this clears it, so the
+              // floor is enforced rather than assumed.
+              //
+              // Why the CONTAINER and not `scroll-mt` on each row: this covers
+              // every scroll-into-view in the region — keyboard navigation and
+              // anchor targets as well as a programmatic click — in one
+              // declaration rather than one per row.
+              "scroll-pt-[45px]",
+              scrollWrapperClassName,
+            )}
+            // maxHeight clamps the wrapper to a whole number of rows
+            // (see whole-row-clip useEffect above). Inline style so
+            // it overrides Tailwind's md:flex-1 from fillBody.
+            style={
+              maxScrollHeight !== undefined
+                ? { maxHeight: maxScrollHeight }
+                : undefined
+            }
+          >
+            <table
+              ref={tableElRef}
+              className={cn(
+                [
+                  // No `transition-[border-spacing,margin-top]` here. Neither
+                  // property ever changes on this element — `border-spacing`
+                  // is pinned to 0, and the only `-mt-` in the file is on the
+                  // pagination footer, not the table — so the transition never
+                  // ran. All it did was mark the table as animatable on
+                  // properties whose change invalidates the whole table layout.
+                  "group/table w-full border-separate border-spacing-0",
+                  "[&_tr>*:first-child]:border-l-transparent",
+                  "[&_tr>*:last-child]:border-r-transparent",
+                  "[&_tr>*:last-child]:border-r-transparent",
+                  // Header cells are `sticky top-0` for the
+                  // viewport-clamped scroll layout. A blanket
+                  // `[&_th]:relative` here would beat the per-th
+                  // `sticky` class via selector specificity (the
+                  // descendant selector outweighs the bare class
+                  // selector). Use select-none only.
+                  "[&_th]:select-none",
+                  enableColumnResizing && "[&_th]:group/resize",
+                ],
+                className,
+              )}
+              // Exposes measure-then-fix: a cell can hold a default width
+              // cap while the columns are measured ("auto") and fill its
+              // column once they are fixed (the Evidence title does).
+              data-layout={applyFixedLayout ? "fixed" : "auto"}
+              style={{
+                width: "100%",
+                tableLayout: applyFixedLayout ? "fixed" : "auto",
+                // Always clamp the table to its container width. Fixed
+                // layout previously set `minWidth = Σ column sizes`,
+                // which on a table whose seeded/resized column widths
+                // summed wider than the viewport forced a horizontal
+                // scrollbar on the wrapper — visible on most tables.
+                // Pinning minWidth to 100% keeps the table inside the
+                // card: columns redistribute within the visible width
+                // (fixed layout still honours each column's relative
+                // width, and the resize handles still work — dragging
+                // re-proportions columns instead of growing the table
+                // off-screen). Cell content truncates per the
+                // per-cell `truncate`, so nothing overflows sideways.
+                minWidth: "100%",
+              }}
+            >
+              <thead className="relative">
+                {table.getHeaderGroups().map((headerGroup) => (
+                  <tr key={headerGroup.id}>
+                    {headerGroup.headers.map((header) => {
+                      const isSortableColumn = sortableColumns.includes(
+                        header.column.id,
+                      );
+                      const ButtonOrDiv = isSortableColumn ? "button" : "div";
+                      const isColumnAfterSelect = columnsAfterSelect.has(
+                        header.column.id,
+                      );
+
+                      return (
+                        <th
+                          // WCAG 2.1 SP 2.5.3 (Label in Name). The sort
+                          // button's visible text IS the column name, so it
+                          // must not carry an `aria-label` naming something
+                          // else: `t("table.sortByColumn")` was the constant
+                          // "Sort by column" on EVERY sortable header, which
+                          // meant a speech-input user looking at "Status"
+                          // could say "click Status" and reach nothing, and
+                          // every column answered to the same name. Removing
+                          // it lets the accessible name fall back to the
+                          // content, which is the column name — the label was
+                          // worse than none.
+                          //
+                          // `aria-sort` is what carries the state the label
+                          // used to imply, and carries it better: it names the
+                          // DIRECTION, which the old constant never did.
+                          aria-sort={
+                            isSortableColumn
+                              ? sortBy === header.column.id
+                                ? sortOrder === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : "none"
+                              : undefined
+                          }
+                          key={header.id}
+                          colSpan={header.colSpan}
+                          data-column-id={header.column.id}
+                          className={cn(
+                            tableCellClassName(
+                              header.column.id,
+                              false,
+                              isColumnAfterSelect,
+                            ),
+                            // Sticky header — keeps the column titles
+                            // visible while rows scroll inside the
+                            // card. Use `bg-bg-muted` (solid) not
+                            // `bg-bg-subtle` (rgba 7% alpha) so
+                            // scrolling rows don't bleed through.
+                            // z-20 sits above row cells (z-10 below
+                            // for the first-row sticky) and above
+                            // the pinned-column z-index.
+                            "sticky top-0 z-20 group/th",
+                            "text-xs font-semibold text-content-muted uppercase tracking-wider bg-bg-muted select-none",
+                            getCommonPinningClassNames(
+                              header.column,
+                              !table.getRowModel().rows.length,
+                            ),
+                            typeof thClassName === "function"
+                              ? thClassName(header.column.id)
+                              : thClassName,
+                            enableColumnResizing && "relative",
+                          )}
+                          style={{
+                            width: FIXED_UTILITY_COLUMN_IDS.has(
+                              header.column.id,
+                            )
+                              ? getUtilityColumnWidth(
+                                  header.column.id,
+                                  header.getSize(),
+                                )
+                              : applyFixedLayout
+                                ? header.getSize()
+                                : undefined,
+                            ...getCommonPinningStyles(header.column),
+                          }}
+                        >
+                          <div
+                            className={cn(
+                              header.column.id === "select"
+                                ? "absolute inset-0 flex items-center justify-center"
+                                : "flex items-center justify-between gap-section !pr-0",
+                            )}
+                          >
+                            <ButtonOrDiv
+                              className={cn(
+                                header.column.id === "select"
+                                  ? "flex size-full items-center justify-center"
+                                  : "flex items-center gap-tight",
+                                // PR-7 — keyboard-focus ring on
+                                // sortable column headers. Without
+                                // this, Tab through the table header
+                                // produced no visible focus state;
+                                // sort columns were dead-zones for
+                                // keyboard users.
+                                isSortableColumn &&
+                                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:rounded-sm",
+                              )}
+                              {...(isSortableColumn && {
+                                type: "button",
+                                disabled: !isSortableColumn,
+                                onClick: () =>
+                                  onSortChange?.({
+                                    sortBy: header.column.id,
+                                    sortOrder:
+                                      sortBy !== header.column.id
+                                        ? "desc"
+                                        : sortOrder === "asc"
+                                          ? "desc"
+                                          : "asc",
+                                  }),
+                              })}
+                            >
+                              {header.isPlaceholder
+                                ? null
+                                : (() => {
+                                    const headerContent = flexRender(
+                                      header.column.columnDef.header,
+                                      header.getContext(),
+                                    );
+                                    const headerTooltip =
+                                      header.column.columnDef.meta?.headerTooltip;
+
+                                    return (
+                                      <HeaderWithTooltip
+                                        tooltip={headerTooltip}
+                                      >
+                                        {headerContent}
+                                      </HeaderWithTooltip>
+                                    );
+                                  })()}
+                              {isSortableColumn && (
+                                <SortOrder
+                                  className={cn(
+                                    "h-3 w-3 shrink-0 transition-opacity",
+                                    sortBy === header.column.id
+                                      ? "opacity-100"
+                                      : "opacity-30 group-hover/th:opacity-60",
+                                  )}
+                                  order={
+                                    sortBy === header.column.id
+                                      ? sortOrder || "desc"
+                                      : null
+                                  }
+                                />
+                              )}
+                            </ButtonOrDiv>
+                          </div>
+                          {enableColumnResizing &&
+                            header.column.getCanResize() &&
+                            !["select", "menu"].includes(header.column.id) && (
+                              <div
+                                onMouseDown={header.getResizeHandler()}
+                                onTouchStart={header.getResizeHandler()}
+                                onClick={(e) => e.stopPropagation()}
+                                className={resizingClassName}
+                              />
+                            )}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </thead>
+              <tbody>
+                {bodyRows.map((row) => {
+                  const props =
+                    typeof rowProps === "function" ? rowProps(row) : rowProps;
+
+                  if (applyFixedLayout) {
+                    return (
+                      <ResizableTableRow
+                        key={`${row.id}-${table
+                          .getVisibleLeafColumns()
+                          .map((col) => col.id)
+                          .join(",")}`}
+                        row={row}
+                        onRowClick={rowClickProxy}
+                        onRowAuxClick={rowAuxClickProxy}
+                        rowProps={props}
+                        cellRight={cellRight}
+                        tdClassName={tdClassName}
+                        table={table}
+                        selectionEnabled={selectionEnabled}
+                        isSelected={row.getIsSelected()}
+                      />
+                    );
+                  }
+
+                  const isLastRow = row.index === bodyRows.length - 1;
+
+                  return (
+                    <Fragment key={row.id}>
+                      {/* Every live-state read the row paints with is
+                          snapshotted HERE, at parent-render time. The
+                          memo compares props shallowly; a read moved
+                          inside the row would go stale silently. */}
+                      <TableBodyRow
+                        row={row}
+                        cells={row.getVisibleCells()}
+                        rowProps={props}
+                        selectionEnabled={selectionEnabled}
+                        onRowClick={rowClickProxy}
+                        onRowAuxClick={rowAuxClickProxy}
+                        isSelected={row.getIsSelected()}
+                        isExpanded={row.getIsExpanded()}
+                        canExpand={row.getCanExpand()}
+                        isLastRow={isLastRow}
+                        hideBottomBorder={bodyRows.length > 8 && isLastRow}
+                        columnsAfterSelect={columnsAfterSelect}
+                        firstContentColumnId={firstContentColumnId}
+                        expandable={!!renderAlignedSubRows}
+                        enableColumnResizing={enableColumnResizing}
+                        expandLabel={expandRowLabel}
+                        collapseLabel={collapseRowLabel}
+                        cellRight={cellRight}
+                        tdClassName={tdClassName}
+                      />
+                      {/* Aligned expandable sub-rows — real <tr>/<td> rows
+                          rendered as direct <tbody> siblings so their cells align
+                          with the parent COLUMNS (the consumer renders one <td>
+                          per visible column id). Deliberately OUTSIDE the memo:
+                          `renderAlignedSubRows` is a render closure the consumer
+                          rebuilds freely, so freezing it behind a props
+                          comparison would paint stale sub-rows. */}
+                      {renderAlignedSubRows &&
+                        row.getIsExpanded() &&
+                        renderAlignedSubRows(
+                          row,
+                          row.getVisibleCells().map((c) => c.column.id),
+                        )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+            {children}
+            {/* Load-on-scroll sentinel — lives inside the scroll
+                wrapper so the fillBody inner-scroll clip gates it to
+                the table-body bottom. Rendered only while the consumer
+                says there is more (onReachEnd defined). */}
+            {onReachEnd && (
+              <InfiniteScrollSentinel
+                onReachEnd={onReachEnd}
+                testId="table-infinite-scroll-sentinel"
+              />
+            )}
+          </div>
+        </>
+      ) : (
+        <div
+          className={cn(
+            // flex-1 + min-h-48: in fillBody mode flex-1 fills the card
+            // so the message is vertically centred in the WHOLE card.
+            // The floor is min-h-48 (192px), NOT min-h-96 (384px) — item
+            // 35: a row-less sub-table inside a detail-page tab is
+            // non-fillBody, so flex-1 has no space to fill and the floor
+            // is its entire height. 384px reserved a huge empty block for
+            // a small panel; 192px is a proportionate empty state.
+            // fillBody (full-page) tables are unaffected: flex-1 still
+            // grows past the floor. text-center handles multi-line
+            // empty messages.
+            "text-content-muted flex flex-1 min-h-48 w-full items-center justify-center text-center text-sm",
+            emptyWrapperClassName,
+          )}
+        >
+          {/* PR-8 — error fallback now renders as <ErrorState> when no
+              custom empty/error JSX is supplied. The previous plain-
+              text rendering meant a failed fetch surfaced as a tiny
+              muted line; users had to guess that the page was broken
+              vs. genuinely empty. With <ErrorState> the failure has
+              an alert role + icon + clear messaging. emptyState (if
+              passed) still wins so consumers can render their own
+              shape. */}
+          {error ? (
+            typeof error === "string" ? (
+              <ErrorState description={error} />
+            ) : (
+              error
+            )
+          ) : (
+            emptyState || t("table.emptyFallback", { items: resourceName?.(true) || t("table.items") })
+          )}
+        </div>
+      )}
+      {pagination && !error && !!data?.length && !!rowCount && (
+        <div className="border-border-subtle bg-bg-default text-content-default sticky bottom-0 z-10 mx-auto -mt-px flex w-full max-w-full items-center justify-between rounded-b-[inherit] border-t px-4 py-3.5 text-sm leading-6 before:pointer-events-none before:absolute before:bottom-full before:left-0 before:right-0 before:h-6 before:bg-gradient-to-t before:from-bg-default before:to-transparent">
+          <div>
+            <span className="hidden sm:inline-block">{t("table.viewing")}</span>{" "}
+            <span className="font-medium">
+              {(
+                (pagination.pageIndex - 1) * pagination.pageSize +
+                1
+              ).toLocaleString()}
+              -
+              {Math.min(
+                (pagination.pageIndex - 1) * pagination.pageSize +
+                  pagination.pageSize,
+                table.getRowCount(),
+              ).toLocaleString()}
+            </span>{" "}
+            {t("table.of")}{" "}
+            <As href={paginationAllRowsHref ?? "#"} className="font-medium">
+              {table.getRowCount().toLocaleString()}{" "}
+              {resourceName?.(table.getRowCount() !== 1) || t("table.items")}
+            </As>
+          </div>
+          <div className="flex items-center gap-tight">
+            <Button
+              variant="secondary"
+              text={t("table.previous")}
+              className="h-7 px-2"
+              onClick={() => table.previousPage()}
+              // disabled={!table.getCanPreviousPage()}
+              disabled={pagination.pageIndex === 1}
+            />
+            <Button
+              variant="secondary"
+              text={t("table.next")}
+              className="h-7 px-2"
+              onClick={() => table.nextPage()}
+              // disabled={!table.getCanNextPage()}
+              disabled={pagination.pageIndex === table.getPageCount()}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Loading overlay */}
+      <AnimatePresence>
+        {loading && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="bg-bg-page/70 absolute inset-0 h-full rounded-lg"
+          >
+            {/* here we're using min(75%,75vh) to ensure proper placement on full height vs partial height tables */}
+            <div className="flex h-[min(75%,75vh)] w-full items-center justify-center">
+              <LoadingSpinner />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+const getCommonPinningClassNames = <TData extends TableRowData,>(
+  column: Column<TData>,
+  isLastRow: boolean,
+): string => {
+  const isPinned = column.getIsPinned();
+  return cn(
+    isPinned && "bg-bg-default py-0",
+    isPinned &&
+      !isLastRow &&
+      "animate-table-pinned-shadow [animation-timeline:scroll(inline)]",
+  );
+};
+
+const getCommonPinningStyles = <TData extends TableRowData,>(
+  column: Column<TData>,
+): CSSProperties => {
+  const isPinned = column.getIsPinned();
+
+  return {
+    // `start` / `end` are v9's LOGICAL pin regions; the CSS properties are
+    // physical. LTR-only product, so start → left and end → right.
+    left: isPinned === "start" ? `${column.getStart("start")}px` : undefined,
+    right: isPinned === "end" ? `${column.getAfter("end")}px` : undefined,
+    // Pinned columns need `position: sticky` for horizontal pinning.
+    // Non-pinned cells: omit the inline position so the className
+    // wins — `sticky top-0` on thead cells stays effective. Setting
+    // `position: relative` here would override the className and
+    // break the sticky table header.
+    position: isPinned ? "sticky" : undefined,
+  };
+};
+
+// Component to wrap header content with optional tooltip
+function HeaderWithTooltip({
+  children,
+  tooltip,
+}: {
+  children: ReactNode;
+  tooltip?: string;
+}) {
+  if (!tooltip) {
+    return <>{children}</>;
+  }
+
+  return (
+    <Tooltip content={tooltip}>
+      <span className="cursor-help underline decoration-dotted underline-offset-2">
+        {children}
+      </span>
+    </Tooltip>
+  );
+}

@@ -164,21 +164,36 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    maps' "noUncheckedIndexedAccess fix" edits are no longer needed; and the owner added the
    Unlicense to the allowlist (ADR 0007 E6, 2026-11-19) for visx's `robust-predicates`.
    Add the new `Shared UI` check to the `main` ruleset.
-4. **1.2 part B (the GENERIC `src/components/ui` files).** Follow `docs/porting/maps/1.2.md`:
-   109 files, 14 MIXED files that come along, a second manifest for Islestone-owned
-   files, and a 10-batch copy order. Per ADR 0001 D4, the `PROVENANCE.md` row of each
-   copied file the Dub measurement links to Dub (at least 50% shared lines,
-   `docs/porting/licence/dub-overlap.py`) names that Dub origin, and `NOTICE`'s Dub entry
-   covers it. Those files are 17 non-icon files (`animated-size-container.tsx`,
-   `charts/funnel-chart.tsx`, `combobox/index.tsx`, `date-picker/shared.ts`,
-   `date-picker/types.ts`, `filter/filter-list.tsx`, `filter/filter-range-panel.tsx`,
-   `filter/filter-range-utils.ts`, `filter/filter-scroll.tsx`, `filter/filter-select.tsx`,
-   `filter/types.ts`, `form.tsx`, `label.tsx`, `number-stepper.tsx`, `slider.tsx`,
-   `table/types.ts`, `table/use-table-pagination.tsx`) and 7 icons
-   (`icons/dub-analytics.tsx`, `dub-api.tsx`, `dub-crafted-shield.tsx`, `dub-links.tsx`,
-   `dub-product-icon.tsx`, `icon-type.ts`, `plan-feature-icons.tsx`), all under
-   `src/components/ui/`. The 1.2 map skips some of them (`form.tsx` and the `dub-*`
-   icons, for example); only those it copies need the row.
+4. **1.2 part B (the GENERIC `src/components/ui` files).** Done, on branch `wt/partb`
+   (not pushed). Following `docs/porting/maps/1.2.md` B0 to B12:
+   - 130 code files copied to inflect's paths under `src/`: 127 byte-identical
+     mirrors (the 106 GENERIC files the map copies, the 14 required MIXED files,
+     `radio-group.tsx`, `format-bytes.ts`, `text-utils.ts`, `filters/filter-presets.ts`,
+     the two MIXED `hooks/__tests__` tests, and `src/types/tanstack-table.d.ts`, which
+     the map missed) and 3 forks (the `charts/index.ts` and `icons/index.tsx` stubs,
+     and `ui-storage.ts` with `UI_STORAGE_PREFIX = 'islestone'`). The map's optional
+     MIXED files, `dashboard-widgets/{index,types,TargetLine}` and everything SKIP or
+     COUPLED are not taken.
+   - The second manifest is `ui-mirror.json`, checked by `scripts/ui-mirror.mjs`
+     (`verify`, `audit`, `compare`, `pin`) in CI's `Shared UI` job
+     (`docs/porting/shared-ui.md`, "Part B").
+   - `src/styles/tokens.css` (the 47 contract tokens and the section 6.1 extras, light
+     and dark), the Tailwind theme keys as `@theme` in `src/app/globals.css` with the
+     section 6.4 recipes, next-intl with the section 6.6 keys in `messages/en.json`,
+     the jsdom Jest settings of section 5.1, the two Radix overrides, and the section 4
+     dependencies at the map's versions (all on the licence allowlist).
+   - 111 tests copied under `tests/`: 102 from section 5.2 (one, `modal-fly-in`,
+     repointed from `tailwind.config.js` to `globals.css`) and 9 from 5.3 with their edits.
+   - `/gallery` renders the main primitives in both themes, with a rendered test and a
+     Playwright smoke test.
+   - `PROVENANCE.md` ("Copied: generic UI") lists every copied file and names the Dub
+     origin of the 14 the measurement links to Dub (13 primitives and `icons/icon-type.ts`;
+     the other files step 4 named, `charts/funnel-chart.tsx`, `form.tsx`,
+     `number-stepper.tsx`, `slider.tsx` and the `dub-*` and `plan-feature-icons` icons,
+     are not copied). `NOTICE`'s Dub entry now covers `src/components/ui`.
+   Open for the owner: Islestone's brand palette (the tokens are an unbranded
+   placeholder), and whether the theme should follow the OS colour scheme before the
+   1.7 theme provider. Add the `Shared UI` check to the `main` ruleset if not yet done.
 5. **Ports 1.3–1.7, then 2.1–2.3, 5.1, 6.1 and 6.2.** Follow their maps in
    `docs/porting/maps/`. Each map gives the files, what to cut, the npm packages and the
    tests that come along, and the copy order. Every copied file gets a `PROVENANCE.md` row

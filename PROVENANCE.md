@@ -22,7 +22,7 @@ inflect-compliance is licensed under the Business Source License 1.1, and Inflec
 - licence notices the copied material carries are kept, such as a package's `"license": "BUSL-1.1"` field or a bundled notice;
 - third-party material inside the copied code brings its notice into [`NOTICE`](NOTICE) in the same change.
 
-The first copied code is `@inflect/ui`, listed file by file under "Copied: `@inflect/ui`" below. The rows under "Adopted" that name inflect-compliance are pattern only: those components were written fresh while the interim rule applied, and they stay as written.
+The first copied code is `@inflect/ui`, listed file by file under "Copied: `@inflect/ui`" below; the generic UI files copied into `src/` follow, under "Copied: generic UI". The rows under "Adopted" that name inflect-compliance are pattern only: those components were written fresh while the interim rule applied, and they stay as written.
 
 All inflect-compliance rows were read in the sibling checkout at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e` (2026-11-17, "chore(release): 3.404.0"), remote `github.com/RodnaPamet/inflect-compliance`.
 
@@ -438,6 +438,295 @@ The whole of inflect-compliance's `packages/ui`, copied byte for byte. These fac
 | `packages/ui/src/lib/number-format.ts` | — |
 | `packages/ui/tokens.contract.css` | — |
 | `packages/ui/tsconfig.json` | — |
+
+</details>
+
+## Copied: generic UI (sub-phase 1.2, part B)
+
+The generic files under inflect-compliance's `src/components/ui` and `src/lib/hooks`, with the files they need to compile, copied to the same paths under Islestone's `src/` ([`docs/porting/maps/1.2.md`](docs/porting/maps/1.2.md), sections 1, 2 and 8). These facts hold for every row below:
+
+- **Source:** inflect-compliance at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`, the path named in each row (for the first two tables, the same path as in Islestone).
+- **Licence:** BUSL-1.1, licensor Inflect Ltd. Copying is allowed by [ADR 0001](docs/adr/0001-code-provenance-and-licences.md) decision D1.
+- **Third-party origin:** as for `@inflect/ui` above, a file is marked Dub-derived when `docs/porting/licence/dub-overlap.py` finds at least 50% of its normalised lines in Dub's `packages/ui` or `packages/utils` at `6b463b4bdd9ed2fd9aa416f67b5b77d317b1471e`; 14 of the copied files are (13 primitives and `icons/icon-type.ts`). They are taken as they are, with the licence risk accepted (ADR 0001 D4); [`NOTICE`](NOTICE) carries Dub's attribution. The `dub-*` icons, `plan-feature-icons.tsx`, `form.tsx`, `number-stepper.tsx`, `slider.tsx` and `charts/funnel-chart.tsx`, which the measurement also links to Dub, are not copied.
+- **Mirror:** [`ui-mirror.json`](ui-mirror.json) records the sha256 of each "mirror" file. `node scripts/ui-mirror.mjs verify` fails on an edit, a missing file, or an unlisted file under `src/components/ui` or `src/lib/hooks`; `audit` fails unless every hash equals the upstream file at the commit. A "fork" is listed there as Islestone-owned. Two upstream files under the roots are excluded on purpose: `src/components/ui/filter/GUIDE.md` and `src/components/ui/table/GUIDE.md` (inflect's contributor guides).
+- **Not taken:** `dashboard-widgets/index.ts` (CUT), `dashboard-widgets/TargetLine.tsx` and `dashboard-widgets/types.ts` (sub-phase 3.6), and every MIXED file the map marks optional or SKIP, and every COUPLED file.
+- **Not in the map:** `src/types/tanstack-table.d.ts`, the `ColumnMeta` augmentation `table/table.tsx` needs to compile (`disableTruncate`, `headerTooltip`), is copied byte for byte and mirrored too.
+
+<details>
+<summary>The 130 copied code files: 127 mirrored, 3 forked</summary>
+
+| File | Kind | Third-party origin | Changes |
+|---|---|---|---|
+| `src/components/ui/ActionCluster.tsx` | mirror | — | None |
+| `src/components/ui/FileDropzone.tsx` | mirror | — | None |
+| `src/components/ui/TabSection.tsx` | mirror | — | None |
+| `src/components/ui/TrendCard.tsx` | mirror | — | None |
+| `src/components/ui/accordion.tsx` | mirror | — | None |
+| `src/components/ui/animated-number.tsx` | mirror | — | None |
+| `src/components/ui/animated-size-container.tsx` | mirror | Dub-derived: 100% shared lines with Dub `packages/ui/src/animated-size-container.tsx` (AGPL-3.0) | None |
+| `src/components/ui/breadcrumbs.tsx` | mirror | — | None |
+| `src/components/ui/button-like-keys.ts` | mirror | — | None |
+| `src/components/ui/button-variants.ts` | mirror | — | None |
+| `src/components/ui/button.tsx` | mirror | — | None |
+| `src/components/ui/card-list/card-list-card.tsx` | mirror | — | None |
+| `src/components/ui/card-list/card-list.tsx` | mirror | — | None |
+| `src/components/ui/card-list/index.ts` | mirror | — | None |
+| `src/components/ui/card-variants.ts` | mirror | — | None |
+| `src/components/ui/card.tsx` | mirror | — | None |
+| `src/components/ui/checkbox.tsx` | mirror | — | None |
+| `src/components/ui/checklist-gear-button.tsx` | mirror | — | None |
+| `src/components/ui/checklist-order.ts` | mirror | — | None |
+| `src/components/ui/combobox/index.tsx` | mirror | Dub-derived: 53% shared lines with Dub `packages/ui/src/combobox/index.tsx` (AGPL-3.0) | None |
+| `src/components/ui/combobox/messages.ts` | mirror | — | None |
+| `src/components/ui/combobox/virtualized-options.tsx` | mirror | — | None |
+| `src/components/ui/confirm-dialog.tsx` | mirror | — | None |
+| `src/components/ui/control-variants.ts` | mirror | — | None |
+| `src/components/ui/copy-button.tsx` | mirror | — | None |
+| `src/components/ui/dashboard-widgets/DashboardGrid.tsx` | mirror | — | None |
+| `src/components/ui/dashboard-widgets/DashboardWidget.tsx` | mirror | — | None |
+| `src/components/ui/date-picker/calendar.tsx` | mirror | — | None |
+| `src/components/ui/date-picker/date-picker.tsx` | mirror | — | None |
+| `src/components/ui/date-picker/date-range-picker.tsx` | mirror | — | None |
+| `src/components/ui/date-picker/date-utils.ts` | mirror | — | None |
+| `src/components/ui/date-picker/index.ts` | mirror | — | None |
+| `src/components/ui/date-picker/presets-catalogue.ts` | mirror | — | None |
+| `src/components/ui/date-picker/presets.tsx` | mirror | — | None |
+| `src/components/ui/date-picker/shared.ts` | mirror | Dub-derived: 100% shared lines with Dub `packages/ui/src/date-picker/shared.ts` (AGPL-3.0) | None |
+| `src/components/ui/date-picker/trigger.tsx` | mirror | — | None |
+| `src/components/ui/date-picker/types.ts` | mirror | Dub-derived: 53% shared lines with Dub `packages/ui/src/date-picker/types.ts` (AGPL-3.0) | None |
+| `src/components/ui/date-picker/week-start.ts` | mirror | — | None |
+| `src/components/ui/empty-state.tsx` | mirror | — | None |
+| `src/components/ui/error-state.tsx` | mirror | — | None |
+| `src/components/ui/field-group.tsx` | mirror | — | None |
+| `src/components/ui/file-icon-resolver.ts` | mirror | — | None |
+| `src/components/ui/file-type-icon.tsx` | mirror | — | None |
+| `src/components/ui/filter/edit-filters-button.tsx` | mirror | — | None |
+| `src/components/ui/filter/filter-context.tsx` | mirror | — | None |
+| `src/components/ui/filter/filter-definitions.ts` | mirror | — | None |
+| `src/components/ui/filter/filter-list.tsx` | mirror | Dub-derived: 85% shared lines with Dub `packages/ui/src/filter/filter-list.tsx` (AGPL-3.0) | None |
+| `src/components/ui/filter/filter-range-panel.tsx` | mirror | Dub-derived: 90% shared lines with Dub `packages/ui/src/filter/filter-range-panel.tsx` (AGPL-3.0) | None |
+| `src/components/ui/filter/filter-range-utils.ts` | mirror | Dub-derived: 86% shared lines with Dub `packages/ui/src/filter/filter-range-panel.tsx` (AGPL-3.0) | None |
+| `src/components/ui/filter/filter-scroll.tsx` | mirror | Dub-derived: 96% shared lines with Dub `packages/ui/src/filter/filter-scroll.tsx` (AGPL-3.0) | None |
+| `src/components/ui/filter/filter-select-utils.ts` | mirror | — | None |
+| `src/components/ui/filter/filter-select.tsx` | mirror | Dub-derived: 68% shared lines with Dub `packages/ui/src/filter/filter-select.tsx` (AGPL-3.0) | None |
+| `src/components/ui/filter/filter-state.ts` | mirror | — | None |
+| `src/components/ui/filter/index.ts` | mirror | — | None |
+| `src/components/ui/filter/types.ts` | mirror | Dub-derived: 82% shared lines with Dub `packages/ui/src/filter/types.ts` (AGPL-3.0) | None |
+| `src/components/ui/filter/use-filter-card-visibility.tsx` | mirror | — | None |
+| `src/components/ui/filter/use-filter-presets.ts` | mirror | — | None |
+| `src/components/ui/filter/use-retained-filter-options.ts` | mirror | — | None |
+| `src/components/ui/form-description.tsx` | mirror | — | None |
+| `src/components/ui/form-error.tsx` | mirror | — | None |
+| `src/components/ui/form-field.tsx` | mirror | — | None |
+| `src/components/ui/freshness.ts` | mirror | — | None |
+| `src/components/ui/hit-area.ts` | mirror | — | None |
+| `src/components/ui/hooks/__tests__/use-autosave-fields.test.tsx` | mirror | — | None |
+| `src/components/ui/hooks/__tests__/use-toast-with-undo.test.ts` | mirror | — | None |
+| `src/components/ui/hooks/index.ts` | mirror | — | None |
+| `src/components/ui/hooks/use-keyboard-shortcut.tsx` | mirror | — | None |
+| `src/components/ui/hooks/use-toast-with-undo.ts` | mirror | — | None |
+| `src/components/ui/hooks/use-view-mode.ts` | mirror | — | None |
+| `src/components/ui/icons/icon-type.ts` | mirror | Dub-derived: 100% shared lines with Dub `packages/ui/src/icons/index.tsx` (AGPL-3.0) | None |
+| `src/components/ui/initials-avatar.tsx` | mirror | — | None |
+| `src/components/ui/inline-notice.tsx` | mirror | — | None |
+| `src/components/ui/input.tsx` | mirror | — | None |
+| `src/components/ui/kpi-filter/index.ts` | mirror | — | None |
+| `src/components/ui/kpi-filter/use-kpi-filter.ts` | mirror | — | None |
+| `src/components/ui/label.tsx` | mirror | Dub-derived: 90% shared lines with Dub `packages/ui/src/label.tsx` (AGPL-3.0) | None |
+| `src/components/ui/modal.tsx` | mirror | — | None |
+| `src/components/ui/overlay-depth.tsx` | mirror | — | None |
+| `src/components/ui/popover.tsx` | mirror | — | None |
+| `src/components/ui/progressive-blur.tsx` | mirror | — | None |
+| `src/components/ui/radio-group.tsx` | mirror | — | None |
+| `src/components/ui/required-marker.tsx` | mirror | — | None |
+| `src/components/ui/scroll-container.tsx` | mirror | — | None |
+| `src/components/ui/sheet.tsx` | mirror | — | None |
+| `src/components/ui/skeleton.tsx` | mirror | — | None |
+| `src/components/ui/status-badge.tsx` | mirror | — | None |
+| `src/components/ui/switch.tsx` | mirror | — | None |
+| `src/components/ui/table/column-visibility-utils.ts` | mirror | — | None |
+| `src/components/ui/table/columns-dropdown.tsx` | mirror | — | None |
+| `src/components/ui/table/data-table-cards.tsx` | mirror | — | None |
+| `src/components/ui/table/data-table.tsx` | mirror | — | None |
+| `src/components/ui/table/edit-columns-button.tsx` | mirror | — | None |
+| `src/components/ui/table/features.ts` | mirror | — | None |
+| `src/components/ui/table/index.ts` | mirror | — | None |
+| `src/components/ui/table/infinite-scroll-sentinel.tsx` | mirror | — | None |
+| `src/components/ui/table/pagination-controls.tsx` | mirror | — | None |
+| `src/components/ui/table/pagination-utils.ts` | mirror | — | None |
+| `src/components/ui/table/selection-toolbar.tsx` | mirror | — | None |
+| `src/components/ui/table/sort-rows.ts` | mirror | — | None |
+| `src/components/ui/table/table-empty-state.tsx` | mirror | — | None |
+| `src/components/ui/table/table-utils.ts` | mirror | — | None |
+| `src/components/ui/table/table.tsx` | mirror | — | None |
+| `src/components/ui/table/types.ts` | mirror | Dub-derived: 53% shared lines with Dub `packages/ui/src/table/types.ts` (AGPL-3.0) | None |
+| `src/components/ui/table/use-columns-dropdown.tsx` | mirror | — | None |
+| `src/components/ui/table/use-is-below-md.ts` | mirror | — | None |
+| `src/components/ui/table/use-list-pagination.ts` | mirror | — | None |
+| `src/components/ui/table/use-table-pagination.tsx` | mirror | Dub-derived: 100% shared lines with Dub `packages/ui/src/table/use-table-pagination.tsx` (AGPL-3.0) | None |
+| `src/components/ui/table/virtual-table-body.tsx` | mirror | — | None |
+| `src/components/ui/textarea.tsx` | mirror | — | None |
+| `src/components/ui/timestamp-tooltip.tsx` | mirror | — | None |
+| `src/components/ui/toggle-group.tsx` | mirror | — | None |
+| `src/components/ui/tooltip.tsx` | mirror | — | None |
+| `src/components/ui/typography.tsx` | mirror | — | None |
+| `src/components/ui/undo-toast.tsx` | mirror | — | None |
+| `src/components/ui/virtualized-list.tsx` | mirror | — | None |
+| `src/lib/filters/filter-presets.ts` | mirror | — | None |
+| `src/lib/format-bytes.ts` | mirror | — | None |
+| `src/lib/hooks/__tests__/use-zod-form.test.tsx` | mirror | — | None |
+| `src/lib/hooks/keyboard-shortcut-internals.ts` | mirror | — | None |
+| `src/lib/hooks/use-dropped-link-click-guard.ts` | mirror | — | None |
+| `src/lib/hooks/use-hydrated-now.ts` | mirror | — | None |
+| `src/lib/hooks/use-keyboard-inset.ts` | mirror | — | None |
+| `src/lib/hooks/use-keyboard-shortcut.tsx` | mirror | — | None |
+| `src/lib/hooks/use-zod-form.ts` | mirror | — | None |
+| `src/lib/hooks/useUrlFilters.ts` | mirror | — | None |
+| `src/lib/text-utils.ts` | mirror | — | None |
+| `src/types/tanstack-table.d.ts` | mirror | — | None |
+| `src/components/ui/charts/index.ts` | fork | — | Islestone stub at the upstream path: only `export * from '@inflect/ui/components/ui/charts'`; upstream also declares five chart modules and two risk charts not taken |
+| `src/components/ui/icons/index.tsx` | fork | — | Upstream barrel minus the seven `./dub-*` and `./plan-feature-icons` re-exports, plus a header comment; the 57 package re-exports and the `Icon` type are unchanged |
+| `src/lib/ui-storage.ts` | fork | — | `UI_STORAGE_PREFIX` is `'islestone'` (upstream `'inflect'`); the docblock examples spell `islestone`, and the two paragraphs about inflect's own keys and server namespaces are generalised |
+
+</details>
+
+<details>
+<summary>The 111 copied tests under tests/ (Islestone-owned, not mirrored)</summary>
+
+Copied from the same path in inflect-compliance. Map section 5.2 lists the tests taken unchanged, section 5.3 those taken with an edit. The three tests inside the mirrored roots (`src/components/ui/hooks/__tests__/*`, `src/lib/hooks/__tests__/use-zod-form.test.tsx`) are in the table above.
+
+| File | Changes |
+|---|---|
+| `tests/guards/action-cluster-discipline.test.ts` | None |
+| `tests/guards/card-padding-cascade.test.ts` | None (it compiles Islestone's `src/app/globals.css` through `tests/helpers/compile-globals-css.mjs`) |
+| `tests/guards/checklist-gear-primitive.test.ts` | None |
+| `tests/guards/datatable-row-chevron-affordance.test.ts` | None |
+| `tests/guards/datatable-row-double-click.test.ts` | None |
+| `tests/guards/edit-columns-no-tooltip-wrap.test.ts` | None |
+| `tests/guards/interaction-state-discipline.test.ts` | None |
+| `tests/guards/legacy-data-table-parity.test.ts` | None (reads Islestone's `src/app/globals.css`, which carries the `.data-table` recipe) |
+| `tests/guards/mobile-datatable-cards.test.ts` | None |
+| `tests/guards/mobile-touch-targets.test.ts` | None (reads Islestone's `src/app/globals.css`, which carries the coarse-pointer block) |
+| `tests/guards/modal-fly-in.test.ts` | Reads the keyframes and `--animate-*` keys from `src/app/globals.css` (`@theme`) instead of `tailwind.config.js` |
+| `tests/guards/sort-affordance.test.ts` | None |
+| `tests/guards/still-surface-button-material.test.ts` | Dropped the `notifications-bell.tsx` entries from two lists and the FilterToolbar rung case (app shell, 1.7); reads Islestone's `src/styles/tokens.css` |
+| `tests/guards/ui-canonical-tooltips.test.ts` | None |
+| `tests/guards/ui-hooks-barrel.test.ts` | None |
+| `tests/rendered/animated-number.test.tsx` | None |
+| `tests/rendered/breadcrumbs.test.tsx` | None |
+| `tests/rendered/button-disabled-tooltip-props.test.tsx` | None |
+| `tests/rendered/button-icon-child-row.test.tsx` | None |
+| `tests/rendered/button-label-centering.test.tsx` | None |
+| `tests/rendered/button-loading-disables.test.tsx` | None |
+| `tests/rendered/button-loading-touch-target.test.tsx` | None |
+| `tests/rendered/card-list.test.tsx` | None |
+| `tests/rendered/card.test.tsx` | None |
+| `tests/rendered/checkbox-control-edge.test.tsx` | None |
+| `tests/rendered/checklist-gear-primitive.test.tsx` | None |
+| `tests/rendered/confirm-dialog-drawer-pending.test.tsx` | None |
+| `tests/rendered/confirm-dialog-pending.test.tsx` | None |
+| `tests/rendered/confirm-dialog.test.tsx` | None |
+| `tests/rendered/core-shortcuts.test.tsx` | One eslint-disable line naming the rules Islestone's config enforces and inflect's allows |
+| `tests/rendered/dashboard-grid-mobile-stack.test.tsx` | None |
+| `tests/rendered/data-table-append-reflow.test.tsx` | None |
+| `tests/rendered/data-table-bulk-bar-and-load-on-every-renderer.test.tsx` | None |
+| `tests/rendered/data-table-cards-list-semantics.test.tsx` | None |
+| `tests/rendered/data-table-column-resize.test.tsx` | None |
+| `tests/rendered/data-table-grouped-header.test.tsx` | None |
+| `tests/rendered/data-table-id-selector-contract.test.tsx` | None |
+| `tests/rendered/data-table-mobile-cards.test.tsx` | None |
+| `tests/rendered/data-table-mobile-fallback.test.tsx` | None |
+| `tests/rendered/data-table-prefetch.test.tsx` | None |
+| `tests/rendered/data-table-row-expansion.test.tsx` | None |
+| `tests/rendered/data-table-row-hover.test.tsx` | None |
+| `tests/rendered/data-table-row-memoization.test.tsx` | None |
+| `tests/rendered/data-table-row-selection.test.tsx` | None |
+| `tests/rendered/data-table-scroll-smoothness.test.tsx` | None |
+| `tests/rendered/data-table-virtualize.test.tsx` | None |
+| `tests/rendered/date-picker-ui.test.tsx` | None |
+| `tests/rendered/date-pickers.test.tsx` | None |
+| `tests/rendered/edit-columns-button-click.test.tsx` | None |
+| `tests/rendered/empty-state-cleared-filters.test.tsx` | None |
+| `tests/rendered/empty-state.test.tsx` | None |
+| `tests/rendered/error-state.test.tsx` | None |
+| `tests/rendered/file-dropzone.test.tsx` | None |
+| `tests/rendered/focus-accent-seam.test.tsx` | Theme blocks repointed to Islestone's: light `:root,\n[data-theme="light"]`, dark `[data-theme="dark"]` |
+| `tests/rendered/form-field-validation.test.tsx` | None |
+| `tests/rendered/form-field.test.tsx` | None |
+| `tests/rendered/infinite-scroll-sentinel.test.tsx` | None |
+| `tests/rendered/initials-avatar.test.tsx` | None |
+| `tests/rendered/inline-notice.test.tsx` | None |
+| `tests/rendered/input-autofill-hygiene.test.tsx` | None |
+| `tests/rendered/input-mobile-inputmode.test.tsx` | None |
+| `tests/rendered/input-submit-hooks.test.tsx` | None |
+| `tests/rendered/keyboard-inset.test.tsx` | None |
+| `tests/rendered/keyboard-shortcut-hook.test.tsx` | None |
+| `tests/rendered/keyboard-shortcut-internals-edges.test.ts` | None |
+| `tests/rendered/keyboard-shortcut-parse.test.ts` | None |
+| `tests/rendered/keyboard-shortcut-registry-edges.test.tsx` | None |
+| `tests/rendered/modal-focus-return.test.tsx` | None |
+| `tests/rendered/modal.test.tsx` | None |
+| `tests/rendered/observer-scroll-hooks.test.tsx` | None |
+| `tests/rendered/overlay-depth.test.tsx` | None |
+| `tests/rendered/persistence-optimistic-hooks.test.tsx` | None |
+| `tests/rendered/popover-menu-keys.test.tsx` | None |
+| `tests/rendered/popover-nested.test.tsx` | None |
+| `tests/rendered/popover-trigger-tooltip.test.tsx` | None |
+| `tests/rendered/progressive-blur.test.tsx` | None |
+| `tests/rendered/sheet-left.test.tsx` | None |
+| `tests/rendered/textarea-describedby.test.tsx` | None |
+| `tests/rendered/timestamp-rollout.test.tsx` | None |
+| `tests/rendered/timestamp-tooltip.test.tsx` | None |
+| `tests/rendered/toggle-group-label-case.test.tsx` | None |
+| `tests/rendered/tooltip.test.tsx` | None |
+| `tests/rendered/trend-card.test.tsx` | None |
+| `tests/rendered/typography.test.tsx` | None |
+| `tests/rendered/undo-toast.test.tsx` | None |
+| `tests/rendered/use-columns-dropdown.test.tsx` | None |
+| `tests/rendered/use-filter-card-visibility.test.tsx` | None |
+| `tests/rendered/use-kpi-filter-coexistence.test.tsx` | None |
+| `tests/rendered/use-kpi-filter.test.tsx` | None |
+| `tests/rendered/use-toast-with-undo.test.tsx` | One eslint-disable line naming the rules Islestone's config enforces and inflect's allows |
+| `tests/rendered/useUrlFilters.test.tsx` | One eslint-disable line naming the rules Islestone's config enforces and inflect's allows |
+| `tests/rendered/virtual-table-body.test.tsx` | None |
+| `tests/rendered/virtualized-list.test.tsx` | None |
+| `tests/unit/checklist-order.test.ts` | None |
+| `tests/unit/components/date-picker-tz-bridge.test.ts` | None |
+| `tests/unit/data-table.test.ts` | Storage-key case expects `islestone:col-vis:` (the `ui-storage.ts` fork); dropped the suites that walk inflect list pages and the table `GUIDE.md` case; an eslint-disable line |
+| `tests/unit/date-picker-foundation.test.ts` | None |
+| `tests/unit/epic55-field-wrapper.test.ts` | None |
+| `tests/unit/epic55-form-primitives.test.ts` | None |
+| `tests/unit/filter-foundation.test.ts` | Dropped the `filter-examples.ts` and `GUIDE.md` layout cases and their markdown readers; an eslint-disable line |
+| `tests/unit/filter-primitives.test.ts` | None |
+| `tests/unit/filter-select.test.ts` | One eslint-disable line naming the rules Islestone's config enforces and inflect's allows |
+| `tests/unit/filter-system.test.ts` | None |
+| `tests/unit/freshness.test.ts` | None |
+| `tests/unit/keyboard-shortcut-layout-independence.test.ts` | None |
+| `tests/unit/list-pagination.test.ts` | Dropped the "Epic 52 adoption" suite (inflect list pages) |
+| `tests/unit/modal-primitive.test.ts` | Dropped the raw-overlay ratchet over `src/app/t` |
+| `tests/unit/responsive-modal-sheet.test.ts` | None |
+| `tests/unit/retained-filter-options.test.ts` | None |
+| `tests/unit/sheet-popover.test.ts` | None |
+| `tests/unit/sort-rows-by-display.test.ts` | None |
+
+</details>
+
+<details>
+<summary>Test infrastructure and styles, copied or adapted</summary>
+
+| Islestone file | inflect-compliance source | Changes |
+|---|---|---|
+| `__mocks__/next-intl.js` | `__mocks__/next-intl.js` | One eslint-disable line |
+| `tests/helpers/source-blocks.ts` | `tests/helpers/source-blocks.ts` | None |
+| `tests/helpers/repo-files.ts` | `tests/helpers/repo-files.ts` | None |
+| `tests/helpers/compile-globals-css.mjs` | `tests/helpers/compile-globals-css.mjs` | No autoprefixer (Islestone's postcss chain has none); shorter header |
+| `tests/setup/jsdom-shims.ts` | `tests/setup/jsdom-shims.ts` | None |
+| `tests/setup/rendered.ts` | `tests/rendered/setup.ts` | Moved to Islestone's setup path; imports `./jsdom-shims`; new header |
+| `tests/rendered/vaul-mock.tsx` | `tests/rendered/vaul-mock.tsx` | None |
+| `tests/rendered/number-flow-mock.tsx` | `tests/rendered/number-flow-mock.tsx` | None |
+| `messages/en.json` | `messages/en.json` | Only the 127 leaves the shared UI reads (map section 6.6): whole `common.upload`, `calendar`, `fileKinds`, `error`, `skeleton`, `copy`, `table` and `ui.combobox`; 24 `common.ui` keys, 4 `common.chart` keys, `common.cancel` and `common.close` |
+| `src/styles/tokens.css` | `packages/ui/tokens.contract.css` (light values) and `src/styles/tokens.css` (the extra property names, the shadow form of `--ctrl-edge-focus`, `--btn-still-lift`, `--btn-still-press`) | Written for Islestone: the contract's 47 names plus the map section 6.1 extras in a light theme (the contract's neutral fallback values, `--btn-still-danger-lift` darkened to clear 4.5:1) and an Islestone dark theme; `data-theme` selectors |
+| `src/app/globals.css` | `src/app/globals.css` (the `.glass-card`, `.surface-popup-texture`, `.data-table`, `.animate-fadeIn` recipes and the coarse-pointer block) and `tailwind.config.js` (the `theme.extend` keys) | Recipes copied into the same layers; the Tailwind 4 theme keys rewritten as `@theme` CSS; only the keys the copied set uses |
 
 </details>
 

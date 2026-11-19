@@ -303,6 +303,88 @@ The other sub-phases need these facts, which the copy itself cannot provide.
   example `error-state`'s "Something went wrong" and "Try again") rather than
   rendering silently wrong.
 
+## Part B: the generic UI in `src/` (`ui-mirror.json`)
+
+Sub-phase 1.2, part B, copied the generic files under inflect-compliance's
+`src/components/ui` and `src/lib/hooks` to the same paths in Islestone's `src/`
+(`docs/porting/maps/1.2.md`; `PROVENANCE.md`, "Copied: generic UI"). They keep
+inflect's paths and specifiers (`@/components/ui/...`, `@inflect/ui/...`), so a
+byte-identical copy compiles without an edit. The same rule holds as for
+`packages/ui`: **never edit a mirrored file in place**; fix it upstream and sync.
+
+### The second manifest
+
+`ui-mirror.json` at the repository root, checked by `scripts/ui-mirror.mjs`
+(`npm run ui:mirror` runs `verify`; tests in `tests/unit/ui-mirror.test.mjs`):
+
+| Key | Holds |
+|---|---|
+| `roots` | `src/components/ui`, `src/lib/hooks`: every file under them must be listed in `files` or `owned` |
+| `files` | path → sha256 of each byte-identical upstream copy (127: 124 code files and the 3 co-located tests inside the roots), including four files outside the roots: `src/lib/format-bytes.ts`, `src/lib/text-utils.ts`, `src/lib/filters/filter-presets.ts` and `src/types/tanstack-table.d.ts` |
+| `owned` | path → why, for Islestone's own files: the two stubs (`charts/index.ts`, `icons/index.tsx`) and the `src/lib/ui-storage.ts` fork (its `UI_STORAGE_PREFIX` is `islestone`) |
+| `excluded` | path → why, for upstream files inside a root that are deliberately not taken: `filter/GUIDE.md` and `table/GUIDE.md` |
+
+| Command | Checks |
+|---|---|
+| `verify [--population git\|fs]` | every `files` entry matches its hash; every `owned` entry exists; no `excluded` entry exists; nothing under a root is unlisted. Population as `ui-drift` (it reuses `listPopulation`) |
+| `audit <checkout>` | the checkout is `inflect-compliance`; every `files` entry equals the upstream blob at `commit`; every `excluded` entry exists there |
+| `compare <checkout> [--ref]` | the listed files changed or removed upstream since `commit`, and files added under the roots |
+| `pin <checkout> --ref <commit> [--add <path>]...` | refuses while `verify` fails; rewrites every listed file (and each `--add`) from upstream, then the manifest |
+
+This is simpler than the map's design in one respect: the map asks for a
+compare "against upstream" that would report every upstream file under the
+roots as missing unless named. Islestone takes about half of them (the rest are
+MIXED or COUPLED files the map skips), so `compare` instead reports files
+**added** upstream since the pinned commit, which needs no list of the ones not
+taken. `excluded` keeps the map's two named exclusions, and `audit` fails if
+either stops existing upstream.
+
+CI's `Shared UI` job runs `verify --population fs` and `audit` against a
+`--depth 1` fetch of the pinned commit, as for `packages/ui`.
+`.gitattributes` marks the mirrored paths `-text`. `eslint.config.mjs` skips
+exactly the `files` paths (they are linted upstream, under upstream's rules);
+owned files and everything else in `src/` are linted.
+
+A sync: `compare`, read the upstream diff, then `pin --ref <commit>` (adding any
+new file the copy now needs with `--add`), `audit`, run the tests and the
+gallery, and update the `PROVENANCE.md` rows. A file that leaves upstream must
+be removed from `files` and the tree first.
+
+### What else part B set up
+
+- **Tokens.** `src/styles/tokens.css`: the contract's 47 names and the map's 23
+  extra properties (section 6.1), plus `--brand-secondary-default`, in a light
+  theme (`:root` and `[data-theme="light"]`) and a dark one
+  (`[data-theme="dark"]`). The palette is an unbranded placeholder.
+- **Tailwind.** No `tailwind.config.js`: `src/app/globals.css` states the
+  section 6.3 keys as Tailwind 4 `@theme inline` (the colour, radius and
+  shadow keys, as var()s of the tokens) and `@theme` (spacing, truncation
+  widths, animations and keyframes), plus `@utility scrollbar-hide`, the four
+  section 6.4 recipes in `@layer components`/`utilities`, and the coarse-pointer
+  touch-target block. It adds `@source "../../packages/ui/src"` and
+  `@source not` for `tests/` and `docs/`, whose quoted class fragments would
+  otherwise reach the stylesheet (one, `bg-[var(…)]` in a guard's comment,
+  is invalid CSS and made the build warn).
+- **next-intl.** English only: `src/i18n/request.ts` serves `messages/en.json`
+  (the section 6.6 keys, 127 leaves), `next.config.ts` adds the plugin, and the
+  root layout renders `NextIntlClientProvider`.
+- **Jest.** The jsdom project matches `tests/rendered/**/*.test.{ts,tsx}`,
+  `src/**/__tests__/**` and `packages/*/src/**/__tests__/**`; it compiles the
+  ESM-only packages the UI reaches (TanStack Table, visx, d3, react-grid-layout
+  and their dependencies) and maps `vaul`, `@number-flow/react` and
+  `react-grid-layout/legacy`; `__mocks__/next-intl.js` resolves keys against
+  `messages/en.json`. The transformer stays `@swc/jest` (inflect uses ts-jest).
+- **Radix overrides.** `package.json` pins `@radix-ui/react-dismissable-layer`
+  1.2.1 and `@radix-ui/react-focus-scope` 1.3.1, as inflect does. The
+  dismissable layer holds shared state, so two copies are two independent
+  layer stacks: a popover opened inside a dialog registers where the dialog
+  cannot see it (inflect measured seven rendered suites failing that way on a
+  Radix bump). Focus containment is the other half of a dismissable surface,
+  and Radix versions the two together. Move both pins with any Radix bump.
+- **Gallery.** `/gallery` (`src/app/gallery/`) renders the main primitives in
+  both themes, side by side; `tests/rendered/gallery.test.tsx` and
+  `tests/e2e/gallery.spec.ts` cover it.
+
 ## Typecheck
 
 This was run in a throwaway directory outside this repository, so no `node_modules`
@@ -354,3 +436,17 @@ inflect-compliance, which then arrives through a sync.
    (`PROVENANCE.md`, "Copied: `@inflect/ui`"), and `NOTICE` names both from the change
    that lands it. Removing the risk later is a change upstream (the finding's option
    1), which then arrives through a sync.
+6. **Part B, the `src/components/ui` copy.** Found while landing it:
+   - `table/selection-toolbar.tsx` passes `inert: ""`, a React 18 workaround;
+     React 19 treats `inert` as a boolean and warns ("Received an empty string
+     for a boolean attribute `inert`") on every `<DataTable>` render in
+     development and in tests.
+   - `tokens.contract.css` gives `--ctrl-edge-focus`, `--btn-still-lift` and
+     `--btn-still-press` colour values, but the package uses them as
+     box-shadows (`shadow-[var(--ctrl-edge-focus)]`), so its fallback paints no
+     focus edge and no button lift. Its `--btn-still-danger-lift` (#d9544a)
+     gives white text 3.95:1, below the 4.5:1 that inflect's own
+     `still-surface-button-material` guard requires.
+   - `table/table.tsx` needs the `ColumnMeta` augmentation in
+     `src/types/tanstack-table.d.ts`, a file outside the classification the map
+     was built from; Islestone mirrors it.
