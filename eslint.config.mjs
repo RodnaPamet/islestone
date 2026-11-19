@@ -55,6 +55,9 @@ export default defineConfig([
         'playwright-report/**',
         'blob-report/**',
         'next-env.d.ts',
+        // The worker, scheduler and healthcheck bundles (scripts/build-worker.mjs):
+        // a bundled copy of src/ that would otherwise be linted again.
+        'dist/**',
         // Test inputs, some deliberately broken (they import packages that
         // do not exist). Tests read them as data.
         'tests/fixtures/**',
@@ -108,7 +111,21 @@ export default defineConfig([
         plugins: { local: localPlugin },
         rules: {
             'local/next-auth-single-seam': 'error',
+            // An observable gauge is created inside `bindObservable()`, so a
+            // gauge registered before initTelemetry() moves onto the real meter
+            // provider when telemetry starts. Created directly, it lands on the
+            // OTel API's no-op meter and exports nothing for the life of the
+            // process. See eslint-rules/rules/observable-gauge-rebinds.js.
+            'local/observable-gauge-rebinds': 'error',
         },
+    },
+    {
+        // Tests obey the gauge rule too: a copied test that plants a bare
+        // gauge on purpose disables `local/observable-gauge-rebinds` on that
+        // line, and the directive needs the rule registered and on.
+        files: ['tests/**/*.{ts,tsx}'],
+        plugins: { local: localPlugin },
+        rules: { 'local/observable-gauge-rebinds': 'error' },
     },
     {
         // The seam itself.

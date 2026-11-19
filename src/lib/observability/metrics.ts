@@ -1,14 +1,37 @@
 /**
- * Observability metrics — OpenTelemetry counters, histograms and gauges.
+ * Observability Metrics — OpenTelemetry counters, histograms, and gauges.
  *
- * Copied in part from inflect-compliance `src/lib/observability/metrics.ts`
- * at 5528464fc54a8681956f3b9ce23ca9c075f0420e. Sub-phase 1.5 holds the
- * ranges its own code records (docs/porting/maps/1.5.md, "Handoff to 1.6"):
+ * Copied from inflect-compliance `src/lib/observability/metrics.ts` at
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e. Sub-phase 1.5 brought the request,
+ * audit-stream and data-layer security ranges; sub-phase 1.6 adds the rest
+ * that Islestone records today (repository, aggregation-cache, job, queue,
+ * session-policy, verification-email, SCIM, slow-query and SSR-cache metrics)
+ * and the two job-queue counters inflect kept in `integration-metrics.ts`.
+ * The Entra group and role-sync families wait for sub-phase 8.3, the AI and
+ * agent families for Phase 6.
  *
- * ── REQUEST METRICS ── (`withApiErrorHandling`)
+ * ── REQUEST METRICS ──
  *   api.request.count      — Counter   (method, route, status)
  *   api.request.duration   — Histogram (method, route, status) [ms]
  *   api.request.errors     — Counter   (method, route, errorCode)
+ *
+ * ── REPOSITORY METRICS (Epic OI-3) ──
+ *   repo.method.duration     — Histogram (repo.method, outcome) [ms]
+ *   repo.method.calls        — Counter   (repo.method, outcome)
+ *   repo.method.errors       — Counter   (repo.method, error.type)
+ *   repo.method.result_count — Histogram (repo.method)
+ *
+ *   tenant_id is intentionally NOT a metric label (would explode
+ *   cardinality on multi-tenant deployments). It IS recorded as a
+ *   span attribute (`repo.tenant_id`) so trace search can still
+ *   pivot per-tenant.
+ *
+ * ── JOB METRICS ──
+ *   job.execution.count    — Counter   (job_name, status: success|failure)
+ *   job.execution.duration — Histogram (job_name, status) [ms]
+ *   job.queue.depth        — Observable Gauge (queue.name, queue.state)
+ *   job.queue.retry_bypassed — Counter (job_name, reason)
+ *   job.fanout.enqueue_failed — Counter (component)
  *
  * ── AUDIT-STREAM METRICS ── (`src/app-layer/events/audit-stream.ts`)
  *   audit_stream.delivery.success  — Counter   (http.status_code)
@@ -17,6 +40,7 @@
  *   audit_stream.delivery.duration — Histogram (outcome) [ms]
  *   audit_stream.buffer.overflow_dropped — Counter
  *   audit_stream.buffer.depth      — Observable Gauge
+ *     One delivery-outcome record per batch (after the retry loop).
  *     Audit-stream failures deliberately do NOT gate /api/readyz: the path
  *     is out-of-band and fail-safe (the audit row is already committed);
  *     escalation is alert-based on these metrics.
@@ -27,16 +51,32 @@
  *   encryption.field_decrypt_failures — Counter (model, field, version,
  *                             outcome)
  *
- * Sub-phase 1.6 APPENDS the rest of the source module (repository, job and
- * queue metrics, the session-policy and verification-email counters, which
- * are no-ops below until then) and must not overwrite these ranges.
+ * ── AUTH METRICS ──
+ *   auth.session_policy.resolution — Counter (outcome)
+ *   auth.verification_email.sent   — Counter (outcome)
+ *   auth.verification_email.failed — Counter (outcome)
+ *     `issueEmailVerification` swallows mailer errors so the register
+ *     API stays 200 (enumeration safety). These metrics surface the
+ *     failure rate before a user-facing outage. `outcome` is
+ *     `register | resend`.
+ *   scim.auth.count                — Counter (outcome, reason); SCIM is
+ *     sub-phase 8.3, which is its first caller.
  *
- * CARDINALITY SAFETY: route labels are normalised by `normalizeRoute()`.
- * Note for 2.x: it collapses UUIDs and cuids, not `ISL-123` work-item keys.
+ * CARDINALITY SAFETY:
+ *   Route labels are normalized via `normalizeRoute()` to collapse dynamic
+ *   segments (UUIDs, slugs) into placeholder tokens. This prevents
+ *   unbounded label growth from entity-specific URLs. Note for 2.x: it
+ *   collapses UUIDs and cuids, not `ISL-123` work-item keys.
  *
- * LAZY INITIALISATION: every instrument is created on first use. Until 1.6
- * registers a MeterProvider, the OpenTelemetry API's no-op meter makes each
- * record a no-op.
+ * LAZY INITIALIZATION:
+ *   All instruments are created on first access to give the global
+ *   MeterProvider time to register. When OTel is not initialized,
+ *   the noop meter produces zero-overhead noop instruments.
+ *
+ * These are recorded from:
+ *   - `withApiErrorHandling` (request metrics)
+ *   - `runJob` / `executorRegistry.execute` (job metrics)
+ *   - `startQueueDepthReporting` (queue depth gauge)
  */
 
 import { metrics } from '@opentelemetry/api';
@@ -47,7 +87,6 @@ const METER_NAME = 'islestone';
 function getMeter() {
     return metrics.getMeter(METER_NAME);
 }
-
 
 // ════════════════════════════════════════════════════════════════════════
 // ROUTE NORMALIZATION — Cardinality Safety
@@ -74,11 +113,11 @@ const OPAQUE_ID_RE = /\/[a-z0-9]{20,}\b/gi;
  *   - Long opaque IDs → :id
  *
  * Examples:
- *   /api/t/acme-corp/controls/550e8400-e29b-41d4-a716-446655440000
- *     → /api/t/:tenantSlug/controls/:id
+ *   /api/t/acme-corp/work-items/550e8400-e29b-41d4-a716-446655440000
+ *     → /api/t/:tenantSlug/work-items/:id
  *
- *   /api/t/my-tenant/evidence/abc123def456
- *     → /api/t/:tenantSlug/evidence/abc123def456  (short IDs kept — low cardinality)
+ *   /api/t/my-tenant/members/abc123def456
+ *     → /api/t/:tenantSlug/members/abc123def456  (short IDs kept — low cardinality)
  *
  * @param pathname — raw URL pathname from req.nextUrl.pathname
  * @returns normalized route string, safe for OTel labels
@@ -107,6 +146,14 @@ let _requestCount: ReturnType<ReturnType<typeof getMeter>['createCounter']> | nu
 let _requestDuration: ReturnType<ReturnType<typeof getMeter>['createHistogram']> | null = null;
 let _requestErrors: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
 
+// Repository instruments — Epic OI-3.
+// Cardinality safety: labels are { 'repo.method', 'outcome' } only.
+// tenant_id, user_id are SPAN attributes (queryable in trace search)
+// but NOT metric labels (where they'd explode cardinality).
+let _repoDuration: ReturnType<ReturnType<typeof getMeter>['createHistogram']> | null = null;
+let _repoCalls: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+let _repoErrors: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+let _repoResultCount: ReturnType<ReturnType<typeof getMeter>['createHistogram']> | null = null;
 
 function getRequestCount() {
     if (!_requestCount) {
@@ -179,6 +226,157 @@ export function recordRequestError(attrs: {
     });
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// AGGREGATION CACHE METRICS
+//
+// Emitted by src/lib/cache/aggregation-cache.ts::cachedAggregationRead.
+// The only label is `aggregation` (the registry key) — bounded
+// cardinality (one value per AGGREGATIONS entry). Watch the hit ratio
+// per aggregation in Grafana: a sustained low hit rate means the
+// invalidation graph is over-eager or the TTL is too short.
+// ════════════════════════════════════════════════════════════════════════
+
+let _aggCacheHit: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+let _aggCacheMiss: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+let _aggCacheComputeDuration: ReturnType<ReturnType<typeof getMeter>['createHistogram']> | null = null;
+
+function getAggCacheHit() {
+    if (!_aggCacheHit) {
+        _aggCacheHit = getMeter().createCounter('cache.aggregation.hit', {
+            description: 'Aggregation cache hits',
+            unit: '1',
+        });
+    }
+    return _aggCacheHit;
+}
+
+function getAggCacheMiss() {
+    if (!_aggCacheMiss) {
+        _aggCacheMiss = getMeter().createCounter('cache.aggregation.miss', {
+            description: 'Aggregation cache misses',
+            unit: '1',
+        });
+    }
+    return _aggCacheMiss;
+}
+
+function getAggCacheComputeDuration() {
+    if (!_aggCacheComputeDuration) {
+        _aggCacheComputeDuration = getMeter().createHistogram('cache.aggregation.compute_duration_ms', {
+            description: 'Time to compute an aggregation on a cache miss',
+            unit: 'ms',
+        });
+    }
+    return _aggCacheComputeDuration;
+}
+
+/** Record an aggregation cache hit. */
+export function recordAggregationCacheHit(aggregation: string): void {
+    getAggCacheHit().add(1, { aggregation });
+}
+
+/** Record an aggregation cache miss + the time the underlying compute took. */
+export function recordAggregationCacheMiss(aggregation: string, computeMs: number): void {
+    getAggCacheMiss().add(1, { aggregation });
+    getAggCacheComputeDuration().record(computeMs, { aggregation });
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// REPOSITORY METRICS — Epic OI-3
+//
+// Emitted by src/lib/observability/repository-tracing.ts::traceRepository.
+// Labels are restricted to { 'repo.method', 'outcome' } to keep
+// cardinality bounded. Use trace span attributes (tenant.id, user.id)
+// for tenant-aware debugging — those don't explode metric storage.
+// ════════════════════════════════════════════════════════════════════════
+
+export function getRepositoryDurationHistogram() {
+    if (!_repoDuration) {
+        _repoDuration = getMeter().createHistogram('repo.method.duration', {
+            description: 'Repository method execution duration in milliseconds',
+            unit: 'ms',
+        });
+    }
+    return _repoDuration;
+}
+
+export function getRepositoryCallCounter() {
+    if (!_repoCalls) {
+        _repoCalls = getMeter().createCounter('repo.method.calls', {
+            description: 'Total number of repository method invocations',
+            unit: '1',
+        });
+    }
+    return _repoCalls;
+}
+
+export function getRepositoryErrorCounter() {
+    if (!_repoErrors) {
+        _repoErrors = getMeter().createCounter('repo.method.errors', {
+            description: 'Total number of repository method errors',
+            unit: '1',
+        });
+    }
+    return _repoErrors;
+}
+
+export function getRepositoryResultCountHistogram() {
+    if (!_repoResultCount) {
+        _repoResultCount = getMeter().createHistogram('repo.method.result_count', {
+            description: 'Distribution of result counts returned by repository methods',
+            unit: '1',
+        });
+    }
+    return _repoResultCount;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// JOB METRICS — Instrument Singletons
+// ════════════════════════════════════════════════════════════════════════
+
+let _jobCount: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+let _jobDuration: ReturnType<ReturnType<typeof getMeter>['createHistogram']> | null = null;
+
+function getJobCount() {
+    if (!_jobCount) {
+        _jobCount = getMeter().createCounter('job.execution.count', {
+            description: 'Total number of job executions',
+            unit: '1',
+        });
+    }
+    return _jobCount;
+}
+
+function getJobDuration() {
+    if (!_jobDuration) {
+        _jobDuration = getMeter().createHistogram('job.execution.duration', {
+            description: 'Job execution duration in milliseconds',
+            unit: 'ms',
+        });
+    }
+    return _jobDuration;
+}
+
+/**
+ * Record a completed job execution.
+ *
+ * @param attrs.jobName — the job name (bounded set from JobPayloadMap)
+ * @param attrs.success — whether the job completed without error
+ * @param attrs.durationMs — execution time in milliseconds
+ */
+export function recordJobMetrics(attrs: {
+    jobName: string;
+    success: boolean;
+    durationMs: number;
+}): void {
+    const labels = {
+        'job.name': attrs.jobName,
+        'job.status': attrs.success ? 'success' : 'failure',
+    };
+
+    getJobCount().add(1, labels);
+    getJobDuration().record(attrs.durationMs, labels);
+}
 
 // ════════════════════════════════════════════════════════════════════════
 // AUDIT-STREAM METRICS — Instrument Singletons
@@ -422,6 +620,135 @@ export function recordFieldDecryptFailure(attrs: {
     });
 }
 
+// ── Session-policy resolution (Epic C.3) ──────────────────────────────
+
+let _sessionPolicyResolution: ReturnType<ReturnType<typeof getMeter>['createCounter']> | undefined;
+
+function getSessionPolicyResolution() {
+    if (!_sessionPolicyResolution) {
+        _sessionPolicyResolution = getMeter().createCounter('session.policy.resolution', {
+            description:
+                'Outcome of reading a tenant session policy at sign-in. `failed` means the ' +
+                'concurrent-session cap and lifetime cap did NOT apply for that sign-in',
+            unit: '1',
+        });
+    }
+    return _sessionPolicyResolution;
+}
+
+/**
+ * Record whether the tenant session policy could be resolved at sign-in.
+ *
+ * `outcome: 'failed'` is a SECURITY signal, not a availability one: the sign-in
+ * still succeeds (the tracker is deliberately non-blocking), but it proceeds
+ * with NO concurrent-session cap and NO lifetime cap. Any sustained non-zero
+ * rate means a security control is silently not applying, which is exactly the
+ * condition this counter exists to make alertable.
+ */
+export function recordSessionPolicyResolution(attrs: {
+    outcome: 'ok' | 'failed';
+}): void {
+    getSessionPolicyResolution().add(1, { outcome: attrs.outcome });
+}
+
+// ── Auth verification-email delivery counters ─────────────────────────
+
+let _verificationEmailSent: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+let _verificationEmailFailed: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+
+function getVerificationEmailSent() {
+    if (!_verificationEmailSent) {
+        _verificationEmailSent = getMeter().createCounter('auth.verification_email.sent', {
+            description: 'Verification emails successfully handed off to the mailer',
+            unit: '1',
+        });
+    }
+    return _verificationEmailSent;
+}
+
+function getVerificationEmailFailed() {
+    if (!_verificationEmailFailed) {
+        _verificationEmailFailed = getMeter().createCounter('auth.verification_email.failed', {
+            description: 'Verification emails that the mailer rejected (operator-only signal — the register API still returns 200)',
+            unit: '1',
+        });
+    }
+    return _verificationEmailFailed;
+}
+
+/**
+ * Record the outcome of a single verification-email send attempt.
+ * Called from `issueEmailVerification` after the `sendEmail` try/catch
+ * settles.
+ *
+ * `flow` labels the call-site:
+ *   - `register` — first email at signup
+ *   - `resend`   — `/api/auth/verify-email/resend` re-issue
+ *
+ * No email or userId on the label (PII + cardinality). Per-tenant
+ * debugging uses the structured pino warn line in the same code path.
+ *
+ * Failures here are best-effort signal — the token is already stored
+ * and the API returns 200 regardless. Operators alert on
+ * `auth.verification_email.failed` (rate or absolute) to catch a
+ * mailer outage BEFORE `AUTH_REQUIRE_EMAIL_VERIFICATION=1` locks
+ * legitimate signups out of verification.
+ */
+export function recordVerificationEmailDelivery(attrs: {
+    outcome: 'sent' | 'failed';
+    flow: 'register' | 'resend';
+}): void {
+    const labels = { flow: attrs.flow };
+    if (attrs.outcome === 'sent') {
+        getVerificationEmailSent().add(1, labels);
+    } else {
+        getVerificationEmailFailed().add(1, labels);
+    }
+}
+
+// ── SCIM token-auth metrics (EI-4) ────────────────────────────────────
+
+let _scimAuth: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+
+function getScimAuth() {
+    if (!_scimAuth) {
+        _scimAuth = getMeter().createCounter('scim.auth.count', {
+            description: 'SCIM bearer-token authentication attempts by outcome',
+            unit: '1',
+        });
+    }
+    return _scimAuth;
+}
+
+/**
+ * Record one SCIM bearer-token authentication attempt — called from
+ * `authenticateScimRequest` at every terminal branch.
+ *
+ * `reason` is a bounded enum (5 values) so cardinality stays flat:
+ *   - `ok`             — authenticated.
+ *   - `missing_header` — no / malformed `Authorization: Bearer` header.
+ *   - `empty_token`    — `Bearer` with an empty value.
+ *   - `not_found`      — token hash matched no row.
+ *   - `revoked`        — token row exists but is revoked.
+ *
+ * A spike in `not_found` is the brute-force / stale-connector signal;
+ * `revoked` rising means an IdP is still pushing with a rotated token.
+ * No tenantId label (the failing cases have no resolved tenant anyway).
+ */
+export function recordScimAuth(attrs: {
+    outcome: 'success' | 'failure';
+    reason:
+        | 'ok'
+        | 'missing_header'
+        | 'empty_token'
+        | 'not_found'
+        | 'revoked'
+        /** The token is live but its tenant has been removed (#5184). */
+        | 'tenant_deleted';
+}): void {
+    getScimAuth().add(1, { outcome: attrs.outcome, reason: attrs.reason });
+}
+
 let _auditStreamBufferGaugeStarted = false;
 
 /**
@@ -458,13 +785,254 @@ export function _resetAuditStreamBufferGaugeForTesting(): void {
     _auditStreamBufferGaugeStarted = false;
 }
 
-// ── Sub-phase 1.4 counters, no-ops until 1.6 brings their instruments ──
+// ════════════════════════════════════════════════════════════════════════
+// QUEUE DEPTH GAUGE — Observable
+//
+// Registered by the BullMQ worker (`scripts/worker.ts`), the only
+// long-running process that holds the queue. Its exported series is
+// `job_queue_depth_ratio{queue_name, queue_state}`: the exporter adds
+// `_ratio` to a gauge whose unit is `1`.
+// ════════════════════════════════════════════════════════════════════════
 
-/** Session-policy resolution outcome (session-tracker). No-op until 1.6. */
-export function recordSessionPolicyResolution(_attrs: { outcome: 'ok' | 'failed' }): void {}
+/**
+ * The BullMQ states the gauge reports, and the only ones it asks Redis for.
+ *
+ * `waiting` and `prioritized` together are the BACKLOG: jobs ready to run
+ * that no worker has taken. BullMQ keeps a job enqueued with a `priority` in
+ * `prioritized`, not `waiting`, so a backlog read from `waiting` alone misses
+ * it. `delayed` is not backlog: it holds the next run of every job scheduler
+ * and every retry's backoff, so it never drops below the number of schedules.
+ * `active` is work in progress and `failed` is retained history. Anything
+ * else BullMQ counts (`completed`, `waiting-children`) is left out.
+ */
+const QUEUE_DEPTH_STATES = ['waiting', 'prioritized', 'active', 'delayed', 'failed'] as const;
+type QueueDepthState = (typeof QUEUE_DEPTH_STATES)[number];
 
-/** Verification-email delivery outcome (email-verification). No-op until 1.6. */
-export function recordVerificationEmailDelivery(_attrs: {
-    outcome: 'sent' | 'failed';
-    flow: 'register' | 'resend';
-}): void {}
+/**
+ * How long one read of the queue's counts may take. The metric reader waits
+ * for every gauge callback before it exports, so a read that hangs on a
+ * Redis outage would hold back every other metric of that export with it.
+ */
+export const QUEUE_DEPTH_READ_TIMEOUT_MS = 5_000;
+
+/** What the gauge reads. A BullMQ `Queue` is one. */
+export interface QueueDepthSource {
+    /** Becomes the `queue.name` label, so the label names the queue that was read. */
+    readonly name: string;
+    getJobCounts(...states: QueueDepthState[]): Promise<Record<string, number>>;
+}
+
+/** The queue the gauge reads; `null` while reporting is stopped. */
+let _queueDepthSource: (() => QueueDepthSource) | null = null;
+/** The gauge is created once per process; stop/start only swaps its source. */
+let _queueDepthGaugeRegistered = false;
+
+function rejectAfter(ms: number): { promise: Promise<never>; cancel: () => void } {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const promise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`queue depth read timed out after ${ms}ms`)), ms);
+        // Never the reason the process stays alive.
+        timer.unref?.();
+    });
+    return { promise, cancel: () => clearTimeout(timer) };
+}
+
+/**
+ * Report the depth of a BullMQ queue, by state, on the `job.queue.depth`
+ * observable gauge.
+ *
+ * The callback runs when the metric reader collects: every export interval
+ * (30s, `instrumentation.ts`) and once more on the meter provider's shutdown
+ * flush. Each run is one `getJobCounts` round trip, bounded by
+ * `QUEUE_DEPTH_READ_TIMEOUT_MS`. A read that fails or times out observes
+ * nothing rather than failing the export. The SDK's storage is cumulative,
+ * so an unobserved state is exported again at the last value it was read
+ * at: the series holds its last reading, it does not disappear.
+ *
+ * Registered through `bindObservable`, so a call made before `initTelemetry()`
+ * is moved onto the real meter provider when telemetry starts (see
+ * `observable-registry.ts`). The worker still calls it after, because it reads
+ * the worker's Redis connection, which exists only from `bootstrap()` on.
+ *
+ * Idempotent: a second call while reporting is a no-op. `getQueueFn` is not
+ * called here, only at collection.
+ *
+ * @param getQueueFn — returns the queue to read, e.g. a BullMQ `Queue`
+ */
+export function startQueueDepthReporting(getQueueFn: () => QueueDepthSource): void {
+    if (_queueDepthSource) return;
+    _queueDepthSource = getQueueFn;
+    if (_queueDepthGaugeRegistered) return;
+    _queueDepthGaugeRegistered = true;
+
+    bindObservable(() => {
+        const gauge = getMeter().createObservableGauge('job.queue.depth', {
+            description: 'Number of jobs in the queue by state',
+            unit: '1',
+        });
+
+        gauge.addCallback(async (result) => {
+            const getQueue = _queueDepthSource;
+            if (!getQueue) return; // stopped: read nothing
+            const timeout = rejectAfter(QUEUE_DEPTH_READ_TIMEOUT_MS);
+            try {
+                const queue = getQueue();
+                const counts = await Promise.race([
+                    queue.getJobCounts(...QUEUE_DEPTH_STATES),
+                    timeout.promise,
+                ]);
+
+                for (const state of QUEUE_DEPTH_STATES) {
+                    if (counts[state] !== undefined) {
+                        result.observe(counts[state], {
+                            'queue.name': queue.name,
+                            'queue.state': state,
+                        });
+                    }
+                }
+            } catch {
+                // Queue unavailable, or the read timed out: observe nothing this
+                // time. The export goes ahead with the last values read.
+            } finally {
+                timeout.cancel();
+            }
+        });
+    });
+}
+
+/**
+ * Stop reading the queue. After this returns the gauge's callback reads
+ * nothing, so the caller may close the queue and its Redis connection. Call
+ * it on shutdown BEFORE closing them: the meter provider's shutdown flush
+ * runs the callback once more. That flush still exports the last values
+ * read, from the SDK's memory, not from Redis.
+ *
+ * The gauge itself stays registered (OTel offers no way to delete an
+ * instrument), and observes nothing until `startQueueDepthReporting` is
+ * called again.
+ */
+export function stopQueueDepthReporting(): void {
+    _queueDepthSource = null;
+}
+
+/**
+ * Reset queue depth reporting (for testing only).
+ * @internal
+ */
+export function _resetQueueDepthForTesting(): void {
+    _queueDepthSource = null;
+    _queueDepthGaugeRegistered = false;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// SLOW-QUERY COUNTER
+//
+// Emitted by src/lib/prisma.ts's query-event listener when a query
+// exceeds the slow threshold (50ms). Label is { model } only — the raw
+// SQL + bound params go to the internal log, NEVER to a metric label.
+// ════════════════════════════════════════════════════════════════════════
+
+let _slowQueryCount: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+
+function getSlowQueryCount() {
+    if (!_slowQueryCount) {
+        _slowQueryCount = getMeter().createCounter('db.slow_query.count', {
+            description: 'Queries exceeding the slow-query threshold',
+            unit: '1',
+        });
+    }
+    return _slowQueryCount;
+}
+
+/** Record a slow query, labelled by the parsed model name. */
+export function recordSlowQuery(model: string): void {
+    getSlowQueryCount().add(1, { model });
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// SSR PAYLOAD CACHE METRICS
+//
+// Emitted by src/lib/cache/ssr-cache.ts::cachedSsrPayload. Label is
+// `route` (the canonical route name — bounded: dashboard, risks, …) plus
+// `outcome` on the duration histogram. Watch the per-route hit ratio in
+// Grafana; a low ratio means the tenant-wide invalidation is too eager or
+// the TTL is too short.
+// ════════════════════════════════════════════════════════════════════════
+
+let _ssrHit: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+let _ssrMiss: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+let _ssrDuration: ReturnType<ReturnType<typeof getMeter>['createHistogram']> | null = null;
+
+function getSsrHit() {
+    if (!_ssrHit) _ssrHit = getMeter().createCounter('cache.ssr.hit', { description: 'SSR payload cache hits', unit: '1' });
+    return _ssrHit;
+}
+function getSsrMiss() {
+    if (!_ssrMiss) _ssrMiss = getMeter().createCounter('cache.ssr.miss', { description: 'SSR payload cache misses', unit: '1' });
+    return _ssrMiss;
+}
+function getSsrDuration() {
+    if (!_ssrDuration) _ssrDuration = getMeter().createHistogram('cache.ssr.duration', { description: 'SSR payload fetch duration (hit = cache read, miss = compute)', unit: 'ms' });
+    return _ssrDuration;
+}
+
+/** Record an SSR payload cache hit. */
+export function recordSsrCacheHit(route: string, durationMs: number): void {
+    getSsrHit().add(1, { route });
+    getSsrDuration().record(durationMs, { route, outcome: 'hit' });
+}
+
+/** Record an SSR payload cache miss + the time the underlying compute took. */
+export function recordSsrCacheMiss(route: string, durationMs: number): void {
+    getSsrMiss().add(1, { route });
+    getSsrDuration().record(durationMs, { route, outcome: 'miss' });
+}
+
+
+// ════════════════════════════════════════════════════════════════════════
+// JOB-QUEUE COUNTERS
+//
+// Moved from inflect-compliance's `integration-metrics.ts` (where they were
+// `integration.queue.retry_bypassed` and `integration.dispatch.enqueue_failed`):
+// they describe the job queue, not an integration, and Islestone has no
+// integrations yet. Nothing in Islestone reads the old names.
+// ════════════════════════════════════════════════════════════════════════
+
+let _queueRetryBypass: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+let _dispatchEnqueueFailed: ReturnType<ReturnType<typeof getMeter>['createCounter']> | null = null;
+
+/**
+ * A job failure was flagged `noRetry`, so BullMQ did not immediately re-run it.
+ *
+ * Worth counting separately from the failure itself: this is the difference
+ * between "a job failed" and "a job failed AND we deliberately declined to
+ * retry it", and the second needs its own eye — a bug in the classifier shows
+ * up here as a suppression rate that does not match the failure mix. The
+ * reason is the thrown `NonRetryableJobError`'s own (`src/app-layer/jobs/non-retryable.ts`).
+ */
+export function recordQueueRetryBypass(attrs: { jobName: string; reason: 'terminal' | 'rate_limited' }): void {
+    if (!_queueRetryBypass) {
+        _queueRetryBypass = getMeter().createCounter('job.queue.retry_bypassed', {
+            description: 'Job failures where the queue retry was deliberately suppressed',
+            unit: '1',
+        });
+    }
+    _queueRetryBypass.add(1, { job_name: attrs.jobName, reason: attrs.reason });
+}
+
+/**
+ * A fan-out enqueue threw and was skipped.
+ *
+ * The dispatcher continues past these instead of aborting, which is right —
+ * but it means the loss is silent unless it is counted. Any non-zero rate is
+ * units of work that did not get their job this cycle.
+ */
+export function recordDispatchEnqueueFailed(attrs: { component: string }): void {
+    if (!_dispatchEnqueueFailed) {
+        _dispatchEnqueueFailed = getMeter().createCounter('job.fanout.enqueue_failed', {
+            description: 'Fan-out enqueues that threw and were skipped (unit not processed this cycle)',
+            unit: '1',
+        });
+    }
+    _dispatchEnqueueFailed.add(1, { component: attrs.component });
+}

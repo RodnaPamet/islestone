@@ -12,18 +12,35 @@
  * `SKIP_ENV_VALIDATION=1` leaks from the build into the runtime container,
  * which is the configuration a container image is most likely to carry.
  *
- * Sub-phase 1.6 adds telemetry, Sentry, the mailer, the shutdown handler
- * (which must call `flushAllAuditStreams`) and the Redis check BELOW these
- * blocks, without moving them.
+ * Sub-phase 1.6 adds, below these refusals and without moving them: the
+ * `REDIS_URL` production refusal, then (in every environment) telemetry, the
+ * Sentry stub, the mailer, the graceful-shutdown handler (which drains the
+ * audit-stream buffers first) and the Redis eviction-policy check, from
+ * inflect-compliance's hook at the same commit. The RLS tripwire inflect
+ * installed here is composed into the Prisma client instead
+ * (`src/lib/prisma.ts`), and the automation-bus, integration-bootstrap and
+ * freshness-reporting calls wait for sub-phases 5.1 and 5.x.
  *
  * `console.error` is the sink on purpose: it runs before any logger is
  * guaranteed, and the process exits right after (a per-file `no-console`
  * exception in eslint.config.mjs).
  */
+import type { env as ServerEnvModule } from '@/env';
+
+type ServerEnv = typeof ServerEnvModule;
+
 export async function registerNode(): Promise<void> {
     const { env } = await import('@/env');
 
-    if (env.NODE_ENV !== 'production') return;
+    if (env.NODE_ENV === 'production') {
+        await refuseUnsafeProductionStart(env);
+    }
+
+    await startObservabilityAndServices();
+}
+
+/** The production start refusals. Each exits the process on a violation. */
+async function refuseUnsafeProductionStart(env: ServerEnv): Promise<void> {
 
     // ── AUTH_TEST_MODE must not be "1" in production ──
     // The flag turns the login brute-force throttle into a no-op and bypasses
@@ -77,4 +94,53 @@ export async function registerNode(): Promise<void> {
         console.error('[startup] FATAL: ' + sentinel.reason);
         process.exit(1);
     }
+
+    // ── GAP-13: Redis is required in production (sub-phase 1.6) ──
+    // Defence in depth alongside the schema rule in `src/env.ts`: the schema
+    // catches a missing or unauthenticated REDIS_URL at module load, this
+    // catches the case where SKIP_ENV_VALIDATION=1 leaks into the runtime
+    // container. The job queue and the worker heartbeat live in Redis, and a
+    // web process that cannot enqueue silently drops the work. (The Playwright
+    // server sets a REDIS_URL, so it starts.)
+    if (!env.REDIS_URL) {
+        console.error(
+            '[startup] FATAL: REDIS_URL is required in production. ' +
+                'The job queue and the worker heartbeat depend on it. ' +
+                'Set REDIS_URL to an authenticated connection string (redis://:PASSWORD@HOST:6379).',
+        );
+        process.exit(1);
+    }
+}
+
+/**
+ * Telemetry, error reporting, the mailer, graceful shutdown and the Redis
+ * eviction check, in every environment. Each is a no-op or a log line when
+ * it is not configured (`OTEL_ENABLED` unset, no SMTP transport, no
+ * `REDIS_URL`), so development pays nothing.
+ */
+async function startObservabilityAndServices(): Promise<void> {
+    const { initTelemetry } = await import('@/lib/observability/instrumentation');
+    const { initSentry } = await import('@/lib/observability/sentry');
+    // The mailer reports its transport. No SMTP transport is installed yet
+    // (src/lib/mailer.ts); until one is, every email stays on the console sink.
+    const { initMailerFromEnv } = await import('@/lib/mailer');
+    const { installShutdownHandlers } = await import('@/lib/observability/shutdown');
+
+    await initTelemetry();
+    initSentry();
+    initMailerFromEnv();
+    // SIGTERM/SIGINT: drain the audit-stream buffers (`flushAllAuditStreams`,
+    // the irreversible loss), then the OTel exporters, then Sentry. Idempotent
+    // under HMR; never calls process.exit (`next start` owns the process).
+    installShutdownHandlers();
+
+    // Verify Redis is not configured to EVICT keys — BullMQ job state lives
+    // in Redis, so an eviction `maxmemory-policy` would silently drop queued
+    // jobs. Best-effort and non-blocking: it logs loudly on a violation but
+    // never crash-loops the process. The fail-fast gate is the structural
+    // guard at PR time (tests/guards/redis-eviction-policy.test.ts).
+    const { verifyRedisEvictionPolicy } = await import('@/lib/redis');
+    void verifyRedisEvictionPolicy().catch(() => {
+        // A diagnostic check must never break startup.
+    });
 }

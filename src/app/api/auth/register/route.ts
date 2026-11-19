@@ -261,7 +261,7 @@ async function handleRegister(body: { email: string; password: string; name: str
 
     // Business KPIs — credentials self-service signup creates BOTH a
     // tenant (always FREE on this path) and its first user.
-    recordTenantCreated({ signupSource: 'credentials' });
+    recordTenantCreated({ plan: 'FREE', signupSource: 'credentials' });
     recordUserSignup({ signupSource: 'credentials' });
 
     // Fire the verification email. Non-blocking in intent — the issue

@@ -1,0 +1,88 @@
+import { flushAllAuditStreams } from '@/app-layer/events/audit-stream';
+import { shutdownTelemetry } from './instrumentation';
+import { shutdownSentry } from './sentry';
+import { logger } from './logger';
+import {
+    SHUTDOWN_AUDIT_FLUSH_MS,
+    SHUTDOWN_OTEL_MS,
+    SHUTDOWN_SENTRY_MS,
+} from './shutdown-budget';
+
+/**
+ * One-shot SIGTERM / SIGINT handler. Drains observability surfaces
+ * in the order most-to-least important for audit correctness:
+ *
+ *   1. audit-stream buffers (irreversible data loss if dropped)
+ *   2. OTel span/metric exporters (observability-only)
+ *   3. Sentry transport (observability-only)
+ *
+ * Each stage is bounded by its budget. NEVER calls process.exit —
+ * next start owns the HTTP lifecycle; we let Node exit naturally
+ * once all handlers finish and the event loop drains.
+ *
+ * Idempotent installation: guards against double registration under
+ * HMR / test re-imports via a module flag.
+ *
+ * Copied from inflect-compliance `src/lib/observability/shutdown.ts` at
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e, without the agent-run, run-stream
+ * and assistant-stream stages (Phase 6). The Sentry stage calls the
+ * `sentry.ts` stub, a no-op until the Sentry SDK is installed.
+ */
+
+let _installed = false;
+
+export function installShutdownHandlers(): void {
+    if (_installed) return;
+    _installed = true;
+
+    const handler = async (signal: 'SIGTERM' | 'SIGINT') => {
+        logger.info('graceful shutdown initiated', {
+            component: 'shutdown',
+            signal,
+        });
+
+        // Stage 1 — audit (most important)
+        await Promise.race([
+            flushAllAuditStreams().catch((err) => {
+                logger.warn('shutdown: audit flush failed', {
+                    component: 'shutdown',
+                    error: err instanceof Error ? err.message : String(err),
+                });
+            }),
+            new Promise<void>((resolve) => setTimeout(resolve, SHUTDOWN_AUDIT_FLUSH_MS)),
+        ]);
+
+        // Stages 2, 3 and 3b of inflect-compliance (pausing in-flight agent
+        // runs, closing run-replay streams, cutting assistant streams) come
+        // back with the agent engine (sub-phases 6.1 and 6.4), each between
+        // the audit flush and OTel and each guarded like the stage above.
+
+        // Stage 4 — OTel (never throws by contract)
+        await shutdownTelemetry(SHUTDOWN_OTEL_MS);
+
+        // Stage 5 — Sentry (never throws by contract)
+        await shutdownSentry(SHUTDOWN_SENTRY_MS);
+
+        logger.info('graceful shutdown complete', {
+            component: 'shutdown',
+            signal,
+        });
+    };
+
+    // Register one listener per signal. Use once() semantics so a second
+    // SIGTERM (common in container runtimes as an escalation) fires the
+    // Node default — ensures we don't block termination if the first
+    // handler hangs despite the budgets.
+    process.once('SIGTERM', () => { void handler('SIGTERM'); });
+    process.once('SIGINT', () => { void handler('SIGINT'); });
+}
+
+/**
+ * Test-only: resets the install flag. Does NOT remove listeners already
+ * attached — use process.removeAllListeners('SIGTERM') in your afterEach
+ * if the test registered real handlers.
+ * @internal
+ */
+export function _resetShutdownInstalledForTesting(): void {
+    _installed = false;
+}

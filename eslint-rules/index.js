@@ -19,5 +19,6 @@ module.exports = {
     rules: {
         'next-auth-single-seam': require('./rules/next-auth-single-seam'),
         'no-request-derived-public-url': require('./rules/no-request-derived-public-url'),
+        'observable-gauge-rebinds': require('./rules/observable-gauge-rebinds'),
     },
 };
