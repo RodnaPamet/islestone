@@ -1,15 +1,144 @@
 /**
- * Server-side plain-text sanitisation — sub-phase 1.4 brings ONE profile.
+ * Server-side HTML sanitisation (Epic C.5).
  *
- * Copied from inflect-compliance `src/lib/security/sanitize.ts` at
- * 5528464fc54a8681956f3b9ce23ca9c075f0420e: `sanitizePlainText` and its
- * entity decoder only, because the first free-text write path (the display
- * name, `src/lib/account/profile.ts`) needs it in 1.4. Sub-phase 1.5 ports
- * the rest of the file (the rich-text and URL profiles) into this module.
+ * Every API write path that accepts user-supplied rich text routes
+ * through one of the helpers below BEFORE the value is persisted. This
+ * is the durable line of defence — render-time sanitisation in React
+ * is helpful but not sufficient: a single missed `dangerouslySetInner-
+ * HTML` consumer would otherwise turn a stored payload into a stored
+ * XSS vector. Sanitising at write time means even off-app surfaces
+ * (exports, email, API consumers reading the row verbatim) inherit the
+ * same safety.
  *
- * `sanitize-html` runs natively on Node without a DOM polyfill.
+ * Encryption is not a reason to skip this: a field encrypted at rest is
+ * decrypted for every renderer that reads it, so it is exactly as dangerous
+ * to render as a plaintext one (inflect-compliance Epic D.2).
+ *
+ * Two profiles. Pick by the call-site's intent:
+ *
+ *   - `sanitizeRichTextHtml(input)` — for surfaces that render HTML
+ *     (rich descriptions and comment bodies, when a later sub-phase
+ *     allows HTML formatting).
+ *     Allows a deliberately small set of formatting tags + safe links.
+ *
+ *   - `sanitizePlainText(input)` — for surfaces that render plain text
+ *     (titles, single-line descriptions, comment bodies today). Strips
+ *     ALL tags AND HTML-entity-decodes so a stored `&lt;script&gt;`
+ *     can't roundtrip back into a `<script>` somewhere downstream.
+ *
+ * And one helper for a value that is a URL rather than prose:
+ *
+ *   - `sanitizeUrlText(input)` — percent-encodes the characters that can
+ *     open markup or end an attribute. `sanitizePlainText` must NOT be
+ *     used on a URL: see that helper for why it corrupts query strings.
+ *
+ * Library choice
+ * --------------
+ *   `sanitize-html` over DOMPurify+jsdom because it runs natively on
+ *   Node without a DOM polyfill, bundles smaller, and exposes a
+ *   declarative allowlist API that's simpler to review in code review.
+ *   It is the de-facto Node.js sanitiser used by GitHub, npm, Sentry,
+ *   and others.
  */
+
 import sanitizeHtml from 'sanitize-html';
+
+// ─── Rich-text profile ──────────────────────────────────────────────
+
+/**
+ * Tags allowed in the rich-text profile. Headings, paragraphs, lists,
+ * inline emphasis, links, code blocks, blockquotes, tables. No
+ * `<script>`, `<style>`, `<iframe>`, `<object>`, `<embed>`, `<form>`,
+ * `<input>`, no SVG, no MathML. The `sanitize-html` defaults already
+ * exclude these, but we re-state the allowed set explicitly so a
+ * library default change can't quietly widen it.
+ */
+const RICH_TEXT_ALLOWED_TAGS: string[] = [
+    'p', 'br', 'hr',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'strong', 'em', 'u', 's', 'sub', 'sup', 'mark',
+    'ul', 'ol', 'li',
+    'blockquote',
+    'code', 'pre',
+    'a',
+    'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
+    'div', 'span',
+];
+
+/**
+ * Per-tag attribute allowlist. Anything not listed here is stripped.
+ * Notably, NO `style`, `class`, or any `on*` handlers anywhere. The
+ * only `id`s permitted are on headings — inert anchor targets for the
+ * document table of contents (`<a href="#...">`). No other tag may carry
+ * an `id`.
+ */
+const RICH_TEXT_ALLOWED_ATTRS: Record<string, string[]> = {
+    a: ['href', 'title', 'rel', 'target'],
+    h1: ['id'], h2: ['id'], h3: ['id'], h4: ['id'], h5: ['id'], h6: ['id'],
+    th: ['scope', 'colspan', 'rowspan'],
+    td: ['colspan', 'rowspan'],
+    code: ['data-language'],
+    pre: ['data-language'],
+};
+
+/**
+ * URL schemes accepted on `href` and friends. Note the deliberate
+ * absence of `javascript:`, `data:` (except `data:image/...` which we
+ * also exclude — embed images via the upload API instead), and
+ * `vbscript:`. Relative URLs are accepted via
+ * `allowProtocolRelative: false` + the schemes below being the only
+ * legal protocol prefixes.
+ */
+const RICH_TEXT_ALLOWED_SCHEMES: string[] = ['http', 'https', 'mailto', 'tel'];
+
+/**
+ * Sanitise an HTML rich-text payload before persisting it.
+ *
+ * Behaviour:
+ *   - Allowed tags: headings, paragraphs, lists, basic inline marks,
+ *     links (`http`, `https`, `mailto`, `tel`), code blocks, tables.
+ *   - All other tags are stripped (their text content is preserved).
+ *   - All attributes outside the per-tag allowlist are stripped — no
+ *     `style`, `class`, `id`, `on*`.
+ *   - All `<script>`, `<style>`, `<iframe>`, `<object>`, `<embed>` are
+ *     dropped along with their text content (XSS sinks).
+ *   - Links get `rel="noopener noreferrer"` and `target` gets coerced
+ *     to `_blank` only when explicitly set — a bare link stays
+ *     same-tab.
+ *   - Returns `''` for `null` / `undefined` so callers can pipe an
+ *     optional field through unconditionally.
+ */
+export function sanitizeRichTextHtml(input: string | null | undefined): string {
+    if (input == null) return '';
+    if (typeof input !== 'string') return '';
+    return sanitizeHtml(input, {
+        allowedTags: RICH_TEXT_ALLOWED_TAGS,
+        allowedAttributes: RICH_TEXT_ALLOWED_ATTRS,
+        allowedSchemes: RICH_TEXT_ALLOWED_SCHEMES,
+        allowedSchemesAppliedToAttributes: ['href'],
+        allowProtocolRelative: false,
+        // Drop disallowed tags AND their text content for known XSS
+        // sinks; for everything else, keep the inner text. This
+        // matches user intent ("they tried to insert <script> with
+        // text — strip the script AND don't ship the script body as
+        // plain text") while preserving e.g. `<custom-tag>hi</custom-tag>`
+        // → `hi`.
+        nonTextTags: ['script', 'style', 'textarea', 'noscript', 'iframe', 'object', 'embed'],
+        // Coerce `<a target="...">`: keep target only when it's a
+        // recognised value, and always pair with a safe rel.
+        transformTags: {
+            a: (tagName, attribs) => {
+                const next: Record<string, string> = { ...attribs };
+                // Force-safe relationship attrs.
+                next.rel = 'noopener noreferrer';
+                if (next.target && next.target !== '_blank' && next.target !== '_self') {
+                    delete next.target;
+                }
+                return { tagName, attribs: next };
+            },
+        },
+    });
+}
 
 // ─── Plain-text profile ─────────────────────────────────────────────
 
@@ -82,4 +211,45 @@ export function sanitizePlainText(input: string | null | undefined): string {
     // Fixed point: `current` is tag-free even after decoding, so the decoded
     // form is both safe AND the readable literal text.
     return decodeHtmlEntities(current);
+}
+
+// ─── URL profile ────────────────────────────────────────────────────
+
+/**
+ * Characters a URL may not contain unencoded (RFC 3986) that HTML reads as
+ * markup or as the end of an attribute value: `<` `>` `"` and the backtick,
+ * whitespace, and the C0 controls and DEL. A browser percent-encodes them
+ * before it sends a request, so encoding them here leaves the link pointing
+ * where it pointed. `'` is deliberately absent: RFC 3986 allows it, and an
+ * encoded `%27` is not, strictly, the same URL.
+ */
+const URL_MARKUP_CHARS = /[<>"`\s\u0000-\u001f\u007f]/g;
+
+/**
+ * Neutralise markup in a user-supplied URL without changing where it points.
+ *
+ * WHY NOT `sanitizePlainText`. That helper parses its input as HTML, and an
+ * HTML parser decodes the legacy entities that need no closing semicolon
+ * inside text — `&reg`, `&para`, `&sect`, `&times`, `&not`, `&copy`, `&lt`
+ * and about a hundred more. In a URL `&` is the query separator, so
+ * `?lang=en&region=us` came back as `?lang=en®ion=us`, `&param=` as `¶m=`
+ * and `&timestamp=` as `×tamp=`: a stored link that goes somewhere else.
+ *
+ * So this does not parse at all. It trims, then percent-encodes every
+ * {@link URL_MARKUP_CHARS} character. The result contains no `<` or `>`, so no
+ * renderer can find a tag in it, and no `"` or whitespace, so it cannot end a
+ * double-quoted or unquoted attribute. `&` and any entity are left exactly as
+ * typed: in every HTML context an entity is text, never markup.
+ *
+ * It does NOT judge the scheme. A `javascript:` link survives this, as it
+ * survives `sanitizePlainText`; refusing to render one is `normaliseHref` in
+ * `@/lib/security/safe-url`.
+ *
+ * Returns `''` for `null` / `undefined` / a non-string, like the other
+ * helpers.
+ */
+export function sanitizeUrlText(input: string | null | undefined): string {
+    if (input == null) return '';
+    if (typeof input !== 'string') return '';
+    return input.trim().replace(URL_MARKUP_CHARS, (c) => encodeURIComponent(c));
 }

@@ -37,6 +37,16 @@ import type { CustomRoleCarriageRefusal, CustomRoleForCarriage } from '@/lib/rol
 import { CUSTOM_ROLE_GRANT_EXCEEDS_HOLDER } from '@/lib/custom-role-grant-refusal';
 import { PERMISSION_NEEDS_ADMIN_BASE, grantsNeedingAdminBase } from '@/lib/custom-role-admin-base-rule';
 import type { Role } from '@prisma/client';
+import { sanitizePlainText } from '@/lib/security/sanitize';
+
+/**
+ * Free text is sanitised on the server before it is stored (CLAUDE.md layer
+ * rules, sub-phase 1.5): a role's description is shown wherever the role is
+ * listed. Blank becomes null, as before.
+ */
+function sanitizeOptionalText(value: string | null | undefined): string | null {
+    return sanitizePlainText(value ?? '').trim() || null;
+}
 
 /**
  * The roles a custom role may be built on (`CUSTOM_ROLE_BASE_ROLES`). A custom
@@ -178,7 +188,7 @@ export async function createCustomRole(ctx: RequestContext, input: CreateCustomR
     assertCanManageMembers(ctx);
 
     // Validate inputs
-    const name = input.name.trim();
+    const name = sanitizePlainText(input.name).trim();
     if (!name || name.length > 100) {
         throw badRequest('Role name is required and must be 100 characters or fewer.');
     }
@@ -209,7 +219,7 @@ export async function createCustomRole(ctx: RequestContext, input: CreateCustomR
                 data: {
                     tenantId: ctx.tenantId,
                     name,
-                    description: input.description?.trim() || null,
+                    description: sanitizeOptionalText(input.description),
                     baseRole: input.baseRole,
                     grantsJson: input.grantsJson as object,
                     isActive: true,
@@ -273,7 +283,7 @@ export async function updateCustomRole(
         const data: Record<string, any> = {};
 
         if (input.name !== undefined) {
-            const name = input.name.trim();
+            const name = sanitizePlainText(input.name).trim();
             if (!name || name.length > 100) {
                 throw badRequest('Role name is required and must be 100 characters or fewer.');
             }
@@ -288,7 +298,7 @@ export async function updateCustomRole(
         }
 
         if (input.description !== undefined) {
-            data.description = input.description?.trim() || null;
+            data.description = sanitizeOptionalText(input.description);
         }
 
         if (input.baseRole !== undefined) {

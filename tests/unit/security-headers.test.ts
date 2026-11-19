@@ -1,4 +1,4 @@
-import { CONTENT_SECURITY_POLICY, securityHeaders } from '@/lib/security-headers';
+import { applySecurityHeaders, securityHeaders } from '@/lib/security-headers';
 
 const asMap = (production: boolean) =>
     Object.fromEntries(securityHeaders({ production }).map((h) => [h.key.toLowerCase(), h.value]));
@@ -9,14 +9,15 @@ describe('baseline security headers', () => {
             const headers = asMap(production);
             expect(headers['x-content-type-options']).toBe('nosniff');
             expect(headers['x-frame-options']).toBe('DENY');
-            expect(headers['content-security-policy']).toContain("frame-ancestors 'none'");
             expect(headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
             expect(headers['permissions-policy']).toContain('camera=()');
         }
     });
 
-    it('holds no script-src yet, which would need a per-request nonce (sub-phase 1.5)', () => {
-        expect(CONTENT_SECURITY_POLICY).not.toMatch(/script-src|default-src/);
+    it('carries no Content-Security-Policy: the middleware writes the one CSP, with a per-request nonce', () => {
+        for (const production of [false, true]) {
+            expect(asMap(production)).not.toHaveProperty('content-security-policy');
+        }
     });
 
     it('sends HSTS from a production build only', () => {
@@ -27,5 +28,11 @@ describe('baseline security headers', () => {
     it('names each header once', () => {
         const keys = securityHeaders({ production: true }).map((h) => h.key.toLowerCase());
         expect(new Set(keys).size).toBe(keys.length);
+    });
+
+    it('applySecurityHeaders sets exactly the same set on a Headers object', () => {
+        const headers = new Headers();
+        applySecurityHeaders(headers, true);
+        expect(Object.fromEntries(headers.entries())).toEqual(asMap(true));
     });
 });
