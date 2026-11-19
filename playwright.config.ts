@@ -67,19 +67,32 @@ export default defineConfig({
         },
     ],
     webServer: {
-        command: `npx next start --hostname 127.0.0.1 --port ${PORT}`,
+        // AUTH_TEST_MODE=1 turns off the credential throttle and the
+        // mutation-tier rate limit, which the auth specs would trip. `next
+        // start` forces NODE_ENV=production, where src/env.ts refuses the flag
+        // unless NEXT_TEST_MODE=1, which only this server sets
+        // (tests/unit/security/auth-test-mode-prod-refusal.test.ts).
+        command: `AUTH_TEST_MODE=1 NEXT_TEST_MODE=1 npx next start --hostname 127.0.0.1 --port ${PORT}`,
         url: `${BASE_URL}/api/livez`,
         reuseExistingServer: !isCI,
         timeout: 120_000,
         env: {
             // Validated at start by next.config.ts, so it must be real.
             NEXT_PUBLIC_APP_URL: BASE_URL,
-            // Required by src/env.ts, which next start validates. A
-            // well-formed URL is enough: the smoke specs open no database
-            // connection, and the Prisma client connects lazily. Do not set
+            // Required by src/env.ts, which next start validates. The auth
+            // specs (sub-phase 1.4) register and sign in, so it must reach a
+            // migrated database. Do not set
             // SKIP_ENV_VALIDATION here: this is the one run that exercises
             // the built app's env check.
             DATABASE_URL: process.env.DATABASE_URL ?? 'postgresql://islestone:islestone_dev@127.0.0.1:6432/islestone',
+            // Sub-phase 1.4. A test value, never a real secret.
+            AUTH_SECRET: process.env.AUTH_SECRET ?? 'e2e-auth-secret-at-least-16-characters',
+            NEXTAUTH_URL: BASE_URL,
+            APP_URL: BASE_URL,
+            // `next start` is production, where public sign-up is closed by
+            // default (ADR 0006); the specs register their own workspaces.
+            AUTH_PUBLIC_SIGNUP: '1',
+            RATE_LIMIT_MODE: 'memory',
             NEXT_TELEMETRY_DISABLED: '1',
         },
     },

@@ -44,6 +44,12 @@ const PUBLIC_PATH_PREFIXES = [
 ];
 
 const PUBLIC_PATH_EXACT = new Set([
+    // Islestone: the placeholder home page and the UI gallery carry no
+    // workspace data and were public before sub-phase 1.4 (the smoke and
+    // gallery E2E specs read them signed out). Exact matches only, so
+    // `/gallery/…` and every other path stay behind the gate.
+    '/',
+    '/gallery',
     '/favicon.ico',
     '/robots.txt',
     '/sitemap.xml',

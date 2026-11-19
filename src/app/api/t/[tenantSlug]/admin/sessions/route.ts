@@ -104,8 +104,8 @@ export const DELETE = withApiErrorHandling(
         if (!row || row.revokedAt) {
             throw notFound('Session not found or already revoked');
         }
-        // An OWNER's or AI_ADMIN's session is an OWNER's to revoke, as their
-        // membership is to deactivate (owner decision, 2026-10-25).
+        // An OWNER's session is an OWNER's to revoke, as their membership is
+        // to deactivate (inflect-compliance owner decision, 2026-10-25).
         await assertMayRevokeSessionsOfUser(ctx, row.userId);
 
         const result = await revokeSessionById({

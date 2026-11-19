@@ -124,7 +124,12 @@ const config = {
             ...shared,
             displayName: 'node',
             testEnvironment: 'node',
-            testMatch: ['<rootDir>/tests/unit/**/*.test.ts', '<rootDir>/tests/guards/**/*.test.ts'],
+            testMatch: [
+                '<rootDir>/tests/unit/**/*.test.ts',
+                '<rootDir>/tests/guards/**/*.test.ts',
+                // RuleTester suites for the local ESLint rules (eslint-rules/).
+                '<rootDir>/eslint-rules/__tests__/**/*.test.ts',
+            ],
         },
         {
             ...shared,

@@ -19,8 +19,8 @@ import { createInvitePostHandler } from '../_lib/create-invite-handler';
 
 const CreateInviteSchema = z.object({
     email: z.string().email('Valid email required'),
-    // The writers' list: nobody is invited straight into AI_ADMIN (#3699). An
-    // OWNER promotes an existing member on the members page instead.
+    // The writers' list (`ASSIGNABLE_TENANT_ROLES`): GUEST is not assignable
+    // until its scope is built.
     role: z.enum(ASSIGNABLE_TENANT_ROLES),
 });
 

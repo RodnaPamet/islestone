@@ -87,9 +87,8 @@ export async function createInviteToken(
 ): Promise<CreateInviteResult> {
     assertCanManageMembers(ctx);
 
-    // An invite is a deferred membership write, so it takes the writers' list:
-    // nobody is invited straight into AI_ADMIN (#3699). An OWNER promotes an
-    // existing member on the members page instead.
+    // An invite is a deferred membership write, so it takes the writers' list
+    // (`ASSIGNABLE_TENANT_ROLES`): GUEST is not assignable yet.
     if (!isAssignableTenantRole(input.role)) {
         throw badRequest(unassignableRoleMessage(input.role));
     }
@@ -507,8 +506,8 @@ async function finalizeInviteRedemption(
     userId: string,
 ): Promise<RedeemResult> {
     // The read-side half of `createInviteToken`'s refusal: an invite row
-    // carrying a role no invite may write (AI_ADMIN, #3699 — one written around
-    // the usecase) materialises no membership. The caller has already claimed it, so it
+    // carrying a role no invite may write (GUEST, or one written around the
+    // usecase) materialises no membership. The caller has already claimed it, so it
     // stays burnt — the safe failure mode this tail already documents.
     if (!isAssignableTenantRole(invite.role)) {
         throw badRequest(unassignableRoleMessage(invite.role));

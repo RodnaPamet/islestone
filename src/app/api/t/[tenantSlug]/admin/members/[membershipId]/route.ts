@@ -18,18 +18,18 @@ import {
 
 const UpdateMemberSchema = z
     .object({
-        // The members-page role change's list: the writers' list plus AI_ADMIN
-        // (#3699 deploy 2), which the usecase lets an OWNER alone assign.
+        // The members-page role change's list (`MEMBER_ROLE_CHANGE_ROLES`, in
+        // Islestone the writers' list itself; the parent added AI_ADMIN).
         role: z.enum(MEMBER_ROLE_CHANGE_ROLES).optional(),
         // `null` clears. An empty string is neither a role id nor a clear, so
         // it is refused here rather than written.
         customRoleId: z.string().min(1).nullable().optional(),
     })
     // A body naming both halves is applied all or nothing (#4118). Asking for
-    // a role that carries no custom role (OWNER, AI_ADMIN — `mayCarryCustomRole`)
+    // a role that carries no custom role (OWNER — `mayCarryCustomRole`)
     // AND a custom role in one body can never succeed, so it is refused here,
     // before the database. The other order is refused by the usecase: a role
-    // change into OWNER or AI_ADMIN is refused while the member still carries a
+    // change into OWNER is refused while the member still carries a
     // custom role, so `{ role: 'OWNER', customRoleId: null }` for a member who
     // carries one commits nothing — the custom role is removed on its own
     // first (#3720).
