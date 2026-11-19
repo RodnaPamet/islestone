@@ -61,10 +61,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { gitFiles, REPO_ROOT } from './git-files';
 import { readPrismaSchema } from './prisma-schema';
 import { codeOf } from './source-blocks';
-
-const MIGRATIONS_DIR = path.resolve(__dirname, '../../prisma/migrations');
 
 /** A `CREATE`/`ALTER`/`DROP TYPE` statement no pattern in here understood. */
 export interface UnreadableDdl {
@@ -289,20 +288,29 @@ function enumLiterals(body: string): string[] {
     return [...body.matchAll(/'((?:[^']|'')*)'/g)].map((m) => unquote(m[1]));
 }
 
-/** Migration directory names, in the order `prisma migrate deploy` applies them. */
-export function migrationDirectories(): string[] {
-    return fs
-        .readdirSync(MIGRATIONS_DIR, { withFileTypes: true })
-        .filter((d) => d.isDirectory())
-        .map((d) => d.name)
-        .sort();
+/** One migration: its directory name and its `migration.sql`. */
+export interface MigrationSource {
+    name: string;
+    sql: string;
+}
+
+/**
+ * The migrations of the repository at `root`, in the order `prisma migrate
+ * deploy` applies them (directory name). Population from git, never a
+ * directory walk.
+ */
+export function migrationSources(root: string = REPO_ROOT): MigrationSource[] {
+    return gitFiles(root)
+        .filter((rel) => /^prisma\/migrations\/[^/]+\/migration\.sql$/.test(rel))
+        .map((rel) => ({ name: rel.split('/')[2]!, sql: fs.readFileSync(path.join(root, rel), 'utf8') }))
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
 /**
  * Replay every migration's enum DDL and return the member order a freshly
  * migrated database would hold, per physical type name.
  */
-export function reconstructEnumOrder(): {
+export function reconstructEnumOrder(sources: readonly MigrationSource[] = migrationSources()): {
     reconstructed: Map<string, string[]>;
     unreadableDdl: UnreadableDdl[];
     danglingAnchors: DanglingAnchor[];
@@ -313,11 +321,9 @@ export function reconstructEnumOrder(): {
     const danglingAnchors: DanglingAnchor[] = [];
     let migrationsReplayed = 0;
 
-    for (const dir of migrationDirectories()) {
-        const file = path.join(MIGRATIONS_DIR, dir, 'migration.sql');
-        if (!fs.existsSync(file)) continue;
+    for (const { name: dir, sql } of sources) {
         migrationsReplayed += 1;
-        for (const raw of splitSqlStatements(stripSqlComments(fs.readFileSync(file, 'utf8')))) {
+        for (const raw of splitSqlStatements(stripSqlComments(sql))) {
             if (!RE_TYPEISH.test(raw)) continue;
             const stmt = stripPlpgsqlPreamble(raw);
 
@@ -393,8 +399,8 @@ export function reconstructEnumOrder(): {
 }
 
 /** Every `enum X { … }` block in `prisma/schema`, in declaration order. */
-export function parseDeclaredEnums(): DeclaredEnum[] {
-    const schema = codeOf(readPrismaSchema());
+export function parseDeclaredEnums(schemaText: string = readPrismaSchema()): DeclaredEnum[] {
+    const schema = codeOf(schemaText);
     const out: DeclaredEnum[] = [];
     for (const block of schema.matchAll(/^enum\s+(\w+)\s*\{([^}]*)\}/gm)) {
         const members: string[] = [];
@@ -425,12 +431,17 @@ const sameSet = (a: readonly string[], b: readonly string[]): boolean =>
 
 let cached: EnumOrderReport | null = null;
 
-/** The whole comparison, cached for the test process. */
+/** The whole comparison for this repository, cached for the test process. */
 export function enumOrderReport(): EnumOrderReport {
     if (cached !== null) return cached;
-    const { reconstructed, unreadableDdl, danglingAnchors, migrationsReplayed } =
-        reconstructEnumOrder();
-    const declared = parseDeclaredEnums();
+    cached = computeEnumOrderReport(migrationSources(), readPrismaSchema());
+    return cached;
+}
+
+/** The comparison over given migrations and schema text (guards prove themselves with it). */
+export function computeEnumOrderReport(sources: readonly MigrationSource[], schemaText: string): EnumOrderReport {
+    const { reconstructed, unreadableDdl, danglingAnchors, migrationsReplayed } = reconstructEnumOrder(sources);
+    const declared = parseDeclaredEnums(schemaText);
 
     const missingFromMigrations: string[] = [];
     const memberSetDifferences: MemberSetDifference[] = [];
@@ -463,7 +474,7 @@ export function enumOrderReport(): EnumOrderReport {
         }
     }
 
-    cached = {
+    return {
         declared,
         reconstructed,
         unreadableDdl,
@@ -475,5 +486,4 @@ export function enumOrderReport(): EnumOrderReport {
         ),
         migrationsReplayed,
     };
-    return cached;
 }

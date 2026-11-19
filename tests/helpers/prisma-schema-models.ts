@@ -358,9 +358,17 @@ let cached: SchemaModel[] | null = null;
  */
 export function parseSchemaModels(): SchemaModel[] {
     if (cached !== null) return cached;
-    const schema = readPrismaSchema();
-    cached = findModelBlocks(schema).map((b) => parseModelBody(b.name, b.body));
+    cached = parseSchemaModelsFrom(readPrismaSchema());
     return cached;
+}
+
+/**
+ * The same parse over a given schema text (comments already masked, as
+ * `readPrismaSchema` returns it). Guards use it to prove their detector on
+ * a planted schema.
+ */
+export function parseSchemaModelsFrom(schema: string): SchemaModel[] {
+    return findModelBlocks(schema).map((b) => parseModelBody(b.name, b.body));
 }
 
 /**
