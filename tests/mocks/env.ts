@@ -4,9 +4,10 @@
  * ESM only.
  *
  * Reads are live from `process.env`, so a test sets a variable for itself
- * (and restores it). The only default is one the real schema declares:
+ * (and restores it). The only defaults are those the real schema declares:
  * `NODE_ENV` falls back to `development` in src/env.ts (Jest sets `test`
- * itself, so the fallback rarely applies). A required variable such as
+ * itself, so the fallback rarely applies), and the auth variables'
+ * `MICROSOFT_TENANT_ID` and `RATE_LIMIT_MODE`. A required variable such as
  * `NEXT_PUBLIC_APP_URL` or `DATABASE_URL` has no default here, as it has
  * none in production: a test that needs it sets it, so a missing required
  * variable never looks satisfied. The integration project's global setup
@@ -16,6 +17,9 @@
  */
 const DEFAULTS: Readonly<Record<string, string>> = {
     NODE_ENV: 'development',
+    // Schema defaults of the auth variables (sub-phase 1.4).
+    MICROSOFT_TENANT_ID: 'common',
+    RATE_LIMIT_MODE: 'upstash',
 };
 
 export const env: Readonly<Record<string, string | undefined>> = new Proxy(

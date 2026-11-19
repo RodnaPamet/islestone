@@ -27,6 +27,11 @@ const ROOT = path.resolve(__dirname, '../..');
 /** Models with a dedicated two-tenant BEHAVIOURAL isolation test. */
 const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     TenantMembership: 'tests/integration/tenant-membership-isolation.test.ts',
+    UserSession: 'tests/integration/user-session-rls.test.ts',
+    UserMfaEnrollment: 'tests/integration/auth-tables-isolation.test.ts',
+    TenantSecuritySettings: 'tests/integration/auth-tables-isolation.test.ts',
+    TenantInvite: 'tests/integration/auth-tables-isolation.test.ts',
+    TenantCustomRole: 'tests/integration/auth-tables-isolation.test.ts',
 };
 
 /** Models proven only structurally, pending a two-tenant test. Empty, and should stay so. */
