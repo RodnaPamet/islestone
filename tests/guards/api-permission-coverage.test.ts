@@ -81,6 +81,14 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
         relPath: 'src/app/api/t/[tenantSlug]/security',
         why: 'Tenant security surface — MFA policy mutations + admin-driven session revocation.',
     },
+    // Sub-phases 2.1–2.2: the work-item API and its configuration. Every
+    // route carries a literal requirePermission, so a refusal writes an
+    // AUTHZ_DENIED row, and every method has its rule.
+    { relPath: 'src/app/api/t/[tenantSlug]/work-items', why: 'Work items: list, CRUD, state, assign, bulk, comments, watchers, links, relations, labels, moves.' },
+    { relPath: 'src/app/api/t/[tenantSlug]/projects', why: 'Projects: create, edit, archive, delete, restore.' },
+    { relPath: 'src/app/api/t/[tenantSlug]/teams', why: 'Teams and their workflow states.' },
+    { relPath: 'src/app/api/t/[tenantSlug]/work-item-types', why: 'Work item types.' },
+    { relPath: 'src/app/api/t/[tenantSlug]/labels', why: 'Labels.' },
     // NOT tenant-scoped, and that is exactly why it is here. `/api/account`
     // acts on the SESSION's user, so `requirePermission` — which resolves a
     // tenant role — does not apply to the route in it today. In scope so the

@@ -207,6 +207,226 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'compromise — destructive on the timeline that matters ' +
             'and OWNER-only per the role model (src/lib/permissions.ts).',
     },
+
+    // ── Work items and their configuration (sub-phases 2.1–2.2) ─────
+    // Every route under work-items, teams, projects, work-item-types and
+    // labels; a specific path sits above its one-segment catch-all.
+    {
+        path: new RegExp(`^${T}\\/work-items$`),
+        methods: ['GET'],
+        permission: 'work_items.view',
+        note: 'The work-item list; project visibility narrows it in the repository.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items$`),
+        methods: ['POST'],
+        permission: 'work_items.create',
+        note: 'Create a work item (also a sub-item, with parentId).',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/deleted$`),
+        methods: ['GET'],
+        permission: 'work_items.delete',
+        note: 'The Deleted view is the restore surface: the key restore takes.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/metrics$`),
+        methods: ['GET'],
+        permission: 'work_items.view',
+        note: 'Counts over visible projects only.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/by-key\\/[^\\/]+$`),
+        methods: ['GET'],
+        permission: 'work_items.view',
+        note: 'Key lookup (current prefix, retired prefix, alias).',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/bulk\\/assign$`),
+        methods: ['POST'],
+        permission: 'work_items.assign',
+        note: 'Bulk assign: the assign key, as the single assign.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/bulk\\/(state|due)$`),
+        methods: ['POST'],
+        permission: 'work_items.edit',
+        note: 'Bulk state and due-date changes.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/bulk\\/delete$`),
+        methods: ['POST'],
+        permission: 'work_items.delete',
+        note: 'Bulk soft delete: the delete key equals the usecase assert, so a refusal is audited.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+$`),
+        methods: ['GET'],
+        permission: 'work_items.view',
+        note: 'Read one work item in a visible project.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+$`),
+        methods: ['PATCH'],
+        permission: 'work_items.edit',
+        note: 'Edit a work item (If-Match for title and description).',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+$`),
+        methods: ['DELETE'],
+        permission: 'work_items.delete',
+        note: 'Soft-delete a work item and its sub-items.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/(state|move)$`),
+        methods: ['POST'],
+        permission: 'work_items.edit',
+        note: 'Change the state; reorder, re-parent or move to another project.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/assign$`),
+        methods: ['POST'],
+        permission: 'work_items.assign',
+        note: 'Assign a work item to a member, or clear its assignee.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/restore$`),
+        methods: ['POST'],
+        permission: 'work_items.delete',
+        note: 'Restore: the key equals the DELETE it undoes.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/(activity|sub-items)$`),
+        methods: ['GET'],
+        permission: 'work_items.view',
+        note: 'Activity and sub-items of a visible item.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/comments$`),
+        methods: ['GET'],
+        permission: 'work_items.view',
+        note: 'List the comments of a visible work item.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/comments$`),
+        methods: ['POST'],
+        permission: 'work_items.comment',
+        note: 'Add a comment to a work item (the comment key, not edit).',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/comments\\/[^\\/]+$`),
+        methods: ['PATCH', 'DELETE'],
+        permission: 'work_items.comment',
+        note: 'Edit or delete a comment (author or admin, in the usecase).',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/watchers$`),
+        methods: ['GET', 'POST', 'DELETE'],
+        permission: 'work_items.view',
+        note: 'List watchers; the caller watches or stops watching.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/watchers\\/[^\\/]+$`),
+        methods: ['POST', 'DELETE'],
+        permission: 'work_items.edit',
+        note: 'Add or remove ANOTHER member as a watcher: the split makes the refusal an audited denial.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/(links|relations)$`),
+        methods: ['GET'],
+        permission: 'work_items.view',
+        note: 'List links or relations.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/(links|relations|labels)$`),
+        methods: ['POST'],
+        permission: 'work_items.edit',
+        note: 'Add a link, relation or labels.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/(links|relations|labels)\\/[^\\/]+$`),
+        methods: ['DELETE'],
+        permission: 'work_items.edit',
+        note: 'Remove a link, relation or label.',
+    },
+    {
+        path: new RegExp(`^${T}\\/(teams|work-item-types|labels)$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: 'Read the work configuration.',
+    },
+    {
+        path: new RegExp(`^${T}\\/(teams|work-item-types|labels)$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note: 'Teams, types and labels are workspace settings (owner to confirm).',
+    },
+    {
+        path: new RegExp(`^${T}\\/teams\\/[^\\/]+$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: 'Read a team and its workflow.',
+    },
+    {
+        path: new RegExp(`^${T}\\/(teams|work-item-types|labels)\\/[^\\/]+$`),
+        methods: ['PATCH', 'DELETE'],
+        permission: 'admin.manage',
+        note: 'Change or delete a team, type or label.',
+    },
+    {
+        path: new RegExp(`^${T}\\/teams\\/[^\\/]+\\/workflow-states$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: 'Read the workflow states of a team.',
+    },
+    {
+        path: new RegExp(`^${T}\\/teams\\/[^\\/]+\\/workflow-states$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note: 'Add a workflow state.',
+    },
+    {
+        path: new RegExp(`^${T}\\/teams\\/[^\\/]+\\/workflow-states\\/[^\\/]+$`),
+        methods: ['PATCH', 'DELETE'],
+        permission: 'admin.manage',
+        note: 'Change or delete a workflow state.',
+    },
+    {
+        path: new RegExp(`^${T}\\/projects$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: 'List the projects visible to the caller.',
+    },
+    {
+        path: new RegExp(`^${T}\\/projects$`),
+        methods: ['POST'],
+        permission: 'projects.create',
+        note: 'Create a project, with its key prefix (never reused).',
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: 'Read a visible project.',
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+$`),
+        methods: ['PATCH'],
+        permission: 'projects.edit',
+        note: 'Rename or re-prefix a project.',
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+$`),
+        methods: ['DELETE'],
+        permission: 'projects.archive',
+        note: 'Delete a project (soft): the archive key, the only destructive project key.',
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/(archive|restore)$`),
+        methods: ['POST'],
+        permission: 'projects.archive',
+        note: 'Archive, unarchive or restore a project.',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────
