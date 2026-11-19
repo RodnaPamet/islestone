@@ -1,14 +1,18 @@
-export default function HomePage() {
-    return (
-        <main className="mx-auto flex max-w-2xl flex-col gap-4 px-4 py-16">
-            <h1 className="text-3xl font-semibold tracking-tight">Islestone</h1>
-            <p className="text-content-muted">
-                AI-enabled project management, where people stay accountable and agents work as
-                their delegates.
-            </p>
-            <p className="border-t border-border-subtle pt-4 text-sm text-content-muted">
-                This is the repository skeleton. The product arrives phase by phase.
-            </p>
-        </main>
-    );
+import { redirect } from 'next/navigation';
+
+import { getSession } from '@/lib/auth/session';
+
+/**
+ * The root page: sends a signed-in person to the workspace picker,
+ * `/tenants`, which handles none, one and several workspaces (one goes
+ * straight to that workspace's My Work), and anybody else to `/login`.
+ *
+ * Copied from inflect-compliance `src/app/page.tsx` at
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e (sub-phase 1.7); it replaces the
+ * 1.1 placeholder home. The session is read through Islestone's seam.
+ */
+export default async function Home() {
+    const session = await getSession();
+    if (!session) redirect('/login');
+    redirect('/tenants');
 }

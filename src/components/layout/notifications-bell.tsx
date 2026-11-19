@@ -1,0 +1,612 @@
+'use client';
+
+/**
+ * Roadmap-14 PR-8 — `<NotificationsBell>` — notification affordance
+ * in the top-bar right slot.
+ *
+ * Mounts between the workspace switcher and the user menu. Shows a
+ * bell icon with a count badge for unread notifications; click
+ * opens a popover listing recent notifications.
+ *
+ * Data: the OPEN workspace's notifications, from `/api/t/<slug>/notifications`
+ * (sub-phase 1.6's workspace routes). Outside a workspace the bell renders
+ * nothing: Islestone has no flat `/api/notifications` route, and the org
+ * chrome (sub-phase 8.3) decides what it shows there. A fetch on mount
+ * seeds the badge; a fixed-cadence poll (NOTIFICATIONS_POLL_INTERVAL_MS)
+ * keeps the unread count live without the user opening the popover;
+ * and every popover-open pulls a fresh list. The poll pauses while
+ * the browser tab is hidden and refetches on return, so a
+ * backgrounded tab never hammers the endpoint.
+ *
+ * Each notification:
+ *
+ *   • Title + body (truncated to one + two lines respectively).
+ *   • Time (relative, formatted through next-intl's `relativeTime`).
+ *   • Click → marks-read + navigates to `linkUrl`, used as stored.
+ *
+ * Empty state uses the R11 personality vocabulary — "All clear"
+ * with a calm icon, not a generic "No notifications" sentence.
+ *
+ * Mark-all-read action lives in the popover footer (bulk verb).
+ *
+ * Out of scope (separate roadmaps — do not blur in here):
+ *   • Real-time push. The bell REST-polls by design; SSE / WebSocket
+ *     streaming is a separate infrastructure roadmap. When it lands
+ *     it replaces the poll interval below and nothing else — the
+ *     fetch/merge/render path is already the seam.
+ *   • Notification preferences / settings.
+ *   • Per-channel filtering — the count is unread-total only.
+ */
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { useFormatter, useTranslations } from 'next-intl';
+import { Bell, CheckCheck } from 'lucide-react';
+
+import { Popover } from '@/components/ui/popover';
+import { EmptyState } from '@inflect/ui/components/ui/empty-state';
+import { formatDateCompact } from '@inflect/ui/lib/format-date';
+import { noteUnauthorized } from '@/lib/auth/session-expiry';
+import { MARK_NOTIFICATION_READ_REQUEST } from '@/lib/notifications/mark-read';
+import { env } from '@/env-client';
+import { NAV_BAR_SLOT_PRESS } from './nav-bar';
+import { HIT_AREA_CLASS } from '@inflect/ui/components/ui/hit-area';
+
+// ─── Types ─────────────────────────────────────────────────────────
+
+interface NotificationRow {
+    id: string;
+    type: string;
+    title: string;
+    /** The notification's text (`Notification.body`). */
+    body: string;
+    read: boolean;
+    linkUrl: string | null;
+    createdAt: string;
+}
+
+// ─── Polling ───────────────────────────────────────────────────────
+
+/**
+ * REST-poll cadence for the unread badge. 60s is frequent enough
+ * that the count feels live without meaningfully loading the
+ * endpoint. This interval IS the real-time mechanism today — a
+ * future SSE / WebSocket roadmap would replace it.
+ */
+const NOTIFICATIONS_POLL_INTERVAL_MS = 60_000;
+
+/**
+ * 2026-05-27 (PR-C) — when the SSE channel is open and healthy,
+ * the poll throttles to 5 minutes — coverage for the cross-pod
+ * gap (a notification created on a pod whose bus subscribers
+ * don't include this client will reach the bell within 5 min via
+ * the fallback poll). When SSE errors, this drops back to the
+ * original 60s.
+ */
+const NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS = 5 * 60_000;
+
+// ─── Recipes ───────────────────────────────────────────────────────
+
+// `HIT_AREA_CLASS`: a 22px `rounded-full` bell is a circle in a square —
+// 14% of its box rendered as bell but did not answer to `:hover`. See
+// `hit-area.ts` for the measurements.
+const BELL_BUTTON_CLASS =
+    `relative inline-flex items-center justify-center h-[22px] w-[22px] rounded-full text-content-muted transition-colors hover:bg-bg-muted/50 hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${NAV_BAR_SLOT_PRESS} ${HIT_AREA_CLASS}`;
+
+const BADGE_OVERLAY_CLASS =
+    // Pill chip pinned to the bell's top-right corner. Negative
+    // inset puts it slightly outside the bell's bounding box so
+    // the bell glyph remains uncluttered.
+    'absolute -top-0.5 -right-0.5 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-bg-error-emphasis text-[10px] font-semibold text-content-inverted tabular-nums leading-none';
+
+const ROW_CLASS =
+    'flex flex-col gap-tight rounded-md px-2.5 py-2 transition-colors hover:bg-bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]';
+
+const ROW_UNREAD_CLASS = 'bg-bg-subtle';
+
+// ─── Helpers ───────────────────────────────────────────────────────
+
+/** Under a minute old: the bell says "now" rather than "0 minutes ago". */
+const JUST_NOW_MS = 60_000;
+
+/** Older than a week: the bell shows the date rather than a distance. */
+const RELATIVE_LIMIT_MS = 7 * 24 * 60 * 60_000;
+
+/**
+ * Where the bell reads from: the open workspace's notifications. The list,
+ * the stream and mark-read all hang off this one base, so they cannot
+ * disagree about whose notifications they are. `null` outside a workspace,
+ * where the bell renders nothing.
+ */
+function notificationsUrlFor(tenantSlug: string | null): string | null {
+    return tenantSlug ? `/api/t/${encodeURIComponent(tenantSlug)}/notifications` : null;
+}
+
+/** Mark-read: the workspace route takes `PUT` with an empty body. */
+const MARK_READ_INIT: RequestInit = { ...MARK_NOTIFICATION_READ_REQUEST, credentials: 'same-origin' };
+
+// ─── Component ─────────────────────────────────────────────────────
+
+export function NotificationsBell() {
+    // The CURRENT workspace, from the URL rather than `useTenantHref`, so the
+    // bell needs no tenant context to decide it has nothing to show.
+    const params = useParams();
+    const currentTenantSlug =
+        typeof params?.tenantSlug === 'string' ? params.tenantSlug : null;
+    const notificationsUrl = notificationsUrlFor(currentTenantSlug);
+    if (!currentTenantSlug || !notificationsUrl) return null;
+    return <WorkspaceNotificationsBell tenantSlug={currentTenantSlug} notificationsUrl={notificationsUrl} />;
+}
+
+function WorkspaceNotificationsBell({
+    tenantSlug: currentTenantSlug,
+    notificationsUrl,
+}: {
+    tenantSlug: string;
+    notificationsUrl: string;
+}) {
+    const t = useTranslations('panels.bell');
+    const format = useFormatter();
+    /**
+     * "now", "5 minutes ago", "3 days ago", then the date. next-intl's
+     * `relativeTime` keeps the words in the active locale.
+     */
+    const formatRelativeTime = useCallback(
+        (iso: string): string => {
+            const then = new Date(iso);
+            if (Number.isNaN(then.getTime())) return '';
+            const diff = Date.now() - then.getTime();
+            if (diff < JUST_NOW_MS) return t('now');
+            if (diff < RELATIVE_LIMIT_MS) return format.relativeTime(then, new Date());
+            return formatDateCompact(iso);
+        },
+        [format, t],
+    );
+    const [open, setOpen] = useState(false);
+    const [items, setItems] = useState<NotificationRow[] | null>(null);
+    const [loading, setLoading] = useState(false);
+    // A flag, not text (#4987): the sentence is the page's, translated.
+    const [error, setError] = useState(false);
+    // Distinct from `error`: this one is terminal and gets its own copy with a
+    // way out, because "reload the page" is the only thing that helps.
+    const [sessionExpired, setSessionExpired] = useState(false);
+
+    const close = useCallback(() => setOpen(false), []);
+
+    /**
+     * Set once the endpoint has answered 401/403, and never cleared.
+     *
+     * A ref rather than state on purpose: the poll callback below closes over
+     * it, and a state update would not be visible to the already-scheduled
+     * interval — which is the exact shape of the bug this guards against.
+     */
+    const authFailedRef = useRef(false);
+
+    const fetchList = useCallback(async () => {
+        // Belt and braces with the interval teardown: `open` and
+        // `visibilitychange` also call this, and both must stay quiet once the
+        // session is gone.
+        if (authFailedRef.current) return;
+
+        setLoading(true);
+        setError(false);
+        try {
+            const res = await fetch(notificationsUrl, {
+                credentials: 'same-origin',
+            });
+
+            // AN EXPIRED SESSION IS TERMINAL, NOT A TRANSIENT FAILURE.
+            //
+            // This used to fall into the `!res.ok` throw below, which set the
+            // error banner and left the 60s interval running — so a tab left
+            // open past its JWT expiry re-requested the notifications route,
+            // failed 401, and logged a console error every 60 seconds for as
+            // long as the tab stayed visible. Nothing ever told the user their
+            // session had gone, and nothing ever stopped.
+            //
+            // Retrying cannot help: the 401 comes from `middleware.ts`, where
+            // `getToken()` returned null for a missing, malformed or expired
+            // cookie. None of those resolve by asking again — only signing in
+            // does.
+            if (res.status === 401 || res.status === 403) {
+                authFailedRef.current = true;
+                setSessionExpired(true);
+                setItems(null);
+                // #2222 — tell the rest of the app, not just this component.
+                // The bell's 60s poll is usually the FIRST to notice, so the
+                // store it marks here is what stops the app's other pollers.
+                //
+                // 401 ONLY through the shared predicate, even though BOTH arms
+                // are terminal here. The notifications route takes no
+                // `requirePermission`, so its only reachable 403 is a
+                // DEACTIVATED/REMOVED membership — terminal for the bell. That
+                // reasoning is a property of THIS route's shape and does not
+                // transfer to the other workspace pollers the store drives,
+                // where a 403 is routinely a permission denial from a
+                // correctly signed-in user.
+                noteUnauthorized(res.status, notificationsUrl);
+                return;
+            }
+
+            if (!res.ok) {
+                setError(true);
+                return;
+            }
+            const body = (await res.json()) as NotificationRow[];
+            setItems(body);
+        } catch {
+            setError(true);
+        } finally {
+            setLoading(false);
+        }
+    }, [notificationsUrl]);
+
+    // 2026-05-27 (PR-C) — SSE-first with REST poll as a fallback.
+    // Primary signal: an EventSource subscription to
+    // `/api/t/<slug>/notifications/stream`. Each server-side notification
+    // create emits an event; the bell prepends it to the list the
+    // moment it lands — no 60s wait. The browser's EventSource
+    // handles reconnect automatically after network blips.
+    //
+    // Fallback path: the original 60s REST poll stays in place but
+    // throttled to ~5 minutes when SSE is healthy (so a cross-pod
+    // notification — produced on a pod whose bus subscribers don't
+    // include us — still reaches the bell within five minutes).
+    // If the SSE connection errors (single-process bus on a
+    // restart-friendly platform, or a corporate proxy stripping
+    // text/event-stream), we drop back to the 60s cadence so the
+    // user keeps seeing the unread count tick.
+    useEffect(() => {
+        // Seeding the list on mount is the point of this effect: the fetch
+        // sets state when the request ANSWERS, asynchronously.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        void fetchList();
+
+        let es: EventSource | null = null;
+        // Assigned below, once the interval exists. Declared here so the SSE
+        // handlers — created before it — can close over the binding.
+        let onSseHealthChange: ((healthy: boolean) => void) | null = null;
+        // typeof check — SSR + jsdom unit tests both lack EventSource.
+        // Feature flag: NEXT_PUBLIC_NOTIFICATIONS_SSE=1 opts the
+        // client into the SSE channel. Defaults OFF so the bell keeps
+        // polling — the server-side bus + endpoint stay wired (so
+        // future opt-in is one env-var flip), but E2E specs that wait
+        // on `networkidle` aren't blocked by a long-lived stream that
+        // never lets the page settle. Flip when the client integration
+        // has been manually verified end-to-end (browser → bell →
+        // event arriving inside <1s).
+        const sseEnabled = env.NEXT_PUBLIC_NOTIFICATIONS_SSE === '1';
+        if (sseEnabled && typeof EventSource !== 'undefined') {
+            try {
+                es = new EventSource(`${notificationsUrl}/stream`, {
+                    withCredentials: true,
+                });
+                es.onopen = () => onSseHealthChange?.(true);
+                es.onmessage = (msg) => {
+                    try {
+                        const event = JSON.parse(msg.data) as NotificationRow;
+                        // Prepend if not already present (dedupe by id —
+                        // the server includes the row id OR the dedupeKey
+                        // as id so cross-channel duplicates collapse).
+                        setItems((prev) => {
+                            const list = prev ?? [];
+                            if (list.some((n) => n.id === event.id)) return list;
+                            return [event, ...list];
+                        });
+                    } catch {
+                        // Malformed event — refetch to recover.
+                        void fetchList();
+                    }
+                };
+                es.onerror = () => onSseHealthChange?.(false);
+            } catch {
+                // Construction itself threw (a blocked scheme, a proxy that
+                // refuses text/event-stream at connect time). There is no
+                // stream and no health signal, so the poll simply stays at the
+                // 60s cadence armed below — nothing to re-arm.
+            }
+        }
+
+        // The cadence is re-armed when the stream's health CHANGES, rather than
+        // read once here.
+        //
+        // Reading it once was a dead branch: the health flag is false at this
+        // point in the effect ALWAYS, because `es.onopen` cannot have fired on
+        // a socket opened microseconds earlier in the same synchronous block.
+        // So `NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS` was unreachable and the
+        // poll stayed at 60s even with SSE healthy — the opposite of what the
+        // comment on that constant promises. Currently masked because
+        // NEXT_PUBLIC_NOTIFICATIONS_SSE defaults off, so the only way to meet
+        // it is to flip the flag and wonder why traffic did not drop 5x.
+        //
+        // There is no separate `sseHealthy` variable: the handlers call
+        // `arm()` with the cadence they want and `arm()` owns the current
+        // one. A flag read by nobody is how the dead branch above happened.
+        let intervalId = 0;
+        // The cadence currently armed. Zero is not a cadence any caller asks
+        // for, so the first arm() below always installs a timer.
+        let armedMs = 0;
+        const poll = () => {
+            // Stop the timer from inside itself. The auth failure can land on
+            // any tick, and there is no outer signal to react to.
+            if (authFailedRef.current) {
+                window.clearInterval(intervalId);
+                return;
+            }
+            if (typeof document !== 'undefined' && document.hidden) return;
+            void fetchList();
+        };
+        /**
+         * Install the poll at `ms` — or leave the running timer alone when it
+         * is already at that cadence.
+         *
+         * The no-op is the load-bearing half, because both health handlers can
+         * fire far more often than they change anything, and clearing and
+         * reinstalling an interval discards its elapsed countdown. Repeat that
+         * faster than the period and the timer never fires at all.
+         *
+         * WHAT THIS CLOSES — the two flat cases, which are the endpoints:
+         *   • a stream that repeatedly fails to CONNECT. When the failure is
+         *     network-level the browser retries on its own (~3s by default;
+         *     the stream route sends no `retry:` field to widen
+         *     it), so `onerror` arrives about twenty times a minute, each one
+         *     asking for 60s again. Without the no-op the 60s poll would never
+         *     elapse — the fallback dead in a case it exists to cover.
+         *   • a stream that connects and STAYS healthy, where a proxy
+         *     recycling the connection re-fires `onopen` and would likewise
+         *     restart the 5-minute countdown forever.
+         *
+         * WHAT IT DOES NOT CLOSE, stated because the flag-flip will meet it:
+         * a stream that ALTERNATES open→error→open. Each transition is a
+         * genuine cadence change, so it still clears and reinstalls, and if
+         * the drop period sits between the reconnect backoff and 300s the poll
+         * can be starved indefinitely. Fixing that needs the remaining delay
+         * carried across a cadence change, not an equality check. It is pinned
+         * as known behaviour by a test rather than left to be rediscovered.
+         *
+         * Note the asymmetry in the first bullet: only a network-level failure
+         * retries. A non-200, or a proxy stripping `text/event-stream`, fails
+         * the connection permanently with a SINGLE `error` and no retry — and
+         * those are the two scenarios the comment above names as the reason
+         * the fallback exists at all. So the twenty-a-minute case and the
+         * motivating case are not the same case.
+         */
+        const arm = (ms: number) => {
+            // Terminal auth failure outranks every cadence: `poll` clears the
+            // interval from inside itself when it lands, and an SSE health
+            // change arriving afterwards must not install a fresh one.
+            if (authFailedRef.current) return;
+            if (ms === armedMs) return;
+            armedMs = ms;
+            window.clearInterval(intervalId);
+            intervalId = window.setInterval(poll, ms);
+        };
+        arm(NOTIFICATIONS_POLL_INTERVAL_MS);
+        // Re-arm at the slower cadence once SSE actually reports healthy, and
+        // back to 60s if it drops.
+        onSseHealthChange = (healthy: boolean) =>
+            arm(
+                healthy
+                    ? NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS
+                    : NOTIFICATIONS_POLL_INTERVAL_MS,
+            );
+
+        const onVisibility = () => {
+            if (authFailedRef.current) return;
+            if (!document.hidden) void fetchList();
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+        return () => {
+            window.clearInterval(intervalId);
+            document.removeEventListener('visibilitychange', onVisibility);
+            onSseHealthChange = null;
+            if (es) es.close();
+        };
+    }, [fetchList, notificationsUrl]);
+
+    // Opening the popover always pulls a fresh list — the user is
+    // looking now, so show current data, not the last poll's.
+    useEffect(() => {
+        if (!open) return;
+
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- the popover just opened: pull a fresh list
+        void fetchList();
+    }, [open, fetchList]);
+
+    const unreadCount = items?.filter((n) => !n.read).length ?? 0;
+    const hasItems = (items?.length ?? 0) > 0;
+
+    const handleRowClick = useCallback(
+        async (n: NotificationRow) => {
+            // Optimistic local mark-as-read so the badge updates the
+            // moment the user clicks.
+            setItems((prev) =>
+                prev
+                    ? prev.map((x) => (x.id === n.id ? { ...x, read: true } : x))
+                    : prev,
+            );
+            try {
+                await fetch(`${notificationsUrl}/${n.id}`, MARK_READ_INIT);
+            } catch {
+                // Server-side mark failed; the local optimistic
+                // update remains so the user perceives the row as
+                // handled. Next fetch will reconcile if needed.
+            }
+        },
+        [notificationsUrl],
+    );
+
+    const handleMarkAllRead = useCallback(async () => {
+        const unread = items?.filter((n) => !n.read) ?? [];
+        if (unread.length === 0) return;
+        setItems((prev) =>
+            prev ? prev.map((x) => ({ ...x, read: true })) : prev,
+        );
+        await Promise.all(
+            unread.map((n) =>
+                fetch(`${notificationsUrl}/${n.id}`, MARK_READ_INIT).catch(() => {}),
+            ),
+        );
+    }, [items, notificationsUrl]);
+
+    return (
+        <Popover
+            openPopover={open}
+            setOpenPopover={setOpen}
+            align="end"
+            side="bottom"
+            sideOffset={8}
+            popoverContentClassName="w-[340px] max-w-[calc(100vw-1rem)] p-1"
+            content={
+                <Popover.Menu aria-label={t('notifications')}>
+                    {/* Header row — count + mark-all-read action */}
+                    <div className="flex items-center justify-between px-2.5 py-1.5">
+                        <span className="text-[10px] font-semibold uppercase tracking-widest text-content-subtle">
+                            {t('notifications')}
+                        </span>
+                        {unreadCount > 0 && (
+                            <button
+                                type="button"
+                                onClick={handleMarkAllRead}
+                                className="inline-flex items-center gap-tight text-xs text-content-muted transition-colors hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] rounded px-1"
+                                data-testid="notifications-mark-all-read"
+                            >
+                                <CheckCheck
+                                    className="h-3 w-3"
+                                    aria-hidden="true"
+                                />
+                                {t('markAllRead')}
+                            </button>
+                        )}
+                    </div>
+
+                    <Popover.Separator />
+
+                    {/* Content */}
+                    <div
+                        className="max-h-[400px] overflow-y-auto"
+                        data-testid="notifications-list"
+                    >
+                        {/* Terminal, so it precedes every other branch: once
+                            the session is gone there is nothing to load and
+                            nothing to retry, and the only useful thing the
+                            panel can do is say so and offer the way back. */}
+                        {sessionExpired ? (
+                            <div className="px-2.5 py-6 text-center text-xs text-content-muted">
+                                <p>{t('sessionExpired')}</p>
+                                <Link
+                                    href="/login"
+                                    className="mt-1 inline-block font-medium text-content-emphasis underline underline-offset-2"
+                                >
+                                    {t('sessionExpiredAction')}
+                                </Link>
+                            </div>
+                        ) : loading && items === null ? (
+                            <div className="px-2.5 py-6 text-center text-xs text-content-muted animate-pulse">
+                                {t('loading')}
+                            </div>
+                        ) : error ? (
+                            <div className="px-2.5 py-6 text-center text-xs text-content-error">
+                                {t('loadFailed')}
+                            </div>
+                        ) : !hasItems ? (
+                            <div className="py-4">
+                                <EmptyState
+                                    icon={Bell}
+                                    title={t('allClear')}
+                                    description={t('caughtUp')}
+                                />
+                            </div>
+                        ) : (
+                            items!.map((n) => {
+                                const row = (
+                                    <>
+                                        <div className="flex items-center justify-between gap-tight">
+                                            <p className="min-w-0 flex-1 break-words text-sm font-medium text-content-emphasis">
+                                                {n.title}
+                                            </p>
+                                            <span className="flex-shrink-0 text-[10px] text-content-subtle tabular-nums">
+                                                {formatRelativeTime(n.createdAt)}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-content-muted line-clamp-2">
+                                            {n.body}
+                                        </p>
+                                    </>
+                                );
+                                const rowClasses = `${ROW_CLASS} ${n.read ? '' : ROW_UNREAD_CLASS}`;
+                                return n.linkUrl ? (
+                                    <Link
+                                        key={n.id}
+                                        href={n.linkUrl}
+                                        onClick={() => {
+                                            close();
+
+                                            void handleRowClick(n);
+                                        }}
+                                        className={rowClasses}
+                                        data-testid={`notification-row-${n.id}`}
+                                    >
+                                        {row}
+                                    </Link>
+                                ) : (
+                                    <button
+                                        key={n.id}
+                                        type="button"
+                                        onClick={() => handleRowClick(n)}
+                                        className={`${rowClasses} text-left`}
+                                        data-testid={`notification-row-${n.id}`}
+                                    >
+                                        {row}
+                                    </button>
+                                );
+                            })
+                        )}
+                    </div>
+
+                    {/* The workspace's Inbox (ADR 0006: the Inbox is the view
+                        over a member's notifications). */}
+                    {!sessionExpired && (
+                        <>
+                            <Popover.Separator />
+                            <Link
+                                href={`/t/${currentTenantSlug}/inbox`}
+                                onClick={close}
+                                className="block rounded px-2.5 py-1.5 text-center text-xs font-medium text-content-muted transition-colors hover:text-content-emphasis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                                data-testid="notifications-view-all"
+                            >
+                                {t('viewAll')}
+                            </Link>
+                        </>
+                    )}
+                </Popover.Menu>
+            }
+        >
+            <button
+                type="button"
+                className={BELL_BUTTON_CLASS}
+                aria-label={
+                    unreadCount > 0
+                        ? t('unreadAria', { count: unreadCount })
+                        : t('notifications')
+                }
+                aria-expanded={open}
+                aria-haspopup="menu"
+                data-testid="top-chrome-notifications-bell"
+            >
+                <Bell className="h-4 w-4" aria-hidden="true" />
+                {unreadCount > 0 && (
+                    <span
+                        className={BADGE_OVERLAY_CLASS}
+                        aria-hidden="true"
+                        data-testid="notifications-unread-badge"
+                    >
+                        {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                )}
+            </button>
+        </Popover>
+    );
+}
+

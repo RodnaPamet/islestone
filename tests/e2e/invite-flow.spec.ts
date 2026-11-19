@@ -3,8 +3,8 @@
  *
  * Copied from inflect-compliance `tests/e2e/invite-flow.spec.ts` at
  * 5528464fc54a8681956f3b9ce23ca9c075f0420e. Islestone's invitee is a MEMBER
- * (the parent's EDITOR), and a signed-in person lands on the workspace page
- * `/t/<slug>` rather than a dashboard with a sidebar (the app shell is 1.7).
+ * (the parent's EDITOR), and a signed-in person lands on the workspace's My
+ * Work (`/t/<slug>/my-work`, sub-phase 1.7) rather than a dashboard.
  *
  * Walks the full happy path against a live server:
  *   1. OWNER creates an invite via the API (and pre-registers the
@@ -32,8 +32,8 @@ import { test, expect } from './fixtures';
 import { type BrowserContext, type Page } from '@playwright/test';
 import { gotoLoginReady, LANDING_URL, safeGoto, submitCredentials, waitForHydration } from './e2e-utils';
 
-/** A workspace page or the workspace picker. */
-const LANDED = /\/(tenants(?:[?#]|$)|t\/[^/?#]+(?:[?#]|$))/;
+/** A workspace's My Work or the workspace picker. */
+const LANDED = /\/(tenants(?:[?#]|$)|t\/[^/?#]+\/my-work(?:[?#]|$))/;
 
 /**
  * Sign in with email+password via the #credentials-form and return
@@ -55,7 +55,7 @@ async function signInWithCredentials(
 async function openWorkspace(page: Page, tenantSlug: string) {
     if (new URL(page.url()).pathname === '/tenants') {
         // The picker names the workspace, not its slug (#4690).
-        const link = page.locator(`a[href="/t/${tenantSlug}"]`);
+        const link = page.locator(`a[href="/t/${tenantSlug}/my-work"]`);
         await link.waitFor({ timeout: 10_000 });
         await link.click();
         await page.waitForURL(LANDING_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
@@ -178,9 +178,7 @@ test.describe('Invitation journey', () => {
                 const match = new URL(page.url()).pathname.match(/^\/t\/([^/]+)/);
                 expect(match).not.toBeNull();
                 expect(match![1]).toBe(tenantSlug);
-                await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toHaveText(
-                    isolatedTenant.tenantName,
-                );
+                await expect(page.getByTestId('top-chrome-tenant-switcher')).toContainText(isolatedTenant.tenantName);
             } finally {
                 await ctx.close();
             }

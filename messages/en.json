@@ -57,7 +57,7 @@
             "title": "Something went wrong",
             "body": "This page encountered an error. You can try again or navigate to another section using the sidebar.",
             "errorId": "Error ID: {id}",
-            "goToDashboard": "Go to Dashboard",
+            "goToMyWork": "Go to My Work",
             "tryAgain": "Try again"
         },
         "skeleton": {
@@ -133,7 +133,21 @@
             "confirm": "Confirm",
             "dialog": "Dialog",
             "sheet": "Sheet",
-            "learnMore": "Learn more"
+            "learnMore": "Learn more",
+            "backTo": "Back to {label}",
+            "previousPage": "previous page",
+            "filter": "Filter",
+            "listRailLeft": "Orientation",
+            "listRailRight": "Context",
+            "switchToDarkTheme": "Switch to dark theme",
+            "switchToLightTheme": "Switch to light theme",
+            "currentOrganization": "Current organization: {name}. Click to switch.",
+            "switchContext": "Switch context",
+            "switcherManageWorkspaces": "Manage workspaces",
+            "switcherNoOrganizations": "No organizations in this session.",
+            "switcherNoWorkspaces": "No workspaces in this session.",
+            "switcherOrganizations": "Organizations",
+            "switcherWorkspaces": "Workspaces"
         },
         "chart": {
             "trendAria": "{label} trend",
@@ -141,7 +155,20 @@
             "scaleAria": "{label}: {min} to {max}",
             "scaleAriaUnlabelled": "Scale: {min} to {max}"
         },
-        "loading": "Loading..."
+        "loading": "Loading...",
+        "appName": "Islestone",
+        "language": "Language",
+        "retry": "Retry",
+        "search": "Search…",
+        "signOut": "Sign out",
+        "theme": "Theme",
+        "sections": {
+            "myWork": "My Work",
+            "inbox": "Inbox",
+            "views": "Views",
+            "projects": "Projects",
+            "settings": "Settings"
+        }
     },
     "ui": {
         "combobox": {
@@ -151,6 +178,14 @@
             "createLabel": "Create \"{search}\"",
             "createLabelEmpty": "Create new option…",
             "triggerLabel": "Select"
+        },
+        "recordStepper": {
+            "previous": {
+                "item": "Previous item"
+            },
+            "next": {
+                "item": "Next item"
+            }
         }
     },
     "account": {
@@ -447,13 +482,104 @@
             }
         }
     },
-    "workspaceHome": {
-        "signedInAs": "You are signed in as {role}.",
-        "placeholder": "Projects, work items and views arrive with the next releases.",
-        "linksLabel": "Account and security",
-        "mfaLink": "Multi-factor authentication",
-        "accountSecurityLink": "Change your password",
-        "accountProfileLink": "Your profile",
-        "workspacesLink": "Your workspaces"
+    "nav": {
+        "account": "Account",
+        "accountMenu": "Account menu",
+        "accountMenuFor": "Account menu for {name}",
+        "brandHomeNamed": "{initials}: Islestone — go to My Work",
+        "collapseSidebarNamed": "{app} — collapse sidebar",
+        "expandSidebar": "Expand sidebar",
+        "mainNavigation": "Main navigation",
+        "multiFactorAuth": "Multi-factor authentication",
+        "noBreadcrumbs": "No breadcrumbs",
+        "openCommandPalette": "Open command palette",
+        "openNavigationMenu": "Open navigation menu",
+        "openOrgNavigationMenu": "Open organization navigation menu",
+        "signOut": "Sign out",
+        "myWork": "My Work",
+        "inbox": "Inbox",
+        "views": "Views",
+        "projects": "Projects",
+        "settings": "Settings",
+        "workspace": "Workspace"
+    },
+    "commandPalette": {
+        "title": "Command palette",
+        "description": "Search for pages and actions. Use arrow keys to navigate and Enter to activate.",
+        "searchPlaceholder": "Search pages and actions…",
+        "searchPlaceholderSignedOut": "Sign in to search…",
+        "filterResultsAria": "Filter results by type",
+        "searching": "Searching…",
+        "searchSignedOut": "Search is available after sign-in.",
+        "noMatchesInCategories": "No matches in the selected categories. Toggle chips to widen",
+        "noResults": "No results found",
+        "groupNavigation": "Navigation",
+        "groupActions": "Actions",
+        "groupRecent": "Recent",
+        "groupShortcuts": "Keyboard shortcuts",
+        "openShortcut": "Open command palette",
+        "searchFailed": "Search failed. Try again in a moment.",
+        "entityWorkItem": "Work items",
+        "entityProject": "Projects",
+        "commands": {
+            "goToMyWork": "Go to My Work",
+            "goToInbox": "Go to Inbox",
+            "goToProjects": "Go to Projects",
+            "goToViews": "Go to Views",
+            "goToSettings": "Go to Settings",
+            "askAssistant": "Ask the assistant",
+            "toggleTheme": "Toggle theme",
+            "signOut": "Sign out"
+        }
+    },
+    "shortcuts": {
+        "title": "Keyboard shortcuts",
+        "description": "Press Ctrl+/ (⌘/ on a Mac) any time to show this list. Shortcuts are ignored while you're typing.",
+        "availableNow": "Available now",
+        "noGlobal": "No global shortcuts are registered yet",
+        "inDialogs": "In dialogs & sheets",
+        "showShortcuts": "Show keyboard shortcuts"
+    },
+    "panels": {
+        "bell": {
+            "notifications": "Notifications",
+            "markAllRead": "Mark all read",
+            "viewAll": "Open the Inbox",
+            "loading": "Loading…",
+            "allClear": "All clear",
+            "caughtUp": "You're caught up. New notifications will land here.",
+            "unreadAria": "{count} unread notifications",
+            "now": "now",
+            "sessionExpired": "Your session has expired.",
+            "sessionExpiredAction": "Sign in again",
+            "loadFailed": "Notifications couldn't be loaded."
+        },
+        "sessionExpired": {
+            "body": "Your session has expired. Anything on screen may be out of date.",
+            "action": "Sign in again"
+        },
+        "env": {
+            "staging": "Staging",
+            "dev": "Dev",
+            "stagingAria": "Staging environment",
+            "devAria": "Development environment"
+        }
+    },
+    "errorPage": {
+        "title": "Something went wrong",
+        "description": "We're sorry, an unexpected error has occurred.",
+        "errorId": "Error ID: {id}",
+        "goToWorkspaces": "Go to your workspaces",
+        "notFoundTitle": "Page not found",
+        "notFoundBody": "Sorry, we couldn't find the page you're looking for. It might have been removed or the link is incorrect.",
+        "returnToWorkspaces": "Back to your workspaces"
+    },
+    "placeholders": {
+        "title": "Not here yet",
+        "myWork": "Your assigned, created, watched and soon-due work items will gather here once work items arrive.",
+        "inbox": "Your notifications will be listed here. Until then, the bell in the top bar shows the latest.",
+        "views": "Saved views of work items, with their filters, grouping and layout, arrive in a later release.",
+        "projects": "Projects, and the work items in them, arrive in a later release.",
+        "settings": "The workspace's settings pages arrive in a later release."
     }
 }

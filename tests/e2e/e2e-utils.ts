@@ -15,8 +15,9 @@
  * database is disposable.
  *
  * Islestone's sign-in lands on `/tenants`, which sends a person with one
- * workspace straight to that workspace's landing page, `/t/<slug>`
- * (`tenantLandingPath`), where the parent landed on `/t/<slug>/dashboard`.
+ * workspace straight to that workspace's landing page, My Work,
+ * `/t/<slug>/my-work` (`tenantLandingPath`, sub-phase 1.7), where the parent
+ * landed on `/t/<slug>/dashboard`.
  */
 import { randomBytes, randomUUID } from 'node:crypto';
 
@@ -28,8 +29,8 @@ const TRANSIENT_ERRORS = ['net::', 'ERR_CONNECTION_REFUSED', 'ERR_EMPTY_RESPONSE
 /** Errors that mean the page/context is dead — retrying on the same page is pointless. */
 const FATAL_ERRORS = ['Target page, context or browser has been closed', 'Target closed'];
 
-/** A workspace landing URL, `/t/<slug>` with nothing after the slug. */
-export const LANDING_URL = /\/t\/[^/?#]+(?:[?#]|$)/;
+/** A workspace landing URL: My Work, `/t/<slug>/my-work`. */
+export const LANDING_URL = /\/t\/[^/?#]+\/my-work(?:[?#]|$)/;
 
 /**
  * Navigate to a URL with retry on transient network errors.

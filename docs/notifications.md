@@ -12,8 +12,8 @@ Copied and edited from inflect-compliance's notification modules at
 `5528464fc54a8681956f3b9ce23ca9c075f0420e` and from its
 `docs/scheduled-notification-system.md` (`PROVENANCE.md`, "Copied: jobs,
 notifications and observability"). Only the work-item kinds are ported; due
-reminders arrive in 2.2, the per-user preference page in 2.7, the bell UI in
-1.7.
+reminders arrive in 2.2 and the per-user preference page in 2.7; the bell UI
+came with the application shell in 1.7 (`docs/app-shell.md`).
 
 ## Tables
 

@@ -1,0 +1,269 @@
+'use client';
+
+/* TODO(swr-migration): this file has fetch-on-mount + setState
+ * patterns flagged by react-hooks/set-state-in-effect. Each call site
+ * carries an inline disable directive; collectively they should
+ * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
+
+/**
+ * Epic 53 — canonical filter toolbar for list pages.
+ *
+ * Composes the shared `FilterSelect` picker + `FilterList` active-pill strip
+ * + a standardised free-text search input. Every migrated list page wires
+ * this one component at its toolbar position; the filter definitions
+ * (enum options, groups, range configs) come from that page's own
+ * `filter-defs.ts`, so the toolbar stays entity-agnostic.
+ *
+ * Must be rendered inside a `<FilterProvider>` — it consumes state via
+ * `useFilters()`. Page authors typically wrap their client component with
+ * `FilterProvider` at the outer boundary (see any migrated *Client.tsx for
+ * the pattern).
+ *
+ * Keyboard / a11y: the shared FilterSelect carries the `f` shortcut, Escape
+ * cascade, and keyboard-driven option navigation. Free-text search lives
+ * INSIDE the filter dropdown — there is no separate search bar. When a page
+ * passes `searchPlaceholder`, the Filter popover's top input becomes a LIVE
+ * content search (typing filters the table on a short debounce, no Enter)
+ * and the filter categories stay listed below it. Pages without
+ * `searchPlaceholder` keep the classic category-only picker.
+ */
+
+import { useTranslations } from 'next-intl';
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import {
+    Filter as FilterUI,
+    filterStateToActiveFilters,
+    useFilters,
+    type ActiveFilter,
+    type FilterType,
+} from '@/components/ui/filter';
+// The single-rung control scale. Imported rather than re-spelled so the
+// Filter trigger cannot drift from the Button beside it in this very
+// toolbar — see the comment on the `className` below.
+import { controlSize } from '@/components/ui/control-variants';
+
+export interface FilterToolbarProps {
+    /**
+     * Resolved filter definitions for this page. Include any runtime-derived
+     * options (owner / category lookups built from loaded rows).
+     */
+    filters: FilterType[];
+    /**
+     * DOM id of the search input. Required ONLY when the toolbar
+     * renders a search input (see `searchPlaceholder`). Ignored
+     * otherwise.
+     */
+    searchId?: string;
+    /**
+     * Placeholder text, `Search {entityPlural}…` (one `…`, no "(Enter)"
+     * hint — the search is live).
+     *
+     * **Every standard list page passes it**, with `searchId`. It turns
+     * the Filter popover's top input into a live content search, with
+     * the filter categories still listed below it; there is no separate
+     * search bar. Presence is locked by
+     * `tests/guards/r14-no-page-searchbars.test.ts`, the wording by
+     * `tests/guards/search-placeholder-vocabulary.test.ts`. Omitted, the
+     * popover offers no search — only for a toolbar that is not a list
+     * page's.
+     */
+    searchPlaceholder?: string;
+    /** Optional label for the FilterSelect trigger button. Defaults to "Filter". */
+    triggerLabel?: ReactNode;
+    /**
+     * Secondary slot (right side of the toolbar, before the primary
+     * cluster) — typically the DataTable's `<EditColumnsButton>` so
+     * column visibility lives at the same eye-line as the filter
+     * controls. Use this for icon-only ghost actions: bulk edit,
+     * export, column visibility, settings.
+     *
+     * v2-PR-7 — was the only right-edge slot. The new `primary` slot
+     * sits to the right of this one for the single primary action
+     * (the "Create X" button). Existing call sites keep working
+     * unchanged; new code reaching for a primary action should use
+     * `primary` instead of crowding it into `actions`.
+     */
+    actions?: ReactNode;
+    /**
+     * Primary slot (rightmost — anchored to the right edge of the
+     * toolbar). Reserved for the SINGLE primary action of the page —
+     * typically a `<Button variant="primary">{action}</Button>`. The
+     * lock to one slot is deliberate: list pages should not present
+     * two co-equal primary actions.
+     *
+     * WHAT IS ACTUALLY TRUE (measured 2026-08-05). This docblock used to
+     * say header "Create" buttons "should migrate here over time". They
+     * did not. All six entity list surfaces put their create button in
+     * `leading` (start of the toolbar), and the `leading` docblock below
+     * says so. Exactly ONE consumer reaches this slot, and it does so
+     * through `EntityListPage`'s `toolbarPrimary` pass-through (in
+     * inflect-compliance, one rules tab).
+     *
+     * So the reading order on a list page is:
+     *
+     *   [leading create] [search + filter] [active pills (flex-1)] [secondary]
+     *
+     * and this slot is the right-edge exception, not the destination
+     * everything is migrating towards. Reach for `leading` unless you
+     * specifically want the right edge.
+     */
+    primary?: ReactNode;
+    /**
+     * Leading slot — rendered at the START of the toolbar, BEFORE the
+     * Filter trigger button (and to the LEFT of the active-pill `flex-1`
+     * spacer that right-pins `actions`/`primary`). The page's primary
+     * "+ Entity" create action lives here so it sits to the LEFT of the
+     * filter rather than crowding the page header.
+     */
+    leading?: ReactNode;
+    /** Optional className forwarded to the outer container. */
+    className?: string;
+}
+
+/**
+ * Dispatch a FilterSelect `onSelect` into the shared context, picking
+ * `toggle` / `set` based on the filter definition's `multiple` / `type`.
+ * Extracted here so every page calls the same branching logic.
+ */
+function dispatchOnSelect(
+    filters: FilterType[],
+    ctx: ReturnType<typeof useFilters>,
+    key: string,
+    value: string | string[],
+): void {
+    if (Array.isArray(value)) {
+        for (const v of value) ctx.toggle(key, String(v));
+        return;
+    }
+    const def = filters.find((f) => f.key === key);
+    if (def?.type === 'range') {
+        ctx.set(key, String(value));
+    } else if (def?.multiple) {
+        ctx.toggle(key, String(value));
+    } else {
+        ctx.set(key, String(value));
+    }
+}
+
+export function FilterToolbar({
+    filters,
+    searchId,
+    searchPlaceholder,
+    triggerLabel,
+    actions,
+    primary,
+    leading,
+    className,
+}: FilterToolbarProps) {
+    const t = useTranslations('common.ui');
+    const ctx = useFilters();
+    const { remove, removeAll, clearAll, search, setSearch, state } = ctx;
+
+    // Live content search lives INSIDE the filter dropdown — typing in the
+    // Filter popover's top input filters the table on a ~250ms debounce
+    // (no Enter, no separate search bar). Only wired when the page opts in
+    // via `searchPlaceholder`.
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const handleSearchChange = useCallback(
+        (value: string) => {
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+            debounceRef.current = setTimeout(() => setSearch(value), 250);
+        },
+        [setSearch],
+    );
+    useEffect(
+        () => () => {
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+        },
+        [],
+    );
+
+    const searchEnabled = Boolean(searchPlaceholder);
+
+    const activeFilters: ActiveFilter[] = useMemo(
+        () => filterStateToActiveFilters(state),
+        [state],
+    );
+
+    const toolbarRef = useRef<HTMLDivElement>(null);
+
+    return (
+        // `toolbarRef` scopes the `f` shortcut to this region — see
+        // `FilterSelect`'s `hostRef`. Without it `f` was bound globally, which
+        // takes the character from every speech-input user on the page.
+        <div
+            ref={toolbarRef}
+            className={`flex flex-wrap items-start gap-compact${className ? ` ${className}` : ''}`}
+        >
+            {leading ? (
+                <div
+                    className="flex items-center gap-tight"
+                    data-testid="filter-toolbar-leading"
+                >
+                    {leading}
+                </div>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-tight">
+                <FilterUI.Select
+                    hostRef={toolbarRef}
+                    filters={filters}
+                    activeFilters={activeFilters}
+                    onSelect={(key, value) => dispatchOnSelect(filters, ctx, String(key), value as string | string[])}
+                    onRemove={(key, value) => remove(String(key), String(value))}
+                    onRemoveFilter={(key) => removeAll(String(key))}
+                    searchId={searchEnabled ? searchId : undefined}
+                    searchPlaceholder={searchEnabled ? searchPlaceholder : undefined}
+                    searchValue={searchEnabled ? search : undefined}
+                    onSearchChange={searchEnabled ? handleSearchChange : undefined}
+                    // `controlSize.md`, not a hand-set height. This trigger
+                    // sits in the same row as `primary` (a <Button>, 28px on
+                    // the single-rung ladder), and the hard-coded `h-9` it
+                    // replaces rendered 36px — the exact "28px button beside a
+                    // 36px control reads as broken" failure that
+                    // control-variants.ts says the lockstep exists to prevent.
+                    // The rung also carries px/type/radius, so the two controls
+                    // match on every axis rather than just height. `cn` is
+                    // tailwind-merge, so these win over the trigger's own
+                    // h-10/px-3/text-sm base.
+                    className={controlSize.md}
+                >
+                    {triggerLabel ?? t('filter')}
+                </FilterUI.Select>
+            </div>
+            <div className="flex-1 min-w-0">
+                <FilterUI.List
+                    filters={filters}
+                    activeFilters={activeFilters}
+                    // Without onSelect, the active-pill value dropdown
+                    // could only REMOVE values — picking a different
+                    // value did nothing (single-select filters like
+                    // applicability could never be switched from the
+                    // pill). Wire the same dispatcher the Select uses so
+                    // the pill can change/add values too.
+                    onSelect={(key, value) =>
+                        dispatchOnSelect(filters, ctx, String(key), value as string | string[])
+                    }
+                    onRemove={(key, value) => remove(String(key), String(value))}
+                    onRemoveFilter={(key) => removeAll(String(key))}
+                    onRemoveAll={clearAll}
+                />
+            </div>
+            {actions ? (
+                <div
+                    className="flex items-center gap-tight"
+                    data-testid="filter-toolbar-secondary"
+                >
+                    {actions}
+                </div>
+            ) : null}
+            {primary ? (
+                <div
+                    className="flex items-center gap-tight"
+                    data-testid="filter-toolbar-primary"
+                >
+                    {primary}
+                </div>
+            ) : null}
+        </div>
+    );
+}

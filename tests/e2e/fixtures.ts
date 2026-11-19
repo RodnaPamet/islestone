@@ -4,7 +4,7 @@
  * Copied from inflect-compliance `tests/e2e/fixtures.ts` at
  * 5528464fc54a8681956f3b9ce23ca9c075f0420e. Islestone has no seeded tenant,
  * so every spec that signs in uses these fixtures; `authedPage` parks on the
- * workspace landing page `/t/<slug>` rather than `/t/<slug>/dashboard`, and
+ * workspace landing page, My Work (`/t/<slug>/my-work`), and
  * there is no tenant tracker or global teardown.
  *
  * This module extends `test` with two fixtures so a mutating spec
@@ -16,7 +16,7 @@
  *     test can never be observed by — let alone break — another.
  *
  *   - `authedPage` — the standard `page` fixture, already signed in
- *     as the `isolatedTenant`'s OWNER and parked on `/t/<slug>`. The common case: a mutating spec that
+ *     as the `isolatedTenant`'s OWNER and parked on My Work. The common case: a mutating spec that
  *     wants "a logged-in browser on a clean tenant" with zero
  *     boilerplate.
  *
@@ -69,7 +69,7 @@ export interface IsolationFixtures {
     isolatedTenant: IsolatedTenantCredentials;
     /**
      * The standard `page`, already signed in as `isolatedTenant`'s
-     * OWNER and on `/t/<slug>`. Convenience over wiring `signInAs` by
+     * OWNER and on My Work. Convenience over wiring `signInAs` by
      * hand in every test.
      */
     authedPage: Page;
