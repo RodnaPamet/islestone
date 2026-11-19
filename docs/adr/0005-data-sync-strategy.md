@@ -1,6 +1,6 @@
 # 0005 — Data sync strategy
 
-Status: Proposed — awaiting owner sign-off (2026-11-18 drafted)
+Status: Accepted (owner decisions, 2026-11-19)
 
 ## Context
 
@@ -16,7 +16,9 @@ Other parts of the roadmap depend on it:
 
 This ADR uses ADR 0006's words: workspace (code: `Tenant`, `tenantId`), work item, page, canvas, sign-in session, agent session. It builds on ADR 0002 section 9 (optimistic concurrency) and ADR 0003 (agents write through proposals), and does not restate them.
 
-How to read this ADR: a line marked **Verified** was read in the named file or registry on 2026-11-18. A line marked **Inference** is reasoning from verified facts. Everything else is a recommendation or an open question. No decision here is made until the owner signs it.
+This ADR was drafted on 2026-11-18 with a recommendation for each decision. The repository owner accepted every recommendation in the working session on 2026-11-19 (the owner chose "Accept all"): no sync engine now, with section 7's reopen thresholds (E0); canvas persistence C1 and transport T1; TanStack Query as the client cache; item presence R1; encrypted Yjs state and snapshots, with page text searched under ADR 0002's S1 for now; one audit entry per person per page per 10 minutes; the limits in open question 10; and the new vocabulary words. Each decision is recorded where it is made. Open questions 8 and 9 remain open but do not block: they belong to roadmap section 7's open decision 5 (hosting) and to sub-phase 8.5.
+
+How to read this ADR: a line marked **Verified** was read in the named file or registry on 2026-11-18. A line marked **Inference** is reasoning from verified facts. A line marked **Decision** records an owner decision of 2026-11-19. Everything else is the design this ADR fixes, or an open question.
 
 ### What Islestone has today
 
@@ -112,7 +114,7 @@ What these facts mean for Islestone:
 
 ## Decision
 
-Everything in this section is a recommendation for the owner.
+Everything in this section is decided: owner decisions, 2026-11-19. The owner chose "Accept all", accepting each recommendation of the draft. Where a section names options, the option chosen is marked **Decision**.
 
 ### 1. Four kinds of data, four rules
 
@@ -120,7 +122,7 @@ Everything in this section is a recommendation for the owner.
 |---|---|---|---|---|
 | Records: work items, projects, cycles, views, labels, custom fields, comments, proposals and every other row | Postgres rows under RLS | Usecases only: people, approved proposals, automation, importers | Change notice, then refetch through the API (section 4) | `version` and 409, per ADR 0002 section 9 |
 | Page content | The page's stored Yjs state, in Postgres under RLS | The collaboration server only (section 6) | Yjs sync over Hocuspocus | Yjs merge |
-| Canvas content | Option C1 or C2 (section 6.5) | The collaboration server only | Yjs sync over Hocuspocus | Yjs merge |
+| Canvas content | The canvas's stored Yjs state (option C1, section 6.5) | The collaboration server only | Yjs sync over Hocuspocus | Yjs merge |
 | Presence | Memory only; never stored | The collaboration server | Yjs awareness | Latest state wins; it expires |
 
 ### 2. Records are server-authoritative
@@ -132,7 +134,7 @@ Everything in this section is a recommendation for the owner.
 
 ### 3. Optimistic UI for records
 
-- **One client cache for server data.** Recommendation: TanStack Query, for its mutation lifecycle (cancel in-flight reads, snapshot, roll back). SWR is the alternative and is what inflect-compliance uses. Both are MIT. This needs a decision before 2.3 (open question 4).
+- **One client cache for server data: TanStack Query**, for its mutation lifecycle (cancel in-flight reads, snapshot, roll back). SWR, which inflect-compliance uses, was the alternative and was not chosen. Both are MIT. **Decision:** Owner decision, 2026-11-19 (open question 4); the owner chose "Accept all".
 - **Each mutation:** apply locally, send, then replace the local copy with the server's row and version. On failure, roll back and say why.
 - **On 409:** follow ADR 0002 section 9. If none of the fields this client changed moved underneath it, retry with the new version. Otherwise show the conflict.
 - **Writes to one item from one tab are sent in order**, through a per-item queue. Each write carries the version the previous one returned. This is the lesson of inflect-compliance's canvas client, which updates its version from each save's response. Pattern only, no code copied.
@@ -141,7 +143,7 @@ Everything in this section is a recommendation for the owner.
 
 ### 4. Change notices (roadmap 4.3)
 
-"Change notice" is a new term. ADR 0006 lists it with this ADR's other new words, for the owner to confirm (open question 11).
+"Change notice" is a new term. ADR 0006 lists it with this ADR's other new words. **Decision:** the words are confirmed, Owner decision, 2026-11-19 (open question 11); the owner chose "Accept all".
 
 **Shape.** A notice names what changed and nothing else. Illustrative, not final:
 
@@ -180,17 +182,17 @@ type ChangeNotice =
 **Authorisation over time.**
 
 - The stream authenticates at connect: sign-in session, workspace from the URL, membership.
-- **It re-checks every 60 seconds** (recommended) that the sign-in session is live and the membership active, and closes on failure.
+- **It re-checks every 60 seconds** that the sign-in session is live and the membership active, and closes on failure. **Decision:** 60 seconds, Owner decision, 2026-11-19 (open question 10).
 - **It closes at once on a revocation**: the sign-in session revoked, the member removed, or their role or project access changed. Those usecases publish an `access` notice, which also reaches the collaboration server (section 6.2).
 - inflect-compliance's stream authenticates only at connect. Islestone adds the re-check because H1 requires that revocation signs a person out, and H4 that a person who loses access is disconnected.
-- Open streams are capped per person and per workspace. Values are set at H4. Over the cap is a 429.
+- Open streams are capped per person and per workspace. Values are set at H4. Over the cap is a 429. **Decision:** the caps as written, Owner decision, 2026-11-19 (open question 10).
 
 ### 5. Presence
 
 - **Pages and canvases:** Yjs awareness, over the same connection as the content.
 - **Work items and lists**, two options:
-  - **R1. A presence-only room on the collaboration server.** A document name with no content, never stored. One presence mechanism and one authorisation hook for everything. Recommended.
-  - **R2. A heartbeat POST plus the change-notice stream.** No WebSocket for item pages, but a second presence implementation.
+  - **R1. A presence-only room on the collaboration server.** A document name with no content, never stored. One presence mechanism and one authorisation hook for everything. **Decision: R1.** Owner decision, 2026-11-19 (open question 5); the owner chose "Accept all".
+  - **R2. A heartbeat POST plus the change-notice stream.** No WebSocket for item pages, but a second presence implementation. Not chosen.
 - **A person cannot appear as someone else.** Awareness state is written by the client. `beforeHandleAwareness` refuses state whose user id is not the connection's, and clients show names fetched through the API from that id, never a name a client sent.
 - Presence state is size-bounded and throttled. inflect-compliance's doc proposes a 60 Hz cursor throttle and a 250 ms selection debounce (lines 147–150); untested, but a reasonable start.
 - Presence is never stored or audited.
@@ -201,13 +203,13 @@ type ChangeNotice =
 
 **6.2 Every connection is authorised, and stays authorised.**
 
-- The app mints a **collaboration token** through an authorised route. It is signed, lives at most 60 seconds, and binds the user, the sign-in session, the workspace, the document name and the access level (read or write). Minting runs `requirePermission` for that page or canvas.
+- The app mints a **collaboration token** through an authorised route. It is signed, lives at most 60 seconds (Owner decision, 2026-11-19, open question 10), and binds the user, the sign-in session, the workspace, the document name and the access level (read or write). Minting runs `requirePermission` for that page or canvas.
 - `onAuthenticate` verifies the token. Then it re-reads the database: the sign-in session is live, the membership is active, the page or canvas exists in that workspace (read under RLS), and the person may read it or write it. Read-only access makes the connection read-only, so its updates are not applied.
 - Document names include the workspace: `<tenantId>/page/<pageId>`, `<tenantId>/canvas/<canvasId>`. A name alone grants nothing: the token must name it.
 - The server checks the `Origin` header on upgrade. A token fetched by same-origin script also avoids a WebSocket authenticated by cookie alone, which Zero's documentation warns can be hijacked cross-site. That warning applies to any cookie-authenticated WebSocket.
 - **Tokens are refreshed over the open connection** through `onTokenSync`. Each refresh re-runs every check. A connection whose token expires without a refresh is closed. So a revocation takes effect within one token lifetime even if its notice is lost.
 - On an `access` notice, the server closes that person's connections in that workspace at once (H4).
-- Connections and update rates are capped per person and per workspace. Values are set at H4.
+- Connections and update rates are capped per person and per workspace. Values are set at H4. **Decision:** the caps as written, Owner decision, 2026-11-19 (open question 10).
 
 **6.3 References, not copies.** A work-item mention or embed in a page, and a canvas shape linked to a work item, store the item's id and nothing else. Title, state and assignee render through the normal API. So:
 
@@ -218,13 +220,13 @@ type ChangeNotice =
 **6.4 Page content: the stored Yjs state is the source of truth.**
 
 - The encoded state is stored in a workspace table (working name `PageContent`), written by `onStoreDocument`.
-- On each store, the collaboration server also writes derived projections: plain text (for search, under ADR 0002 section 11's search decision), sanitised HTML (for export and email), and the list of mentioned work items (for backlinks).
+- On each store, the collaboration server also writes derived projections: plain text (for search, under ADR 0002 section 11's search decision: S1 for now, so the stored page text is not searched until the search ADR chooses between S2 and S3), sanitised HTML (for export and email), and the list of mentioned work items (for backlinks).
 - Projections are derived only from the Yjs state, through the editor's schema. Nothing else writes them.
 
-**6.5 Canvas content: two options.**
+**6.5 Canvas content: C1.**
 
-- **C1. The stored Yjs state is the source of truth**, as for pages. `CanvasNode` and `CanvasEdge` rows are a projection written on store, used for queries such as "which canvases link this item". Recommended: one write path and one persistence model for all collaborative content, and no lossy rebuild from rows at each session start.
-- **C2. Rows are the source of truth; Yjs is a transient layer.** The session rebuilds the Yjs document from rows and writes rows back on store. This keeps the ported serializer and row model unchanged, which is why inflect-compliance's doc recommends it for its product. Islestone has no such code yet, which weakens that reason. Costs: a full rewrite of the canvas's rows on every store, and every row write outside the session must still go through the live document.
+- **C1. The stored Yjs state is the source of truth**, as for pages. `CanvasNode` and `CanvasEdge` rows are a projection written on store, used for queries such as "which canvases link this item". One write path and one persistence model for all collaborative content, and no lossy rebuild from rows at each session start. **Decision: C1.** Owner decision, 2026-11-19 (open question 2); the owner chose "Accept all".
+- **C2. Rows are the source of truth; Yjs is a transient layer.** Not chosen. The session rebuilds the Yjs document from rows and writes rows back on store. This keeps the ported serializer and row model unchanged, which is why inflect-compliance's doc recommends it for its product. Islestone has no such code yet, which weakens that reason. Costs: a full rewrite of the canvas's rows on every store, and every row write outside the session must still go through the live document.
 - Under either option, inflect-compliance's whole-graph save endpoint is not ported as a client save path. Saving is the collaboration server's job.
 
 **6.6 One write path for content.** Any server-side change to page or canvas content goes through the collaboration server's direct connection: an approved agent proposal (ADR 0003), an automation, an import, a template, a version restore. It runs as the approving or acting person. Live editors see it at once, and the next store cannot overwrite it. No other code writes the stored Yjs state or its projections. A guard enforces this single write seam.
@@ -239,15 +241,15 @@ type ChangeNotice =
 
 **6.8 Encryption.**
 
-- Stored Yjs state and version snapshots are encrypted with the workspace key through the field-encryption manifest (roadmap 1.5). Recommended, to match ADR 0002's treatment of descriptions and comments. Whether the manifest handles binary columns is a question for 1.5.
-- The text projection follows the search decision in ADR 0002 section 11.
+- Stored Yjs state and version snapshots are encrypted with the workspace key through the field-encryption manifest (roadmap 1.5), to match ADR 0002's treatment of descriptions and comments. **Decision:** Owner decision, 2026-11-19 (open question 6); the owner chose "Accept all". Whether the manifest handles binary columns is a question for 1.5.
+- The text projection follows the search decision in ADR 0002 section 11: S1 for now (owner decision, 2026-11-19), so page text is not searched until the search ADR, due before roadmap 2.7, chooses between S2 and S3.
 - Redis carries document updates between instances in flight. In production it is private, authenticated and on TLS, and the collaboration path uses pub/sub only, so it stores no updates.
 
 **6.9 Version history (roadmap 4.1).** Full encoded snapshots at intervals and on an explicit save, kept for the period the retention table sets (8.3). A restore is a server-side write through section 6.6.
 
 **6.10 Comments on pages are `Comment` rows** (ADR 0006), anchored by an encoded Yjs relative position stored on the comment row. Their text never enters the Yjs document, so comments keep their sanitisation, permissions and audit.
 
-**6.11 Audit.** Keystrokes are not audited. A store writes one audit entry per contributing person per page in a window (recommended: 10 minutes), saying "edited the page" without the text. This follows ADR 0002 section 11 for encrypted fields (open question 7).
+**6.11 Audit.** Keystrokes are not audited. A store writes one audit entry per contributing person per page in a 10-minute window, saying "edited the page" without the text. This follows ADR 0002 section 11 for encrypted fields. **Decision:** 10 minutes, Owner decision, 2026-11-19 (open question 7); the owner chose "Accept all".
 
 **6.12 Agents and the assistant never connect to the collaboration server.** Their read tools read the projections. Their writes are proposals, applied through section 6.6 when approved.
 
@@ -255,16 +257,16 @@ type ChangeNotice =
 
 **6.14 The canvas library (ADR 0001, D3).**
 
-ADR 0001 D3 is decided: tldraw 3.x with the watermark, not a licensed tldraw (owner decision, 2026-11-18). **Inference:** T2 as drafted assumes a licensed tldraw, so it does not arise, and T1 is the remaining option. This ADR does not choose T1; that waits for the owner's sign-off. Whether tldraw sync runs under 3.x was not checked.
+ADR 0001 D3 is decided: tldraw 3.x with the watermark, not a licensed tldraw (owner decision, 2026-11-18). **Inference:** T2 as drafted assumes a licensed tldraw, so it does not arise, and T1 is the remaining option. Whether tldraw sync runs under 3.x was not checked.
 
-- **T1. Yjs for the canvas, whichever library is chosen.** Recommended: one collaboration server and one permission model for pages and canvases. With Excalidraw, I found no maintained official binding: `y-excalidraw` was last published 2024-12-10. So the binding (shapes in a `Y.Map` keyed by shape id) is written in-house.
-- **T2. tldraw sync**, only if D3 chooses a licensed tldraw. It is under tldraw's own licence, adds a second realtime server, and ties canvas collaboration to the licence's renewals. Whether tldraw sync runs under 3.x was not checked.
+- **T1. Yjs for the canvas, whichever library is chosen.** One collaboration server and one permission model for pages and canvases. **Decision: T1.** Owner decision, 2026-11-19 (open question 3); the owner chose "Accept all". With Excalidraw, I found no maintained official binding: `y-excalidraw` was last published 2024-12-10. So the binding (shapes in a `Y.Map` keyed by shape id) is written in-house.
+- **T2. tldraw sync**, only if D3 chooses a licensed tldraw. Not chosen. It is under tldraw's own licence, adds a second realtime server, and ties canvas collaboration to the licence's renewals. Whether tldraw sync runs under 3.x was not checked.
 
 ### 7. A sync engine is deferred
 
 **Options:**
 
-- **E0. No sync engine now.** Recommended. Records follow sections 2 to 4; content follows section 6.
+- **E0. No sync engine now.** Records follow sections 2 to 4; content follows section 6. **Decision: E0**, with the reopen conditions below and condition 2's thresholds as written. Owner decision, 2026-11-19 (open question 1); the owner chose "Accept all".
 - **E1. Zero.** The fastest-feeling reads and a server write path that runs Islestone's own logic. But: a second permission model beside RLS (inference 1), encrypted fields cannot sync as plaintext (inference 2), no offline writes, a direct Postgres connection beside PgBouncer, and a SQLite replica of every workspace's synced data.
 - **E2. ElectricSQL.** Reads only; writes stay on the API, which matches section 2. Authorisation in a proxy that Islestone writes. Same tensions with RLS and encryption.
 - **E3. PowerSync.** Built for offline, with a local database and an upload queue to the API. Same tensions with RLS and encryption, plus offline conflicts the product must design for.
@@ -274,7 +276,7 @@ ADR 0001 D3 is decided: tldraw 3.x with the watermark, not a licensed tldraw (ow
 **Conditions that reopen the decision.** Any one of them starts a new ADR. None of them is a reason to adopt an engine quietly.
 
 1. **An offline requirement.** Paying customers, or a roadmap commitment such as offline quick capture in 8.5, require writes or reads while offline beyond a short reconnect. Then PowerSync, not Zero, is the closer fit.
-2. **A measured problem after the H2 budgets are met.** Recommended thresholds, for the owner to set:
+2. **A measured problem after the H2 budgets are met.** Thresholds (Owner decision, 2026-11-19, open question 1):
    - p75 time to show a list or board on navigation without a cached copy, above 400 ms on the 100,000-item H2 tenant;
    - p75 time from a write to its appearance in another open client, above 2 seconds;
    - refetches caused by change notices, above half of API read traffic.
@@ -302,17 +304,19 @@ ADR 0001 D3 is decided: tldraw 3.x with the watermark, not a licensed tldraw (ow
 
 ### Open questions for the owner
 
-1. Approve E0, and set the reopen thresholds in section 7.
-2. Canvas persistence: C1 (recommended) or C2.
-3. Canvas transport: T1 (recommended) or T2. ADR 0001 D3 chose tldraw 3.x, not a licensed tldraw, so T2 as drafted does not arise and T1 is the remaining option (an inference, not a decision). It is pending owner sign-off; whether tldraw sync runs under 3.x was not checked.
-4. Client cache: TanStack Query (recommended) or SWR. Needed before 2.3.
-5. Item presence: R1 (recommended) or R2.
-6. Encrypt stored Yjs state and snapshots (recommended), and how page text is searched (follows ADR 0002's S1 to S4).
-7. Audit granularity for collaborative edits. Recommended: one entry per person per page per 10 minutes.
-8. Does the hosting target (roadmap open decision 5) keep long-lived SSE and WebSocket connections? A serverless-only host would change sections 4 and 6.
-9. Does 8.5's PWA quick capture need to work offline? If yes, condition 1 fires.
-10. Recommended limits to confirm at H4: 60-second token lifetime, 60-second stream re-check, connection and update caps.
-11. Confirm the new words this ADR adds to ADR 0006's vocabulary: "change notice", "collaboration server", "collaboration token", "page content" (`PageContent`, a working name) and "projection". ADR 0006 lists them as proposed rows.
+Questions 1 to 7, 10 and 11 were answered on 2026-11-19 in the working session; the owner chose "Accept all". Questions 8 and 9 remain open.
+
+1. Answered: E0 is approved, with section 7's reopen thresholds as written.
+2. Answered: canvas persistence is C1 (section 6.5).
+3. Answered: canvas transport is T1 (section 6.14). Whether tldraw sync runs under 3.x was not checked; under T1 it is not needed.
+4. Answered: the client cache is TanStack Query (section 3).
+5. Answered: item presence is R1 (section 5).
+6. Answered: stored Yjs state and snapshots are encrypted (section 6.8). Page text is searched under ADR 0002's S1 for now, so not until the search ADR chooses between S2 and S3.
+7. Answered: one audit entry per person per page per 10 minutes (section 6.11).
+8. Open, not blocking. Does the hosting target (roadmap open decision 5) keep long-lived SSE and WebSocket connections? A serverless-only host would change sections 4 and 6. It belongs to roadmap open decision 5.
+9. Open, not blocking. Does 8.5's PWA quick capture need to work offline? If yes, condition 1 fires. It belongs to sub-phase 8.5.
+10. Answered: a 60-second token lifetime, a 60-second stream re-check, and the connection and update caps as written (sections 4 and 6.2); H4 sets the cap values.
+11. Answered: the new words "change notice", "collaboration server", "collaboration token", "page content" (`PageContent`, a working name) and "projection" are confirmed. ADR 0006 lists them as decided rows.
 
 ## Consequences
 
@@ -324,7 +328,7 @@ ADR 0001 D3 is decided: tldraw 3.x with the watermark, not a licensed tldraw (ow
 - Collaborative content is a CRDT. It cannot be queried in place: search, export, backlinks and agents read projections, which lag the live document by the store debounce (2 to 10 seconds by Hocuspocus's defaults).
 - A schema change in the editor or canvas means transforming stored Yjs documents, which is harder than migrating rows. Each change needs a tested transform.
 - No offline mode. A person who loses the connection keeps typing in a page, and Yjs merges on reconnect, but records cannot be changed offline.
-- ADR 0001 D3 chose tldraw 3.x, so under T1, the remaining option once signed, 4.2 binds tldraw 3.x's shapes to Yjs. Whether a maintained binding exists for tldraw 3.x was not checked.
+- ADR 0001 D3 chose tldraw 3.x and this ADR chose T1, so 4.2 binds tldraw 3.x's shapes to Yjs. Whether a maintained binding exists for tldraw 3.x was not checked.
 - Patterns learned from inflect-compliance, all pattern only, no code copied: an optional-to-required `expectedVersion` with a conditional update; updating the held version from each save's response; SSE for one-way updates with heartbeat, Node runtime and buffering off; an in-process fan-out bus; polling as the fallback for missed pushes. Each goes in `PROVENANCE.md` as pattern only.
 
 ## What would change this decision

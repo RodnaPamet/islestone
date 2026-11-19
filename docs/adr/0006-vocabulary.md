@@ -1,6 +1,6 @@
 # 0006 — Vocabulary
 
-Status: Proposed — awaiting owner sign-off (2026-11-18 drafted). The role names, their order, the fallback role and the public sign-up switch were decided by the owner on 2026-11-18; the other open questions await sign-off.
+Status: Proposed — awaiting owner sign-off (2026-11-18 drafted). The role names, their order, the fallback role and the public sign-up switch were decided by the owner on 2026-11-18, and the sync and collaboration words ADR 0005 added on 2026-11-19; the other open questions await sign-off.
 
 ## Context
 
@@ -8,7 +8,7 @@ Islestone will hold dozens of domain concepts. Each one will reach a Prisma mode
 
 This ADR fixes one name per concept before the first model is written (roadmap 1.3 creates the tenancy models, roadmap 2.1 the work-item models). ADRs 0002 and 0003 use these names.
 
-How to read this ADR: a line marked **Verified** was read in the named file on 2026-11-18. A section marked **Decided** records an owner decision of 2026-11-18. Everything else is a recommendation, and is not made until the owner signs.
+How to read this ADR: a line marked **Verified** was read in the named file on 2026-11-18. A section marked **Decided** records an owner decision of 2026-11-18 or 2026-11-19, as it states. Everything else is a recommendation, and is not made until the owner signs.
 
 ### What happened in inflect-compliance
 
@@ -118,7 +118,7 @@ Rows for Phase 2 concepts are fixed by this ADR once signed. Rows for later phas
 | Page content | A page's stored collaborative state (ADR 0005, section 6.4). The source of truth for the page body. | `PageContent` (working name) | Not shown as a noun | Document state, Body (as a model), Blob |
 | Projection | Data derived from collaborative content on store: plain text, sanitised HTML, mentioned items (ADR 0005, sections 6.4 and 6.5). Read-only to everything but the collaboration server. | Columns or tables named for what they hold, such as `PageContent.plainText` | Not shown | Cache, Copy, Snapshot (a snapshot is a canvas version), Index (except a search index) |
 
-**Sync and collaboration** (ADR 0005; rows proposed with that ADR's open question 11)
+**Sync and collaboration** (ADR 0005). **Decided. Owner decision, 2026-11-19** (ADR 0005, open question 11); the owner chose "Accept all". It confirms these three rows and the "Page content" and "Projection" rows above. `PageContent` stays a working model name.
 
 | Term | Meaning | Model name | UI label | Words NOT to use |
 |---|---|---|---|---|

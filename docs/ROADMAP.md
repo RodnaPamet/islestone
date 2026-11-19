@@ -444,12 +444,12 @@ Gaps found in review and how they were closed:
 - Live updates were implied by collaboration but not specified for boards; added as 4.3.
 - Forecast honesty on thin history was unstated; added to 3.6 and H3.
 
-Decisions for the owner that the research could not settle. The first three were decided on 2026-11-18 and are recorded in [ADR 0001](adr/0001-code-provenance-and-licences.md):
+Decisions for the owner that the research could not settle. The first three were decided on 2026-11-18 and are recorded in [ADR 0001](adr/0001-code-provenance-and-licences.md); the fourth was decided on 2026-11-19 and is recorded in [ADR 0004](adr/0004-authentication-path.md):
 
 1. The written BUSL grant from Inflect Ltd. (0.1). **Decided (D1):** copying from inflect-compliance is allowed; every copied file gets a `PROVENANCE.md` row. No separate grant document was produced: the owner's decision, recorded in the ADR, is the authority.
 2. The canvas licence path (0.1). **Decided (D3):** tldraw 3.x with the watermark visible.
 3. Whether Islestone itself is open source, and under which licence. **Decided (D2):** BUSL-1.1, licensor Inflect Ltd., Change License Apache-2.0; source-available, not open source.
-4. Auth: port NextAuth v4 now (recommended, because SSO, MFA and SCIM come with it) or start on Better Auth.
+4. Auth: port NextAuth v4 now (recommended, because SSO, MFA and SCIM come with it) or start on Better Auth. **Decided (ADR 0004 A1, A2):** port NextAuth v4, pinned exactly, with exit criteria for a later move to Better Auth. SSO and SCIM wait for 8.3; 1.4 ports credentials, Google, Microsoft, sign-in sessions, MFA and invites.
 5. Hosting target and data residency regions.
 6. Which embeddings provider, since a hosted one is a new sub-processor.
 7. Pricing and how AI usage is metered.
