@@ -143,7 +143,7 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 
 #### 1.4 Authentication and roles (L)
 - **Source:** `src/auth.ts`, `src/middleware.ts`, `lib/auth/`, `lib/scim/`, `lib/permissions.ts`, `lib/security/permission-middleware.ts`.
-- **Prompt:** "Port authentication: credentials, Google and Microsoft sign-in, session rows with revocation, MFA, password policy with the breach check, invites, and the tenant-access gate in middleware. Port SSO and SCIM behind a feature flag. Write a new `PermissionSet` for project management (workspace, projects, work items, views, cycles, docs, canvas, automations, integrations, agents, billing, admin) with roles OWNER, ADMIN, MEMBER, GUEST and VIEWER, and port `requirePermission` with its denial audit row. Port the guards for membership-creation paths and permission coverage."
+- **Prompt:** "Port authentication: credentials, Google and Microsoft sign-in, session rows with revocation, MFA, password policy with the breach check, invites, and the tenant-access gate in middleware. SSO and SCIM wait for 8.3 (ADR 0004 A2, owner decision 2026-11-19). Write a new `PermissionSet` for project management (workspace, projects, work items, views, cycles, docs, canvas, automations, integrations, agents, billing, admin) with roles OWNER, ADMIN, MEMBER, GUEST and VIEWER, and port `requirePermission` with its denial audit row. Port the guards for membership-creation paths and permission coverage."
 - **Decided 2026-11-18 ([ADR 0006](adr/0006-vocabulary.md)):** the roles rank Owner > Admin > Member > Viewer > Guest by breadth of access, and `Role` is declared in that order; a user whose role cannot be resolved falls back to Viewer, never Guest; public self-sign-up at `/api/auth/register` sits behind a switch, off by default in production, on in development, opened by an operator without a code change.
 
 #### 1.5 Security perimeter (M)
@@ -372,7 +372,7 @@ Each feature ships as a skill with an evaluation set, writes only proposals, and
 - **Prompt:** "Add onboarding: workspace creation, a sample project, template gallery, importer entry point, invite flow and a guided tour. Measure time to first created item."
 
 #### 8.3 Enterprise administration (M)
-- **Prompt:** "Finish enterprise administration: SSO and SCIM out of the feature flag, audit-log viewer and streaming, session policy, data export per workspace, retention settings, and tenant deletion with a purge job and a documented retention table for every model."
+- **Prompt:** "Finish enterprise administration: port SSO (SAML and OIDC, with Enforce SSO) and SCIM (ADR 0004 A2), audit-log viewer and streaming, session policy, data export per workspace, retention settings, and tenant deletion with a purge job and a documented retention table for every model."
 
 #### 8.4 Sharing and guests (M)
 - **Prompt:** "Add project-level roles, guest access limited to named projects, private projects, and public read-only links for roadmaps and pages with expiry and revocation."

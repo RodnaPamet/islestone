@@ -197,7 +197,7 @@ Because "member" is also the concept "anyone with a membership", text about perm
 
 ### Public sign-up behind a switch — decided
 
-**Decided. Owner decision, 2026-11-18; the owner chose "Behind a switch".** Public self-sign-up at `/api/auth/register` sits behind a switch. It is off by default in production and on in development, and an operator opens it without a code change. This is not a vocabulary rule. It is recorded here because the owner decided it together with the role questions, and ADR 0004 (authentication path) is still Proposed. Roadmap 1.4 builds it when it ports the register route.
+**Decided. Owner decision, 2026-11-18; the owner chose "Behind a switch".** Public self-sign-up at `/api/auth/register` sits behind a switch. It is off by default in production and on in development, and an operator opens it without a code change. This is not a vocabulary rule. It is recorded here because the owner decided it together with the role questions, before ADR 0004 (authentication path) was decided. Roadmap 1.4 builds it when it ports the register route.
 
 ### How Islestone avoids inflect-compliance's two-vocabulary state
 

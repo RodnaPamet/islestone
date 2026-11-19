@@ -125,7 +125,9 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
 
 1. **Finish Phase 0 + 1.1.** Done on the branch: the skeleton is there, and PR #1's first
    completed CI run, on `3ffb78a`, was green. Roadmap 0.2's "Done when: five ADRs merged"
-   still waits: PR #1 is a draft, and ADRs 0002 to 0006 await the owner's sign-off.
+   PR #1 merged on 2026-11-19. Roadmap 0.2's five ADRs: 0001, 0002, 0004, 0005 and 0007
+   are Accepted; 0003 and 0006 record the owner's decisions in place and stay Proposed for
+   their remaining open questions.
 2. **Record the owner decisions.** Done. What landed:
    - ADR 0001 is Accepted. It records D1 (copying allowed), D2 (BUSL-1.1, licensor
      Inflect Ltd.), D3 (tldraw 3.x with the watermark) and a new D4 (Dub/Nucleo taken as
@@ -134,8 +136,8 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      and other licence notices.
    - ADR 0007 is Accepted (decisions 11 and 12). ADR 0003 records decisions 13 and 14 in
      place; ADR 0006 records decisions 7 to 9. Both stay Proposed, because their other
-     open questions are unanswered. ADRs 0002, 0004 and 0005 stay Proposed; their
-     references to the retired interim rule were corrected.
+     open questions are unanswered. ADRs 0002, 0004 and 0005 were
+     Accepted on 2026-11-19 (decisions 20 to 26).
    - `package.json` says `"license": "BUSL-1.1"`.
    - The licence gate allows 0BSD, the `tslib` exemption is gone, an exemption must cite
      an Accepted ADR that names the package, and a workspace holding `UPSTREAM.json` is
