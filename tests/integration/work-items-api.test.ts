@@ -1,0 +1,300 @@
+/**
+ * The work-item API, route by route, against a real Postgres (sub-phase 2.2,
+ * roadmap H2's permission matrix seed).
+ *
+ *   - Every route file under work-items, projects, teams, work-item-types and
+ *     labels is driven here, and the suite fails if one is not
+ *     (the population is read from git).
+ *   - A VIEWER is refused every write with a 403 and an `AUTHZ_DENIED` audit
+ *     row; a MEMBER is admitted.
+ *   - A GUEST membership (written with the raw client: GUEST is not
+ *     assignable until 8.4) sees NO item through any read route: the list is
+ *     empty, metrics are zero, and every per-item read is a 404.
+ *   - `If-Match` gives 428 without a version on a title edit and 409 with a
+ *     stale one.
+ *
+ * `getTenantCtx` is replaced by a context for the role under test (the
+ * session and edge are 1.4's, tested there); everything below it is real.
+ */
+import * as path from 'node:path';
+
+import { NextRequest } from 'next/server';
+import type { PrismaClient, Role } from '@prisma/client';
+
+import type { RequestContext } from '@/app-layer/types';
+
+const getTenantCtxMock = jest.fn<Promise<RequestContext>, [unknown, unknown]>();
+jest.mock('@/app-layer/context', () => ({
+    getTenantCtx: (params: unknown, req: unknown) => getTenantCtxMock(params, req),
+}));
+
+import { createProject } from '@/app-layer/usecases/project';
+import { createTeam } from '@/app-layer/usecases/team';
+import { listWorkItemTypes } from '@/app-layer/usecases/work-item-type';
+import { createWorkItem } from '@/app-layer/usecases/work-item';
+import { addComment } from '@/app-layer/usecases/work-item-collab';
+import { createLabel } from '@/app-layer/usecases/label';
+import { addWorkItemRelation } from '@/app-layer/usecases/work-item-relations';
+import { verifyAuditChain } from '@/lib/audit';
+import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
+
+import { gitFiles } from '../helpers/git-files';
+import { prismaTestClient, resetDatabase } from '../helpers/db';
+import { makeRequestContext } from '../helpers/make-context';
+
+import { DB_AVAILABLE } from './db-helper';
+
+const describeFn = DB_AVAILABLE ? describe : describe.skip;
+const TAG = `wapi${Date.now().toString(36)}`;
+const ROOT = path.resolve(__dirname, '../..');
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels'];
+
+type Handler = (req: NextRequest, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>;
+
+interface Ids {
+    item: string;
+    other: string;
+    comment: string;
+    link: string;
+    relation: string;
+    label: string;
+    project: string;
+    team: string;
+    state: string;
+    type: string;
+    member: string;
+    key: string;
+}
+
+/** One request per route and method: the template, a body, and whether it reads an item. */
+interface Call {
+    file: string;
+    method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+    path: (i: Ids) => string;
+    params: (i: Ids) => Record<string, string>;
+    body?: (i: Ids) => unknown;
+    /** A read of one visible item (a GUEST must get a 404). */
+    itemRead?: boolean;
+    /** A list or count over items (a GUEST must get nothing). */
+    itemList?: boolean;
+    /** Does the route write? */
+    write: boolean;
+    /** The key the route takes. */
+    key: string;
+}
+
+const W = 'src/app/api/t/[tenantSlug]/work-items';
+const P = (i: Ids, extra: Record<string, string> = {}) => ({ tenantSlug: TAG, ...extra, ...(i ? {} : {}) });
+const CALLS: Call[] = [
+    { file: `${W}/route.ts`, method: 'GET', path: () => '/work-items', params: (i) => P(i), itemList: true, write: false, key: 'work_items.view' },
+    { file: `${W}/route.ts`, method: 'POST', path: () => '/work-items', params: (i) => P(i), body: (i) => ({ projectId: i.project, typeId: i.type, title: 'api created' }), write: true, key: 'work_items.create' },
+    { file: `${W}/deleted/route.ts`, method: 'GET', path: () => '/work-items/deleted', params: (i) => P(i), write: true, key: 'work_items.delete' },
+    { file: `${W}/metrics/route.ts`, method: 'GET', path: () => '/work-items/metrics', params: (i) => P(i), itemList: true, write: false, key: 'work_items.view' },
+    { file: `${W}/by-key/[key]/route.ts`, method: 'GET', path: (i) => `/work-items/by-key/${i.key}`, params: (i) => P(i, { key: i.key }), itemRead: true, write: false, key: 'work_items.view' },
+    { file: `${W}/bulk/assign/route.ts`, method: 'POST', path: () => '/work-items/bulk/assign', params: (i) => P(i), body: (i) => ({ workItemIds: [i.other], assigneeId: null }), write: true, key: 'work_items.assign' },
+    { file: `${W}/bulk/state/route.ts`, method: 'POST', path: () => '/work-items/bulk/state', params: (i) => P(i), body: (i) => ({ workItemIds: [i.other], stateCategory: 'STARTED' }), write: true, key: 'work_items.edit' },
+    { file: `${W}/bulk/due/route.ts`, method: 'POST', path: () => '/work-items/bulk/due', params: (i) => P(i), body: (i) => ({ workItemIds: [i.other], dueDate: '2031-01-02' }), write: true, key: 'work_items.edit' },
+    { file: `${W}/bulk/delete/route.ts`, method: 'POST', path: () => '/work-items/bulk/delete', params: (i) => P(i), body: () => ({ workItemIds: ['nothing-here'] }), write: true, key: 'work_items.delete' },
+    { file: `${W}/[workItemId]/route.ts`, method: 'GET', path: (i) => `/work-items/${i.item}`, params: (i) => P(i, { workItemId: i.item }), itemRead: true, write: false, key: 'work_items.view' },
+    { file: `${W}/[workItemId]/route.ts`, method: 'PATCH', path: (i) => `/work-items/${i.other}`, params: (i) => P(i, { workItemId: i.other }), body: () => ({ priority: 'LOW' }), write: true, key: 'work_items.edit' },
+    { file: `${W}/[workItemId]/route.ts`, method: 'DELETE', path: () => '/work-items/none', params: (i) => P(i, { workItemId: 'none' }), write: true, key: 'work_items.delete' },
+    { file: `${W}/[workItemId]/state/route.ts`, method: 'POST', path: (i) => `/work-items/${i.other}/state`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ stateId: i.state }), write: true, key: 'work_items.edit' },
+    { file: `${W}/[workItemId]/assign/route.ts`, method: 'POST', path: (i) => `/work-items/${i.other}/assign`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ assigneeId: i.member }), write: true, key: 'work_items.assign' },
+    { file: `${W}/[workItemId]/restore/route.ts`, method: 'POST', path: () => '/work-items/none/restore', params: (i) => P(i, { workItemId: 'none' }), write: true, key: 'work_items.delete' },
+    { file: `${W}/[workItemId]/activity/route.ts`, method: 'GET', path: (i) => `/work-items/${i.item}/activity`, params: (i) => P(i, { workItemId: i.item }), itemRead: true, write: false, key: 'work_items.view' },
+    { file: `${W}/[workItemId]/sub-items/route.ts`, method: 'GET', path: (i) => `/work-items/${i.item}/sub-items?progress=1`, params: (i) => P(i, { workItemId: i.item }), itemRead: true, write: false, key: 'work_items.view' },
+    { file: `${W}/[workItemId]/move/route.ts`, method: 'POST', path: (i) => `/work-items/${i.other}/move`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ position: { afterId: i.item } }), write: true, key: 'work_items.edit' },
+    { file: `${W}/[workItemId]/comments/route.ts`, method: 'GET', path: (i) => `/work-items/${i.item}/comments`, params: (i) => P(i, { workItemId: i.item }), itemRead: true, write: false, key: 'work_items.view' },
+    { file: `${W}/[workItemId]/comments/route.ts`, method: 'POST', path: (i) => `/work-items/${i.other}/comments`, params: (i) => P(i, { workItemId: i.other }), body: () => ({ body: 'hello' }), write: true, key: 'work_items.comment' },
+    { file: `${W}/[workItemId]/comments/[commentId]/route.ts`, method: 'PATCH', path: (i) => `/work-items/${i.item}/comments/${i.comment}`, params: (i) => P(i, { workItemId: i.item, commentId: i.comment }), body: () => ({ body: 'edited' }), write: true, key: 'work_items.comment' },
+    { file: `${W}/[workItemId]/comments/[commentId]/route.ts`, method: 'DELETE', path: () => '/work-items/none/comments/none', params: (i) => P(i, { workItemId: 'none', commentId: 'none' }), write: true, key: 'work_items.comment' },
+    { file: `${W}/[workItemId]/watchers/route.ts`, method: 'GET', path: (i) => `/work-items/${i.item}/watchers`, params: (i) => P(i, { workItemId: i.item }), itemRead: true, write: false, key: 'work_items.view' },
+    { file: `${W}/[workItemId]/watchers/route.ts`, method: 'POST', path: (i) => `/work-items/${i.item}/watchers`, params: (i) => P(i, { workItemId: i.item }), itemRead: true, write: false, key: 'work_items.view' },
+    { file: `${W}/[workItemId]/watchers/route.ts`, method: 'DELETE', path: (i) => `/work-items/${i.item}/watchers`, params: (i) => P(i, { workItemId: i.item }), itemRead: true, write: false, key: 'work_items.view' },
+    { file: `${W}/[workItemId]/watchers/[userId]/route.ts`, method: 'POST', path: (i) => `/work-items/${i.other}/watchers/${i.member}`, params: (i) => P(i, { workItemId: i.other, userId: i.member }), write: true, key: 'work_items.edit' },
+    { file: `${W}/[workItemId]/watchers/[userId]/route.ts`, method: 'DELETE', path: (i) => `/work-items/${i.other}/watchers/${i.member}`, params: (i) => P(i, { workItemId: i.other, userId: i.member }), write: true, key: 'work_items.edit' },
+    { file: `${W}/[workItemId]/links/route.ts`, method: 'GET', path: (i) => `/work-items/${i.item}/links`, params: (i) => P(i, { workItemId: i.item }), itemRead: true, write: false, key: 'work_items.view' },
+    { file: `${W}/[workItemId]/links/route.ts`, method: 'POST', path: (i) => `/work-items/${i.other}/links`, params: (i) => P(i, { workItemId: i.other }), body: () => ({ type: 'URL', location: 'https://example.com/x' }), write: true, key: 'work_items.edit' },
+    { file: `${W}/[workItemId]/links/[linkId]/route.ts`, method: 'DELETE', path: () => '/work-items/none/links/none', params: (i) => P(i, { workItemId: 'none', linkId: 'none' }), write: true, key: 'work_items.edit' },
+    { file: `${W}/[workItemId]/relations/route.ts`, method: 'GET', path: (i) => `/work-items/${i.item}/relations`, params: (i) => P(i, { workItemId: i.item }), itemRead: true, write: false, key: 'work_items.view' },
+    { file: `${W}/[workItemId]/relations/route.ts`, method: 'POST', path: (i) => `/work-items/${i.other}/relations`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ type: 'RELATES', toId: i.item }), write: true, key: 'work_items.edit' },
+    { file: `${W}/[workItemId]/relations/[relationId]/route.ts`, method: 'DELETE', path: () => '/work-items/none/relations/none', params: (i) => P(i, { workItemId: 'none', relationId: 'none' }), write: true, key: 'work_items.edit' },
+    { file: `${W}/[workItemId]/labels/route.ts`, method: 'POST', path: (i) => `/work-items/${i.other}/labels`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ labelIds: [i.label] }), write: true, key: 'work_items.edit' },
+    { file: `${W}/[workItemId]/labels/[labelId]/route.ts`, method: 'DELETE', path: () => '/work-items/none/labels/none', params: (i) => P(i, { workItemId: 'none', labelId: 'none' }), write: true, key: 'work_items.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/route.ts', method: 'GET', path: () => '/projects', params: (i) => P(i), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/route.ts', method: 'POST', path: () => '/projects', params: (i) => P(i), body: (i) => ({ teamId: i.team, name: 'API', keyPrefix: `AP${Math.floor(Math.random() * 9e7)}`.slice(0, 10) }), write: true, key: 'projects.create' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/route.ts', method: 'GET', path: (i) => `/projects/${i.project}`, params: (i) => P(i, { projectId: i.project }), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/route.ts', method: 'PATCH', path: (i) => `/projects/${i.project}`, params: (i) => P(i, { projectId: i.project }), body: () => ({ name: 'Renamed project' }), write: true, key: 'projects.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/route.ts', method: 'DELETE', path: () => '/projects/none', params: (i) => P(i, { projectId: 'none' }), write: true, key: 'projects.archive' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/archive/route.ts', method: 'POST', path: () => '/projects/none/archive', params: (i) => P(i, { projectId: 'none' }), body: () => ({ archived: true }), write: true, key: 'projects.archive' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/restore/route.ts', method: 'POST', path: () => '/projects/none/restore', params: (i) => P(i, { projectId: 'none' }), write: true, key: 'projects.archive' },
+    { file: 'src/app/api/t/[tenantSlug]/teams/route.ts', method: 'GET', path: () => '/teams', params: (i) => P(i), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/teams/route.ts', method: 'POST', path: () => '/teams', params: (i) => P(i), body: () => ({ name: `API team ${Math.random()}` }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/teams/[teamId]/route.ts', method: 'GET', path: (i) => `/teams/${i.team}`, params: (i) => P(i, { teamId: i.team }), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/teams/[teamId]/route.ts', method: 'PATCH', path: (i) => `/teams/${i.team}`, params: (i) => P(i, { teamId: i.team }), body: () => ({ name: `Core ${Math.random()}` }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/teams/[teamId]/route.ts', method: 'DELETE', path: () => '/teams/none', params: (i) => P(i, { teamId: 'none' }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/teams/[teamId]/workflow-states/route.ts', method: 'GET', path: (i) => `/teams/${i.team}/workflow-states`, params: (i) => P(i, { teamId: i.team }), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/teams/[teamId]/workflow-states/route.ts', method: 'POST', path: (i) => `/teams/${i.team}/workflow-states`, params: (i) => P(i, { teamId: i.team }), body: () => ({ name: `QA ${Math.random()}`, category: 'STARTED' }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/teams/[teamId]/workflow-states/[stateId]/route.ts', method: 'PATCH', path: (i) => `/teams/${i.team}/workflow-states/${i.state}`, params: (i) => P(i, { teamId: i.team, stateId: i.state }), body: () => ({ name: 'In progress' }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/teams/[teamId]/workflow-states/[stateId]/route.ts', method: 'DELETE', path: (i) => `/teams/${i.team}/workflow-states/none`, params: (i) => P(i, { teamId: i.team, stateId: 'none' }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/work-item-types/route.ts', method: 'GET', path: () => '/work-item-types', params: (i) => P(i), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/work-item-types/route.ts', method: 'POST', path: () => '/work-item-types', params: (i) => P(i), body: () => ({ name: `Type ${Math.random()}`, icon: 'bug', color: '#ff0000' }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/work-item-types/[typeId]/route.ts', method: 'PATCH', path: (i) => `/work-item-types/${i.type}`, params: (i) => P(i, { typeId: i.type }), body: () => ({ color: 'brand-500' }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/labels/route.ts', method: 'GET', path: () => '/labels', params: (i) => P(i), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/labels/route.ts', method: 'POST', path: () => '/labels', params: (i) => P(i), body: () => ({ name: `Label ${Math.random()}` }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/labels/[labelId]/route.ts', method: 'PATCH', path: (i) => `/labels/${i.label}`, params: (i) => P(i, { labelId: i.label }), body: () => ({ color: '#00ff00' }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/labels/[labelId]/route.ts', method: 'DELETE', path: () => '/labels/none', params: (i) => P(i, { labelId: 'none' }), write: true, key: 'admin.manage' },
+];
+
+function request(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): NextRequest {
+    return new NextRequest(`http://localhost/api/t/${TAG}${path}`, {
+        method,
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': '10.0.0.7', ...headers },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+}
+
+async function handlerFor(call: Call): Promise<Handler> {
+    const mod = (await import(`../../${call.file}`)) as Record<string, Handler>;
+    const handler = mod[call.method];
+    if (!handler) throw new Error(`${call.file} exports no ${call.method}`);
+    return handler;
+}
+
+describeFn('the work-item API', () => {
+    let prisma: PrismaClient;
+    let tenantId = '';
+    const users: Partial<Record<Role, string>> = {};
+    const ids = {} as Ids;
+
+    const ctxFor = (role: Role): RequestContext =>
+        makeRequestContext(role, { tenantId, tenantSlug: TAG, userId: users[role]!, requestId: `${TAG}-${role}-${Math.random()}` });
+
+    async function call(role: Role, c: Call, headers: Record<string, string> = {}) {
+        getTenantCtxMock.mockResolvedValue(ctxFor(role));
+        const handler = await handlerFor(c);
+        const res = await handler(request(c.method, c.path(ids), c.body?.(ids), headers), { params: Promise.resolve(c.params(ids)) });
+        return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+    }
+
+    beforeAll(async () => {
+        prisma = prismaTestClient();
+        await resetDatabase(prisma);
+        tenantId = (await createTenantWithDek({ name: TAG, slug: TAG })).id;
+        for (const role of ['OWNER', 'MEMBER', 'VIEWER', 'GUEST'] as Role[]) {
+            const u = await prisma.user.create({ data: { email: `${role.toLowerCase()}-${TAG}@example.test` } });
+            // GUEST is written with the raw client: no writer assigns it before 8.4.
+            await prisma.tenantMembership.create({ data: { tenantId, userId: u.id, role } });
+            users[role] = u.id;
+        }
+        const owner = ctxFor('OWNER');
+        const team = await createTeam(owner, { name: 'API' });
+        const project = await createProject(owner, { teamId: team.id, name: 'API', keyPrefix: 'API' });
+        const type = (await listWorkItemTypes(owner))[0]!;
+        const item = await createWorkItem(owner, { projectId: project.id, typeId: type.id, title: 'the item' });
+        const other = await createWorkItem(owner, { projectId: project.id, typeId: type.id, title: 'the other' });
+        await createWorkItem(owner, { projectId: project.id, typeId: type.id, title: 'a sub-item', parentId: item.id });
+        // Authored by the MEMBER, so the member's edit is the author's.
+        const comment = await addComment(ctxFor('MEMBER'), item.id, { body: 'a comment' });
+        const label = await createLabel(owner, { name: 'api label' });
+        const relation = await addWorkItemRelation(owner, item.id, { type: 'BLOCKS', toId: other.id });
+        Object.assign(ids, {
+            item: item.id,
+            other: other.id,
+            comment: comment.id,
+            link: 'none',
+            relation: relation.id,
+            label: label.id,
+            project: project.id,
+            team: team.id,
+            state: team.workflowStates.find((s) => s.name === 'In progress')!.id,
+            type: type.id,
+            member: users.MEMBER!,
+            key: item.key,
+        });
+    });
+
+    afterAll(async () => {
+        await resetDatabase(prisma);
+    });
+
+    it('drives every work route file and method (the population is read from git)', () => {
+        const files = gitFiles(ROOT).filter((f) => ROOTS.some((r) => f.startsWith(`src/app/api/t/[tenantSlug]/${r}/`)) && f.endsWith('/route.ts'));
+        expect(files.length).toBeGreaterThan(30);
+        const driven = new Set(CALLS.map((c) => c.file));
+        expect(files.filter((f) => !driven.has(f))).toEqual([]);
+        for (const f of files) {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const src = require('node:fs').readFileSync(path.join(ROOT, f), 'utf8') as string;
+            for (const m of ['GET', 'POST', 'PATCH', 'DELETE'] as const) {
+                if (new RegExp(`export const ${m}\\b`).test(src)) {
+                    expect({ f, m, driven: CALLS.some((c) => c.file === f && c.method === m) }).toEqual({ f, m, driven: true });
+                }
+            }
+        }
+    });
+
+    it.each(CALLS.filter((c) => c.write).map((c) => [`${c.method} ${c.file.replace('src/app/api/t/[tenantSlug]/', '')}`, c] as const))(
+        'a VIEWER is refused %s with a 403 and an AUTHZ_DENIED row',
+        async (_name, c) => {
+            const before = await prisma.auditLog.count({ where: { tenantId, action: 'AUTHZ_DENIED' } });
+            const res = await call('VIEWER', c);
+            expect(res.status).toBe(403);
+            expect(await prisma.auditLog.count({ where: { tenantId, action: 'AUTHZ_DENIED' } })).toBe(before + 1);
+        },
+    );
+
+    it.each(
+        CALLS.filter((c) => c.key.startsWith('work_items.') && !['work_items.delete'].includes(c.key)).map(
+            (c) => [`${c.method} ${c.file.replace('src/app/api/t/[tenantSlug]/', '')}`, c] as const,
+        ),
+    )('a MEMBER is admitted to %s (never a 403)', async (_name, c) => {
+        const res = await call('MEMBER', c);
+        expect(res.status).not.toBe(403);
+        expect(res.status).toBeLessThan(500);
+    });
+
+    it.each(CALLS.filter((c) => c.itemRead).map((c) => [`${c.method} ${c.file.replace('src/app/api/t/[tenantSlug]/', '')}`, c] as const))(
+        'a GUEST sees no item through %s (404)',
+        async (_name, c) => {
+            expect((await call('GUEST', c)).status).toBe(404);
+        },
+    );
+
+    it('a GUEST lists no items, counts none, and sees no project', async () => {
+        const list = await call('GUEST', CALLS.find((c) => c.file.endsWith('work-items/route.ts') && c.method === 'GET')!);
+        expect(list).toMatchObject({ status: 200, body: { items: [] } });
+        const metrics = await call('GUEST', CALLS.find((c) => c.file.endsWith('metrics/route.ts'))!);
+        expect(metrics.body).toMatchObject({ total: 0 });
+        const projects = await call('GUEST', CALLS.find((c) => c.file.endsWith('projects/route.ts') && c.method === 'GET')!);
+        expect(projects.body).toEqual([]);
+        const sub = await call('OWNER', CALLS.find((c) => c.file.endsWith('sub-items/route.ts'))!);
+        expect((sub.body.items as unknown[]).length).toBe(1);
+    });
+
+    it('PATCH without If-Match on a title is a 428; with a stale version a 409 carrying the current row; with the right one a 200', async () => {
+        const patch: Call = { ...CALLS.find((c) => c.method === 'PATCH' && c.file.endsWith('[workItemId]/route.ts'))!, body: () => ({ title: 'renamed via api' }) };
+        expect((await call('OWNER', patch)).status).toBe(428);
+        const stale = await call('OWNER', patch, { 'if-match': '"1"' });
+        expect(stale.status).toBe(409);
+        const details = (stale.body.error as { details: { version: number; item: { id: string } } }).details;
+        expect(details.item.id).toBe(ids.other);
+        const ok = await call('OWNER', patch, { 'if-match': `"${details.version}"` });
+        expect(ok.status).toBe(200);
+        expect(ok.body).toMatchObject({ title: 'renamed via api', version: details.version + 1 });
+        expect((await call('OWNER', patch, { 'if-match': 'banana' })).status).toBe(400);
+    });
+
+    it('a VIEWER may watch an item themselves, but adding someone else is an audited 403', async () => {
+        const self = await call('VIEWER', CALLS.find((c) => c.method === 'POST' && c.file.endsWith('watchers/route.ts'))!);
+        expect(self.status).toBe(200);
+        const other = await call('VIEWER', CALLS.find((c) => c.method === 'POST' && c.file.endsWith('watchers/[userId]/route.ts'))!);
+        expect(other.status).toBe(403);
+        const rows = await prisma.auditLog.findMany({ where: { tenantId, action: 'WORK_ITEM_WATCHER_ADDED' } });
+        expect(rows.some((r) => (r.metadataJson as { self?: boolean } | null)?.self === true)).toBe(true);
+    });
+
+    it('the audit chain verifies', async () => {
+        expect((await verifyAuditChain(tenantId)).valid).toBe(true);
+    });
+});

@@ -49,7 +49,15 @@ const APPEND_ONLY_TABLES: readonly string[] = ['AuditLog'];
  * (sub-phase 1.6): the application never deletes an outbox row or a settings
  * row; a workspace purge cascades as the table owner.
  */
-const NO_DELETE_TABLES: readonly string[] = ['NotificationOutbox', 'TenantNotificationSettings'];
+const NO_DELETE_TABLES: readonly string[] = [
+    'NotificationOutbox',
+    'TenantNotificationSettings',
+    // Sub-phases 2.1–2.2: key bookkeeping is never pruned (prefixes and
+    // numbers are never reused; old keys keep resolving).
+    'ProjectKeyPrefix',
+    'ProjectKeySequence',
+    'WorkItemKeyAlias',
+];
 
 describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
     let prisma: PrismaClient;
@@ -260,8 +268,14 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
         expect([...TENANT_SCOPED_MODELS].sort()).toEqual([
             'AuditLog',
             'AuditOutbox',
+            'Comment',
+            'Label',
             'Notification',
             'NotificationOutbox',
+            'Project',
+            'ProjectKeyPrefix',
+            'ProjectKeySequence',
+            'Team',
             'TenantCustomRole',
             'TenantInvite',
             'TenantMembership',
@@ -269,6 +283,14 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             'TenantSecuritySettings',
             'UserMfaEnrollment',
             'UserSession',
+            'WorkItem',
+            'WorkItemKeyAlias',
+            'WorkItemLabel',
+            'WorkItemLink',
+            'WorkItemRelation',
+            'WorkItemType',
+            'WorkItemWatcher',
+            'WorkflowState',
         ]);
     });
 

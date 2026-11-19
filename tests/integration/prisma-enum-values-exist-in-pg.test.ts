@@ -170,6 +170,9 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
             'OrgAuditAction',
             'OrgRole',
             'Role',
+            'WorkItemPriority',
+            'WorkItemRelationType',
+            'WorkflowStateCategory',
         ]);
 
         // Every schema enum must be findable in the client, or the pairing
@@ -180,8 +183,10 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
         const values = enums.reduce((n, e) => n + (clientValues(e.name)?.length ?? 0), 0);
         // Role 5 + OrgRole 3 + MembershipStatus 4 (1.3), then MfaPolicy 3 +
         // MfaType 1 + OrgAuditAction 9 (1.4), then AuditOutboxStatus 3 (1.5),
-        // then NotificationType 3 + EmailNotificationType 2 + EmailOutboxStatus 3 (1.6).
-        expect(values).toBe(36);
+        // then NotificationType 3 + EmailNotificationType 2 + EmailOutboxStatus 3 (1.6),
+        // then NotificationType +1, WorkflowStateCategory 5, WorkItemPriority 5,
+        // WorkItemRelationType 3 (2.1–2.2).
+        expect(values).toBe(50);
 
         // No `@@map`ed enum: ADR 0006 rule 3. The mapping half is proved with
         // planted inputs below instead.

@@ -229,15 +229,23 @@ describeFn('rotateTenantDek and the sweep (integration — real DB)', () => {
         expect(sweep.previousEncryptedDekCleared).toBe(true);
         expect(sweep.totalErrors).toBe(0);
         expect(sweep.totalRewritten).toBe(1);
-        expect(sweep.perField).toEqual([
-            {
-                model: 'TenantSecuritySettings',
-                field: 'auditStreamSecretEncrypted',
-                scanned: 1,
-                rewritten: 1,
-                skipped: 0,
-                errors: 0,
-            },
+        // Every manifest field is swept; this workspace holds one ciphertext.
+        expect(sweep.perField).toEqual(
+            expect.arrayContaining([
+                {
+                    model: 'TenantSecuritySettings',
+                    field: 'auditStreamSecretEncrypted',
+                    scanned: 1,
+                    rewritten: 1,
+                    skipped: 0,
+                    errors: 0,
+                },
+            ]),
+        );
+        expect(sweep.perField.map((f) => `${f.model}.${f.field}`).sort()).toEqual([
+            'Comment.body',
+            'TenantSecuritySettings.auditStreamSecretEncrypted',
+            'WorkItem.description',
         ]);
 
         const phases = progressEvents.map((p) => p.phase);
