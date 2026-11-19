@@ -326,3 +326,45 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    finishes as the workspace system user with who asked recorded; the master-key
    rotation is OWNER-only; creating the system user writes `SYSTEM_USER_CREATED` in the
    same transaction. The API-key liveness check in `key-rotation` returns with 5.2.
+
+   **1.7 (application shell) has landed** on branch `wt/p17`, by
+   `docs/porting/maps/1.7.md` (`PROVENANCE.md`, "Copied: application shell"):
+   - The shell: `AppShell` on `AppShellFrame` with the sidebar (`SidebarNav`, navigation
+     from the fresh `nav-config.ts`: My Work, Inbox, Projects, Views, with Settings as the
+     footer gear behind `mayOpenSettings`), the top chrome (brand `IS`, environment badge,
+     breadcrumbs, workspace switcher, the bell on the workspace routes, the account menu
+     with the theme toggle) and the mobile drawer. The page shells `EntityListPage`,
+     `EntityDetailLayout` and `DashboardLayout`, with `ListPageShell`, `PageHeader` and
+     `FilterToolbar`.
+   - The command palette (`mod+k`, navigation and actions; entity search off until 2.7
+     ships `/api/t/:slug/search`), the shortcut help (`mod+/`), the theme provider and
+     pre-paint script, the back-affordance libraries, root providers, layout, error and
+     not-found pages. `docs/app-shell.md`.
+   - The real `TenantProvider` at `@/lib/tenant-context-provider` (its URL builders fall
+     back to the route's slug outside it), and `OrgProvider`.
+   - Routes: `src/app/t/[tenantSlug]/(app)/layout.tsx` merges the source's two tenant
+     layouts (session, `getTenantServerContext` with its MFA gate and 404, provider,
+     shell). The MFA challenge and enrolment pages moved to `(mfa)`, outside it, because a
+     session owing a code must reach them. Placeholder pages for every nav target; the
+     workspace root and `tenantLandingPath` go to My Work; `/` goes to `/tenants` or
+     `/login`.
+   - `swr` 2.5.1 (MIT) for the session seam's `SWRConfig`. The nav tokens, keyframes,
+     `.icon-btn` and a reduced-motion rule joined `tokens.css` / `globals.css`.
+   Owner decisions this step did not take, listed for the owner:
+   - **Following the OS colour scheme.** inflect-compliance follows `prefers-color-scheme`
+     until a member chooses, with a dark default. Islestone keeps light as the default and
+     does not read the OS (`ThemeProvider`, `THEME_INIT_SCRIPT`); turning it on is the
+     `matchMedia` read and its listener, both noted in the provider's header.
+   - **Islestone's brand mark.** No `src/app/icon.svg` or favicon ships (the source's are
+     Inflect's); the top chrome and sidebar use the initials `IS` on the placeholder
+     brand gradient.
+   - **The palette's Settings row** shows for every member (the palette sits above the
+     workspace provider); the page answers a 404 to a member who may not open it. Whether
+     to hide the row is open.
+   - **The MFA enrolment page outside the shell.** `/t/<slug>/security/mfa` renders
+     without the sidebar, as in 1.4, because it must also serve a session that owes a
+     code. Whether an enrolled member should reach it inside the shell is open.
+   Not ported now: `back-affordance-no-cycles` (no subpages yet, so it would check
+   nothing; 2.3 brings it with the first detail page), `docs/keyboard-shortcuts.md`,
+   `docs/i18n.md` and `docs/epic-52-list-page-shell.md` (distilled into
+   `docs/app-shell.md`), `@axe-core/playwright` (the a11y checks are jest-axe).

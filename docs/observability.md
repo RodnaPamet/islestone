@@ -78,7 +78,7 @@ Vital to `POST /api/telemetry/vitals` with `navigator.sendBeacon`; the route
 records it as a histogram by route template (`vital-route.ts`), never by the
 raw path, which can carry an id. The middleware logs one line per document
 load and soft navigation, the denominator the vitals are read against. The
-reporter is mounted by the app shell in 1.7. The beacon path is a machine
+reporter is mounted by the app shell (`ClientProviders`, 1.7). The beacon path is a machine
 caller (`MACHINE_CALLER_PREFIXES` in `src/lib/auth/guard.ts`): it carries no
 session and authenticates nothing.
 

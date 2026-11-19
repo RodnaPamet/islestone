@@ -922,10 +922,10 @@ NextAuth behind one seam, the edge gate, the permission set, roles and custom ro
 | `src/app/no-tenant/RefreshAccessButton.tsx` | `src/app/no-tenant/RefreshAccessButton.tsx` | COPY+EDIT | Imports point at Islestone's modules; compliance, SSO, SCIM, Entra, API-key and agent branches cut; role names per ADR 0006. |
 | `src/app/no-tenant/page.tsx` | `src/app/no-tenant/page.tsx` | COPY+EDIT | Imports point at Islestone's modules; compliance, SSO, SCIM, Entra, API-key and agent branches cut; role names per ADR 0006. |
 | `src/app/reset-password/page.tsx` | `src/app/reset-password/page.tsx` | COPY+EDIT | Imports point at Islestone's modules; compliance, SSO, SCIM, Entra, API-key and agent branches cut; role names per ADR 0006. |
-| `src/app/t/[tenantSlug]/(app)/auth/mfa/page.tsx` | `src/app/t/[tenantSlug]/(app)/auth/mfa/page.tsx` | COPY+EDIT | Landing route as `next` default; icons from `lucide-react`. |
-| `src/app/t/[tenantSlug]/(app)/security/mfa/TotpQrCode.tsx` | `src/app/t/[tenantSlug]/(app)/security/mfa/TotpQrCode.tsx` | COPY | None. |
-| `src/app/t/[tenantSlug]/(app)/security/mfa/page.tsx` | `src/app/t/[tenantSlug]/(app)/security/mfa/page.tsx` | COPY+EDIT | `BackAffordance` removed; icons from `lucide-react`. |
-| `src/app/t/[tenantSlug]/page.tsx` | — | Islestone-owned | Placeholder workspace landing page behind `getTenantServerContext` (1.7 replaces it with My Work). |
+| `src/app/t/[tenantSlug]/(mfa)/auth/mfa/page.tsx` | `src/app/t/[tenantSlug]/(app)/auth/mfa/page.tsx` | COPY+EDIT | Landing route as `next` default; icons from `lucide-react`. Moved to the `(mfa)` group in sub-phase 1.7. |
+| `src/app/t/[tenantSlug]/(mfa)/security/mfa/TotpQrCode.tsx` | `src/app/t/[tenantSlug]/(app)/security/mfa/TotpQrCode.tsx` | COPY | None. Moved to the `(mfa)` group in sub-phase 1.7. |
+| `src/app/t/[tenantSlug]/(mfa)/security/mfa/page.tsx` | `src/app/t/[tenantSlug]/(app)/security/mfa/page.tsx` | COPY+EDIT | `BackAffordance` removed; icons from `lucide-react`. Moved to the `(mfa)` group in sub-phase 1.7. |
+| `src/app/t/[tenantSlug]/page.tsx` | — | Islestone-owned | Placeholder workspace landing page behind `getTenantServerContext`. Deleted in sub-phase 1.7: the workspace root redirects to My Work. |
 | `src/app/tenants/page.tsx` | `src/app/tenants/page.tsx` | COPY+EDIT | Links to `tenantLandingPath`; shim imports → `@inflect/ui`. |
 | `src/auth.ts` | `src/auth.ts` | COPY+EDIT | SSO hand-off, "Enforce SSO", Entra group sync and the agent paths cut; Google and Microsoft registered only when configured; VIEWER fallbacks; `lookupEmail`; invite cookies renamed `islestone_*`; `GroupMember.Read.All` dropped. |
 | `src/lib/account/profile.ts` | `src/lib/account/profile.ts` | COPY | None. |
@@ -988,7 +988,7 @@ NextAuth behind one seam, the edge gate, the permission set, roles and custom ro
 | `src/lib/security/sanitize.ts` | `src/lib/security/sanitize.ts` | COPY+EDIT | `sanitizePlainText` and its entity decoder only (1.5 brings the rest). |
 | `src/lib/security/session-tracker.ts` | `src/lib/security/session-tracker.ts` | COPY | None. |
 | `src/lib/security/totp-crypto.ts` | `src/lib/security/totp-crypto.ts` | COPY | None. |
-| `src/lib/tenant-context-provider.tsx` | `src/lib/tenant-context-provider.tsx` | STUB | The two URL-builder hooks from route params (1.7 brings the provider). |
+| `src/lib/tenant-context-provider.tsx` | `src/lib/tenant-context-provider.tsx` | STUB | The two URL-builder hooks from route params. Replaced in sub-phase 1.7 by the provider (see that section). |
 | `src/lib/tenant-system-user.ts` | `src/lib/tenant-system-user.ts` | COPY+EDIT | `isTenantSystemUserId` only (1.6 brings the system user). |
 | `src/lib/validation/route.ts` | `src/lib/validation/route.ts` | COPY+EDIT | Imports point at Islestone's modules; compliance, SSO, SCIM, Entra, API-key and agent branches cut; role names per ADR 0006. |
 | `src/middleware.ts` | `src/middleware.ts` | COPY+EDIT | Rewritten around the parent's gates: public paths, JWT, admin gate, MFA gates, tenant and org gates and the request id; CSP, CORS, the rate tiers and the API-key path cut (1.5, 5.2). |
@@ -1678,6 +1678,149 @@ Files from earlier sub-phases edited in 1.5b (their rows are in the sections abo
 | `tests/unit/executor-registry.test.ts` | Five registrations. |
 | `tests/unit/jobs/job-contract-completeness.test.ts` | Three scheduled jobs. |
 | `PROVENANCE.md` | This section; the 1.5 and 1.6 "Not taken" lines and the 1.5a `tenant-key-manager.ts` row. |
+
+## Copied: application shell (sub-phase 1.7)
+
+The authenticated application shell (sidebar, top chrome, mobile drawer), the three page shells, the command palette and shortcut help, the theme, the workspace and org context providers, the back-affordance navigation libraries, and the root providers, layout and error pages, ported by [`docs/porting/maps/1.7.md`](docs/porting/maps/1.7.md). These facts hold for every row below:
+
+- **Source:** inflect-compliance at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`, at the path in the row's Source column (`same` means the same path).
+- **Licence:** BUSL-1.1, licensor Inflect Ltd. Copying is allowed by [ADR 0001](docs/adr/0001-code-provenance-and-licences.md) decision D1. The source files carry no per-file notice, so none is added, and `NOTICE` takes no entry: no third-party material came with them.
+- **What every port changed:** imports of the ten `@/components/ui/<name>` re-export shims point at `@inflect/ui/components/ui/<name>`; `import type` where an import is type-only; routes are Islestone's (My Work, Inbox, Projects, Views, Settings; ADR 0006), and the brand is `IS` / Islestone; compliance navigation, entities and fixtures are cut or replaced; English only.
+- **Action** is COPY (byte for byte), COPY+EDIT (the source text, edited as the Changes column says), REWRITE (written fresh to the source's design), PATTERN (pattern only, no code copied), or Islestone-owned (written fresh, no source).
+- **Not taken:** the org sidebar and switcher (8.3), the calendar badge (3.3), the onboarding tour (8.2), the assistant launcher (6.4), SWR devtools, the billing plan read (8.1), the risk money formatter and the process-canvas module flag, the legacy notification-link rewriter, the `/dashboard` shim, `WorkspaceShell` (4.2), `IdentityPill`, `use-guarded-push` (2.3), Inflect's `icon.svg` and `favicon.ico`, and `messages/bg.json`.
+- **CISO-Assistant:** `EntityListPage.tsx` credited CISO-Assistant's `ModelTable.svelte` as the inspiration for one shell across every list. No CISO-Assistant code reaches Islestone: pattern only, no code copied (inherited through inflect-compliance). Its licence was re-read at `github.com/intuitem/ciso-assistant-community` commit `cbd830894001dd0e90eec8d287207c86b3f5cd41` (`LICENSE.md`, 2026-11-19): AGPL-3.0 outside the `enterprise` directory, which is under the intuitem Commercial License. The roadmap lists it as inspiration only; the credit line was removed from the copied comment.
+
+<details>
+<summary>All 126 rows</summary>
+
+| File | Source | Action | Changes |
+|---|---|---|---|
+| `src/components/layout/AppShell.tsx` | same | COPY+EDIT | No org sidebar (8.3): both variants mount `SidebarContent`; no route full-bleed regex (`fullBleed={false}`; 4.2 adds the canvas); sign-out through `@/lib/auth/client-sign-out`; comments. |
+| `src/components/layout/AppShellFrame.tsx` | same | COPY | None. |
+| `src/components/layout/ClientProviders.tsx` | same | COPY+EDIT | No onboarding tour (8.2) or SWR devtools; mounts 1.6's `WebVitalsReporter`; a passthrough seam with the `userId` prop. |
+| `src/components/layout/sidebar-collapse-context.tsx` | same | COPY | None. |
+| `src/components/layout/breadcrumbs-store.tsx` | same | COPY+EDIT | No render-time ref write (Islestone's `react-hooks/refs` is an error): the effect reads the render's `items`; `items` derived inside `useMemo`. |
+| `src/components/layout/MobileNavDrawer.tsx` | same | COPY+EDIT | The ten `@/components/ui/*` re-export shims imported from `@inflect/ui` (every file below likewise). |
+| `src/components/layout/TopChrome.tsx` | same | COPY+EDIT | Initials `IS`; the brand mark goes to My Work; the bell in the workspace chrome only; `showLanguage` off with one locale; comments. |
+| `src/components/layout/nav-bar.tsx` | same | COPY+EDIT | Comments (`IS`, My Work). |
+| `src/components/layout/environment-badge.tsx` | same | COPY+EDIT | A set-state-in-effect line carries its disable directive and reason. |
+| `src/components/layout/tenant-switcher.tsx` | same | COPY+EDIT | Rows go to `/t/<slug>/my-work`. |
+| `src/components/layout/org-workspace-switcher.tsx` | same | COPY+EDIT | Rows go to `/t/<slug>/my-work`. |
+| `src/components/layout/user-menu.tsx` | same | COPY+EDIT | Comment (`LOCALE_COOKIE`). |
+| `src/components/layout/LocaleSwitcher.tsx` | same | COPY+EDIT | Comments (`LOCALE_COOKIE`). |
+| `src/components/layout/notifications-bell.tsx` | same | COPY+EDIT | The open workspace's routes only: no flat `/api/notifications` fallback, nothing rendered outside a workspace; `body` for `message` (ADR 0006); "View all" opens the Inbox; relative time through next-intl's `relativeTime`; links used as stored (no legacy-link rewriter); comments. |
+| `src/components/layout/session-expired-notice.tsx` | same | COPY+EDIT | Comment (the bell's poll, not the calendar badge). |
+| `src/components/layout/SidebarNav.tsx` | same | REWRITE | `SidebarContent` kept (brand and collapse control, the navigation landmark, the palette opener, the footer); initials `IS`; the gear opens Settings behind `mayOpenSettings`; the navigation register moved, rewritten, to `nav-config.ts`; no calendar badge, agent-inventory gate, module flag or tour button. |
+| `src/components/layout/nav-item.tsx` | same | COPY+EDIT | Comments (Islestone's rows and the Inbox badge). |
+| `src/components/layout/nav-section.tsx` | same | COPY+EDIT | Comment (My Work, not Board). |
+| `src/components/layout/PageActions.tsx` | same | COPY | None. |
+| `src/components/layout/PageBreadcrumbs.tsx` | same | COPY | None. |
+| `src/components/layout/PageHeader.tsx` | same | COPY+EDIT | A JSDoc example. |
+| `src/components/layout/ListPageShell.tsx` | same | COPY+EDIT | `import type`; a comment. |
+| `src/components/layout/EntityListPage.tsx` | same | COPY+EDIT | Comments and examples, including the CISO-Assistant inspiration line (see the pattern row below). |
+| `src/components/layout/EntityDetailLayout.tsx` | same | COPY+EDIT | Imports the stepper from `./entity-prev-next-nav`; prose examples. |
+| `src/components/layout/DashboardLayout.tsx` | same | COPY+EDIT | A comment. |
+| `src/components/layout/entity-prev-next-nav.tsx` | `src/components/ui/entity-prev-next-nav.tsx` | COPY+EDIT | Moved out of the mirrored root to `src/components/layout`; `STEPPER_ENTITIES` empty (2.3 adds `workItem`); neighbour ids narrowed; comments. |
+| `src/components/filters/FilterToolbar.tsx` | same | COPY+EDIT | A comment. |
+| `src/components/command-palette/command-palette-provider.tsx` | same | COPY | None. |
+| `src/components/command-palette/index.ts` | same | COPY | None. |
+| `src/components/command-palette/command-palette.tsx` | same | COPY+EDIT | Entity groups for work items and projects; the chips and entity groups hidden while search is unavailable, without the signed-out text; a guarded shortcut lookup; comments. |
+| `src/components/command-palette/use-entity-search.ts` | same | COPY+EDIT | `ENTITY_SEARCH_AVAILABLE = false` and an `unavailable` flag until 2.7; `match?.[1]`; the doc comment. |
+| `src/components/command-palette/use-palette-commands.ts` | same | REWRITE | Types, `tenantPath` and `filterPaletteCommands` kept; the command list rewritten (My Work, Inbox, Projects, Views, Settings from `NAV_PATHS`; ask the assistant, toggle theme, sign out); sign-out through the auth seam. |
+| `src/components/app-shell/shortcut-help-overlay.tsx` | same | COPY+EDIT | The shim imports only. |
+| `src/components/assistant/assistant-open-context.tsx` | same | COPY | None. |
+| `src/lib/palette/recents.ts` | same | COPY+EDIT | Comments. |
+| `src/lib/palette/filter.ts` | same | COPY+EDIT | `countHitsByKind` derived from `SEARCH_TYPE_DEFAULTS`; comments. |
+| `src/lib/search/types.ts` | same | REWRITE | `SearchHitType` is `workItem` and `project`, with their icon keys and defaults; the shapes and tunables kept; the header. |
+| `src/lib/tenant-context-provider.tsx` | same | COPY+EDIT | Replaces the 1.4 stub, keeping its hooks: no currency or module bag; Islestone's coarse `Permissions`; the URL builders fall back to the route's slug outside the provider (the MFA pages). |
+| `src/lib/org-context-provider.tsx` | same | COPY | None. |
+| `src/components/theme/ThemeProvider.tsx` | same | COPY+EDIT | Light default (`DEFAULT_THEME`); the OS colour scheme is not read (owner decision pending); the header. |
+| `src/components/theme/ThemeToggle.tsx` | same | COPY+EDIT | The shim import. |
+| `src/lib/theme-constants.ts` | same | COPY+EDIT | `DEFAULT_THEME`; the pre-paint script falls back to light, not to the OS; `?? x` in the escaper; comments. |
+| `src/lib/telemetry/form-telemetry.ts` | same | COPY+EDIT | The debug global is `__ISLESTONE_FORM_TELEMETRY__`; an example name. |
+| `src/lib/zod-jitless.ts` | same | COPY | None. |
+| `src/lib/locale-constants.ts` | same | COPY+EDIT | English only; `LOCALE_COOKIE = uiCookieName('locale')`; comments. |
+| `src/i18n/request.ts` | `src/i18n.ts` | COPY+EDIT | At the plugin's default path, replacing 1.2's static config; the catalogue path. |
+| `src/lib/nav/page-segregation.ts` | same | COPY+EDIT | Islestone's lists (five main pages, no subpages yet); a segment guard; the header. |
+| `src/lib/nav/canonical-parents.ts` | same | COPY+EDIT | An empty `PARENT_MAP`; a segment guard; examples. |
+| `src/lib/nav/back-destination.ts` | same | COPY+EDIT | A comment's example. |
+| `src/lib/nav/usePreviousPath.ts` | same | COPY+EDIT | `match?.[1] ?? null`; a set-state-in-effect directive with its reason. |
+| `src/components/nav/BackAffordance.tsx` | same | COPY+EDIT | `SECTION_LABELS` is the five shell routes; a type-only import. |
+| `src/components/nav/NavigationTracker.tsx` | same | COPY | None. |
+| `src/app/layout.tsx` | same, merged into Islestone's | COPY+EDIT | Islestone's nonce bridge kept; locale and messages; `data-theme` from the cookie, light by default; the pre-paint script with the nonce; `Providers`; `viewport`; Islestone's metadata. |
+| `src/app/providers.tsx` | same | COPY+EDIT | A themed `<Toaster>` (it was pinned dark); comments. |
+| `src/app/error.tsx` | same | COPY+EDIT | No browser Sentry call or `console.error` (Islestone reports on the server); `goToWorkspaces`; a full-load `location.assign`. |
+| `src/app/not-found.tsx` | same | COPY+EDIT | `returnToWorkspaces`. |
+| `src/app/global-error.tsx` | same | COPY+EDIT | No browser Sentry call or `console.error`; "Our team has been notified" dropped; `type="button"`. |
+| `src/app/global-error.module.css` | same | COPY | None. |
+| `src/app/page.tsx` | same | COPY+EDIT | Replaces the 1.1 placeholder; the session through `getSession`. |
+| `src/app/t/[tenantSlug]/(app)/layout.tsx` | `src/app/t/[tenantSlug]/layout.tsx` and `src/app/t/[tenantSlug]/(app)/layout.tsx` | COPY+EDIT | The two merged into one, so the MFA pages can sit outside it in `(mfa)`; Islestone's `getTenantServerContext` (with the MFA gate) and its 404; no plan, currency, modules or assistant. |
+| `src/app/t/[tenantSlug]/(app)/error.tsx` | same | COPY+EDIT | No `console.error`; goes to My Work; comments. |
+| `src/components/layout/nav-config.ts` | — | Islestone-owned | The shell's routes (`NAV_PATHS`), the sidebar sections and `mayOpenSettings`. |
+| `src/components/layout/PlaceholderPage.tsx` | — | Islestone-owned | The placeholder destination: a page header and an empty state. |
+| `src/app/t/[tenantSlug]/(app)/page.tsx` | — | Islestone-owned | Redirects to My Work. |
+| `src/app/t/[tenantSlug]/(app)/{my-work,inbox,views,projects,settings}/page.tsx` | — | Islestone-owned | Placeholder pages; Settings asserts `mayOpenSettings` on the server. |
+| `src/lib/auth/client-sign-out.ts` | — | Islestone-owned | The shell's sign-out, in the auth seam. |
+| `src/styles/tokens.css`, `src/app/globals.css (the 1.7 additions)` | `src/styles/tokens.css`, `tailwind.config.js`, `src/app/globals.css` | COPY+EDIT | The nav band and brand-mark tokens, built from the brand tokens; the nav and dashboard keyframes as `@theme` animations; `.icon-btn`; the reduced-motion rule. |
+| `tests/rendered/app-shell-frame-landmarks.test.tsx` | same | COPY+EDIT | Fixture routes. |
+| `tests/rendered/app-shell-shortcuts.test.tsx` | same | COPY+EDIT | A fixture description. |
+| `tests/rendered/command-palette.test.tsx` | same | COPY | None. |
+| `tests/rendered/command-palette-shortcut-badges.test.tsx` | same | COPY+EDIT | Fixture routes. |
+| `tests/rendered/palette-commands.test.tsx` | same | COPY+EDIT | Rewritten for Islestone's command table; the vocabulary and agentic cases replaced by keyword cases; the filter-trigger source checks dropped. |
+| `tests/rendered/shortcut-conflict-scenarios.test.tsx` | same | COPY+EDIT | Fixture routes. |
+| `tests/rendered/shortcut-help-overlay.test.tsx` | same | COPY | None. |
+| `tests/unit/keyboard-shortcut-provider-integration.test.ts` | same | COPY+EDIT | The themed toaster. |
+| `tests/rendered/list-page-shell.test.tsx` | same | COPY+EDIT | Comments. |
+| `tests/rendered/entity-list-page.test.tsx` | same | COPY+EDIT | Fixtures; the eyebrow and default `fillBody` cases added (from `list-header-row-hover`, `list-pagination`). |
+| `tests/rendered/entity-detail-layout.test.tsx` | same | COPY+EDIT | Fixtures. |
+| `tests/rendered/entity-detail-prev-next-prop.test.tsx` | same | COPY+EDIT | English only; fixtures. |
+| `tests/rendered/entity-prev-next-nav.test.tsx` | same | COPY+EDIT | English only; the generic `item` phrase; plain id arrays. |
+| `tests/rendered/filter-toolbar-live-search.test.tsx` | same | COPY+EDIT | A fixture route. |
+| `tests/rendered/filter-select-enter-no-match.test.tsx` | same | COPY+EDIT | Fixtures. |
+| `tests/rendered/filter-single-select-switch.test.tsx` | same | COPY+EDIT | A project status filter. |
+| `tests/rendered/tooltip-migration.test.tsx` | same | COPY | None. |
+| `tests/rendered/mobile-nav-drawer-a11y.test.tsx` | same | COPY+EDIT | My Work fixtures. |
+| `tests/rendered/mobile-nav-drawer-autofocus.test.tsx` | same | COPY+EDIT | My Work fixtures. |
+| `tests/rendered/nav-bar-states.test.tsx` | same | COPY+EDIT | Islestone's brand and route. |
+| `tests/rendered/nav-item-states.test.tsx` | same | COPY+EDIT | Fixtures. |
+| `tests/rendered/nav-item-active-band-tone.test.tsx` | same | COPY+EDIT | Islestone's theme blocks; the page tone read from tokens.css. |
+| `tests/rendered/nav-item-active-contrast.test.tsx` | same | COPY | None. |
+| `tests/rendered/nav-item-dropped-click-guard.test.tsx` | same | COPY+EDIT | Fixtures. |
+| `tests/rendered/nav-item-prefetch.test.tsx` | same | COPY+EDIT | The Inbox fixture. |
+| `tests/rendered/nav-seams-for-hosts.test.tsx` | same | COPY+EDIT | A mocked second locale; fixtures. |
+| `tests/rendered/top-bar-touch-and-slots.test.tsx` | same | COPY+EDIT | A fixture route. |
+| `tests/rendered/user-menu-a11y.test.tsx` | same | COPY+EDIT | The provider value (no modules; Islestone's roles and coarse shape). |
+| `tests/rendered/user-menu-profile-link.test.tsx` | same | COPY+EDIT | The provider value; a case for the session's photo (from `avatar-renderer-convergence`). |
+| `tests/rendered/user-menu-mfa-link.test.tsx` | same | COPY+EDIT | The provider value; roles. |
+| `tests/rendered/workspace-switcher-role-words.test.tsx` | same | COPY+EDIT | A fixture route. |
+| `tests/rendered/sidebar-role-label.test.tsx` | same | COPY+EDIT | Islestone's roles; no org sidebar half. |
+| `tests/rendered/sidebar-admin-link-membership-role.test.tsx` | same | COPY+EDIT | The Settings gear; Islestone's roles. |
+| `tests/rendered/notifications-bell-behaviour.test.tsx` | same | COPY+EDIT | Inside a workspace; `body`; next-intl relative time. |
+| `tests/rendered/notifications-open-workspace.test.tsx` | same | COPY+EDIT | The bell cases only; Inbox; nothing outside a workspace. |
+| `tests/rendered/session-expired-notice.test.tsx` | same | COPY+EDIT | Comments; JSON imports. |
+| `tests/rendered/session-expiry-swr-seam.test.tsx` | same | COPY+EDIT | Fixture keys. |
+| `tests/rendered/theme-storage-on-choice.test.tsx` | same | COPY+EDIT | The light default; the OS is not followed. |
+| `tests/rendered/locale-switcher.test.tsx` | same | COPY+EDIT | A mocked second locale. |
+| `tests/rendered/i18n-kept-primitives.test.tsx` | same | COPY+EDIT | The shell's primitives only, English only. |
+| `tests/rendered/root-error-pages-go-to-the-picker.test.tsx` | same | COPY+EDIT | The 404 case; a root error-page case; no `/dashboard` shim. |
+| `tests/unit/theme-provider.test.ts` | same | COPY+EDIT | Islestone's names and default; the globals.css checks are the shell's. |
+| `tests/unit/ui-storage.test.ts` | same | COPY+EDIT | The `islestone` prefix. |
+| `tests/unit/palette-filter.test.ts` | same | COPY+EDIT | Work items and projects. |
+| `tests/unit/palette-recents.test.ts` | same | COPY+EDIT | Work items and projects. |
+| `tests/unit/zod-jitless.test.ts` | same | COPY | None. |
+| `tests/unit/form-telemetry.test.ts` | same | COPY | None. |
+| `tests/guards/dropdowns-no-option-truncation.test.ts` | same | COPY+EDIT | No org-switcher or canvas-palette block. |
+| `tests/guards/app-shell-structure.test.ts` | `tests/guards/single-app-shell.test.ts`, `one-banner-landmark-in-src.test.ts`, `rq4-3-navigation-tracker.test.ts` | REWRITE | The three as one guard; population from git; a planted repository. |
+| `tests/guards/page-segregation-coverage.test.ts` | `tests/guards/rq4-1-page-segregation.test.ts` | REWRITE | Population from git; the shell routes equal `NAV_PATHS`; a planted repository. |
+| `tests/guards/keyboard-shortcut-conventions.test.ts` | `tests/guardrails/keyboard-shortcut-conventions.test.ts` | REWRITE | Population from git, mirrors out of scope; a planted repository; the docs-heading checks not ported. |
+| `tests/guards/i18n-keys-resolve.test.ts` | same | REWRITE | English only; both quote styles; population from git; a planted repository. |
+| `tests/guards/i18n-adoption.test.ts` | `tests/guardrails/i18n-adoption-ratchet.test.ts` | REWRITE | The rule, with a new TypeScript-AST detector, an empty baseline and a planted repository. |
+| `tests/guards/i18n-locale-infrastructure.test.ts` | `tests/guardrails/i18n-locale-infrastructure.test.ts` | REWRITE | One locale; the plugin's default config path. |
+| `tests/guards/theme-flash-init.test.ts` | same | REWRITE | Islestone's names, light default, no OS read. |
+| `tests/guards/mobile-readiness.test.ts` | same | COPY+EDIT | The read bound to the `viewport` declaration. |
+| `tests/e2e/app-shell.spec.ts` | `tests/e2e/tenant-switcher.spec.ts`, `theme-toggle.spec.ts`, `responsive.spec.ts`, `a11y.spec.ts` | PATTERN | Pattern only, no code copied: a fresh spec over the shell, the palette and the switcher. |
+| `tests/rendered/app-shell.test.tsx`, `page-shells-a11y.test.tsx`, `tenant-context-provider.test.tsx`, `shell-placeholder-pages.test.tsx`; `tests/unit/home-page-redirect.test.ts`; `tests/integration/workspace-app-layout-gate.test.ts` | — | Islestone-owned | The shell end to end with jest-axe; the page shells under axe; the provider; the placeholder pages and the Settings gate; the root redirect; the layout's two-workspace gate. |
+| `__mocks__/next-intl.js` | same | COPY+EDIT | `relativeTime` formats through `Intl.RelativeTimeFormat` rather than stringifying the date. |
 
 </details>
 
