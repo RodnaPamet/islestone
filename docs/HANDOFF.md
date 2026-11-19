@@ -233,5 +233,34 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      placeholder workspace page at `/t/<slug>` that 1.7 replaces.
    Open for the owner: whether `/` and `/gallery` stay public (they are, as before 1.4);
    a seed tenant for E2E (roadmap 1.8 or H1); ADR 0004 open question 7 (the `next-auth`
-   overrides entry for nodemailer) is still open, and no override was added. 1.5 is
-   next.
+   overrides entry for nodemailer) is still open, and no override was added.
+   **1.5a (the security perimeter) has landed** on branch `wt/p15` (PR #16, not pushed
+   from this session), by `docs/porting/maps/1.5.md` (`PROVENANCE.md`, "Copied: security
+   perimeter"):
+   - Field encryption with per-workspace DEKs (`Tenant.encryptedDek`, wrapped in the
+     register transaction), fail-closed decryption, and a one-entry manifest
+     (`TenantSecuritySettings.auditStreamSecretEncrypted`). Production refuses to start
+     without a real `DATA_ENCRYPTION_KEY` (schema and startup check).
+   - The PII extension: `User.email` and `name` hold ciphertext under their own names
+     (ADR 0006 forbids `@map`), every lookup is by `emailHash`, nullable in the schema and
+     NOT NULL in the database (one residue line); `Account` tokens dual-written. The
+     migration refuses a database with existing `User` rows.
+   - The hash-chained `AuditLog` and `OrgAuditLog` (`subjectUserId`, ADR 0006 bans
+     "Target") with immutability triggers and SELECT/INSERT-only grants, `AuditOutbox`,
+     the erasure record, `logEvent` writing real rows from every 1.4 mutation, the audit
+     stream through `safeFetch`, and `scripts/verify-audit-chain.ts`.
+   - The edge read and auth rate-limit tiers, and issue #17: production refuses
+     `RATE_LIMIT_MODE=upstash` (the default) without both Upstash values.
+   - A per-request nonce CSP (request-header and `__webpack_nonce__` bridges), CORS,
+     sanitisation profiles, the egress allowlist, and secret detection (Husky hook plus
+     `tests/guards/no-secrets.test.ts`).
+   - Docs: `docs/encryption.md`, `docs/audit-trail.md`, `docs/rate-limiting.md`,
+     `docs/security-perimeter.md`.
+   Left for **1.5b**, after 1.6 brings the job queue: the master-key and per-tenant DEK
+   rotation jobs and routes, `scripts/rotate-global-pii.ts` and the audit-outbox drain.
+   Open for the owner: the CSP violation-report sink (no `report-uri` until it lands);
+   whether `src/instrumentation.ts` may read `process.env.NEXT_RUNTIME` directly so the
+   Edge build drops the Node-only startup checks (today `next build` warns, harmlessly,
+   that `process.exit` and `crypto` are not Edge APIs); and whether the 1.4 suites that
+   mock `@/lib/audit` through `tests/helpers/audit-recorder.ts` should move to reading
+   rows. 1.6 is next.
