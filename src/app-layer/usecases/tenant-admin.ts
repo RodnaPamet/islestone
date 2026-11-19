@@ -26,6 +26,7 @@ import {
     assertNotSelfDeactivation,
 } from '../policies/admin.policies';
 import { logEvent } from '../events/audit';
+import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { notFound, badRequest, forbidden, ConflictError } from '@/lib/errors/types';
 import type { Role } from '@prisma/client';
@@ -520,6 +521,22 @@ export async function removeTenantMember(
         // leaves the count as it was.
         if (membership.role === 'ADMIN' && membership.status === 'ACTIVE') {
             await assertNotLastActiveAdmin(db, ctx, 'Cannot remove the last admin. Promote another member first.');
+        }
+
+        // ADR 0003 §1, step 2: unassign every work item assigned to them, so
+        // the RESTRICT foreign key from `WorkItem.assigneeId` does not refuse
+        // the delete. (Step 1, ending delegated agent sessions, and step 3,
+        // suspending the agents they own, arrive with agents in 6.3.)
+        const unassigned = await WorkItemRepository.unassignAll(db, ctx, membership.userId);
+        if (unassigned > 0) {
+            await logEvent(db, ctx, {
+                action: 'WORK_ITEMS_UNASSIGNED_ON_MEMBER_REMOVAL',
+                entityType: 'TenantMembership',
+                entityId: membership.id,
+                details: `Unassigned ${unassigned} work item(s) before removing a member`,
+                detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'updated', changedFields: ['assigneeId'] },
+                metadata: { unassignedCount: unassigned },
+            });
         }
 
         await db.tenantMembership.delete({
