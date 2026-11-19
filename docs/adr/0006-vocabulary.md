@@ -199,6 +199,15 @@ Because "member" is also the concept "anyone with a membership", text about perm
 
 **Decided. Owner decision, 2026-11-18; the owner chose "Behind a switch".** Public self-sign-up at `/api/auth/register` sits behind a switch. It is off by default in production and on in development, and an operator opens it without a code change. This is not a vocabulary rule. It is recorded here because the owner decided it together with the role questions, before ADR 0004 (authentication path) was decided. Roadmap 1.4 builds it when it ports the register route.
 
+### Notification column names — decided
+
+**Decided. Owner decision, 2026-11-19 (relayed to the porting session by its coordinator).** Two column names sub-phase 1.6 brought, where inflect-compliance's names break the rules above:
+
+| Term | Meaning | Model name | UI label | Words NOT to use |
+|---|---|---|---|---|
+| Notification body | A notification's text, shown under its title in the Inbox. | `Notification.body`; the bus event's `body` | Not shown as a noun | Message (banned in identifiers; inflect-compliance's `message`) |
+| BCC mailbox | A workspace's copy-to address: every email the workspace sends is also sent, blind, to it. | `TenantNotificationSettings.bccMailbox` | BCC mailbox | Compliance mailbox (inflect-compliance's `complianceMailbox`), Archive address |
+
 ### How Islestone avoids inflect-compliance's two-vocabulary state
 
 1. **Names are fixed before the first migration.** This ADR is signed before roadmap 1.3 and 2.1 write models.

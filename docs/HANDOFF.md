@@ -41,6 +41,10 @@ porting maps now record them (next step 2); the last column says where.
 | 28 | `src/instrumentation.ts` may read `process.env.NEXT_RUNTIME` and nothing else raw: the Node-only startup checks move to `src/instrumentation-node.ts`, imported behind that literal, so the Edge bundle drops them. Decided 2026-11-19. | "One named exception" | `tests/guards/no-raw-process-env.test.ts`; CLAUDE.md "Rules that apply now" |
 | 29 | `RATE_LIMIT_MODE` defaults to `upstash`, and production refuses to start without both Upstash values (issue #17); per-process limits are an explicit `RATE_LIMIT_MODE=memory`. The 1.5 map's "default to memory" is not taken. Decided 2026-11-19. | "Upstash + refuse" | `src/env.ts`; `docs/rate-limiting.md` |
 | 30 | The CSP violation-report sink comes back with observability in 1.6; until then the policy names no report endpoint. Decided 2026-11-19. | "With 1.6" | `docs/porting/maps/1.6.md`; `docs/security-perimeter.md` |
+| 31 | MIT-0 joins the licence allowlist (ADR 0007, new E8), so `nodemailer` and the mailer's SMTP transport can be ported. Decided 2026-11-19, relayed to the 1.6 session by its coordinator. **Not applied yet:** the session's permission check refused the change to `ALLOWED_LICENCES` on a relayed decision; it needs the owner's own approval in a session. | relayed | to be recorded in ADR 0007 E8 and `scripts/licence-gate.mjs` |
+| 32 | FSL-1.1-Apache-2.0 joins the licence allowlist (ADR 0007, new E9; source-available, Apache-2.0 after two years), accepted for the Sentry SDK. Decided 2026-11-19, relayed as row 31, and **not applied yet** for the same reason. | relayed | to be recorded in ADR 0007 E9 and `scripts/licence-gate.mjs` |
+| 33 | ADR 0006 gains decided rows for `Notification.body` (a notification's text, replacing the banned "Message") and `TenantNotificationSettings.bccMailbox` (a workspace's copy-to address). Decided 2026-11-19, relayed. | relayed | ADR 0006 "Notification column names — decided" |
+| 34 | The mailer's log lines never carry a recipient's address: they log `hashForLookup` of each address and the template name. Decided 2026-11-19, relayed. | relayed | `src/lib/mailer.ts` (`recipientLogFields`); `tests/unit/mailer.test.ts` |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
@@ -289,7 +293,9 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      delegating in-process), `report-uri` and `report-to` in the policy, and the three
      beacons as `MACHINE_CALLER_PREFIXES` (row 30).
    - CI: a Redis service in Integration and E2E, and the worker bundle in Build.
-   Open for the owner: the SMTP transport (`nodemailer` is MIT-0) and the Sentry SDK
-   (`sentry` is FSL-1.1-Apache-2.0), neither on the licence allowlist (ADR 0007); the
-   column names `Notification.body` and `TenantNotificationSettings.bccMailbox` for the
-   ADR 0006 record. 1.5b (issue #19) can now use the queue; 1.7 is next.
+   Owner decisions 31 to 34 (2026-11-19): the column names are recorded in ADR 0006 and
+   the mailer logs only address hashes. Rows 31 and 32 (MIT-0 and FSL-1.1-Apache-2.0 on
+   the licence allowlist, then the SMTP transport and the Sentry SDK) are not applied:
+   widening `ALLOWED_LICENCES` needs the owner's own approval in a session. Until then
+   mail goes to the console sink and Sentry is a no-op. 1.5b (issue #19) can now use the
+   queue; 1.7 is next.
