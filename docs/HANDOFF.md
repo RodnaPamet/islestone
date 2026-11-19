@@ -38,6 +38,9 @@ porting maps now record them (next step 2); the last column says where.
 | 25 | ADR 0005 as recommended: no sync engine now (E0) with section 7's reopen thresholds; canvas persistence C1 and transport T1; TanStack Query as the client cache; item presence R1; stored Yjs state and snapshots encrypted, page text searched under ADR 0002's S1 for now; one audit entry per person per page per 10 minutes; a 60-second token lifetime, a 60-second stream re-check and the caps as written. ADR 0005 is Accepted; open questions 8 (long-lived connections on the hosting target) and 9 (offline PWA quick capture) stay open, not blocking. Decided 2026-11-19. | "Accept all" | ADR 0005 |
 | 26 | The words ADR 0005 added are confirmed: change notice, collaboration server, collaboration token, page content and projection. Decided 2026-11-19. | "Accept all" | ADR 0006 (decided rows); ADR 0005 open question 11 |
 | 27 | The Prisma CLI's tree: BlueOak-1.0.0 joins the licence allowlist, and `elkjs` (EPL-2.0) and the second `@visx/vendor` are exempted, pinned. Decided 2026-11-19. | "BlueOak + 2 exemptions" | ADR 0007 E7; `scripts/licence-exemptions.json` |
+| 28 | `src/instrumentation.ts` may read `process.env.NEXT_RUNTIME` and nothing else raw: the Node-only startup checks move to `src/instrumentation-node.ts`, imported behind that literal, so the Edge bundle drops them. Decided 2026-11-19. | "One named exception" | `tests/guards/no-raw-process-env.test.ts`; CLAUDE.md "Rules that apply now" |
+| 29 | `RATE_LIMIT_MODE` defaults to `upstash`, and production refuses to start without both Upstash values (issue #17); per-process limits are an explicit `RATE_LIMIT_MODE=memory`. The 1.5 map's "default to memory" is not taken. Decided 2026-11-19. | "Upstash + refuse" | `src/env.ts`; `docs/rate-limiting.md` |
+| 30 | The CSP violation-report sink comes back with observability in 1.6; until then the policy names no report endpoint. Decided 2026-11-19. | "With 1.6" | `docs/porting/maps/1.6.md`; `docs/security-perimeter.md` |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
@@ -258,9 +261,9 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      `docs/security-perimeter.md`.
    Left for **1.5b**, after 1.6 brings the job queue: the master-key and per-tenant DEK
    rotation jobs and routes, `scripts/rotate-global-pii.ts` and the audit-outbox drain.
-   Open for the owner: the CSP violation-report sink (no `report-uri` until it lands);
-   whether `src/instrumentation.ts` may read `process.env.NEXT_RUNTIME` directly so the
-   Edge build drops the Node-only startup checks (today `next build` warns, harmlessly,
-   that `process.exit` and `crypto` are not Edge APIs); and whether the 1.4 suites that
-   mock `@/lib/audit` through `tests/helpers/audit-recorder.ts` should move to reading
-   rows. 1.6 is next.
+   Decided on review (rows 28 to 30): the startup checks are in
+   `src/instrumentation-node.ts`, behind a literal `process.env.NEXT_RUNTIME` branch, so
+   `next build` no longer warns; `upstash` stays the default with the production refusal;
+   the CSP violation-report sink is ported in 1.6. Open: whether the 1.4 suites that read
+   audit entries through `tests/helpers/audit-recorder.ts` should move to reading rows
+   (issue #18). 1.5b is issue #19. 1.6 is next.

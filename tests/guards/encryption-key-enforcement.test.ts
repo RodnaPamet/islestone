@@ -8,7 +8,8 @@
  * coordinated surfaces:
  *
  *   1. Zod schema — `superRefine` on the field in `src/env.ts`.
- *   2. Web startup hook — `src/instrumentation.ts` calls
+ *   2. Web startup hook — `src/instrumentation-node.ts` (imported by
+ *      `src/instrumentation.ts` on the Node.js runtime) calls
  *      `checkProductionEncryptionKey` + `runEncryptionSentinel`.
  *   3. Worker startup — `scripts/worker.ts` calls the same checker.
  *   4. Scheduler startup — `scripts/scheduler.ts` calls the checker.
@@ -94,7 +95,7 @@ describe('GAP-03 ratchet — schema layer', () => {
 
 describe('GAP-03 ratchet — runtime startup hooks', () => {
     it('Next.js instrumentation hook calls checkProductionEncryptionKey + runEncryptionSentinel', () => {
-        const src = readRepoFile('src/instrumentation.ts');
+        const src = readRepoFile('src/instrumentation-node.ts');
         // Regression: a refactor that drops either check leaves the
         // SKIP_ENV_VALIDATION=1 escape hatch unguarded (if the schema
         // is bypassed) OR loses the functional sentinel that catches
@@ -123,7 +124,7 @@ describe('issue #17 ratchet — the rate-limit store in production', () => {
     });
 
     it('the instrumentation hook calls checkProductionRateLimitStore and exits on a refusal', () => {
-        const src = readRepoFile('src/instrumentation.ts');
+        const src = readRepoFile('src/instrumentation-node.ts');
         expect(src).toMatch(/checkProductionRateLimitStore\(/);
         expect(src).toMatch(/if \(!store\.ok\)[\s\S]{0,120}process\.exit\(1\)/);
     });

@@ -144,7 +144,7 @@ export default defineConfig([
     // guaranteed and exit the process right after, so they write to
     // `console.error` (sub-phase 1.5, inflect-compliance's GAP-03 hook).
     {
-        files: ['src/instrumentation.ts'],
+        files: ['src/instrumentation-node.ts'],
         rules: {
             'no-console': 'off',
         },

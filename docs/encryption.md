@@ -124,7 +124,7 @@ development fallback:
 1. the Zod schema in `src/env.ts`, at module load;
 2. `checkProductionEncryptionKey` in
    `src/lib/security/startup-encryption-check.ts`, run from
-   `src/instrumentation.ts`, which also covers a process started with
+   `src/instrumentation-node.ts`, which also covers a process started with
    `SKIP_ENV_VALIDATION=1`, and then an encrypt → decrypt sentinel
    (`runEncryptionSentinel`) that catches a key that passes the shape check
    but breaks HKDF or AES. Each exits with `[startup] FATAL: …`.

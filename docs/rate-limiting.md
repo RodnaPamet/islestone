@@ -61,7 +61,7 @@ through the sign-in throttle and the edge tiers. Two checks now refuse it:
    `NEXT_TEST_MODE=1`);
 2. `checkProductionRateLimitStore` in
    `src/lib/security/startup-rate-limit-check.ts`, run from
-   `src/instrumentation.ts`, for a process started with
+   `src/instrumentation-node.ts`, for a process started with
    `SKIP_ENV_VALIDATION=1`.
 
 A deployment that means to run on memory says so with
