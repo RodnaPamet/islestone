@@ -32,8 +32,8 @@ import type { PrismaClient } from '@prisma/client';
 import { DB_AVAILABLE } from './db-helper';
 import { prismaTestClient } from '../helpers/db';
 import { createTenantWithOwner } from '../helpers/tenant-fixture';
-import { lookupEmail } from '@/lib/auth/email-lookup';
 import { applyMembershipClaims } from '@/auth';
+import { hashForLookup } from '@/lib/security/encryption';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 
@@ -52,7 +52,7 @@ describeFn('JWT membership claims refresh', () => {
 
     async function makeUser(email: string) {
         return prisma.user.upsert({
-            where: { email: lookupEmail(email) },
+            where: { emailHash: hashForLookup(email) },
             create: { email, name: email.split('@')[0] },
             update: {},
         });

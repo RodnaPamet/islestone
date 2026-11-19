@@ -29,6 +29,8 @@ import { PrismaClient } from '@prisma/client';
 // Relative, not `@/`: Jest's globalSetup loads this file outside the module
 // mapper, where the alias does not resolve.
 import { TENANT_TX_OPTIONS } from '../../src/lib/db/concurrency-limits';
+// Type only, so globalSetup does not load the module (see prismaTestClient).
+import type * as PiiModule from '../../src/lib/security/pii-middleware';
 
 const ROOT = path.resolve(__dirname, '../..');
 
@@ -48,9 +50,21 @@ export function getTestDatabaseUrl(): string {
     return process.env.DATABASE_URL_TEST || process.env.DATABASE_URL || '';
 }
 
-/** The URL migrations run against: a direct connection when one is named. */
+/**
+ * The URL migrations run against: a direct connection when one is named.
+ *
+ * `prisma migrate deploy` takes a SESSION advisory lock. Through PgBouncer in
+ * transaction mode the lock and its release can land on different server
+ * connections, and the lock then stays held on a pooled connection: every
+ * later migrate waits on it and times out. So without
+ * `DIRECT_DATABASE_URL_TEST`, a run against `DATABASE_URL` (no `_TEST`
+ * database) uses `DIRECT_DATABASE_URL` when it is set, as the app's own
+ * migrations do (prisma.config.ts).
+ */
 export function getTestDirectDatabaseUrl(): string {
-    return process.env.DIRECT_DATABASE_URL_TEST || getTestDatabaseUrl();
+    if (process.env.DIRECT_DATABASE_URL_TEST) return process.env.DIRECT_DATABASE_URL_TEST;
+    if (!process.env.DATABASE_URL_TEST && process.env.DIRECT_DATABASE_URL) return process.env.DIRECT_DATABASE_URL;
+    return getTestDatabaseUrl();
 }
 
 /**
@@ -79,16 +93,30 @@ let _client: PrismaClient | null = null;
 /**
  * Create and return the PrismaClient connected to the test database.
  *
- * Prisma 7 — connections go through the adapter pattern. This client carries
- * no extensions: it connects as the login role, so it sees every row (the
- * `superuser_bypass` policies), which is what fixtures and teardown need.
- * Isolation is exercised through `runInTenantContext` or an explicit
- * `SET LOCAL ROLE app_user` transaction on it.
+ * Prisma 7 — connections go through the adapter pattern. It connects as the
+ * login role, so it sees every row (the `superuser_bypass` policies), which
+ * is what fixtures and teardown need. Isolation is exercised through
+ * `runInTenantContext` or an explicit `SET LOCAL ROLE app_user` transaction
+ * on it.
+ *
+ * It carries ONE extension, the PII extension (sub-phase 1.5), as in
+ * inflect-compliance: a suite that creates a `User` through it gets the
+ * address encrypted and `emailHash` filled without naming it (the column is
+ * NOT NULL in the database), and `where: { email }` is rewritten to the hash.
+ * Field encryption and the audit extension are NOT on it, so a fixture write
+ * is neither audited nor encrypted.
  */
 export function prismaTestClient(): PrismaClient {
     if (!_client) {
         const adapter = new PrismaPg({ connectionString: getTestDatabaseUrl() });
-        _client = new PrismaClient({ adapter, transactionOptions: TENANT_TX_OPTIONS });
+        const base = new PrismaClient({ adapter, transactionOptions: TENANT_TX_OPTIONS });
+        // Loaded lazily, by a relative path: Jest's globalSetup imports this
+        // file (for `migrateTestDb`) without the module mapper, and the PII
+        // extension's own `@/` imports would not resolve there. By the time a
+        // suite calls this, the mapper is in force.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const pii = require('../../src/lib/security/pii-middleware') as typeof PiiModule;
+        _client = pii.withPiiEncryptionExtension(base);
     }
     return _client;
 }
@@ -103,6 +131,11 @@ export function prismaTestClient(): PrismaClient {
  * block a reset.
  */
 export const RESET_TABLES: readonly string[] = [
+    // The audit trail (sub-phase 1.5). TRUNCATE fires no row trigger, so the
+    // immutability guards do not block it; `app_user` holds no TRUNCATE.
+    'AuditLog',
+    'OrgAuditLog',
+    'AuditOutbox',
     'UserMfaEnrollment',
     'TenantSecuritySettings',
     'TenantInvite',

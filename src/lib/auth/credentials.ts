@@ -68,7 +68,7 @@ import {
     recordLoginFailure,
     recordLoginSuccess,
 } from './security-events';
-import { lookupEmail } from '@/lib/auth/email-lookup';
+import { hashForLookup } from '@/lib/security/encryption';
 import {
     evaluateProgressiveRateLimit,
     recordProgressiveFailure,
@@ -231,7 +231,7 @@ export async function authenticateWithPassword(
         // we attribute to their tenant; otherwise logger-only (see
         // security-events.ts for the branching).
         const maybeUser = await prisma.user
-            .findUnique({ where: { email: lookupEmail(email) }, select: { id: true } })
+            .findUnique({ where: { emailHash: hashForLookup(email) }, select: { id: true } })
             .catch(() => null);
         await recordLoginFailure({
             email,
@@ -261,7 +261,7 @@ export async function authenticateWithPassword(
         );
         if (!decision.allowed) {
             const maybeUser = await prisma.user
-                .findUnique({ where: { email: lookupEmail(email) }, select: { id: true } })
+                .findUnique({ where: { emailHash: hashForLookup(email) }, select: { id: true } })
                 .catch(() => null);
             await recordLoginFailure({
                 email,
@@ -298,7 +298,7 @@ export async function authenticateWithPassword(
     } | null = null;
     try {
         user = await prisma.user.findUnique({
-            where: { email: lookupEmail(email) },
+            where: { emailHash: hashForLookup(email) },
             select: {
                 id: true,
                 email: true,

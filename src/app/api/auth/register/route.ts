@@ -36,6 +36,9 @@ import { issueEmailVerification } from '@/lib/auth/email-verification';
 import { hashPassword, validatePasswordPolicy } from '@/lib/auth/passwords';
 import { checkPasswordAgainstHIBP } from '@/lib/security/password-check';
 import { lookupEmail } from '@/lib/auth/email-lookup';
+import { hashForLookup } from '@/lib/security/encryption';
+import { sanitizePlainText } from '@/lib/security/sanitize';
+import { generateAndWrapDek } from '@/lib/security/tenant-keys';
 import { isPublicSignupOpen } from '@/lib/auth/public-signup';
 import { withValidatedBody } from '@/lib/validation/route';
 import { AuthActionSchema } from '@/lib/schemas/auth';
@@ -79,8 +82,7 @@ const POLICY_REFUSAL = {
 
 /**
  * The unique violation a racing duplicate registration loses on: the
- * user's `email` (stored in its `lookupEmail` form), the column the
- * `existing` check reads. Sub-phase 1.5 moves it to `emailHash`.
+ * user's `emailHash`, the column the `existing` check reads.
  */
 function isEmailHashUniqueViolation(err: unknown): boolean {
     if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') return false;
@@ -96,7 +98,7 @@ function isEmailHashUniqueViolation(err: unknown): boolean {
         ...(Array.isArray(constraint?.fields) ? constraint.fields : []),
         ...(Array.isArray(meta?.target) ? meta.target : [meta?.target]),
     ];
-    return names.some((n) => typeof n === 'string' && (n.includes('email') || n === 'User_email_key'));
+    return names.some((n) => typeof n === 'string' && (n.includes('email') || n === 'User_emailHash_key'));
 }
 
 /** Every refusal carries its code beside the English sentence. */
@@ -105,8 +107,11 @@ function refuse(code: RegisterRefusal, error: string, status = 400) {
 }
 
 async function handleRegister(body: { email: string; password: string; name: string; orgName?: string }) {
-    const { email: rawEmail, password, name } = body;
-    const orgName = body.orgName?.trim() || null;
+    const { email: rawEmail, password } = body;
+    // Free text is sanitised on the server before it is stored (sub-phase
+    // 1.5): the display name and the workspace name are rendered everywhere.
+    const name = sanitizePlainText(body.name ?? '').trim();
+    const orgName = sanitizePlainText(body.orgName ?? '').trim() || null;
     if (!rawEmail || !password || !name) {
         return refuse('REGISTER_FIELDS_MISSING', 'Missing required fields');
     }
@@ -139,11 +144,11 @@ async function handleRegister(body: { email: string; password: string; name: str
 
     const email = String(rawEmail).trim().toLowerCase();
 
-    // Identity is anchored on the normalised email (`lookupEmail`), which
-    // is what the unique constraint enforces, so a duplicate signup races
+    // Identity is anchored on the hash of the normalised email (`emailHash`),
+    // which is what the unique constraint enforces, so a duplicate signup races
     // through the same gate as the DB.
     const existing = await prisma.user.findUnique({
-        where: { email: lookupEmail(email) },
+        where: { emailHash: hashForLookup(email) },
     });
     if (existing) {
         return refuse('EMAIL_ALREADY_REGISTERED', 'Email already registered', 409);
@@ -203,8 +208,9 @@ async function handleRegister(body: { email: string; password: string; name: str
     // duplicate registration (a double-submitted form) passes the `existing`
     // check above and loses on the user's unique email, and the loser rolls
     // back whole and is told the email is registered, rather than leaving a
-    // tenant with no member behind. (Sub-phase 1.5 wraps the per-tenant data
-    // key inside this transaction.)
+    // tenant with no member behind. The per-tenant data key is wrapped as
+    // `createTenantWithDek` wraps it, inside the transaction, so a rolled-back
+    // registration leaves no key behind either; its first use unwraps it.
     const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '-' + Date.now().toString(36);
     // Hashed before the transaction opens: a slow hash must not hold it.
     const passwordHash = await hashPassword(password);
@@ -215,8 +221,9 @@ async function handleRegister(body: { email: string; password: string; name: str
     };
     try {
         created = await prisma.$transaction(async (tx) => {
+            const { wrapped } = generateAndWrapDek();
             const tenant = await tx.tenant.create({
-                data: { name: orgName, slug },
+                data: { name: orgName, slug, encryptedDek: wrapped },
                 select: { id: true, name: true, slug: true },
             });
 

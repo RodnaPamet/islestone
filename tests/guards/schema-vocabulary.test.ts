@@ -254,6 +254,9 @@ describe('the schema speaks ADR 0006', () => {
         const ids = schemaIdentifiers(schema);
         expect(ids.filter((i) => i.kind === 'model').map((i) => i.name).sort()).toEqual([
             'Account',
+            'AuditLog',
+            'AuditOutbox',
+            'OrgAuditLog',
             'OrgInvite',
             'OrgMembership',
             'Organization',
@@ -268,7 +271,7 @@ describe('the schema speaks ADR 0006', () => {
             'UserSession',
             'VerificationToken',
         ]);
-        expect(ids.filter((i) => i.kind === 'enum').length).toBe(6);
+        expect(ids.filter((i) => i.kind === 'enum').length).toBe(7);
         expect(ids).toEqual(expect.arrayContaining([{ kind: 'value', name: 'MEMBER', where: 'Role.MEMBER' }]));
     });
 });

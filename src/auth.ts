@@ -44,7 +44,7 @@ import { hashEmailForLog } from '@/lib/auth/security-events';
 import { EMAIL_NOT_VERIFIED_SIGN_IN_ERROR } from '@/lib/auth/register-refusals';
 import type { Role } from '@prisma/client';
 import { edgeLogger } from '@/lib/observability/edge-logger';
-import { lookupEmail } from '@/lib/auth/email-lookup';
+import { hashForLookup } from '@/lib/security/encryption';
 import { graphHeaders } from '@/lib/http/graph-headers';
 import {
     pendingAfterMembershipRefresh,
@@ -192,7 +192,7 @@ export async function applyMembershipClaims(
     fallbackUserId?: string,
 ): Promise<void> {
     const dbUser = await prisma.user.findUnique({
-        where: { email: lookupEmail(token.email!) },
+        where: { emailHash: hashForLookup(token.email!) },
         include: {
             tenantMemberships: {
                 // Exclude soft-deleted (org-removed) tenants so they
@@ -664,7 +664,7 @@ export const authOptions: NextAuthOptions = {
             // 1. Account linking for OAuth (not credentials).
             if (isOAuth && user.email) {
                 const existingUser = await prisma.user.findUnique({
-                    where: { email: lookupEmail(user.email) },
+                    where: { emailHash: hashForLookup(user.email) },
                 });
 
                 if (existingUser && user.id !== existingUser.id) {

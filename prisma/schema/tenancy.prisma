@@ -20,6 +20,7 @@ model Organization {
   memberships                  OrgMembership[]
   provisionedTenantMemberships TenantMembership[] @relation("OrgProvisionedTenantMemberships")
   invites                      OrgInvite[]
+  auditLogs                    OrgAuditLog[]
 }
 
 model OrgMembership {
@@ -40,20 +41,31 @@ model OrgMembership {
 /// A workspace: the unit of isolation, billing and membership. Every tenant
 /// table carries its id as `tenantId`.
 model Tenant {
-  id             String    @id @default(cuid())
-  name           String
-  slug           String    @unique
+  id                   String    @id @default(cuid())
+  name                 String
+  slug                 String    @unique
   /// Hub-and-spoke parent. Nullable: a workspace need not belong to an
   /// organization. ON DELETE SET NULL, so removing an organization does not
   /// take its workspaces with it.
-  organizationId String?
+  organizationId       String?
   /// Soft delete. When set, the workspace is filtered out of tenant
   /// resolution (`resolveTenantContext` answers 404) while its data is
   /// retained. The last-owner trigger lets a soft-deleted workspace lose its
   /// last OWNER, so a purge can remove its memberships.
-  deletedAt      DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  deletedAt            DateTime?
+  /// This workspace's data-encryption key (DEK), wrapped under the master
+  /// KEK (sub-phase 1.5, src/lib/security/tenant-key-manager.ts). Nullable so
+  /// `ensureTenantDek`'s lazy path stays reachable for a workspace created
+  /// without one.
+  encryptedDek         String?
+  /// The outgoing DEK while a DEK rotation's re-encryption sweep runs; NULL
+  /// otherwise. The CHECK `Tenant_previousEncryptedDek_differs` refuses it
+  /// equal to `encryptedDek`, and the partial index
+  /// `Tenant_rotation_in_flight_idx` finds rotations in flight (both in the
+  /// 1.5 migration; Prisma's schema expresses neither).
+  previousEncryptedDek String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   organization Organization?      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
   memberships  TenantMembership[]
@@ -62,6 +74,8 @@ model Tenant {
   invites          TenantInvite[]
   mfaEnrollments   UserMfaEnrollment[]
   customRoles      TenantCustomRole[]
+  auditLogs        AuditLog[]
+  auditOutbox      AuditOutbox[]
 
   @@index([organizationId])
 }
@@ -111,11 +125,22 @@ model TenantMembership {
 /// A person's global sign-in identity, independent of any workspace.
 model User {
   id             String    @id @default(cuid())
-  /// Plaintext and unique in sub-phase 1.3. Sub-phase 1.5 adds the
-  /// deterministic `emailHash` lookup column and the PII extension, and moves
-  /// uniqueness in a forward migration. The column is never `@map`ped
-  /// (ADR 0006 rule 3).
-  email          String    @unique
+  /// The address, ENCRYPTED at rest (sub-phase 1.5). The PII extension
+  /// (src/lib/security/pii-middleware.ts) writes ciphertext into this column,
+  /// decrypts it on every read, and rewrites `where: { email }` to
+  /// `emailHash`, so callers read and write plaintext. Not unique: the
+  /// ciphertext has a random IV. The column keeps the field's name; it is
+  /// never `@map`ped (ADR 0006 rule 3), where inflect-compliance maps it to
+  /// `emailEncrypted`.
+  email          String
+  /// HMAC-SHA256 lookup hash of the normalised address, filled by the PII
+  /// extension on every write. Nullable in the schema and NOT NULL in the
+  /// database ON PURPOSE (inflect-compliance GAP-21): the schema's `?` keeps
+  /// every create from having to name it, the database refuses a row without
+  /// it. `tests/guards/pii-hash-not-null.test.ts` pins both halves; the drift
+  /// residue carries the one line this leaves.
+  emailHash      String?   @unique
+  /// The display name, ENCRYPTED at rest by the same extension.
   name           String?
   emailVerified  DateTime?
   image          String?
@@ -134,4 +159,8 @@ model User {
   mfaEnrollments      UserMfaEnrollment[]
   invitesSent         TenantInvite[]
   orgInvitesIssued    OrgInvite[]          @relation("OrgInviteInviter")
+
+  auditLogs           AuditLog[]
+  orgAuditLogActions  OrgAuditLog[] @relation("OrgAuditLogActor")
+  orgAuditLogSubjects OrgAuditLog[] @relation("OrgAuditLogSubject")
 }

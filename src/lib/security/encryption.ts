@@ -1,0 +1,668 @@
+/**
+ * Data Protection — Field-Level Encryption
+ *
+ * AES-256-GCM authenticated encryption with versioned payload format.
+ * Used for PII fields (emails, names) at the application layer.
+ *
+ * Payload format: "v1:" + base64(iv ∥ ciphertext ∥ authTag)
+ *   - iv:        12 bytes (96-bit, GCM recommended)
+ *   - ciphertext: variable length
+ *   - authTag:   16 bytes (128-bit)
+ *
+ * Key derivation: HKDF-SHA256 from DATA_ENCRYPTION_KEY env var.
+ * Each purpose (field encryption vs lookup hash) gets a distinct derived key.
+ *
+ * SECURITY NOTES:
+ * - Never log plaintext PII after decryption.
+ * - Never reuse IVs (crypto.randomBytes ensures this).
+ * - The version prefix ("v1:") enables future algorithm rotation.
+ * - HMAC-SHA256 lookup hashes are deterministic by design — they enable
+ *   WHERE clause lookups without decrypting every row.
+ */
+import crypto from 'crypto';
+
+import { env } from '@/env';
+import { logger } from '@/lib/observability/logger';
+
+import { DEV_FALLBACK_DATA_ENCRYPTION_KEY } from './encryption-constants';
+
+// ─── Constants ──────────────────────────────────────────────────────
+
+const ALGORITHM = 'aes-256-gcm' as const;
+const IV_LENGTH = 12;        // 96-bit IV (GCM recommendation)
+const AUTH_TAG_LENGTH = 16;  // 128-bit auth tag
+const KEY_LENGTH = 32;       // AES-256
+
+/**
+ * Envelope versions.
+ *
+ *   v1 — ciphertext under the **global KEK** (HKDF-derived from
+ *        DATA_ENCRYPTION_KEY). Produced by `encryptField()` — the
+ *        Epic B.1 baseline.
+ *
+ *   v2 — ciphertext under a **per-tenant DEK** (Epic B.2). Produced
+ *        by `encryptWithKey(dek, plaintext)` and consumed by
+ *        `decryptWithKey(dek, ciphertext)`. The middleware emits v2
+ *        when a tenant context is available on the request and
+ *        falls back to v1 otherwise, so a gradual rollout works
+ *        without any big-bang re-encrypt.
+ */
+const VERSION_PREFIX_V1 = 'v1:';
+const VERSION_PREFIX_V2 = 'v2:';
+// Kept for backwards compatibility with callers that import the
+// private constant (internal tests). The public behaviour is unchanged.
+const VERSION_PREFIX = VERSION_PREFIX_V1;
+
+// HKDF info strings — distinct per purpose to ensure key separation
+const ENCRYPT_INFO = 'islestone-data-encryption';
+const HMAC_INFO = 'islestone-data-lookup-hash';
+
+// ─── Key Management ─────────────────────────────────────────────────
+
+let _cachedEncryptKey: Buffer | null = null;
+let _cachedHmacKey: Buffer | null = null;
+let _lastKeySource: string | null = null;
+/**
+ * The lookup-hash key's OWN cache source (#5071).
+ *
+ * Separate from `_lastKeySource` because the two keys no longer derive from
+ * the same material. One shared source would serve a stale HMAC key for as
+ * long as the KEK happened not to change — which is precisely the window a
+ * rotation opens.
+ */
+let _lastHmacKeySource: string | null = null;
+
+/**
+ * Gets the raw encryption key material from environment.
+ * In production, DATA_ENCRYPTION_KEY is required.
+ * In development/test, falls back to a deterministic dev key (logs a warning).
+ */
+function getRawKeyMaterial(): string {
+    const key = env.DATA_ENCRYPTION_KEY;
+    if (key && key.length >= 32) {
+        return key;
+    }
+
+    const nodeEnv = env.NODE_ENV;
+    if (nodeEnv === 'production') {
+        throw new Error(
+            'DATA_ENCRYPTION_KEY is required in production and must be at least 32 characters. ' +
+            'Generate one with: openssl rand -base64 48'
+        );
+    }
+
+    // Dev/test fallback — deterministic so tests are reproducible.
+    // GAP-03 — the value is shared from `encryption-constants.ts` so
+    // env validation + the startup hook can reject this exact string
+    // when NODE_ENV=production.
+    if (nodeEnv !== 'test') {
+        logger.warn('Using development fallback encryption key', { component: 'encryption' });
+    }
+    return DEV_FALLBACK_DATA_ENCRYPTION_KEY;
+}
+
+/**
+ * Derives a 256-bit key via HKDF-SHA256 for the given purpose.
+ */
+function deriveKey(rawMaterial: string, info: string): Buffer {
+    const salt = Buffer.from('islestone-data-protection-salt-v1', 'utf8');
+    const ikm = Buffer.from(rawMaterial, 'utf8');
+    const infoBuffer = Buffer.from(info, 'utf8');
+
+    // HKDF-Extract
+    const prk = crypto.createHmac('sha256', salt).update(ikm).digest();
+    // HKDF-Expand (single block = 32 bytes, sufficient for AES-256)
+    const derived = crypto.createHmac('sha256', prk)
+        .update(Buffer.concat([infoBuffer, Buffer.from([1])]))
+        .digest();
+
+    return derived; // 32 bytes = 256 bits
+}
+
+/**
+ * The material the LOOKUP-HASH key derives from — #5071.
+ *
+ * `LOOKUP_HASH_KEY` when set, otherwise the master KEK's material, which is
+ * exactly what this derived from before. That fallback is what makes the
+ * change invisible to every deployment that does nothing: the derivation is
+ * byte-identical, so no stored `*Hash` column moves.
+ *
+ * ═══ WHY A LOOKUP HASH MUST NOT FOLLOW THE KEK ═══
+ *
+ * `hashForLookup` is an INDEX, not a ciphertext. `decryptField` can fall back
+ * to `DATA_ENCRYPTION_KEY_PREVIOUS`, so a rotation leaves ciphertext readable;
+ * a hash has no such fallback, because the stored value is the lookup KEY —
+ * a miss is indistinguishable from "no such row". So the documented master-KEK
+ * rotation silently broke every email-based sign-in from the first request:
+ * credentials, OAuth and SSO account matching, and invite redemption all read
+ * `User.emailHash`, and nothing recomputes it.
+ *
+ * Deriving it from its own secret removes the coupling permanently rather than
+ * papering over one rotation. The zero-backfill adoption path is to set
+ * `LOOKUP_HASH_KEY` to the CURRENT `DATA_ENCRYPTION_KEY` value BEFORE rotating:
+ * the material is unchanged, so every existing hash still resolves, and the
+ * KEK is then free to rotate without touching the index.
+ *
+ * Reusing that material under two HKDF `info` strings is not key reuse in the
+ * harmful sense — `ENCRYPT_INFO` and `HMAC_INFO` already separate them, and
+ * this file has derived both from one material since it was written. An
+ * operator who wants genuinely independent material can set a fresh value,
+ * but that CHANGES every hash and needs a backfill of every `*Hash` column
+ * first; it is not the migration path.
+ */
+function getLookupHashKeyMaterial(): string {
+    const key = env.LOOKUP_HASH_KEY;
+    if (key && key.length >= 32) {
+        return key;
+    }
+    return getRawKeyMaterial();
+}
+
+/**
+ * The material every HKDF SUBKEY derives from — #5500.
+ *
+ * `DERIVED_SUBKEY_KEY` when set, otherwise the master KEK's material, which is
+ * exactly what this derived from before. That fallback is what makes the change
+ * invisible to a deployment that does nothing: the derivation is byte-identical,
+ * so no stored sample seed, seal or outstanding token moves.
+ *
+ * ═══ WHY A SUBKEY MUST NOT FOLLOW THE KEK ═══
+ *
+ * A subkey's consumers rely on it staying the same: a value derived or signed
+ * under it (a sampling seed, a seal, a token signing key) must derive again
+ * identically later. None of them has the fallback a ciphertext has:
+ * `decryptField` can read under `DATA_ENCRYPTION_KEY_PREVIOUS`, a derived seed
+ * cannot. Tying the subkeys to the KEK would make every master-key rotation
+ * re-derive all of them by accident.
+ *
+ * Islestone has no subkey consumer yet; sub-phase 6.2's MCP token signing is
+ * the first. The separation is in place before it, so that consumer never
+ * inherits the coupling.
+ *
+ * This is the lookup hash's defect one subsystem over, and takes the same
+ * remedy: its own secret, so the coupling is removed permanently rather than
+ * papered over for one rotation. The zero-backfill adoption path is to set `DERIVED_SUBKEY_KEY`
+ * to the CURRENT `DATA_ENCRYPTION_KEY` value BEFORE rotating — the material is
+ * unchanged, every existing seed and seal still derives, and the KEK is then
+ * free to rotate without touching any of them.
+ *
+ * It is a SIBLING of `LOOKUP_HASH_KEY`, not the same variable (owner decision,
+ * 2026-11-15). A lookup hash is an index that can never rotate, because the
+ * stored value IS the lookup key; a token signing key should be rotatable
+ * deliberately. Sharing one secret would mean neither could move without the
+ * other — rotating the signing material would re-index every email hash and
+ * break sign-in, which is the failure #5071 exists to prevent.
+ */
+function getDerivedSubkeyMaterial(): string {
+    const key = env.DERIVED_SUBKEY_KEY;
+    if (key && key.length >= 32) {
+        return key;
+    }
+    return getRawKeyMaterial();
+}
+
+/**
+ * Gets the encryption key, caching it for performance.
+ * Cache is invalidated if the underlying key material changes.
+ */
+function getEncryptionKey(): Buffer {
+    const raw = getRawKeyMaterial();
+    if (_cachedEncryptKey && _lastKeySource === raw) {
+        return _cachedEncryptKey;
+    }
+    _cachedEncryptKey = deriveKey(raw, ENCRYPT_INFO);
+    _lastKeySource = raw;
+    return _cachedEncryptKey;
+}
+
+// ─── Epic B.3 — previous-KEK for rotation ────────────────────────────
+//
+// During a master-key rotation, the operator sets
+// `DATA_ENCRYPTION_KEY_PREVIOUS` to the outgoing key material alongside
+// the new primary `DATA_ENCRYPTION_KEY`. Writes always use the new
+// primary; reads try the new primary first and fall back to the
+// previous on an AES-GCM auth failure. The rotation job
+// (`src/app-layer/jobs/key-rotation.ts`) walks every v1 ciphertext and
+// re-encrypts it under the new primary, eventually making the previous
+// key retirable.
+//
+// Cached separately from the primary so a rotation-complete state
+// (primary alone, previous unset) naturally evicts the old key from
+// memory on next access.
+
+let _cachedPreviousEncryptKey: Buffer | null = null;
+// Three states matter, distinguished intentionally:
+//   undefined — never checked; first `getPreviousEncryptionKey` call
+//               does the env read.
+//   null      — checked + no previous key configured (env var unset
+//               or too short). Subsequent calls short-circuit
+//               without re-reading the env.
+//   string    — checked + previous key present; value is the raw
+//               env string so the cache invalidates correctly when
+//               the operator swaps `DATA_ENCRYPTION_KEY_PREVIOUS`.
+let _lastPreviousKeySource: string | null | undefined = undefined;
+
+function getPreviousRawKey(): string | null {
+    const key = env.DATA_ENCRYPTION_KEY_PREVIOUS;
+    if (!key || key.length < 32) return null;
+    return key;
+}
+
+/**
+ * The previous-generation encryption key, if rotation is in flight.
+ * Returns null when no previous key is configured — the `decryptField`
+ * fallback branch is skipped and decrypt behaves exactly as in B.1.
+ */
+function getPreviousEncryptionKey(): Buffer | null {
+    const raw = getPreviousRawKey();
+    if (raw === null) {
+        // Rotation either hasn't started or just finished — clear the
+        // cached key so the next rotation generation starts from a
+        // clean slate.
+        _cachedPreviousEncryptKey = null;
+        _lastPreviousKeySource = null;
+        return null;
+    }
+    if (_cachedPreviousEncryptKey && _lastPreviousKeySource === raw) {
+        return _cachedPreviousEncryptKey;
+    }
+    _cachedPreviousEncryptKey = deriveKey(raw, ENCRYPT_INFO);
+    _lastPreviousKeySource = raw;
+    return _cachedPreviousEncryptKey;
+}
+
+/**
+ * Derive a 256-bit subkey from the master KEK for a NAMED purpose.
+ *
+ * Key separation is the whole contract: HKDF's `info` string is what makes the
+ * field-encryption key, the lookup-hash key and any subkey minted here
+ * cryptographically independent, so a subkey that leaks says nothing about the
+ * others and a value signed under one purpose cannot be replayed under another.
+ * Callers pass a stable, versioned string (`islestone-<purpose>-v1`); changing it
+ * invalidates every value derived under the old one, which is the intended way
+ * to retire a purpose.
+ *
+ * Not cached, unlike the two hot-path keys above: subkeys are minted on
+ * credential-lifecycle paths rather than per row, and a cache keyed on an
+ * arbitrary caller-supplied string is an unbounded map fed by whatever the
+ * caller passes.
+ *
+ * The material never leaves this module's derivation — the raw
+ * `DATA_ENCRYPTION_KEY` is not exposed, and a subkey is one HKDF expansion away
+ * from it in the one direction that matters.
+ */
+export function deriveSubkey(purpose: string): Buffer {
+    if (!purpose || purpose.length < 8) {
+        throw new Error('deriveSubkey: purpose must be a stable, descriptive string');
+    }
+    return deriveKey(getDerivedSubkeyMaterial(), purpose);
+}
+
+/**
+ * Gets the HMAC key for deterministic lookup hashes.
+ */
+function getHmacKey(): Buffer {
+    // Its OWN material and its own cache source (#5071). This used to read the
+    // KEK's material and delegate to `getEncryptionKey()`, which populated both
+    // caches under one source — so the two keys could not move independently
+    // even in principle.
+    const raw = getLookupHashKeyMaterial();
+    if (_cachedHmacKey && _lastHmacKeySource === raw) {
+        return _cachedHmacKey;
+    }
+    _cachedHmacKey = deriveKey(raw, HMAC_INFO);
+    _lastHmacKeySource = raw;
+    return _cachedHmacKey;
+}
+
+// ─── Public API ─────────────────────────────────────────────────────
+
+/**
+ * Encrypts a plaintext string using AES-256-GCM.
+ *
+ * @param plaintext - The string to encrypt (can be empty, but not null/undefined)
+ * @returns Versioned ciphertext: "v1:base64(iv ∥ ciphertext ∥ tag)"
+ *
+ * @example
+ * const encrypted = encryptField('user@example.com');
+ * // "v1:dGVzdC..." (opaque, variable length)
+ */
+export function encryptField(plaintext: string): string {
+    if (plaintext === null || plaintext === undefined) {
+        throw new Error('encryptField: plaintext must not be null or undefined');
+    }
+
+    const key = getEncryptionKey();
+    const iv = crypto.randomBytes(IV_LENGTH);
+    const cipher = crypto.createCipheriv(ALGORITHM, key, iv, {
+        authTagLength: AUTH_TAG_LENGTH,
+    });
+
+    const encrypted = Buffer.concat([
+        cipher.update(plaintext, 'utf8'),
+        cipher.final(),
+    ]);
+
+    const tag = cipher.getAuthTag();
+
+    // iv (12) + ciphertext (variable) + tag (16)
+    const combined = Buffer.concat([iv, encrypted, tag]);
+    return VERSION_PREFIX + combined.toString('base64');
+}
+
+/**
+ * Decrypts a v1 ciphertext blob (iv ∥ ct ∥ tag) with the given key.
+ * The version prefix has already been stripped by the caller.
+ * Throws on AES-GCM auth failure or structural corruption.
+ */
+function decryptV1Payload(key: Buffer, payload: string): string {
+    const combined = Buffer.from(payload, 'base64');
+    if (combined.length < IV_LENGTH + AUTH_TAG_LENGTH) {
+        throw new Error('decryptField: ciphertext too short (truncated?)');
+    }
+    const iv = combined.subarray(0, IV_LENGTH);
+    const tag = combined.subarray(combined.length - AUTH_TAG_LENGTH);
+    const encrypted = combined.subarray(
+        IV_LENGTH,
+        combined.length - AUTH_TAG_LENGTH,
+    );
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, {
+        authTagLength: AUTH_TAG_LENGTH,
+    });
+    decipher.setAuthTag(tag);
+    const decrypted = Buffer.concat([
+        decipher.update(encrypted),
+        decipher.final(),
+    ]);
+    return decrypted.toString('utf8');
+}
+
+/**
+ * Decrypts an encrypted field back to plaintext.
+ *
+ * Epic B.3 dual-KEK behaviour: tries the primary KEK first. On
+ * AES-GCM auth failure, if `DATA_ENCRYPTION_KEY_PREVIOUS` is
+ * configured, retries with the previous KEK. This lets in-flight
+ * rotation read ciphertext written under either key without
+ * downtime. The original primary-key error is re-thrown if both
+ * attempts fail, so corruption/tamper cases still surface clearly.
+ *
+ * @param ciphertext - Versioned ciphertext from encryptField()
+ * @returns Decrypted plaintext string
+ * @throws Error if ciphertext is tampered, truncated, uses unknown
+ *         version, OR neither the primary nor the previous KEK can
+ *         decrypt it.
+ *
+ * @example
+ * const email = decryptField(record.emailEncrypted);
+ */
+export function decryptField(ciphertext: string): string {
+    if (!ciphertext || !ciphertext.startsWith(VERSION_PREFIX)) {
+        throw new Error(
+            'decryptField: invalid ciphertext format. Expected version prefix "v1:"'
+        );
+    }
+
+    const payload = ciphertext.slice(VERSION_PREFIX.length);
+
+    // Primary KEK first. If the auth tag matches, we're done —
+    // overwhelmingly the common case.
+    try {
+        return decryptV1Payload(getEncryptionKey(), payload);
+    } catch (primaryErr) {
+        // Fall back to previous KEK during rotation. A missing
+        // previous key means we're not in rotation; rethrow the
+        // primary failure unchanged so the caller sees "tampered /
+        // corrupt / key mismatch" with the same shape as before.
+        const previous = getPreviousEncryptionKey();
+        if (!previous) throw primaryErr;
+        try {
+            return decryptV1Payload(previous, payload);
+        } catch {
+            // Both keys rejected. Surface the primary error (the
+            // caller's mental model is "my current key doesn't fit");
+            // ops sees both failures via structured logs upstream.
+            throw primaryErr;
+        }
+    }
+}
+
+/**
+ * Produces a deterministic HMAC-SHA256 hash for indexed lookups.
+ *
+ * Use this to populate `<field>Hash` columns so you can do:
+ *   WHERE emailHash = hashForLookup('user@example.com')
+ * without decrypting every row.
+ *
+ * The input is normalised (lowercased, trimmed) before hashing to ensure
+ * consistent lookups regardless of casing.
+ *
+ * @param value - The plaintext value to hash
+ * @returns Hex-encoded HMAC-SHA256 hash (64 characters)
+ *
+ * @example
+ * const hash = hashForLookup('User@Example.com');
+ * // Same as hashForLookup('user@example.com')
+ */
+export function hashForLookup(value: string): string {
+    if (value === null || value === undefined) {
+        throw new Error('hashForLookup: value must not be null or undefined');
+    }
+
+    const normalised = value.toLowerCase().trim();
+    const key = getHmacKey();
+    return crypto.createHmac('sha256', key)
+        .update(normalised, 'utf8')
+        .digest('hex');
+}
+
+/**
+ * A keyed digest that says whether a value CHANGED without storing the value.
+ *
+ * For a value that may carry a credential and must still be compared over time
+ * from a record people other than its owner read, such as a configured
+ * endpoint URL whose path or query can hold a key. HMAC-SHA256
+ * under the same deployment key as `hashForLookup`, so nobody without that key
+ * can test a guess against it, which an unkeyed hash of a low-entropy secret
+ * would allow.
+ *
+ * Unlike `hashForLookup` the value is used EXACTLY — no lowercasing, no trim —
+ * because a URL path is case-sensitive and a change in case is a change. The
+ * `domain` separates uses: the same value digested for two purposes yields two
+ * unrelated digests, and neither equals its lookup hash. Rotating the master
+ * key re-keys every digest.
+ *
+ * @returns Hex-encoded HMAC-SHA256 (64 characters)
+ */
+export function keyedChangeDigest(domain: string, value: string): string {
+    if (typeof domain !== 'string' || domain.length === 0 || domain.includes('\u0000')) {
+        throw new Error('keyedChangeDigest: domain must be a non-empty string without NUL');
+    }
+    if (typeof value !== 'string') {
+        throw new Error('keyedChangeDigest: value must be a string');
+    }
+    return crypto.createHmac('sha256', getHmacKey())
+        .update(`${domain}\u0000${value}`, 'utf8')
+        .digest('hex');
+}
+
+/**
+ * Checks whether a string looks like an encrypted field (has a
+ * recognised version prefix — v1 or v2).
+ *
+ * Accepts both envelopes so idempotency gates and manifest
+ * traversal don't need to know which key model produced the
+ * ciphertext.
+ */
+export function isEncryptedValue(value: string | null | undefined): boolean {
+    if (typeof value !== 'string') return false;
+    return (
+        value.startsWith(VERSION_PREFIX_V1) ||
+        value.startsWith(VERSION_PREFIX_V2)
+    );
+}
+
+/**
+ * Return the envelope version for a ciphertext, or null if the input
+ * is not a recognised encrypted value. The encryption middleware
+ * dispatches on this to route each ciphertext to the right key.
+ */
+export function getCiphertextVersion(
+    value: string | null | undefined,
+): 'v1' | 'v2' | null {
+    if (typeof value !== 'string') return null;
+    if (value.startsWith(VERSION_PREFIX_V1)) return 'v1';
+    if (value.startsWith(VERSION_PREFIX_V2)) return 'v2';
+    return null;
+}
+
+// ─── Per-tenant (v2) primitives ──────────────────────────────────────
+//
+// Epic B.2 — encrypt/decrypt with an explicit key (the tenant DEK).
+// These mirror `encryptField` / `decryptField` but take the key as an
+// argument instead of deriving it from the global master material.
+// Same AES-256-GCM, same IV length, same tag length — only the key
+// and envelope prefix change.
+//
+// **Never** pass the global KEK through these functions. Their
+// version prefix declares "tenant DEK"; mixing would make rotation
+// and key-purpose separation meaningless. The middleware is the
+// single call site that picks the right primitive based on context.
+
+/**
+ * Validate that a buffer is usable as an AES-256 key. 32 bytes
+ * exactly, not empty. Centralised so callers can't slip a shorter
+ * key past the type system.
+ */
+function assertAesKey(key: Buffer, where: string): void {
+    if (!Buffer.isBuffer(key)) {
+        throw new Error(`${where}: key must be a Buffer`);
+    }
+    if (key.length !== KEY_LENGTH) {
+        throw new Error(
+            `${where}: key must be exactly ${KEY_LENGTH} bytes (got ${key.length})`,
+        );
+    }
+}
+
+/**
+ * Encrypt a plaintext using the provided AES-256 key (the caller's
+ * tenant DEK). Returns a `v2:` envelope — the middleware and
+ * `getCiphertextVersion()` dispatch on this prefix to pick the right
+ * key path on decryption.
+ *
+ * Same AES-256-GCM + fresh random 96-bit IV + 128-bit auth tag as
+ * `encryptField`. Do NOT reuse keys across tenants; the per-tenant
+ * isolation guarantee is that each tenant's ciphertexts are only
+ * decryptable with that tenant's DEK.
+ */
+export function encryptWithKey(key: Buffer, plaintext: string): string {
+    assertAesKey(key, 'encryptWithKey');
+    if (plaintext === null || plaintext === undefined) {
+        throw new Error(
+            'encryptWithKey: plaintext must not be null or undefined',
+        );
+    }
+    const iv = crypto.randomBytes(IV_LENGTH);
+    const cipher = crypto.createCipheriv(ALGORITHM, key, iv, {
+        authTagLength: AUTH_TAG_LENGTH,
+    });
+    const encrypted = Buffer.concat([
+        cipher.update(plaintext, 'utf8'),
+        cipher.final(),
+    ]);
+    const tag = cipher.getAuthTag();
+    const combined = Buffer.concat([iv, encrypted, tag]);
+    return VERSION_PREFIX_V2 + combined.toString('base64');
+}
+
+/**
+ * Decrypt a `v2:` envelope with the provided AES-256 key. Rejects
+ * `v1:` envelopes with a clear error message — the global-KEK path
+ * is `decryptField`, not this function. Splitting the API prevents
+ * a caller from accidentally trying tenant DEKs against global-KEK
+ * ciphertexts and silently getting a GCM auth failure for the wrong
+ * reason.
+ */
+export function decryptWithKey(key: Buffer, ciphertext: string): string {
+    assertAesKey(key, 'decryptWithKey');
+    if (!ciphertext || !ciphertext.startsWith(VERSION_PREFIX_V2)) {
+        throw new Error(
+            'decryptWithKey: expected a v2: ciphertext. v1: ciphertexts ' +
+                'must be decrypted with `decryptField` (global KEK).',
+        );
+    }
+    const payload = ciphertext.slice(VERSION_PREFIX_V2.length);
+    const combined = Buffer.from(payload, 'base64');
+    if (combined.length < IV_LENGTH + AUTH_TAG_LENGTH) {
+        throw new Error('decryptWithKey: ciphertext too short (truncated?)');
+    }
+    const iv = combined.subarray(0, IV_LENGTH);
+    const tag = combined.subarray(combined.length - AUTH_TAG_LENGTH);
+    const encrypted = combined.subarray(
+        IV_LENGTH,
+        combined.length - AUTH_TAG_LENGTH,
+    );
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, {
+        authTagLength: AUTH_TAG_LENGTH,
+    });
+    decipher.setAuthTag(tag);
+    const plaintext = Buffer.concat([
+        decipher.update(encrypted),
+        decipher.final(),
+    ]);
+    return plaintext.toString('utf8');
+}
+
+/**
+ * Decrypt a `v2:` envelope, falling back to a previous tenant DEK on
+ * AES-GCM auth failure. Mirrors the dual-KEK behaviour of
+ * `decryptField` (which falls back to `DATA_ENCRYPTION_KEY_PREVIOUS`
+ * for v1) — but at the per-tenant DEK granularity needed by
+ * `rotateTenantDek`.
+ *
+ * Behaviour:
+ *   - Try `primary` first. Auth-tag match → done.
+ *   - On any failure AND `previous` is non-null → retry with `previous`.
+ *   - If both keys reject (or `previous` is null) → re-throw the
+ *     PRIMARY error so the caller sees "current key doesn't fit", not
+ *     "previous key didn't either" (which would be misleading after
+ *     the rotation completes and the previous slot is cleared).
+ *
+ * The middleware uses this on every v2 read while
+ * `Tenant.previousEncryptedDek` is non-null. The re-encrypt job that
+ * walks v2 ciphertexts under the previous DEK and rewrites them under
+ * the new primary calls `decryptWithKey(previous, ...)` directly —
+ * deliberate, because if a row is supposed to be under the previous
+ * DEK and the primary somehow decrypts it, that's a state we want to
+ * surface as a hard error in the job, not silently accept.
+ */
+export function decryptWithKeyOrPrevious(
+    primary: Buffer,
+    previous: Buffer | null,
+    ciphertext: string,
+): string {
+    try {
+        return decryptWithKey(primary, ciphertext);
+    } catch (primaryErr) {
+        if (!previous) throw primaryErr;
+        try {
+            return decryptWithKey(previous, ciphertext);
+        } catch {
+            throw primaryErr;
+        }
+    }
+}
+
+/**
+ * Clears the cached keys. Useful in tests to simulate key rotation.
+ * @internal
+ */
+export function _resetKeyCache(): void {
+    _cachedEncryptKey = null;
+    _cachedHmacKey = null;
+    _lastKeySource = null;
+    _lastHmacKeySource = null;
+    _cachedPreviousEncryptKey = null;
+    _lastPreviousKeySource = undefined;
+}

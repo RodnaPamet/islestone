@@ -17,6 +17,7 @@
 import { lookupEmail } from '@/lib/auth/email-lookup';
 
 import { prismaTestClient } from './db';
+import { hashForLookup } from '@/lib/security/encryption';
 
 export interface CreateTenantWithOwnerInput {
     name: string;
@@ -35,7 +36,7 @@ export async function createTenantWithOwner(input: CreateTenantWithOwnerInput): 
     const prisma = prismaTestClient();
     const email = lookupEmail(input.ownerEmail);
     const user = await prisma.user.upsert({
-        where: { email },
+        where: { emailHash: hashForLookup(email) },
         update: {},
         create: { email },
         select: { id: true },

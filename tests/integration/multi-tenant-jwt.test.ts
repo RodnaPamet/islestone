@@ -24,7 +24,7 @@ import { makeRequestContext } from '../helpers/make-context';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { PrismaClient } from '@prisma/client';
 import type { Role } from '@prisma/client';
-import { lookupEmail } from '@/lib/auth/email-lookup';
+import { hashForLookup } from '@/lib/security/encryption';
 
 // ─── Pure helper extracted from src/auth.ts jwt callback logic ───
 
@@ -38,7 +38,7 @@ async function buildMembershipsForUser(
     email: string,
 ): Promise<Array<{ slug: string; role: Role; tenantId: string }>> {
     const dbUser = await prisma.user.findUnique({
-        where: { email: lookupEmail(email) },
+        where: { emailHash: hashForLookup(email) },
         include: {
             tenantMemberships: {
                 where: { status: 'ACTIVE' },
@@ -124,7 +124,7 @@ describeFn('R-1 multi-tenant JWT memberships array', () => {
 
     async function createUser(email: string) {
         return prisma.user.upsert({
-            where: { email: lookupEmail(email) },
+            where: { emailHash: hashForLookup(email) },
             create: { email, name: email.split('@')[0] },
             update: {},
         });

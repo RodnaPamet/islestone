@@ -27,7 +27,7 @@ import { appendAuditEntry } from '@/lib/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest, forbidden, gone, internal, ConflictError } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
-import { lookupEmail } from '@/lib/auth/email-lookup';
+import { hashForLookup } from '@/lib/security/encryption';
 import {
     BUILT_IN_SCOPE_REFUSAL,
     builtInScopeRoleMessage,
@@ -106,7 +106,7 @@ export async function createInviteToken(
     const invite = await runInTenantContext(ctx, async (db) => {
         // Guard: reject if there's already an ACTIVE membership for this email.
         const existingUser = await db.user.findUnique({
-            where: { email: lookupEmail(normalizedEmail) },
+            where: { emailHash: hashForLookup(normalizedEmail) },
             select: { id: true },
         });
         if (existingUser) {

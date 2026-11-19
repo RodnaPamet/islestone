@@ -39,7 +39,7 @@ import { env } from '@/env';
 import { sendEmail } from '@/lib/mailer';
 import { logger } from '@/lib/observability/logger';
 import { recordVerificationEmailDelivery } from '@/lib/observability/metrics';
-import { lookupEmail } from '@/lib/auth/email-lookup';
+import { hashForLookup } from '@/lib/security/encryption';
 
 import {
     recordEmailVerificationIssued,
@@ -245,7 +245,7 @@ export async function consumeEmailVerification(
 
     const identifier = record.identifier;
     const user = await prisma.user.findUnique({
-        where: { email: lookupEmail(identifier) },
+        where: { emailHash: hashForLookup(identifier) },
         select: { id: true, email: true, emailVerified: true },
     });
     if (!user) {

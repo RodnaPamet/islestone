@@ -11,11 +11,23 @@
 --  direction — a statement the diff produces that is not listed here, and
 --  a statement listed here that the diff no longer produces.
 --
---  The residue is EMPTY: the migrations reproduce the schema exactly.
---  Adding a line here is the one edit that can hide a real defect, so a
+--  The residue holds ONE statement, below, with its reason. Otherwise the
+--  migrations reproduce the schema exactly. Adding a line here is the one edit that can hide a real defect, so a
 --  line is added only for a divergence that is intentional, with a
 --  comment group above it saying why. Widening this file is not a way to
 --  make new drift pass.
 -- ════════════════════════════════════════════════════════════════════
 
 -- ==== EXPECTED RESIDUE BEGINS BELOW ====
+
+-- ── GROUP 1 — User.emailHash: nullable in the schema, NOT NULL in the DB ──
+--
+-- Deliberate (sub-phase 1.5; inflect-compliance GAP-21, the same line in its
+-- residue). The PII extension (src/lib/security/pii-middleware.ts) fills
+-- `emailHash` from `email` on every write, so the schema's `String?` keeps
+-- every `prisma.user.create` from having to name it, while the database's
+-- NOT NULL refuses any row that skipped the extension. A "fix" in either
+-- direction is a defect: a required schema field forces the hash into every
+-- create site, a nullable column lets a row without a hash break sign-in.
+-- tests/guards/pii-hash-not-null.test.ts pins both halves.
+ALTER TABLE "User" ALTER COLUMN "emailHash" DROP NOT NULL;
