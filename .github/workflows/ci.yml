@@ -279,6 +279,113 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
+  # Sub-phase 1.8: both container images, built on every pull request so the
+  # Dockerfile cannot rot, and never pushed (publishing is release.yml's, on
+  # main only). Each image is then started far enough to prove it is what the
+  # compose file expects, and scanned by Trivy.
+  image:
+    name: Image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      # The Trivy SARIF upload to the Security tab.
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the app image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          target: app
+          push: false
+          load: true
+          tags: islestone:ci-${{ github.sha }}
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+          cache-from: type=gha,scope=islestone-image
+          cache-to: type=gha,scope=islestone-image,mode=max,ignore-error=true
+      - name: Build the worker image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          target: worker
+          push: false
+          load: true
+          tags: islestone-worker:ci-${{ github.sha }}
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+          cache-from: type=gha,scope=islestone-image
+          cache-to: type=gha,scope=islestone-image,mode=max,ignore-error=true
+      # What the compose file and the runbook rely on, read out of the built
+      # images: a non-root user, the standalone server and the migration head
+      # in the app, the bundles and a runnable Prisma CLI in the worker, no npm
+      # in either, and the build's commit baked in.
+      - name: Inspect the images
+        env:
+          APP: islestone:ci-${{ github.sha }}
+          WORKER: islestone-worker:ci-${{ github.sha }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for image in "$APP" "$WORKER"; do
+            test "$(docker run --rm --entrypoint id "$image" -u)" = "1000"
+            test "$(docker run --rm --entrypoint printenv "$image" BUILD_SHA)" = "$SHA"
+            docker run --rm --entrypoint sh "$image" -c '! command -v npm && test -s .migration-head && test -s NOTICE && test -s LICENSE'
+          done
+          docker run --rm --entrypoint sh "$APP" -c 'test -f server.js && test -d .next/static && test ! -d node_modules/prisma'
+          docker run --rm --entrypoint sh "$WORKER" -c 'test -f dist/worker.mjs && test -f dist/scheduler.mjs && test -f dist/worker-healthcheck.mjs'
+          docker run --rm --entrypoint node_modules/.bin/prisma "$WORKER" --version
+      # Report-only until the date below (owner decision 47, 2026-11-19): the
+      # scan publishes SARIF and never fails the job. After two clean weeks it
+      # becomes blocking: set exit-code "1" here and in release.yml and delete
+      # the marker. tests/guards/security-scan-deferral.test.ts fails CI once
+      # the date has passed while the scan is still non-blocking.
+      # TRIVY-NON-BLOCKING-UNTIL: 2026-12-03
+      - name: Trivy scan of the app image (CRITICAL, HIGH)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: islestone:ci-${{ github.sha }}
+          format: sarif
+          output: trivy-app.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          vuln-type: os,library
+          exit-code: '0'
+          timeout: 15m
+      - name: Trivy scan of the worker image (CRITICAL, HIGH)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: islestone-worker:ci-${{ github.sha }}
+          format: sarif
+          output: trivy-worker.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          vuln-type: os,library
+          exit-code: '0'
+          timeout: 15m
+      # A pull request from a fork cannot write to the Security tab; the
+      # upload is reporting, not the scan, so its failure fails nothing.
+      - name: Upload the app scan to GitHub Security
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-app.sarif
+          category: trivy-image-app
+      - name: Upload the worker scan to GitHub Security
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-worker.sarif
+          category: trivy-image-worker
+
   e2e:
     name: E2E
     needs: build

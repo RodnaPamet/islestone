@@ -23,3 +23,14 @@ updates:
     groups:
       actions:
         patterns: ['*']
+  # Sub-phase 1.8: the Node base image in the Dockerfile, and the pinned
+  # Postgres, PgBouncer, Redis and Watchtower images in the production compose
+  # file (the app's own images move with every merge, not through Dependabot).
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    schedule:
+      interval: weekly
