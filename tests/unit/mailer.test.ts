@@ -4,19 +4,37 @@
  * `mailer.ts` is a small provider-strategy module with a mutable
  * module-level singleton. The branches worth pinning:
  *
- *   - the singleton get/set/sendEmail delegation
+ *   - the singleton get/set/sendEmail delegation, and the lazy init on the
+ *     first send of a module copy nothing initialised
  *   - StubEmailProvider record + reset
- *   - initMailerFromEnv: no SMTP transport is installed (nodemailer awaits a
- *     licence decision), so it keeps the console sink either way, and says
- *     so — an error when SMTP_HOST is set, a warning in production without it.
+ *   - NodemailerProvider's conditional `auth` / `secure` / `html` /
+ *     `bcc` / `from`-override spreads (each is an `&&` branch)
+ *   - initMailerFromEnv: SMTP_HOST set → swap to Nodemailer (credentials
+ *     never logged); unset → keep the console sink, and warn in production
  *   - no log line carries a recipient's address (or the body, which greets
  *     them by name): the console sink logs `hashForLookup` of each address and
  *     the template (owner decision, 2026-11-19).
  *
+ * nodemailer is mocked so no real transport is constructed; the test asserts
+ * the exact config object handed to createTransport.
+ *
  * Copied from inflect-compliance `tests/unit/mailer.test.ts` at
- * 5528464fc54a8681956f3b9ce23ca9c075f0420e, without the NodemailerProvider
- * cases (no transport is ported) and with Islestone's reserved domain.
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e, with Islestone's reserved domain,
+ * the env read through the `@/env` mock, and the logging, lazy-init and
+ * credential cases added.
  */
+const createTransportMock = jest.fn();
+const sendMailMock = jest.fn().mockResolvedValue(undefined);
+
+jest.mock('nodemailer', () => ({
+    __esModule: true,
+    default: {
+        createTransport: (...args: unknown[]) => {
+            createTransportMock(...args);
+            return { sendMail: sendMailMock };
+        },
+    },
+}));
 jest.mock('@/lib/observability/logger', () => ({
     logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
@@ -24,7 +42,9 @@ jest.mock('@/lib/observability/logger', () => ({
 import { logger } from '@/lib/observability/logger';
 import {
     ConsoleEmailProvider,
+    NodemailerProvider,
     StubEmailProvider,
+    _resetMailerForTesting,
     getEmailProvider,
     setEmailProvider,
     sendEmail,
@@ -44,8 +64,8 @@ const BASE_MSG: EmailMessage = {
 
 beforeEach(() => {
     jest.clearAllMocks();
-    // Reset the module singleton between tests.
-    setEmailProvider(new ConsoleEmailProvider());
+    // Reset the module singleton (and its lazy-init latch) between tests.
+    _resetMailerForTesting();
 });
 
 describe('StubEmailProvider', () => {
@@ -167,12 +187,71 @@ describe('the console sink never logs a recipient address', () => {
     });
 });
 
+describe('NodemailerProvider', () => {
+    it('builds an auth block only when user + pass are present', () => {
+        new NodemailerProvider({ host: 'smtp.test', port: 587, user: 'u', pass: 'p', from: 'noreply@test' });
+        expect(createTransportMock).toHaveBeenCalledWith({
+            host: 'smtp.test',
+            port: 587,
+            secure: false, // 587 ≠ 465
+            auth: { user: 'u', pass: 'p' },
+        });
+    });
+
+    it('omits the auth block when credentials are missing', () => {
+        new NodemailerProvider({ host: 'smtp.test', port: 25, from: 'noreply@test' });
+        expect(createTransportMock).toHaveBeenCalledWith({ host: 'smtp.test', port: 25, secure: false });
+    });
+
+    it('sets secure:true for the implicit-TLS port 465', () => {
+        new NodemailerProvider({ host: 'smtp.test', port: 465, from: 'noreply@test' });
+        expect(createTransportMock.mock.calls[0][0].secure).toBe(true);
+    });
+
+    it('send() uses the configured default sender and minimal fields', async () => {
+        await new NodemailerProvider({ host: 'smtp.test', port: 587, from: 'default@test' }).send(BASE_MSG);
+        expect(sendMailMock).toHaveBeenCalledWith({
+            from: 'default@test',
+            to: BASE_MSG.to,
+            subject: BASE_MSG.subject,
+            text: BASE_MSG.text,
+        });
+    });
+
+    it('send() honours per-message from override, html and the BCC mailbox', async () => {
+        await new NodemailerProvider({ host: 'smtp.test', port: 587, from: 'default@test' }).send({
+            ...BASE_MSG,
+            from: 'override@test',
+            html: '<p>rich</p>',
+            bcc: 'copy@test',
+        });
+        expect(sendMailMock).toHaveBeenCalledWith({
+            from: 'override@test',
+            to: BASE_MSG.to,
+            subject: BASE_MSG.subject,
+            text: BASE_MSG.text,
+            html: '<p>rich</p>',
+            bcc: 'copy@test',
+        });
+    });
+
+    it('sendEmail through the transport reports delivered, and logs nothing about the recipient', async () => {
+        setEmailProvider(new NodemailerProvider({ host: 'smtp.test', port: 587, from: 'default@test' }));
+        await expect(sendEmail({ ...BASE_MSG, to: 'person@example.org' })).resolves.toEqual({ delivered: true });
+        expect(sendMailMock).toHaveBeenCalledWith(expect.objectContaining({ to: 'person@example.org' }));
+        const calls = (['info', 'warn', 'error', 'debug'] as const).flatMap(
+            (level) => (logger[level] as unknown as jest.Mock).mock.calls,
+        );
+        expect(JSON.stringify(calls)).not.toContain('person@example.org');
+    });
+});
+
 describe('initMailerFromEnv', () => {
     const ORIGINAL = { ...process.env };
 
     afterEach(() => {
         process.env = { ...ORIGINAL };
-        setEmailProvider(new ConsoleEmailProvider());
+        _resetMailerForTesting();
     });
 
     it('keeps the console provider when SMTP_HOST is unset', () => {
@@ -181,14 +260,59 @@ describe('initMailerFromEnv', () => {
         expect(getEmailProvider()).toBeInstanceOf(ConsoleEmailProvider);
     });
 
-    it('says so loudly when SMTP_HOST is set, and keeps the console sink (no transport is installed)', () => {
+    it('swaps to a Nodemailer provider when SMTP_HOST is set, and never logs the password', () => {
         process.env.SMTP_HOST = 'smtp.configured';
+        process.env.SMTP_PORT = '2525';
+        process.env.SMTP_USER = 'envuser';
+        process.env.SMTP_PASS = 'envpass-secret'; // pragma: allowlist secret
+        process.env.SMTP_FROM = 'env-from@test';
+
         initMailerFromEnv();
-        expect(getEmailProvider()).toBeInstanceOf(ConsoleEmailProvider);
-        expect(logger.error).toHaveBeenCalledWith(
-            expect.stringContaining('no SMTP transport is installed'),
-            expect.objectContaining({ host: 'smtp.configured' }),
+
+        expect(getEmailProvider()).toBeInstanceOf(NodemailerProvider);
+        const cfg = createTransportMock.mock.calls[0][0];
+        expect(cfg.host).toBe('smtp.configured');
+        // The real @/env coerces SMTP_PORT; the Jest mock passes the string,
+        // which the mailer turns into a number either way.
+        expect(cfg.port).toBe(2525);
+        expect(cfg.auth).toEqual({ user: 'envuser', pass: 'envpass-secret' }); // pragma: allowlist secret
+        expect(logger.info).toHaveBeenCalledWith(
+            'Mailer initialised: SMTP transport',
+            expect.objectContaining({ host: 'smtp.configured', port: 2525, hasAuth: true, from: 'env-from@test' }),
         );
+        const logged = JSON.stringify((logger.info as unknown as jest.Mock).mock.calls);
+        expect(logged).not.toContain('envpass-secret');
+    });
+
+    it('applies the default port and sender when only SMTP_HOST is set', () => {
+        process.env.SMTP_HOST = 'smtp.bare';
+        delete process.env.SMTP_PORT;
+        delete process.env.SMTP_USER;
+        delete process.env.SMTP_PASS;
+        delete process.env.SMTP_FROM;
+
+        initMailerFromEnv();
+
+        const cfg = createTransportMock.mock.calls[0][0];
+        expect(cfg.host).toBe('smtp.bare');
+        expect(cfg.port).toBe(587); // documented default
+        expect(cfg.auth).toBeUndefined(); // no creds → no auth block
+    });
+
+    it('the first sendEmail of an uninitialised module copy picks up SMTP from the environment', async () => {
+        process.env.SMTP_HOST = 'smtp.lazy';
+        await expect(sendEmail(BASE_MSG)).resolves.toEqual({ delivered: true });
+        expect(getEmailProvider()).toBeInstanceOf(NodemailerProvider);
+        expect(sendMailMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('the lazy init never replaces a provider a caller set', async () => {
+        process.env.SMTP_HOST = 'smtp.lazy';
+        const stub = new StubEmailProvider();
+        setEmailProvider(stub);
+        await sendEmail(BASE_MSG);
+        expect(getEmailProvider()).toBe(stub);
+        expect(createTransportMock).not.toHaveBeenCalled();
     });
 
     it('warns in production when SMTP_HOST is unset — no email will be delivered', () => {

@@ -2,22 +2,23 @@
  * Email provider abstraction.
  *
  * Providers:
- * - ConsoleEmailProvider: logs the message (dev, and every environment until
- *   an SMTP transport is installed)
+ * - ConsoleEmailProvider: logs the message (dev, and any deployment without
+ *   SMTP configured): it reaches nobody
+ * - NodemailerProvider:   sends through an SMTP relay (production)
  * - StubEmailProvider:    records messages for tests
  *
  * Copied from inflect-compliance `src/lib/mailer.ts` at
- * 5528464fc54a8681956f3b9ce23ca9c075f0420e, WITHOUT its SMTP transport.
- * inflect sends through `nodemailer`, which is licensed MIT-0, and MIT-0 is
- * not on the licence allowlist (`scripts/licence-gate.mjs`): allowing it is an
- * owner decision (ADR 0007). Until then every message goes to the console
- * sink, which logs it, and `sendEmail` reports `delivered: false`, so no
- * caller tells a person "we emailed it" when nothing was sent. The outbox
- * (`processOutbox`) still claims and settles rows exactly as it will with a
- * transport. `initMailerFromEnv` is called from both process entry points so
- * the transport, when it lands, needs no new wiring.
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e. `nodemailer` is MIT-0, allowed by
+ * owner decision of 2026-11-19 (ADR 0007 E8). Changed: the SMTP settings are
+ * read through `@/env`, not raw `process.env`; no log line carries a
+ * recipient's address, the subject or the body (`recipientLogFields`, owner
+ * decision of 2026-11-19); the BCC is the workspace's BCC mailbox.
  */
+import nodemailer from 'nodemailer';
+import type { Transporter } from 'nodemailer';
+
 import { env } from '@/env';
+import { deploymentSenderAddress } from '@/lib/email/sender-identity';
 import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
 
@@ -71,7 +72,7 @@ export interface EmailProvider {
     send(msg: EmailMessage): Promise<void>;
 }
 
-// ─── Console (dev, and every environment until a transport is installed) ───
+// ─── Console (dev, and a deployment without SMTP) ───
 
 export class ConsoleEmailProvider implements EmailProvider {
     async send(msg: EmailMessage): Promise<void> {
@@ -88,10 +89,48 @@ export class ConsoleEmailProvider implements EmailProvider {
         // In production a send hitting the console sink means the email was
         // DROPPED. Log at WARN so it is visible.
         if (env.NODE_ENV === 'production') {
-            logger.warn('Email NOT delivered — mailer is on the console sink (no SMTP transport is installed)', fields);
+            logger.warn('Email NOT delivered — mailer is on the console sink (SMTP unconfigured or uninitialised)', fields);
         } else {
             logger.debug('Email sent (dev console sink)', fields);
         }
+    }
+}
+
+// ─── Nodemailer (production SMTP) ───
+
+export interface SmtpConfig {
+    host: string;
+    port: number;
+    user?: string;
+    pass?: string;
+    from: string;
+}
+
+export class NodemailerProvider implements EmailProvider {
+    private readonly transporter: Transporter;
+    private readonly from: string;
+
+    constructor(config: SmtpConfig) {
+        this.transporter = nodemailer.createTransport({
+            host: config.host,
+            port: config.port,
+            // 465 is implicit TLS; every other port upgrades with STARTTLS.
+            secure: config.port === 465,
+            ...(config.user && config.pass ? { auth: { user: config.user, pass: config.pass } } : {}),
+        });
+        this.from = config.from;
+    }
+
+    async send(msg: EmailMessage): Promise<void> {
+        await this.transporter.sendMail({
+            from: msg.from || this.from,
+            to: msg.to,
+            subject: msg.subject,
+            text: msg.text,
+            ...(msg.html ? { html: msg.html } : {}),
+            ...(msg.bcc ? { bcc: msg.bcc } : {}),
+            ...(msg.attachments ? { attachments: msg.attachments } : {}),
+        });
     }
 }
 
@@ -112,6 +151,7 @@ export class StubEmailProvider implements EmailProvider {
 // ─── Singleton ───
 
 let provider: EmailProvider = new ConsoleEmailProvider();
+let envInitAttempted = false;
 
 export function setEmailProvider(p: EmailProvider) {
     provider = p;
@@ -123,7 +163,9 @@ export function getEmailProvider(): EmailProvider {
 
 /**
  * What a send did with the message. `delivered` is false when the message
- * went to the console sink and reached nobody.
+ * went to the console sink and reached nobody: a caller that tells a person
+ * "we emailed it" must read this, because a send that resolves is not, by
+ * itself, a delivery.
  */
 export interface EmailDelivery {
     delivered: boolean;
@@ -140,6 +182,15 @@ export function isUndeliverableRecipient(to: string): boolean {
 
 export async function sendEmail(msg: EmailMessage): Promise<EmailDelivery> {
     if (isUndeliverableRecipient(msg.to)) return { delivered: false };
+    // Lazy, per-module-instance init (inflect-compliance): a bundler can load
+    // this module in a different chunk for a route handler than the one the
+    // startup hook initialised, leaving that copy on the console sink. So the
+    // first real send initialises from the environment, unless a caller set a
+    // provider explicitly (tests' stub, `setEmailProvider`).
+    if (!envInitAttempted && provider instanceof ConsoleEmailProvider) {
+        envInitAttempted = true;
+        initMailerFromEnv();
+    }
     // Read the provider once, so the answer describes the transport that
     // actually took this message.
     const transport = provider;
@@ -150,22 +201,44 @@ export async function sendEmail(msg: EmailMessage): Promise<EmailDelivery> {
 /**
  * Initialize the provider from environment variables. Called once at process
  * start by `src/instrumentation-node.ts` and `scripts/worker.ts`
- * (`tests/guards/mailer-init-wiring.test.ts` holds both).
+ * (`tests/guards/mailer-init-wiring.test.ts` holds both), and lazily by the
+ * first `sendEmail` in a module copy nothing initialised.
  *
- * There is no SMTP transport yet (see the module header), so this only
- * reports what the deployment asked for: an `SMTP_HOST` that cannot be used
- * is an error, and none at all in production is a warning, because either way
- * no email leaves the process.
+ * Read through `@/env`. inflect-compliance read `process.env.SMTP_*` raw,
+ * because one of its route chunks held a copy of its env module without the
+ * server variables; Islestone's rule forbids the raw read, and the lazy init
+ * above covers a chunk that was never initialised.
+ *
+ * `SMTP_HOST` set: the SMTP transport, from `deploymentSenderAddress()`, with
+ * credentials when both `SMTP_USER` and `SMTP_PASS` are set (the log line
+ * says whether, never what). Unset: the console sink stays, and production
+ * says so at WARN, because no email leaves the process.
  */
 export function initMailerFromEnv(): void {
-    if (env.SMTP_HOST) {
-        logger.error(
-            'SMTP_HOST is set but no SMTP transport is installed (nodemailer awaits a licence decision); email stays on the console sink',
-            { component: 'mailer', host: env.SMTP_HOST },
-        );
+    const host = env.SMTP_HOST;
+    if (host) {
+        const port = env.SMTP_PORT !== undefined ? Number(env.SMTP_PORT) : 587;
+        const user = env.SMTP_USER || undefined;
+        const pass = env.SMTP_PASS || undefined;
+        const from = deploymentSenderAddress();
+        setEmailProvider(new NodemailerProvider({ host, port, user, pass, from }));
+        logger.info('Mailer initialised: SMTP transport', {
+            component: 'mailer',
+            host,
+            port,
+            secure: port === 465,
+            hasAuth: !!(user && pass),
+            from,
+        });
     } else if (env.NODE_ENV === 'production') {
         logger.warn('Mailer on console sink — SMTP_HOST unset; email will not be delivered', {
             component: 'mailer',
         });
     }
+}
+
+/** Test seam: forget that the lazy init ran, so a test can exercise it again. */
+export function _resetMailerForTesting(): void {
+    provider = new ConsoleEmailProvider();
+    envInitAttempted = false;
 }
