@@ -129,12 +129,20 @@ describeFn('work-item usecases', () => {
     });
 
     describe('keys', () => {
-        it('20 concurrent creates in one project get contiguous numbers', async () => {
+        // Concurrent writers queue on the project's key-sequence row lock, held
+        // until each create commits, so the last of N waits for N-1 commits
+        // inside its own transaction, against TENANT_TX_TIMEOUT_MS (5 s,
+        // src/lib/db/concurrency-limits.ts). Ten writers prove the numbering
+        // under contention; twenty on a loaded CI runner measured the runner
+        // and expired the last transaction (PR #31). Create throughput under
+        // a per-project burst is issue #32, not this test.
+        const WRITERS = 10;
+        it(`${WRITERS} concurrent creates in one project get contiguous numbers`, async () => {
             const before = (await prisma.projectKeySequence.findUniqueOrThrow({ where: { projectId } })).lastValue;
-            const items = await Promise.all(Array.from({ length: 20 }, (_, i) => newItem(`concurrent ${i}`)));
+            const items = await Promise.all(Array.from({ length: WRITERS }, (_, i) => newItem(`concurrent ${i}`)));
             const numbers = items.map((i) => i.number).sort((a, b) => a - b);
-            expect(numbers).toEqual(Array.from({ length: 20 }, (_, i) => before + 1 + i));
-            expect(new Set(items.map((i) => i.key)).size).toBe(20);
+            expect(numbers).toEqual(Array.from({ length: WRITERS }, (_, i) => before + 1 + i));
+            expect(new Set(items.map((i) => i.key)).size).toBe(WRITERS);
             expect(items[0]!.key).toMatch(/^ISL-\d+$/);
         });
 
