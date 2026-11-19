@@ -138,12 +138,17 @@ describe('licence declarations', () => {
         expect(normaliseDeclaration({ license: '(MIT OR ISC) AND 0BSD' })).toMatchObject({ expression: '(MIT OR ISC) AND 0BSD' });
     });
 
-    it.each(['CC0-1.0', 'MIT-0', 'Python-2.0', 'CC-BY-4.0', 'EPL-2.0'])(
-        'fails %s: the allowlist is roadmap 0.3\'s list plus 0BSD, the Unlicense and BlueOak-1.0.0, and anything else needs an exemption (ADR 0007 E4)',
+    it.each(['CC0-1.0', 'Python-2.0', 'CC-BY-4.0', 'EPL-2.0', 'FSL-1.1-MIT'])(
+        'fails %s: the allowlist is roadmap 0.3\'s list plus 0BSD, the Unlicense, BlueOak-1.0.0, MIT-0 and FSL-1.1-Apache-2.0, and anything else needs an exemption (ADR 0007 E4)',
         (id) => {
             expect(judge({ license: id })).toMatchObject({ verdict: 'fail', code: 'NOT_ALLOWED' });
         },
     );
+
+    it('passes MIT-0 and FSL-1.1-Apache-2.0, which the owner added on 2026-11-19 (ADR 0007 E8, E9), for nodemailer and the Sentry SDK', () => {
+        expect(judge({ license: 'MIT-0' }, 'nodemailer')).toMatchObject({ verdict: 'pass', relied: ['MIT-0'] });
+        expect(judge({ license: 'FSL-1.1-Apache-2.0' }, 'sentry')).toMatchObject({ verdict: 'pass', relied: ['FSL-1.1-Apache-2.0'] });
+    });
 
     it('passes 0BSD, which the owner added to the allowlist on 2026-11-18 (ADR 0007 E2b), so tslib needs no exemption', () => {
         expect(judge({ license: '0BSD' }, 'tslib')).toMatchObject({ verdict: 'pass', relied: ['0BSD'], notices: [] });
@@ -254,8 +259,8 @@ describe('licence declarations', () => {
         expect(judge({ license: '(MPL-2.0 OR Apache-2.0)' })).toMatchObject({ verdict: 'pass', relied: ['Apache-2.0'], notices: [] });
     });
 
-    it('holds exactly roadmap 0.3\'s licences, with BSD read as the 2- and 3-clause forms, plus 0BSD (ADR 0007 E2b)', () => {
-        expect([...ALLOWED_LICENCES].sort()).toEqual(['0BSD', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'BlueOak-1.0.0', 'ISC', 'MIT', 'MPL-2.0', 'PostgreSQL', 'Unlicense']);
+    it('holds exactly roadmap 0.3\'s licences, with BSD read as the 2- and 3-clause forms, plus 0BSD, the Unlicense, BlueOak-1.0.0, MIT-0 and FSL-1.1-Apache-2.0 (ADR 0007 E2b, E6–E9)', () => {
+        expect([...ALLOWED_LICENCES].sort()).toEqual(['0BSD', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'BlueOak-1.0.0', 'FSL-1.1-Apache-2.0', 'ISC', 'MIT', 'MIT-0', 'MPL-2.0', 'PostgreSQL', 'Unlicense']);
     });
 
     it('compares expressions by meaning, not spelling', () => {

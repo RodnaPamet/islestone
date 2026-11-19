@@ -317,12 +317,26 @@ export const env = createEnv({
          */
         npm_package_version: z.string().optional(),
         /**
-         * SMTP relay host. There is no SMTP transport yet (nodemailer is
-         * MIT-0, which the licence allowlist does not list: an owner
-         * decision), so when this is set the mailer logs that mail stays on
-         * the console sink (src/lib/mailer.ts, `initMailerFromEnv`).
+         * SMTP relay host. Set, the mailer sends through nodemailer
+         * (src/lib/mailer.ts, `initMailerFromEnv`); unset, mail goes to the
+         * console sink, and production says so at WARN.
          */
         SMTP_HOST: z.string().min(1).optional(),
+        /** SMTP port. Defaults to 587; 465 means implicit TLS. */
+        SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
+        /** SMTP user; with SMTP_PASS, the relay's credentials. Both or neither. */
+        SMTP_USER: z.string().min(1).optional(),
+        /** SMTP password. A secret: never logged. */
+        SMTP_PASS: z.string().min(1).optional(),
+        /**
+         * Sentry project DSN. Unset, the Sentry SDK is never initialised and
+         * every capture is a no-op (src/lib/observability/sentry.ts).
+         */
+        SENTRY_DSN: z.url().optional(),
+        /** The Sentry environment tag. Defaults to NODE_ENV. */
+        SENTRY_ENVIRONMENT: z.string().min(1).optional(),
+        /** Sentry performance sample rate, 0 to 1. Defaults to 0 (tracing is OpenTelemetry's). */
+        SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).optional(),
         /**
          * The deployment's sender address: the fallback `From` for every
          * outbound email (src/lib/email/sender-identity.ts). Unset, the
@@ -377,7 +391,13 @@ export const env = createEnv({
         OTEL_EXPORTER_OTLP_ENDPOINT: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
         npm_package_version: process.env.npm_package_version,
         SMTP_HOST: process.env.SMTP_HOST,
+        SMTP_PORT: process.env.SMTP_PORT,
+        SMTP_USER: process.env.SMTP_USER,
+        SMTP_PASS: process.env.SMTP_PASS,
         SMTP_FROM: process.env.SMTP_FROM,
+        SENTRY_DSN: process.env.SENTRY_DSN,
+        SENTRY_ENVIRONMENT: process.env.SENTRY_ENVIRONMENT,
+        SENTRY_TRACES_SAMPLE_RATE: process.env.SENTRY_TRACES_SAMPLE_RATE,
     },
 
     skipValidation: skipEnvValidation(),
