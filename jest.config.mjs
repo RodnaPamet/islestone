@@ -172,10 +172,10 @@ const config = {
             testMatch: ['<rootDir>/tests/integration/**/*.test.ts'],
             globalSetup: '<rootDir>/tests/setup/integration-global-setup.ts',
             setupFiles: ['<rootDir>/jest.setup.ts', '<rootDir>/tests/setup/integration-env.ts'],
-            setupFilesAfterEnv: ['<rootDir>/tests/setup/disconnect-after-suite.ts'],
-            // Real database round trips, advisory-lock waits and a cold
-            // Prisma client: the 5 s default is too tight.
-            testTimeout: 30_000,
+            // `integration-timeout.ts` raises the per-test timeout to 30 s
+            // (real database round trips, advisory-lock waits, a cold Prisma
+            // client). Not `testTimeout`: Jest ignores it inside a project.
+            setupFilesAfterEnv: ['<rootDir>/tests/setup/integration-timeout.ts', '<rootDir>/tests/setup/disconnect-after-suite.ts'],
         },
     ],
 };
