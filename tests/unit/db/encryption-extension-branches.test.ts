@@ -216,7 +216,12 @@ describe('withEncryptionExtension — the `*` fan-out arm for unmanifested model
         expect(rows[0].treatmentNotes).toBe('fan-out plaintext');
     });
 
-    it('encrypts a manifest FIELD NAME written through an unmanifested model', async () => {
+    it('does NOT encrypt a manifest FIELD NAME on an unmanifested model\'s own row (Islestone, sub-phase 2.2)', async () => {
+        // The top-level model is known. A column outside the manifest that
+        // merely shares a manifest field's name (`Notification.body` beside
+        // `Comment.body`) must stay as written: sealed by fan-out, it would
+        // sit outside the rotation sweeps and become unreadable after a DEK
+        // rotation.
         const handler = captureHandler();
         let seen: { data: { treatmentNotes: string; name: string } } | undefined;
         const query = jest.fn(async (args: unknown): Promise<unknown> => {
@@ -231,8 +236,28 @@ describe('withEncryptionExtension — the `*` fan-out arm for unmanifested model
             query,
         });
 
-        expect(isEncryptedValue(seen!.data.treatmentNotes)).toBe(true);
+        expect(seen!.data.treatmentNotes).toBe('secret note');
         expect(seen!.data.name).toBe('ISO 27001');
+    });
+
+    it('still encrypts a manifest FIELD NAME in a NESTED write under an unmanifested model', async () => {
+        // A nested create's target model is not named by the payload, so the
+        // fan-out by field name stays for it.
+        const handler = captureHandler();
+        let seen: { data: { name: string; notes: { create: { treatmentNotes: string } } } } | undefined;
+        const query = jest.fn(async (args: unknown): Promise<unknown> => {
+            seen = clone(args) as typeof seen;
+            return null;
+        });
+
+        await handler({
+            model: 'Framework',
+            operation: 'create',
+            args: { data: { name: 'ISO 27001', notes: { create: { treatmentNotes: 'nested secret' } } } },
+            query,
+        });
+
+        expect(isEncryptedValue(seen!.data.notes.create.treatmentNotes)).toBe(true);
     });
 
     it('leaves an unmanifested model with no manifest field names entirely alone', async () => {
