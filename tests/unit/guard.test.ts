@@ -36,6 +36,10 @@ describe('isPublicPath', () => {
         ['/api/invites/abc123/start-signin', true],
         ['/api/org/invite/abc123/start-signin', true],
         ['/api/org/invite/abc123', true],
+        // Islestone: the placeholder home page and the UI gallery stay public
+        // as they were before sub-phase 1.4 (exact matches only).
+        ['/', true],
+        ['/gallery', true],
     ])('"%s" → %s (public)', (path, expected) => {
         expect(isPublicPath(path)).toBe(expected);
     });
@@ -47,7 +51,8 @@ describe('isPublicPath', () => {
         ['/admin', false],
         ['/admin/users', false],
         ['/settings', false],
-        ['/', false],
+        ['/gallery/anything', false],
+        ['/tenants', false],
         ['/t/acme/dashboard', false],
         ['/api/t/acme/risks', false],
         // Org invite *management* (create/list/revoke) is admin-only and
