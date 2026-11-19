@@ -10,6 +10,12 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # Islestone runs Node 24 (.nvmrc, CI, production). Type definitions for
+      # a newer Node major describe APIs the runtime does not have, so
+      # @types/node follows the runtime major and moves with .nvmrc.
+      - dependency-name: '@types/node'
+        versions: ['>=25']
   - package-ecosystem: github-actions
     directory: /
     schedule:
