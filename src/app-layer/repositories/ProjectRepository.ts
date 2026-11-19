@@ -174,6 +174,7 @@ export class ProjectRepository {
     /** Lock two projects' sequences in id order (moves): Kaneo `move-task.ts`'s lesson. */
     static async lockSequences(db: PrismaTx, ctx: RequestContext, projectIds: readonly string[]): Promise<void> {
         for (const id of [...new Set(projectIds)].sort()) {
+            // guardrail-allow: n+1 — at most two rows, locked one by one in a fixed order.
             await db.$queryRaw`
                 SELECT "projectId" FROM "ProjectKeySequence"
                  WHERE "projectId" = ${id} AND "tenantId" = ${ctx.tenantId} FOR UPDATE`;

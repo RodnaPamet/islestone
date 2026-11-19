@@ -34,6 +34,7 @@ import {
 } from '@/app-layer/usecases/work-item';
 import { addComment, addWatcher, deleteComment, editComment, listComments, watchWorkItem } from '@/app-layer/usecases/work-item-collab';
 import { updateWorkflowState, deleteWorkflowState } from '@/app-layer/usecases/workflow-state';
+import { removeTenantMember } from '@/app-layer/usecases/tenant-admin';
 import { verifyAuditChain } from '@/lib/audit';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 
@@ -254,7 +255,7 @@ describeFn('work-item usecases', () => {
             const deleted = await listDeletedWorkItems(owner);
             expect(deleted.rows.map((r) => r.id)).toEqual(expect.arrayContaining([parent.id, child.id, grandchild.id]));
             await restoreWorkItem(owner, grandchild.id);
-            expect((await getWorkItem(owner, parent.id)).deletedAt).toBeUndefined();
+            expect((await getWorkItem(owner, parent.id)).id).toBe(parent.id);
             await getWorkItem(owner, grandchild.id);
             // The separately deleted sibling stays deleted.
             await expect(getWorkItem(owner, separate.id)).rejects.toMatchObject({ status: 404 });
@@ -389,6 +390,17 @@ describeFn('work-item usecases', () => {
             expect(bell?.dedupeKey).toContain(item.id);
             expect(await prisma.notificationOutbox.count({ where: { tenantId, type: 'WORK_ITEM_ASSIGNED' } })).toBeGreaterThan(0);
         });
+    });
+
+    it('removing a member unassigns their items first (ADR 0003 §1, the RESTRICT foreign key)', async () => {
+        const leaver = await prisma.user.create({ data: { email: `leaver-${TAG}@example.test` } });
+        const membership = await prisma.tenantMembership.create({ data: { tenantId, userId: leaver.id, role: 'MEMBER' } });
+        const item = await newItem('assigned to a leaver', { assigneeId: leaver.id });
+        // The database refuses the dangling assignee on its own.
+        await expect(prisma.tenantMembership.delete({ where: { id: membership.id } })).rejects.toThrow();
+        await removeTenantMember(owner, { membershipId: membership.id });
+        expect((await getWorkItem(owner, item.id)).assigneeId).toBeNull();
+        expect(await prisma.auditLog.count({ where: { tenantId, action: 'WORK_ITEMS_UNASSIGNED_ON_MEMBER_REMOVAL' } })).toBe(1);
     });
 
     it('the audit chain verifies', async () => {

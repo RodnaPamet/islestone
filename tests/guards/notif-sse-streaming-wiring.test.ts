@@ -18,8 +18,8 @@
  * Copied from inflect-compliance `tests/guards/notif-sse-streaming-wiring.test.ts`
  * at 5528464fc54a8681956f3b9ce23ca9c075f0420e. Islestone has one stream route,
  * the workspace's (the flat `/api/notifications/stream` used a context 1.3
- * deleted and is not ported); part 3 asserts the two Islestone bell writers in
- * place of `task-due.ts` (2.2); part 4, the bell client, came with the bell
+ * deleted and is not ported); part 3 asserts the Islestone bell writers,
+ * `work-item-due.ts` (2.2) in place of `task-due.ts`; part 4, the bell client, came with the bell
  * in sub-phase 1.7, against the workspace stream only.
  */
 
@@ -114,6 +114,11 @@ describe('PR-C SSE notification streaming wiring', () => {
             {
                 file: 'src/app-layer/notifications/watcher.ts',
                 signature: /publishNotificationEvent\(\s*a\.tenantId,\s*row\.userId,/,
+            },
+            {
+                // Sub-phase 2.2: the due reminder (the source's task-due.ts).
+                file: 'src/app-layer/notifications/work-item-due.ts',
+                signature: /publishNotificationEvent\(\s*tenantId,\s*row\.userId,/,
             },
         ];
 

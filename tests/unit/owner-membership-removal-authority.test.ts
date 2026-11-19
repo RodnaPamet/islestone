@@ -52,6 +52,8 @@ function membershipDb(membership: { role: string; status?: string }, owners = 2)
     };
     const db = {
         $executeRawUnsafe: jest.fn().mockResolvedValue(0),
+        // ADR 0003 §1 step 2: removal unassigns the member's work items first (2.2).
+        workItem: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
         tenantMembership: {
             findFirst: jest.fn().mockResolvedValue(row),
             count: jest.fn().mockResolvedValue(owners),
