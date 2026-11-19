@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import createNextIntlPlugin from 'next-intl/plugin';
 
 // Validate both env modules whenever Next loads this config (dev, build and
 // start), so a bad environment fails at boot rather than on first use.
@@ -21,4 +22,7 @@ const nextConfig: NextConfig = {
     },
 };
 
-export default nextConfig;
+// next-intl reads its request config from src/i18n/request.ts (the plugin's default path).
+const withNextIntl = createNextIntlPlugin();
+
+export default withNextIntl(nextConfig);

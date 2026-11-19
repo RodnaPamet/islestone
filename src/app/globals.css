@@ -1,49 +1,313 @@
 @import 'tailwindcss';
 
+/* Unlayered, after Tailwind: these custom properties are the theme. */
+@import '../styles/tokens.css';
+
 /*
- * Placeholder tokens. The real token set (and its contract) arrives with the
- * shared UI in sub-phase 1.2; until then this block only guarantees a legible
- * page in both themes.
- *
- * Light is the default. Dark applies when the OS asks for it, unless the page
- * pins a theme with data-theme on <html>.
+ * Tailwind 4 detects sources from the working directory, which already reaches
+ * packages/ui; this states the dependency, and keeps it once the package is
+ * consumed from node_modules, which automatic detection skips.
  */
-:root {
-    color-scheme: light;
-    --token-bg: #ffffff;
-    --token-fg: #18181b;
-    --token-muted: #52525b;
-    --token-border: #e4e4e7;
-}
+@source '../../packages/ui/src';
 
-@media (prefers-color-scheme: dark) {
-    :root:not([data-theme='light']) {
-        color-scheme: dark;
-        --token-bg: #0f1115;
-        --token-fg: #f4f4f5;
-        --token-muted: #a1a1aa;
-        --token-border: #27272a;
-    }
-}
+/*
+ * Tests and docs are not UI: their class names (fixtures, guard comments that
+ * quote a class to explain it, the porting maps) would add rules to the shipped
+ * stylesheet, and a quoted fragment such as `bg-[var(…)]` is invalid CSS.
+ */
+@source not '../../tests';
+@source not '../../docs';
 
-:root[data-theme='dark'] {
-    color-scheme: dark;
-    --token-bg: #0f1115;
-    --token-fg: #f4f4f5;
-    --token-muted: #a1a1aa;
-    --token-border: #27272a;
-}
-
-/* Tailwind colours over the tokens: bg-bg, text-fg, text-muted, border-border. */
+/*
+ * The Tailwind theme keys the shared UI writes in its class names
+ * (docs/porting/maps/1.2.md, section 6.3). inflect-compliance keeps them in a
+ * tailwind.config.js `theme.extend`; Islestone states them here in CSS.
+ *
+ * `inline`, because each value is a var() of a token that changes per theme:
+ * a utility must carry the var() itself (`bg-bg-default` paints
+ * `var(--bg-default)`), not a copy of whatever the variable held where the
+ * theme was defined. Where a key has the token's own name (--radius-lg,
+ * --shadow-lg), the utility still reads the token: tokens.css is unlayered,
+ * so its declaration wins over Tailwind's theme layer.
+ */
 @theme inline {
-    --color-bg: var(--token-bg);
-    --color-fg: var(--token-fg);
-    --color-muted: var(--token-muted);
-    --color-border: var(--token-border);
+  --color-bg-default: var(--bg-default);
+  --color-bg-muted: var(--bg-muted);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-page: var(--bg-page);
+  --color-bg-overlay: var(--bg-overlay);
+  --color-bg-success: var(--bg-success);
+  --color-bg-warning: var(--bg-warning);
+  --color-bg-error: var(--bg-error);
+  --color-bg-info: var(--bg-info);
+  --color-bg-success-emphasis: var(--bg-success-emphasis);
+  --color-bg-error-emphasis: var(--bg-error-emphasis);
+
+  --color-content-emphasis: var(--content-emphasis);
+  --color-content-default: var(--content-default);
+  --color-content-muted: var(--content-muted);
+  --color-content-subtle: var(--content-subtle);
+  --color-content-inverted: var(--content-inverted);
+  --color-content-brand: var(--content-brand);
+  --color-content-success: var(--content-success);
+  --color-content-warning: var(--content-warning);
+  --color-content-error: var(--content-error);
+  --color-content-info: var(--content-info);
+
+  --color-border-default: var(--border-default);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-emphasis: var(--border-emphasis);
+  --color-border-strong: var(--border-strong);
+  --color-border-success: var(--border-success);
+  --color-border-warning: var(--border-warning);
+  --color-border-error: var(--border-error);
+  --color-border-info: var(--border-info);
+
+  --color-brand-default: var(--brand-default);
+  --color-brand-emphasis: var(--brand-emphasis);
+  --color-brand-muted: var(--brand-muted);
+  --color-brand-subtle: var(--brand-subtle);
+
+  --color-primary: var(--primary);
+  --color-ring: var(--ring);
+  /* `ring-offset-background` */
+  --color-background: var(--ring-offset-background);
+
+  --radius-sm: var(--radius-sm);
+  --radius: var(--radius);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+
+  --shadow-lg: var(--shadow-lg);
+}
+
+@theme {
+  /* The spacing scale: p-tight, gap-compact, space-y-section, … */
+  --spacing-tight: 0.5rem;
+  --spacing-compact: 0.75rem;
+  --spacing-default: 1rem;
+  --spacing-section: 1.5rem;
+  --spacing-page: 2.5rem;
+
+  /* max-w-trunc-*: truncation widths. */
+  --container-trunc-tight: 14ch;
+  --container-trunc-default: 28ch;
+  --container-trunc-loose: 40ch;
+
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-slide-up-fade: slide-up-fade 0.2s ease-out;
+  --animate-slide-down-fade: slide-down-fade 0.2s ease-out;
+  --animate-modal-fly-in: modal-fly-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --animate-modal-fly-out: modal-fly-out 0.15s ease-in;
+  --animate-fade-in: fade-in 0.15s ease-out;
+  --animate-fade-out: fade-out 0.15s ease-out;
+  --animate-table-pinned-shadow: table-pinned-shadow cubic-bezier(0, 0, 1, 0);
+  --animate-shimmer-sweep: shimmer-sweep 1.6s ease-in-out infinite;
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+  @keyframes slide-up-fade {
+    0% {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes slide-down-fade {
+    0% {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  /* The modal pops from 0.88x with an overshooting ease (tests/guards/modal-fly-in.test.ts). */
+  @keyframes modal-fly-in {
+    0% {
+      opacity: 0;
+      transform: scale(0.88);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @keyframes modal-fly-out {
+    0% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+  }
+  @keyframes fade-in {
+    0% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+  @keyframes fade-out {
+    0% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  @keyframes table-pinned-shadow {
+    0% {
+      filter: drop-shadow(rgba(0, 0, 0, 0.1) -2px 10px 6px);
+    }
+    100% {
+      filter: drop-shadow(rgba(0, 0, 0, 0) -2px 10px 6px);
+    }
+  }
+  @keyframes shimmer-sweep {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
+  }
+}
+
+/* Hides a scroll container's scrollbar but keeps it scrollable. */
+@utility scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 body {
-    background-color: var(--token-bg);
-    color: var(--token-fg);
-    font-family: ui-sans-serif, system-ui, sans-serif;
+  background-color: var(--bg-page);
+  color: var(--content-default);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+/*
+ * Recipes the shared UI names in its class lists (map section 6.4). Each sits
+ * in a layer on purpose: an unlayered rule beats every Tailwind utility at
+ * equal specificity whatever the source order, so a `className` utility on a
+ * `.glass-card` (`p-0`, `bg-…`) would be silently dropped. In `components`,
+ * the recipe is the default and a utility overrides it
+ * (tests/guards/card-padding-cascade.test.ts compiles this file to prove it).
+ */
+@layer components {
+  /* The default <Card elevation="raised"> surface (packages/ui card-variants). */
+  .glass-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    @apply p-4 md:p-5;
+  }
+
+  /* Modal, popover, sheet and undo-toast surfaces: a faint brand pool toward the top edge. */
+  .surface-popup-texture {
+    background: radial-gradient(
+      ellipse 120% 80% at 50% 0%,
+      color-mix(in srgb, var(--bg-default), var(--brand-default) 10%) 0%,
+      color-mix(in srgb, var(--bg-default), var(--brand-default) 4%) 42%,
+      var(--bg-default) 78%,
+      color-mix(in srgb, var(--bg-default), black 9%) 100%
+    );
+    border: 1px solid color-mix(in srgb, var(--border-default), var(--brand-default) 22%);
+    box-shadow:
+      inset 0 1px 0 0 color-mix(in srgb, var(--bg-default), white 20%),
+      var(--shadow-lg);
+  }
+
+  /* Plain-table skeleton (packages/ui skeleton.tsx); mirrors <DataTable>'s row rhythm. */
+  .data-table {
+    @apply w-full text-left text-sm;
+  }
+  .data-table th {
+    @apply px-4 py-2.5 text-xs leading-6 font-semibold tracking-wider uppercase;
+    color: var(--content-muted);
+    background: var(--bg-muted);
+  }
+  .data-table td {
+    @apply border-b px-4 py-2.5 text-sm leading-6;
+    border-color: var(--border-subtle);
+  }
+  .data-table tr:hover td {
+    background: var(--bg-muted);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* An animation, so a utility like any other (packages/ui skeleton.tsx). */
+@layer utilities {
+  .animate-fadeIn {
+    animation: fadeIn 0.3s ease-out;
+  }
+}
+
+/*
+ * Touch targets on coarse pointers (WCAG 2.5.5). Unlayered on purpose: these
+ * are floors, not defaults, and a drive-by utility must not shrink a finger
+ * target. The <Input> and <Button> primitives carry their own floor
+ * (`pointer-coarse:min-h-11`); this covers native `.input` controls and gives
+ * the compact Radix checkbox, radio and switch a 44px transparent hit area.
+ */
+@media (pointer: coarse) {
+  .input {
+    min-height: 44px;
+  }
+
+  [role="checkbox"],
+  [role="radio"],
+  [role="switch"] {
+    position: relative;
+  }
+  [role="checkbox"]::before,
+  [role="radio"]::before,
+  [role="switch"]::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+    background: transparent;
+  }
 }

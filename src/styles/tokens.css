@@ -1,0 +1,216 @@
+/*
+ * Islestone design tokens: the custom properties the shared UI paints with.
+ *
+ * `@inflect/ui` (packages/ui) and the generic components copied into
+ * src/components/ui REQUIRE tokens and ship none. This file defines:
+ *
+ *   - the 47 names of packages/ui/tokens.contract.css, the package's closed
+ *     token contract, in both themes;
+ *   - the 23 more the copied set and the package also read
+ *     (docs/porting/maps/1.2.md, section 6.1): the radius scale, --shadow-lg,
+ *     --ring-offset-background, two `*-emphasis` status fills, the three glass
+ *     tokens behind `.glass-card`, and the 12 chart-series gradient stops;
+ *   - --brand-secondary-default, which the Still Surface button guard asks
+ *     for in both themes.
+ *
+ * Theming: light is the default, on :root. Dark applies to any element under
+ * data-theme="dark", and light can be pinned again under data-theme="light",
+ * so a page can show both themes side by side (the gallery does). Nothing
+ * follows the operating system's preference yet: the theme provider that
+ * flips <html data-theme> arrives with the app shell (sub-phase 1.7).
+ *
+ * Every theme block is a flat list of declarations. tests/rendered/
+ * focus-accent-seam.test.tsx and tests/guards/still-surface-button-material.
+ * test.ts read these blocks and compute WCAG contrast from them, so colours
+ * the guards measure are written as #rrggbb.
+ *
+ * The palette is a deliberately unbranded placeholder. The light values are
+ * the token contract's own neutral fallback (measured there: 34 pairs, none
+ * below the WCAG floor), except --btn-still-danger-lift, whose contract value
+ * gives white text only 3.95:1. The dark values are Islestone's, measured with
+ * the same arithmetic. Islestone's brand is an owner decision still to take.
+ */
+
+/* Theme-independent. */
+:root {
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --glass-blur: 12px;
+}
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surfaces */
+  --bg-page: #ffffff;
+  --bg-default: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #f6f7f8;
+  --bg-muted: #eceef0;
+  --bg-overlay: rgba(0, 0, 0, 0.5);
+  --bg-success: #e8f5ec;
+  --bg-warning: #fdf3e2;
+  --bg-error: #fcebea;
+  --bg-info: #e8f1fb;
+  --bg-success-emphasis: #1c6b3a;
+  --bg-error-emphasis: #c0392b;
+
+  /* Borders. Only --border-strong (and the status borders) carry a 3:1 claim. */
+  --border-subtle: #e3e6e9;
+  --border-default: #c9ced4;
+  --border-emphasis: #9aa2ab;
+  --border-strong: #6e767f;
+  --border-success: #2f8a52;
+  --border-warning: #b07a12;
+  --border-error: #c0392b;
+  --border-info: #2e6fb8;
+
+  /* Brand */
+  --brand-default: #3a6ea5;
+  --brand-emphasis: #2c5580;
+  --brand-muted: #6a93c0;
+  --brand-subtle: #e9f0f7;
+  --brand-secondary-default: #5a6169;
+
+  /* Still Surface button material */
+  --btn-still-top: rgba(255, 255, 255, 0.34);
+  --btn-still-bot: rgba(0, 0, 0, 0.13);
+  --btn-still-lift: 0 1px 2px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.09);
+  --btn-still-press: inset 0 2px 4px rgba(0, 0, 0, 0.22);
+  --btn-still-danger: #c0392b;
+  --btn-still-danger-deep: #8e2a20;
+  --btn-still-danger-lift: #c4433a;
+
+  /* Content: every one paints text, so every one owes 4.5:1. */
+  --content-default: #1f2328;
+  --content-emphasis: #0b0d0f;
+  --content-muted: #5a6169;
+  --content-subtle: #656c74;
+  --content-inverted: #ffffff;
+  --content-brand: #2d5ba8;
+  --content-success: #1c6b3a;
+  --content-warning: #7a4e06;
+  --content-error: #a3261e;
+  --content-info: #1b5a9c;
+
+  /* Form-control edges. --ctrl-edge-focus is a box-shadow, as the package uses it. */
+  --ctrl-edge-rest: #6e767f;
+  --ctrl-edge-hover: #4c545c;
+  --ctrl-edge-focus: 0 0 0 3px rgba(45, 91, 168, 0.25), 0 1px 2px rgba(15, 23, 42, 0.1);
+
+  --primary: #3a6ea5;
+  --ring: #2d5ba8;
+  --ring-offset-background: #ffffff;
+
+  /* The solid focus indicators: aliases of the brand. */
+  --accent-default: var(--brand-default);
+  --accent-emphasis: var(--brand-emphasis);
+
+  --shadow-lg: 0 8px 24px rgba(15, 23, 42, 0.12);
+
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(201, 206, 212, 0.6);
+
+  /* Chart series: six gradient pairs, start (lighter) to end (deeper). */
+  --chart-series-1-start: #3a6ea5;
+  --chart-series-1-end: #2c5580;
+  --chart-series-2-start: #0f766e;
+  --chart-series-2-end: #134e4a;
+  --chart-series-3-start: #7c3aed;
+  --chart-series-3-end: #5b21b6;
+  --chart-series-4-start: #be185d;
+  --chart-series-4-end: #831843;
+  --chart-series-5-start: #15803d;
+  --chart-series-5-end: #14532d;
+  --chart-series-6-start: #b45309;
+  --chart-series-6-end: #78350f;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --bg-page: #0e1116;
+  --bg-default: #161a21;
+  --bg-elevated: #1e232c;
+  --bg-subtle: #1a1e25;
+  --bg-muted: #242a33;
+  --bg-overlay: rgba(0, 0, 0, 0.6);
+  --bg-success: #173323;
+  --bg-warning: #352a14;
+  --bg-error: #3a1c1a;
+  --bg-info: #172a40;
+  --bg-success-emphasis: #15803d;
+  --bg-error-emphasis: #b91c1c;
+
+  /* Borders */
+  --border-subtle: #2a303a;
+  --border-default: #39414d;
+  --border-emphasis: #525c69;
+  --border-strong: #7c8794;
+  --border-success: #3f9a5f;
+  --border-warning: #b8892f;
+  --border-error: #d0574b;
+  --border-info: #4f8cd0;
+
+  /* Brand */
+  --brand-default: #3d78b8;
+  --brand-emphasis: #3a74b3;
+  --brand-muted: #4683c4;
+  --brand-subtle: #1b2a3d;
+  --brand-secondary-default: #a9b1bc;
+
+  /* Still Surface button material */
+  --btn-still-top: rgba(255, 255, 255, 0.16);
+  --btn-still-bot: rgba(0, 0, 0, 0.3);
+  --btn-still-lift: 0 1px 2px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --btn-still-press: inset 0 2px 5px rgba(0, 0, 0, 0.42);
+  --btn-still-danger: #b91c1c;
+  --btn-still-danger-deep: #991b1b;
+  --btn-still-danger-lift: #c62828;
+
+  /* Content */
+  --content-default: #e3e6ea;
+  --content-emphasis: #f4f5f7;
+  --content-muted: #a9b1bc;
+  --content-subtle: #959eaa;
+  --content-inverted: #ffffff;
+  --content-brand: #8fb6e3;
+  --content-success: #6fcf8f;
+  --content-warning: #e8b55a;
+  --content-error: #f08a80;
+  --content-info: #7fb2ee;
+
+  /* Form-control edges */
+  --ctrl-edge-rest: #7c8794;
+  --ctrl-edge-hover: #a9b1bc;
+  --ctrl-edge-focus: 0 0 0 3px rgba(143, 182, 227, 0.3), 0 1px 2px rgba(0, 0, 0, 0.3);
+
+  --primary: #3d78b8;
+  --ring: #8fb6e3;
+  --ring-offset-background: #161a21;
+
+  --accent-default: var(--brand-default);
+  --accent-emphasis: var(--brand-emphasis);
+
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+
+  --glass-bg: rgba(22, 26, 33, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.1);
+
+  --chart-series-1-start: #6a9fd8;
+  --chart-series-1-end: #3d78b8;
+  --chart-series-2-start: #2dd4bf;
+  --chart-series-2-end: #0f766e;
+  --chart-series-3-start: #a78bfa;
+  --chart-series-3-end: #7c3aed;
+  --chart-series-4-start: #f472b6;
+  --chart-series-4-end: #be185d;
+  --chart-series-5-start: #4ade80;
+  --chart-series-5-end: #15803d;
+  --chart-series-6-start: #fbbf24;
+  --chart-series-6-end: #b45309;
+}
