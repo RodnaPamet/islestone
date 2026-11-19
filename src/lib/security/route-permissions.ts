@@ -165,6 +165,26 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'Creating, listing, and revoking pending tenant invites. ' +
             'Changes who can join the tenant — gated under admin.members.',
     },
+
+    // ── Notification settings (sub-phase 1.6) ────────────────────────
+    // Outside `/api/t/:slug/admin/`, so the edge admin gate never applies:
+    // these rules are the route-level gate, with `assertCanAdmin` behind
+    // them in the usecase.
+    {
+        path: new RegExp(`^${T}\\/notification-settings$`),
+        methods: ['GET', 'PUT'],
+        permission: 'admin.manage',
+        note:
+            "The workspace's email sender, BCC mailbox and email switch, and " +
+            'its in-app mute list — read and written only by the OWNER + ADMIN ' +
+            "set the usecase's assertCanAdmin admits.",
+    },
+    {
+        path: new RegExp(`^${T}\\/notification-settings\\/run-job$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note: 'Drains this workspace\'s email outbox now (OWNER + ADMIN).',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────

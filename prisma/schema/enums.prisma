@@ -76,3 +76,26 @@ enum AuditOutboxStatus {
   APPLIED
   FAILED
 }
+
+/// The kind of an in-app `Notification` (sub-phase 1.6). Sub-phase 2.2 adds
+/// `WORK_ITEM_DUE` with the due reminder, 2.7 the mention types, Phase 6 the
+/// agent types. A value is added in a migration of its own, and a reader
+/// ships before its first writer.
+enum NotificationType {
+  GENERAL
+  WORK_ITEM_ASSIGNED
+  WORK_ITEM_WATCH_UPDATE
+}
+
+/// The kind of an outbound email in `NotificationOutbox` (sub-phase 1.6).
+enum EmailNotificationType {
+  WORK_ITEM_ASSIGNED
+  DUE_DIGEST
+}
+
+/// The state of a `NotificationOutbox` row.
+enum EmailOutboxStatus {
+  PENDING
+  SENT
+  FAILED
+}

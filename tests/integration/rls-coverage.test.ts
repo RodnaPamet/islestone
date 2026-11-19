@@ -44,6 +44,13 @@ const describeFn = DB_AVAILABLE ? describe : describe.skip;
 /** Tenant tables app_user may only read and append to (sub-phase 1.5). */
 const APPEND_ONLY_TABLES: readonly string[] = ['AuditLog'];
 
+/**
+ * Tenant tables app_user may read, insert and update but never delete
+ * (sub-phase 1.6): the application never deletes an outbox row or a settings
+ * row; a workspace purge cascades as the table owner.
+ */
+const NO_DELETE_TABLES: readonly string[] = ['NotificationOutbox', 'TenantNotificationSettings'];
+
 describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
     let prisma: PrismaClient;
     let policies: Array<{
@@ -253,9 +260,12 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
         expect([...TENANT_SCOPED_MODELS].sort()).toEqual([
             'AuditLog',
             'AuditOutbox',
+            'Notification',
+            'NotificationOutbox',
             'TenantCustomRole',
             'TenantInvite',
             'TenantMembership',
+            'TenantNotificationSettings',
             'TenantSecuritySettings',
             'UserMfaEnrollment',
             'UserSession',
@@ -273,7 +283,10 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
         );
         const missing: string[] = [];
         for (const table of tables) {
-            for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'DELETE']) {
+            const wanted = NO_DELETE_TABLES.includes(table)
+                ? ['SELECT', 'INSERT', 'UPDATE']
+                : ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
+            for (const privilege of wanted) {
                 const [row] = await prisma.$queryRawUnsafe<Array<{ ok: boolean }>>(
                     `SELECT has_table_privilege('app_user', $1, $2) AS ok`,
                     `"${table}"`,
@@ -283,6 +296,21 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             }
         }
         expect(missing).toEqual([]);
+    });
+
+    test('app_user holds no DELETE or TRUNCATE on the outbox and the notification settings', async () => {
+        const held: string[] = [];
+        for (const table of NO_DELETE_TABLES) {
+            for (const privilege of ['DELETE', 'TRUNCATE']) {
+                const [row] = await prisma.$queryRawUnsafe<Array<{ ok: boolean }>>(
+                    `SELECT has_table_privilege('app_user', $1, $2) AS ok`,
+                    `"${table}"`,
+                    privilege,
+                );
+                if (row?.ok) held.push(`${privilege} ON "${table}"`);
+            }
+        }
+        expect(held).toEqual([]);
     });
 
     test('app_user holds SELECT and INSERT, and nothing more, on the append-only audit trails', async () => {

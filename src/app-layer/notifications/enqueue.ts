@@ -1,0 +1,175 @@
+/**
+ * Enqueue an email into the NotificationOutbox.
+ *
+ * Copied from inflect-compliance `src/app-layer/notifications/enqueue.ts` at
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e, over Islestone's two email types
+ * and the react-email templates (rendering is async, awaited before the
+ * insert). The first caller of `WORK_ITEM_ASSIGNED` is sub-phase 2.2.
+ *
+ * - Builds email content from templates.
+ * - Computes dedupeKey to prevent duplicate sends for the same event.
+ * - Uses Prisma's unique constraint to skip silently on duplicates.
+ * - Logs with requestId for correlation.
+ */
+
+import type { PrismaTx } from '@/lib/db-context';
+import type { EmailNotificationType } from '@prisma/client';
+import { isNotificationsEnabled } from './settings';
+import { logger } from '@/lib/observability/logger';
+import { hashForLookup } from '@/lib/security/encryption';
+import {
+    buildDueDigestEmail,
+    buildWorkItemAssignedEmail,
+    type DueDigestPayload,
+    type EmailTemplateResult,
+    type WorkItemAssignedPayload,
+} from './templates';
+
+/**
+ * The payload each email type takes. Exhaustive over
+ * `EmailNotificationType`: a new enum value fails `tsc` here until it has a
+ * payload and a builder.
+ */
+export interface EmailPayloadByType {
+    WORK_ITEM_ASSIGNED: WorkItemAssignedPayload;
+    DUE_DIGEST: DueDigestPayload;
+}
+
+type EmailPayloadMap = { [K in EmailNotificationType]: EmailPayloadByType[K] };
+
+export type EnqueueEmailInput = {
+    [K in EmailNotificationType]: {
+        tenantId: string;
+        type: K;
+        toEmail: string;
+        entityId: string;
+        payload: EmailPayloadMap[K];
+        sendAfter?: Date;
+        requestId?: string;
+    };
+}[EmailNotificationType];
+
+/**
+ * Build a dedupe key for idempotent email sending.
+ *
+ * Format: `{tenantId}:{type}:{recipientHash}:{entityId}:{YYYY-MM-DD}`
+ *
+ * ─── WHY THE RECIPIENT IS HASHED (#3577) ───────────────────────────────────
+ *
+ * In inflect-compliance this key once embedded the address itself: THE SAME
+ * PERSONAL DATA IN A SECOND PLACE, which is what makes a deletion or a DSAR
+ * incomplete — anything that redacts or encrypts `toEmail` (Islestone encrypts
+ * it, src/lib/security/pii-middleware.ts) leaves the address intact in a
+ * uniquely-indexed column with no retention rule of its own.
+ *
+ * ─── WHY `hashForLookup` AND NOT A NEW CONSTRUCTION ────────────────────────
+ *
+ * Because the repository already solved this exact problem. `hashForLookup` is
+ * the blind-index primitive behind `User.emailHash`, which sign-in uses to find
+ * a user without storing the address in the clear:
+ * HMAC-SHA256 under an HKDF-derived subkey of `DATA_ENCRYPTION_KEY`, with the
+ * production-required / dev-fallback handling already in place. Inventing a
+ * second keyed hash here would have meant a second key to source, a second
+ * rotation story and a second thing to get wrong.
+ *
+ * KEYED, not a bare digest, and that distinction is the whole value: an
+ * unkeyed SHA-256 of a corporate address is reversible by dictionary attack
+ * over a known user base, so it would pseudonymise nothing.
+ *
+ * ─── CASE ───────────────────────────────────────────────────────────────────
+ *
+ * `hashForLookup` lowercases and trims before hashing, so `Alice@acme.com` and
+ * `alice@acme.com` produce the SAME key and the second is deduped away: one
+ * mailbox, one notification.
+ */
+export function buildDedupeKey(
+    tenantId: string,
+    type: string,
+    email: string,
+    entityId: string,
+    date: Date = new Date(),
+): string {
+    const day = date.toISOString().slice(0, 10); // YYYY-MM-DD
+    return `${tenantId}:${type}:${hashForLookup(email)}:${entityId}:${day}`;
+}
+
+/**
+ * Enqueue an email notification into the outbox.
+ * Silently skips if dedupeKey already exists (idempotent).
+ * Silently skips if tenant notifications are disabled.
+ *
+ * @returns The created record, or null if duplicate/disabled.
+ */
+export async function enqueueEmail(
+    db: PrismaTx,
+    input: EnqueueEmailInput,
+): Promise<{ id: string; dedupeKey: string } | null> {
+    const { tenantId, type, toEmail, entityId, sendAfter, requestId } = input;
+
+    // Check tenant settings — skip if disabled
+    const enabled = await isNotificationsEnabled(db, tenantId);
+    if (!enabled) {
+        if (requestId) {
+            logger.debug('notification skipped — disabled for tenant', { component: 'notifications' });
+        }
+        return null;
+    }
+
+    // Build email content from template
+    const { subject, bodyText, bodyHtml }: EmailTemplateResult = await buildEmailContent(input);
+
+    // Compute dedupe key
+    const dedupeKey = buildDedupeKey(tenantId, type, toEmail, entityId);
+
+    // ON CONFLICT DO NOTHING, never a caught P2002 (#5061). Callers pass
+    // their interactive transaction, and a statement that fails inside one
+    // aborts it in Postgres: the duplicate was swallowed here, then the
+    // caller's next statement, or its commit, failed with 25P02 and rolled
+    // back the assignment or approval request the email was about.
+    const { count } = await db.notificationOutbox.createMany({
+        data: [
+            {
+                tenantId,
+                type,
+                toEmail,
+                subject,
+                bodyText,
+                bodyHtml,
+                dedupeKey,
+                ...(sendAfter ? { sendAfter } : {}),
+            },
+        ],
+        skipDuplicates: true,
+    });
+    if (count === 0) {
+        if (requestId) {
+            logger.debug('notification skipped — duplicate', { component: 'notifications', type });
+        }
+        return null;
+    }
+    const record = await db.notificationOutbox.findUnique({
+        where: { dedupeKey },
+        select: { id: true },
+    });
+    if (requestId) {
+        logger.debug('notification enqueued', { component: 'notifications', type });
+    }
+    return record ? { id: record.id, dedupeKey } : null;
+}
+
+/**
+ * Build email content based on notification type. Exhaustive: the `never` in
+ * the default branch fails `tsc` for an unhandled type.
+ */
+async function buildEmailContent(input: EnqueueEmailInput): Promise<EmailTemplateResult> {
+    switch (input.type) {
+        case 'WORK_ITEM_ASSIGNED':
+            return buildWorkItemAssignedEmail(input.payload);
+        case 'DUE_DIGEST':
+            return buildDueDigestEmail(input.payload);
+        default: {
+            const unhandled: never = input;
+            throw new Error(`Unknown notification type: ${(unhandled as { type: string }).type}`);
+        }
+    }
+}
