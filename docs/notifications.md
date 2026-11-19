@@ -161,7 +161,8 @@ is not on the licence allowlist, and allowing it is an owner decision
 provider seam (`setEmailProvider`, `sendEmail`) and the console sink: every
 message is logged, `sendEmail` reports `delivered: false`, and the drain
 still claims and settles rows as it will with a transport. In production the
-sink logs each dropped message at WARN; `initMailerFromEnv` logs an error
+sink logs each dropped message at WARN, with the lookup hash of each address and
+the template, never the address, subject or body (`recipientLogFields`); `initMailerFromEnv` logs an error
 when `SMTP_HOST` is set, because the deployment asked for a transport it
 does not have. Adding the transport is one provider class and one branch in
 `initMailerFromEnv`.

@@ -1426,7 +1426,7 @@ The BullMQ queue, worker and scheduler with two jobs, the notification outbox, d
 | `src/app-layer/notifications/email/work-item-assigned.tsx` | — | Islestone-owned | The assignment template. |
 | `src/app-layer/notifications/email/due-digest.tsx` | `src/app-layer/notifications/digest-templates.ts` (`buildDeadlineDigestEmail`) | REWRITE | The digest as a react-email component; the two audiences' copy (#3651) kept, singular and plural. |
 | `src/app-layer/notifications/enqueue.ts` | `src/app-layer/notifications/enqueue.ts` | COPY+EDIT | A discriminated payload per `EmailNotificationType`, exhaustive; async build. |
-| `src/app-layer/notifications/processOutbox.ts` | `src/app-layer/notifications/processOutbox.ts` | COPY+EDIT | Comments only. |
+| `src/app-layer/notifications/processOutbox.ts` | `src/app-layer/notifications/processOutbox.ts` | COPY+EDIT | Comments; the row's type passed to the mailer as the template name for its log line. |
 | `src/app-layer/notifications/digest-dispatcher.ts` | `src/app-layer/notifications/digest-dispatcher.ts` | COPY+EDIT | `DUE_DIGEST` only; the dedupe key hashes the address (`hashForLookup`); `createMany({ skipDuplicates })`; async build; docblocks re-pointed at work items. |
 | `src/app-layer/notifications/assignment.ts` | `src/app-layer/notifications/assignment.ts` | COPY+EDIT | One kind, `WORK_ITEM_ASSIGNED`; the link is the caller's; the in-app mute is asked before the write (new, map); `body`. |
 | `src/app-layer/notifications/watcher.ts` | `src/app-layer/notifications/watcher.ts` | COPY+EDIT | Work-item fields; the link is the caller's; the mute check (new); `body`. |
@@ -1437,7 +1437,7 @@ The BullMQ queue, worker and scheduler with two jobs, the notification outbox, d
 | `src/lib/notifications/notification-sse.ts` | `src/lib/notifications/notification-sse.ts` | COPY+EDIT | Docblock: one stream route. |
 | `src/lib/notifications/mark-read.ts` | `src/lib/notifications/mark-read.ts` | COPY | None. |
 | `src/lib/email/sender-identity.ts` | `src/lib/email/sender-identity.ts` | COPY+EDIT | Islestone's `.invalid` placeholder (`UNCONFIGURED_SENDER`); `SMTP_FROM` through `@/env`. |
-| `src/lib/mailer.ts` | `src/lib/mailer.ts` | COPY+EDIT | Replaces the 1.4 stub, WITHOUT the SMTP transport (`nodemailer` is MIT-0, not on the allowlist): the console sink, `delivered: false`, and an `initMailerFromEnv` that says so. |
+| `src/lib/mailer.ts` | `src/lib/mailer.ts` | COPY+EDIT | Replaces the 1.4 stub, WITHOUT the SMTP transport (`nodemailer` is MIT-0, not on the allowlist): the console sink, `delivered: false`, and an `initMailerFromEnv` that says so; the sink logs `hashForLookup` of each recipient and the template, never the address, subject or body (`recipientLogFields`, new; owner decision 2026-11-19). |
 | `src/app-layer/repositories/NotificationRepository.ts` | `src/app-layer/repositories/NotificationRepository.ts` | COPY+EDIT | `import type`; `body`. |
 | `src/app-layer/schemas/notification-settings.schemas.ts` | `src/app-layer/schemas/notification-settings.schemas.ts` | COPY+EDIT | `bccMailbox`; `z.enum` over the mutable types. |
 | `src/app-layer/usecases/notification.ts` | `src/app-layer/usecases/notification.ts` | COPY+EDIT | Imports. |
@@ -1512,7 +1512,7 @@ The BullMQ queue, worker and scheduler with two jobs, the notification outbox, d
 | `tests/unit/jobs/job-contract-completeness.test.ts` | `tests/regression/infrastructure-guards.test.ts` | COPY+EDIT | The extract the map names. |
 | `tests/unit/jobs/notification-outbox-flush-wiring.test.ts` | `tests/unit/jobs/notification-outbox-flush-wiring.test.ts` | COPY+EDIT | Paths. |
 | `tests/unit/jobs/register-schedules.test.ts` | `tests/unit/jobs/register-schedules.test.ts` | COPY+EDIT | Planted retired names through a mock. |
-| `tests/unit/mailer.test.ts` | `tests/unit/mailer.test.ts` | COPY+EDIT | No transport: the console sink and `initMailerFromEnv` cases. |
+| `tests/unit/mailer.test.ts` | `tests/unit/mailer.test.ts` | COPY+EDIT | No transport: the console sink and `initMailerFromEnv` cases; new: no log line carries an address or the body. |
 | `tests/unit/notification-eligibility-guardrail.test.ts` | `tests/unit/notification-eligibility-guardrail.test.ts` | COPY | None. |
 | `tests/unit/notification-enqueue.test.ts` | `tests/unit/notification-enqueue.test.ts` | COPY | None. |
 | `tests/unit/notification-outbox.test.ts` | `tests/unit/notification-outbox.test.ts` | COPY | None. |

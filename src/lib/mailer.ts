@@ -19,6 +19,7 @@
  */
 import { env } from '@/env';
 import { logger } from '@/lib/observability/logger';
+import { hashForLookup } from '@/lib/security/encryption';
 
 export interface EmailAttachment {
     filename: string;
@@ -36,6 +37,34 @@ export interface EmailMessage {
     /** The workspace's BCC mailbox. */
     bcc?: string;
     attachments?: EmailAttachment[];
+    /**
+     * Which template built the message (the outbox row's type), for the log
+     * line. Never the address: see `recipientLogFields`.
+     */
+    template?: string;
+}
+
+/**
+ * What a log line may say about a message's recipients: the lookup hash of
+ * each address (`hashForLookup`, the same hash `User.emailHash` and the
+ * outbox dedupe key use, so an operator can correlate without the address)
+ * and the template. Never the address itself, and never the body, which
+ * greets the recipient by name (owner decision, 2026-11-19, relayed by the
+ * session coordinator). `tests/unit/mailer.test.ts` fails if a plain address
+ * reaches the log.
+ */
+export function recipientLogFields(msg: Pick<EmailMessage, 'to' | 'bcc' | 'template'>): Record<string, unknown> {
+    const hashes = (list: string) =>
+        list
+            .split(',')
+            .map((a) => a.trim())
+            .filter((a) => a !== '')
+            .map((a) => hashForLookup(a));
+    return {
+        recipientHashes: hashes(msg.to),
+        ...(msg.bcc ? { bccHashes: hashes(msg.bcc) } : {}),
+        ...(msg.template ? { template: msg.template } : {}),
+    };
 }
 
 export interface EmailProvider {
@@ -46,14 +75,15 @@ export interface EmailProvider {
 
 export class ConsoleEmailProvider implements EmailProvider {
     async send(msg: EmailMessage): Promise<void> {
+        // No address, subject or body: the subject can name a work item and
+        // the body greets the recipient by name. The sender is the
+        // deployment's (or the workspace's) own address, not a person's.
         const fields = {
             component: 'mailer',
-            to: msg.to,
-            subject: msg.subject,
-            bodyPreview: msg.text.substring(0, 200),
+            ...recipientLogFields(msg),
+            bodyLength: msg.text.length,
             ...(msg.from && { from: msg.from }),
-            ...(msg.bcc && { bcc: msg.bcc }),
-            ...(msg.attachments?.length ? { attachments: msg.attachments.map((a) => a.filename) } : {}),
+            ...(msg.attachments?.length ? { attachments: msg.attachments.length } : {}),
         };
         // In production a send hitting the console sink means the email was
         // DROPPED. Log at WARN so it is visible.

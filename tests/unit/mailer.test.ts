@@ -9,6 +9,9 @@
  *   - initMailerFromEnv: no SMTP transport is installed (nodemailer awaits a
  *     licence decision), so it keeps the console sink either way, and says
  *     so — an error when SMTP_HOST is set, a warning in production without it.
+ *   - no log line carries a recipient's address (or the body, which greets
+ *     them by name): the console sink logs `hashForLookup` of each address and
+ *     the template (owner decision, 2026-11-19).
  *
  * Copied from inflect-compliance `tests/unit/mailer.test.ts` at
  * 5528464fc54a8681956f3b9ce23ca9c075f0420e, without the NodemailerProvider
@@ -27,8 +30,10 @@ import {
     sendEmail,
     isUndeliverableRecipient,
     initMailerFromEnv,
+    recipientLogFields,
     type EmailMessage,
 } from '@/lib/mailer';
+import { hashForLookup } from '@/lib/security/encryption';
 import { tenantSystemUserEmail } from '@/lib/tenant-system-user';
 
 const BASE_MSG: EmailMessage = {
@@ -110,6 +115,55 @@ describe('provider singleton', () => {
         await expect(
             new ConsoleEmailProvider().send(BASE_MSG),
         ).resolves.toBeUndefined();
+    });
+});
+
+describe('the console sink never logs a recipient address', () => {
+    const MSG: EmailMessage = {
+        to: 'Dana.Lee@Example.com, second@example.org',
+        bcc: 'audit-copy@example.net',
+        subject: 'Assigned to you: [ISL-1] Patch',
+        text: 'Hi Dana Lee, you were assigned a work item.',
+        template: 'WORK_ITEM_ASSIGNED',
+    };
+    const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
+    const ORIGINAL_KEY = process.env.DATA_ENCRYPTION_KEY;
+    afterEach(() => {
+        (process.env as Record<string, string | undefined>).NODE_ENV = ORIGINAL_NODE_ENV;
+        if (ORIGINAL_KEY === undefined) delete process.env.DATA_ENCRYPTION_KEY;
+        else process.env.DATA_ENCRYPTION_KEY = ORIGINAL_KEY;
+    });
+
+    /** Every argument of every logger call, serialised, so a nested field cannot hide an address. */
+    function logged(): string {
+        const calls = (['info', 'warn', 'error', 'debug'] as const).flatMap(
+            (level) => (logger[level] as unknown as jest.Mock).mock.calls,
+        );
+        expect(calls.length).toBeGreaterThan(0);
+        return JSON.stringify(calls);
+    }
+
+    it.each(['production', 'development'])('in %s: hashes and template, never the address or the body', async (nodeEnv) => {
+        (process.env as Record<string, string | undefined>).NODE_ENV = nodeEnv;
+        // Production refuses the published fallback key; a throwaway test value.
+        process.env.DATA_ENCRYPTION_KEY = 'mailer-test-key-not-a-real-secret-000000001'; // pragma: allowlist secret
+        await sendEmail(MSG);
+        const out = logged();
+        for (const address of ['Dana.Lee@Example.com', 'dana.lee@example.com', 'second@example.org', 'audit-copy@example.net']) {
+            expect(out.toLowerCase()).not.toContain(address.toLowerCase());
+        }
+        expect(out).not.toContain('Hi Dana Lee');
+        expect(out).toContain(hashForLookup('dana.lee@example.com'));
+        expect(out).toContain(hashForLookup('second@example.org'));
+        expect(out).toContain(hashForLookup('audit-copy@example.net'));
+        expect(out).toContain('WORK_ITEM_ASSIGNED');
+    });
+
+    it('recipientLogFields hashes every listed address the way a lookup does (trimmed, lower-cased)', () => {
+        expect(recipientLogFields({ to: ' A@B.example , c@d.example', template: 'DUE_DIGEST' })).toEqual({
+            recipientHashes: [hashForLookup('a@b.example'), hashForLookup('c@d.example')],
+            template: 'DUE_DIGEST',
+        });
     });
 });
 
