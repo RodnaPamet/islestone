@@ -44,12 +44,21 @@ jest.mock('@/lib/prisma', () => ({
 
 // Env mock: the chokepoint reads `env.AUTH_REQUIRE_EMAIL_VERIFICATION`.
 // We drive this per-test via a mutable object so we can flip the flag.
-const mockEnv = { AUTH_REQUIRE_EMAIL_VERIFICATION: undefined as string | undefined };
+const mockEnv = { NODE_ENV: 'test', AUTH_REQUIRE_EMAIL_VERIFICATION: undefined as string | undefined };
 jest.mock('@/env', () => ({
     __esModule: true,
-    // Read lazily: @swc/jest hoists this factory above `mockEnv`.
+    // Read lazily: @swc/jest hoists this factory above `mockEnv`. A module
+    // that reads the env while the imports are still loading (the logger,
+    // through `credentials.ts` → `encryption.ts`) meets `mockEnv` in its
+    // temporal dead zone, and gets the unset answer instead.
     env: new Proxy({}, {
-        get: (_target, prop: string) => mockEnv[prop as keyof typeof mockEnv],
+        get: (_target, prop: string) => {
+            try {
+                return mockEnv[prop as keyof typeof mockEnv];
+            } catch {
+                return undefined;
+            }
+        },
     }),
 }));
 
@@ -83,7 +92,7 @@ jest.mock('@/lib/auth/security-events', () => ({
 
 import { authenticateWithPassword } from '@/lib/auth/credentials';
 import { BCRYPT_COST, prehashForBcrypt } from '@/lib/auth/passwords';
-import { lookupEmail } from '@/lib/auth/email-lookup';
+import { hashForLookup } from '@/lib/security/encryption';
 
 beforeEach(() => {
     mockFindUnique.mockReset();
@@ -175,7 +184,7 @@ describe('authenticateWithPassword — success', () => {
         // the call site no longer references the plaintext column.
         expect(mockFindUnique).toHaveBeenCalledWith(
             expect.objectContaining({
-                where: { email: lookupEmail('alice@example.com') },
+                where: { emailHash: hashForLookup('alice@example.com') },
             }),
         );
     });

@@ -1,6 +1,9 @@
 import { createEnv } from '@t3-oss/env-nextjs';
 import { z } from 'zod';
 
+import { DEV_FALLBACK_DATA_ENCRYPTION_KEY } from './lib/security/encryption-constants';
+import { parseCidr } from './lib/security/cidr';
+
 import { skipEnvValidation } from './env-skip';
 
 /**
@@ -108,14 +111,166 @@ export const env = createEnv({
         /** Platform-operator key (and its predecessor during a rotation). */
         PLATFORM_ADMIN_API_KEY: z.string().min(32).optional(),
         PLATFORM_ADMIN_API_KEY_PREVIOUS: z.string().min(32).optional(),
-        /** Credential throttle store: Upstash, or process memory. */
-        RATE_LIMIT_MODE: z.enum(['upstash', 'memory']).default('upstash'),
+        /**
+         * Rate-limit store for the credential throttle and the edge read and
+         * auth tiers: Upstash (shared across processes and edge isolates), or
+         * process memory (one process). The default stays `upstash`.
+         *
+         * Issue #17: with `upstash` and no Upstash URL or token, the
+         * limiters cannot reach a store, and the credential throttle used to
+         * let every request through without a word. Production now REFUSES to
+         * start in that state. A production deployment either configures
+         * both `UPSTASH_REDIS_REST_*` values or chooses `memory` explicitly
+         * (per process, so the limit multiplies by the instance count). The
+         * hosting decision (Upstash, a self-hosted REST proxy over the
+         * stack's Redis, or memory) is the owner's (docs/porting/maps/1.5.md,
+         * Traps). NEXT_TEST_MODE=1 (the Playwright server) is exempt, like
+         * AUTH_TEST_MODE below.
+         */
+        RATE_LIMIT_MODE: z
+            .enum(['upstash', 'memory'])
+            .default('upstash')
+            .superRefine((val, ctx) => {
+                // NODE_ENV and the Upstash values are read from process.env:
+                // zod parses each field on its own, so the parsed siblings
+                // are not available here (the same reason DATA_ENCRYPTION_KEY
+                // reads it). An empty string counts as unset, as
+                // `emptyStringAsUndefined` treats it.
+                if (process.env.NODE_ENV !== 'production') return;
+                if (process.env.NEXT_TEST_MODE === '1') return;
+                if (val !== 'upstash') return;
+                const missing = ['UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN'].filter(
+                    (key) => !process.env[key],
+                );
+                if (missing.length === 0) return;
+                ctx.addIssue({
+                    code: 'custom',
+                    message:
+                        `RATE_LIMIT_MODE is "upstash" (the default) but ${missing.join(' and ')} ` +
+                        `${missing.length === 1 ? 'is' : 'are'} not set. In production that would leave ` +
+                        'the sign-in throttle and the rate-limit tiers without a store. Set both ' +
+                        'UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN, or set ' +
+                        'RATE_LIMIT_MODE=memory to limit per process.',
+                });
+            }),
         /** "0" turns every rate limit off. */
         RATE_LIMIT_ENABLED: z.enum(['0', '1']).optional(),
         UPSTASH_REDIS_REST_URL: z.url().optional(),
         UPSTASH_REDIS_REST_TOKEN: z.string().min(1).optional(),
         /** Test-only: "1" lets the edge logger write under NODE_ENV=test. */
         EDGE_LOGGER_IN_TEST: z.enum(['0', '1']).optional(),
+
+        // ─── Security perimeter (sub-phase 1.5) ──────────────────────
+        /**
+         * The master key-encryption key (KEK) for field encryption
+         * (src/lib/security/encryption.ts, docs/encryption.md). At least 32
+         * characters. REQUIRED in production, where the documented dev
+         * fallback is refused too; development and test use the fallback.
+         * Generate one with `openssl rand -base64 48`.
+         *
+         * The production rule is a field-level superRefine that reads
+         * `process.env.NODE_ENV` itself, because zod parses each field on its
+         * own and the parsed NODE_ENV is not available here.
+         */
+        DATA_ENCRYPTION_KEY: z
+            .string()
+            .min(32, 'DATA_ENCRYPTION_KEY must be at least 32 characters')
+            .optional()
+            .superRefine((val, ctx) => {
+                if (process.env.NODE_ENV !== 'production') return;
+                if (!val) {
+                    ctx.addIssue({
+                        code: 'custom',
+                        message:
+                            'DATA_ENCRYPTION_KEY is REQUIRED in production. ' +
+                            'Generate with: openssl rand -base64 48',
+                    });
+                    return;
+                }
+                if (val === DEV_FALLBACK_DATA_ENCRYPTION_KEY) {
+                    ctx.addIssue({
+                        code: 'custom',
+                        message:
+                            'DATA_ENCRYPTION_KEY equals the documented dev ' +
+                            'fallback. Refusing to boot — generate a real ' +
+                            'key with: openssl rand -base64 48',
+                    });
+                }
+            }),
+        /**
+         * The outgoing KEK during a master-key rotation: a decrypt fallback
+         * for ciphertext the new primary cannot read. Remove it once the
+         * rotation sweep reports no rows left under the old key.
+         */
+        DATA_ENCRYPTION_KEY_PREVIOUS: z.string().min(32).optional(),
+        /**
+         * The key the deterministic lookup hashes (`User.emailHash`) derive
+         * from. Unset, it falls back to DATA_ENCRYPTION_KEY's material. Set
+         * it at first deploy (to its own value or to the KEK's), so a later
+         * KEK rotation does not move every hash: a hash is an index, and a
+         * moved index makes every email sign-in miss.
+         */
+        LOOKUP_HASH_KEY: z.string().min(32).optional(),
+        /**
+         * The key every HKDF subkey (`deriveSubkey`) derives from. Unset, it
+         * falls back to DATA_ENCRYPTION_KEY's material. A sibling of
+         * LOOKUP_HASH_KEY, not the same variable: a signing key should be
+         * rotatable, an index never.
+         */
+        DERIVED_SUBKEY_KEY: z.string().min(32).optional(),
+        /**
+         * "0" makes a genuine decrypt failure (a key resolved, AES-GCM still
+         * refused) pass the ciphertext through instead of failing the read.
+         * The incident lever for a page that 500s on one corrupt row; leave
+         * it unset in normal operation.
+         */
+        ENCRYPTION_DECRYPT_FAIL_CLOSED: z.string().optional(),
+        /** "0" sends each audit-stream batch once, without retries. */
+        AUDIT_STREAM_RETRY_ENABLED: z.string().optional(),
+        /**
+         * Self-hosted only: comma-separated private CIDRs `safeFetch` may
+         * reach (an internal SIEM, say). Inert on a hosted deployment, and
+         * loopback and cloud metadata stay refused inside it. Validated for
+         * shape here so a typo fails at startup; the runtime parser drops
+         * anything unparseable, which fails closed.
+         */
+        EGRESS_PRIVATE_CIDR_ALLOWLIST: z
+            .string()
+            .optional()
+            .refine(
+                (v) =>
+                    v === undefined ||
+                    v
+                        .split(',')
+                        .map((e) => e.trim())
+                        .filter(Boolean)
+                        .every((e) => parseCidr(e) !== null),
+                {
+                    message:
+                        'EGRESS_PRIVATE_CIDR_ALLOWLIST must be a comma-separated list of CIDRs, ' +
+                        "e.g. '10.0.0.0/8,192.168.0.0/16' or 'fd00::/8'",
+                },
+            ),
+        /**
+         * Billing (sub-phase 8.1 consumes it). Its presence is what makes a
+         * deployment hosted rather than self-hosted
+         * (src/lib/billing/billing-mode.ts).
+         */
+        STRIPE_SECRET_KEY: z.string().optional(),
+        /**
+         * "1" (or "true"/"yes") sends the Content-Security-Policy as
+         * Content-Security-Policy-Report-Only: violations are reported in the
+         * browser and not blocked. Unset, the policy is enforced.
+         */
+        CSP_REPORT_ONLY: z.string().optional(),
+        /**
+         * Comma-separated origins allowed to call `/api/**` cross-origin
+         * (src/lib/security/cors.ts). Unset in production means none:
+         * fail-closed. Development and test also admit http://localhost.
+         */
+        CORS_ALLOWED_ORIGINS: z.string().optional(),
+        /** Set by Next.js itself: `nodejs` or `edge` (src/instrumentation.ts). */
+        NEXT_RUNTIME: z.string().optional(),
     },
 
     // Listed key by key so a variable cannot be declared without being wired.
@@ -146,6 +301,17 @@ export const env = createEnv({
         UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
         UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
         EDGE_LOGGER_IN_TEST: process.env.EDGE_LOGGER_IN_TEST,
+        DATA_ENCRYPTION_KEY: process.env.DATA_ENCRYPTION_KEY,
+        DATA_ENCRYPTION_KEY_PREVIOUS: process.env.DATA_ENCRYPTION_KEY_PREVIOUS,
+        LOOKUP_HASH_KEY: process.env.LOOKUP_HASH_KEY,
+        DERIVED_SUBKEY_KEY: process.env.DERIVED_SUBKEY_KEY,
+        ENCRYPTION_DECRYPT_FAIL_CLOSED: process.env.ENCRYPTION_DECRYPT_FAIL_CLOSED,
+        AUDIT_STREAM_RETRY_ENABLED: process.env.AUDIT_STREAM_RETRY_ENABLED,
+        EGRESS_PRIVATE_CIDR_ALLOWLIST: process.env.EGRESS_PRIVATE_CIDR_ALLOWLIST,
+        STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+        CSP_REPORT_ONLY: process.env.CSP_REPORT_ONLY,
+        CORS_ALLOWED_ORIGINS: process.env.CORS_ALLOWED_ORIGINS,
+        NEXT_RUNTIME: process.env.NEXT_RUNTIME,
     },
 
     skipValidation: skipEnvValidation(),
