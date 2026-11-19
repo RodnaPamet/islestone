@@ -38,6 +38,23 @@ jobs:
       - run: npm ci
       - run: npm run lint
 
+  audit:
+    name: Audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      # Reads the lockfile only; installs nothing. Fails on a moderate or
+      # worse advisory in a production dependency.
+      - run: npm audit --omit=dev --audit-level=moderate
+
   typecheck:
     name: Typecheck
     runs-on: ubuntu-24.04

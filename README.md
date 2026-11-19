@@ -40,6 +40,15 @@ npm run dev                  # http://localhost:3000
 
 For Playwright with a Chromium already on the machine, set `PW_CHROMIUM_PATH` to its binary or to a directory containing it; otherwise run `npx playwright install chromium` once.
 
+## Continuous integration
+
+Every pull request, and every push to `main`, runs:
+
+- `CI` (`.github/workflows/ci.yml`): Lint, Audit (`npm audit --omit=dev --audit-level=moderate`), Typecheck, Test, Licence, Build and E2E.
+- `CodeQL` (`.github/workflows/codeql.yml`): the `security-extended` queries over JavaScript/TypeScript and the workflow files. It also runs weekly.
+
+Dependabot (`.github/dependabot.yml`) proposes npm and GitHub Actions updates weekly, keeping versions exact. Branch protection on `main` is a repository setting, not a file: require a pull request and these checks to pass before merging.
+
 ## Local services
 
 `docker-compose.yml` runs PostgreSQL 17 with pgvector, PgBouncer in transaction mode in front of it, and Redis 7 with a password, all bound to `127.0.0.1`. The app's `DATABASE_URL` points at PgBouncer (port 6432). Every credential in the file is a development default; production values never live in the repository.
