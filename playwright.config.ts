@@ -74,6 +74,12 @@ export default defineConfig({
         env: {
             // Validated at start by next.config.ts, so it must be real.
             NEXT_PUBLIC_APP_URL: BASE_URL,
+            // Required by src/env.ts, which next start validates. A
+            // well-formed URL is enough: the smoke specs open no database
+            // connection, and the Prisma client connects lazily. Do not set
+            // SKIP_ENV_VALIDATION here: this is the one run that exercises
+            // the built app's env check.
+            DATABASE_URL: process.env.DATABASE_URL ?? 'postgresql://islestone:islestone_dev@127.0.0.1:6432/islestone',
             NEXT_TELEMETRY_DISABLED: '1',
         },
     },

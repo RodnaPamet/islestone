@@ -1,0 +1,37 @@
+// ─────────────────────────────────────────────────────────────────
+//  Multi-file schema — the FOUNDATION file. It owns:
+//
+//    • The `generator client` block. Prisma 7 reads every `.prisma`
+//      file in this directory (the folder is named by `schema` in
+//      prisma.config.ts); no preview flag is involved.
+//
+//    • The `datasource db` block. There is exactly one datasource
+//      per Prisma project; it lives here.
+//
+//  No models, enums, or relations live in base.prisma. A new domain
+//  file must NOT redeclare generator or datasource — Prisma rejects
+//  duplicates across the folder.
+//
+//  Domain split (see prisma/schema/README.md):
+//    base.prisma     (this file — generator + datasource)
+//    enums.prisma    (every enum)
+//    tenancy.prisma  (Organization / OrgMembership / Tenant /
+//                     TenantMembership / User)
+// ─────────────────────────────────────────────────────────────────
+
+generator client {
+  provider      = "prisma-client-js"
+  // linux-musl-openssl-3.0.x → Alpine 3.19+ / node:22-alpine runtime.
+  // native → local dev. Kept from inflect-compliance; whether it still
+  // matters under Prisma 7's driver adapter is checked when sub-phase
+  // 1.8 builds the image.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  // Prisma 7 — connection URLs are NOT defined here. The adapter
+  // pattern in `src/lib/prisma.ts` passes the runtime URL via
+  // `@prisma/adapter-pg`; CLI tools (migrate / generate) resolve
+  // it via `prisma.config.ts` at the repo root.
+  provider = "postgresql"
+}

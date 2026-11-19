@@ -7,9 +7,12 @@
  * (and restores it). The only default is one the real schema declares:
  * `NODE_ENV` falls back to `development` in src/env.ts (Jest sets `test`
  * itself, so the fallback rarely applies). A required variable such as
- * `NEXT_PUBLIC_APP_URL` has no default here, as it has none in production:
- * a test that needs it sets it, so a missing required variable never looks
- * satisfied.
+ * `NEXT_PUBLIC_APP_URL` or `DATABASE_URL` has no default here, as it has
+ * none in production: a test that needs it sets it, so a missing required
+ * variable never looks satisfied. The integration project's global setup
+ * (tests/setup/integration-global-setup.ts) points `DATABASE_URL` and
+ * `DIRECT_DATABASE_URL` at the test database before any suite loads
+ * `@/lib/prisma`.
  */
 const DEFAULTS: Readonly<Record<string, string>> = {
     NODE_ENV: 'development',

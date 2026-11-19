@@ -37,6 +37,7 @@ porting maps now record them (next step 2); the last column says where.
 | 24 | The rest of ADR 0002 as recommended: an in-house fractional-index module with property tests (F1); a 30-day soft-delete window; depth caps of 5 levels of sub-items and 3 of goals; moving a sub-item on its own to another project is refused. ADR 0002 is Accepted. Decided 2026-11-19. | "Accept all" | ADR 0002 sections 2, 5 and 8 |
 | 25 | ADR 0005 as recommended: no sync engine now (E0) with section 7's reopen thresholds; canvas persistence C1 and transport T1; TanStack Query as the client cache; item presence R1; stored Yjs state and snapshots encrypted, page text searched under ADR 0002's S1 for now; one audit entry per person per page per 10 minutes; a 60-second token lifetime, a 60-second stream re-check and the caps as written. ADR 0005 is Accepted; open questions 8 (long-lived connections on the hosting target) and 9 (offline PWA quick capture) stay open, not blocking. Decided 2026-11-19. | "Accept all" | ADR 0005 |
 | 26 | The words ADR 0005 added are confirmed: change notice, collaboration server, collaboration token, page content and projection. Decided 2026-11-19. | "Accept all" | ADR 0006 (decided rows); ADR 0005 open question 11 |
+| 27 | The Prisma CLI's tree: BlueOak-1.0.0 joins the licence allowlist, and `elkjs` (EPL-2.0) and the second `@visx/vendor` are exempted, pinned. Decided 2026-11-19. | "BlueOak + 2 exemptions" | ADR 0007 E7; `scripts/licence-exemptions.json` |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
@@ -198,3 +199,12 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    `docs/porting/maps/`. Each map gives the files, what to cut, the npm packages and the
    tests that come along, and the copy order. Every copied file gets a `PROVENANCE.md` row
    pinned to `5528464fc54a8681956f3b9ce23ca9c075f0420e`.
+   **1.3 (tenancy and data core) has landed**: the Prisma 7 schema and the tenancy
+   migration with RLS and both last-owner triggers, `runInTenantContext`,
+   `RequestContext`, `getTenantCtx`, the stubs for 1.4, the `integration` Jest project and
+   the CI `Integration` job (`PROVENANCE.md`, "Copied: tenancy and data core"). Two owner
+   items came out of it: ADR 0006 W1 (`Tenant`/`tenantId` in code) is applied but not
+   signed, and the `prisma` CLI's dependency tree fails `npm run licence:check`
+   (`elkjs` EPL-2.0 and `@visx/vendor` 4.0.0-alpha.0 through Prisma Studio, `graceful-fs`
+   4.2.12 BlueOak-1.0.0), which needs an ADR 0007 decision; no exemption was added.
+   1.4 is next.

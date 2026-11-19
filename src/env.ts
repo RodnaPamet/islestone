@@ -23,11 +23,30 @@ export const env = createEnv({
 
         /**
          * PostgreSQL, through PgBouncer in transaction mode (see
-         * docker-compose.yml). Optional for now: nothing reads the database in
-         * the skeleton. Sub-phase 1.3 (tenancy and data core) makes it
-         * required and adds the direct connection string migrations need.
+         * docker-compose.yml). The runtime Prisma client (src/lib/prisma.ts)
+         * connects here.
          */
-        DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }).optional(),
+        DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
+
+        /**
+         * Direct connection to Postgres, bypassing PgBouncer. Used by the
+         * Prisma CLI for migrations (prisma.config.ts), which need DDL and
+         * lock semantics PgBouncer does not provide. Falls back to
+         * DATABASE_URL when unset (a non-pooled environment).
+         */
+        DIRECT_DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }).optional(),
+
+        /**
+         * Read-replica connection string. When set, reads explicitly marked
+         * replica-tolerant route to it through `prismaRead` and
+         * `runInTenantReadContext`; writes and read-after-write stay on
+         * DATABASE_URL. Unset means single-database mode. See
+         * docs/database-routing.md.
+         */
+        DATABASE_READ_URL: z.url({ protocol: /^postgres(ql)?$/ }).optional(),
+
+        /** Minimum log level (src/lib/observability/logger.ts). Defaults by NODE_ENV. */
+        LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'fatal']).optional(),
 
         /**
          * Redis (queues, rate limits). Optional for now; sub-phases 1.5 and
@@ -41,6 +60,9 @@ export const env = createEnv({
     runtimeEnv: {
         NODE_ENV: process.env.NODE_ENV,
         DATABASE_URL: process.env.DATABASE_URL,
+        DIRECT_DATABASE_URL: process.env.DIRECT_DATABASE_URL,
+        DATABASE_READ_URL: process.env.DATABASE_READ_URL,
+        LOG_LEVEL: process.env.LOG_LEVEL,
         REDIS_URL: process.env.REDIS_URL,
     },
 

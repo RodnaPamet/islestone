@@ -1,8 +1,14 @@
 /**
- * Jest 30, two projects.
+ * Jest 30, three projects.
  *
- *   node   tests/unit, tests/guards    route handlers, pure logic, source guards
- *   jsdom  tests/rendered              React components through Testing Library
+ *   node         tests/unit, tests/guards    route handlers, pure logic, source guards
+ *   jsdom        tests/rendered              React components through Testing Library
+ *   integration  tests/integration           against a real Postgres (`npm run test:integration`)
+ *
+ * `npm test` selects `node` and `jsdom` only, so it needs no database. The
+ * integration project applies the migrations once (globalSetup), points the
+ * app's DATABASE_URL at the test database before any suite loads (setupFiles),
+ * and runs in band: suites share one database and reset it.
  *
  * Transformer: @swc/jest. It compiles TypeScript and TSX with SWC (the
  * compiler Next.js itself uses), needs no tsconfig-driven type check per test
@@ -133,6 +139,18 @@ const config = {
                 '<rootDir>/packages/*/src/**/__tests__/**/*.test.{ts,tsx}',
             ],
             setupFilesAfterEnv: ['<rootDir>/tests/setup/rendered.ts'],
+        },
+        {
+            ...shared,
+            displayName: 'integration',
+            testEnvironment: 'node',
+            testMatch: ['<rootDir>/tests/integration/**/*.test.ts'],
+            globalSetup: '<rootDir>/tests/setup/integration-global-setup.ts',
+            setupFiles: ['<rootDir>/jest.setup.ts', '<rootDir>/tests/setup/integration-env.ts'],
+            setupFilesAfterEnv: ['<rootDir>/tests/setup/disconnect-after-suite.ts'],
+            // Real database round trips, advisory-lock waits and a cold
+            // Prisma client: the 5 s default is too tight.
+            testTimeout: 30_000,
         },
     ],
 };

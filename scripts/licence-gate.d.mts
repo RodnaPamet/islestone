@@ -56,7 +56,8 @@ export interface Exemption {
     licenceKey: string;
     reason: string;
     adr: string;
-    version: string | null;
+    /** The exact versions the entry is bound to, or null when it is bound to the declared licence only. */
+    versions: string[] | null;
 }
 export type ExemptionErrorCode = 'EXEMPTIONS_NOT_AN_OBJECT' | 'EXEMPTION_INVALID' | 'ADR_NOT_ACCEPTED';
 export declare function validateExemptions(

@@ -1,0 +1,21 @@
+-- ════════════════════════════════════════════════════════════════════
+--  EXPECTED residue of `prisma migrate diff` between a database built
+--  ONLY from prisma/migrations and prisma/schema.
+--
+--  Produced by, and compared by:
+--      npm run db:check-schema-drift            (scripts/check-fresh-db-schema-drift.mjs)
+--  Run in CI by the Integration job, immediately after
+--  `prisma migrate deploy`.
+--
+--  READ THIS BEFORE EDITING.  The gate fails on any difference in EITHER
+--  direction — a statement the diff produces that is not listed here, and
+--  a statement listed here that the diff no longer produces.
+--
+--  The residue is EMPTY: the migrations reproduce the schema exactly.
+--  Adding a line here is the one edit that can hide a real defect, so a
+--  line is added only for a divergence that is intentional, with a
+--  comment group above it saying why. Widening this file is not a way to
+--  make new drift pass.
+-- ════════════════════════════════════════════════════════════════════
+
+-- ==== EXPECTED RESIDUE BEGINS BELOW ====

@@ -17,6 +17,10 @@ const nextConfig: NextConfig = {
     // read CLAUDE.md here; an untracked file the dev server creates would only
     // dirty the tree.
     agentRules: false,
+    // The logger's pino-pretty transport (src/lib/observability/logger.ts)
+    // runs in a worker thread, which bundling breaks; keep these three out of
+    // the server bundle and load them from node_modules.
+    serverExternalPackages: ['pino', 'pino-pretty', 'thread-stream'],
     async headers() {
         return [{ source: '/:path*', headers: securityHeaders({ production: env.NODE_ENV === 'production' }) }];
     },

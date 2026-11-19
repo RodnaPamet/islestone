@@ -129,13 +129,15 @@ import { fileURLToPath } from 'node:url';
  * (Zero-Clause BSD, which grants every right and asks for nothing) was added
  * by owner decision of 2026-11-18, ADR 0007 E2b. The Unlicense (a
  * public-domain dedication with no conditions) was added by owner decision of
- * 2026-11-19, ADR 0007 E6, when visx brought `robust-predicates`. Anything else
- * (CC0-1.0, CC-BY-4.0 data, LGPL) passes only through a recorded exemption,
+ * 2026-11-19, ADR 0007 E6, when visx brought `robust-predicates`. BlueOak-1.0.0
+ * (the Blue Oak Model License, permissive like MIT) was added by owner decision
+ * of 2026-11-19, ADR 0007 E7, when the Prisma CLI's tree brought `graceful-fs`
+ * 4.2.12. Anything else (CC0-1.0, CC-BY-4.0 data, EPL, LGPL) passes only through a recorded exemption,
  * and ADR 0007 E4 adds no other licence until a dependency needs one. Widening this list is an
  * owner decision, recorded in an ADR, never a change made to get a build
  * through.
  */
-export const ALLOWED_LICENCES = Object.freeze(['MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MPL-2.0', 'PostgreSQL', '0BSD', 'Unlicense']);
+export const ALLOWED_LICENCES = Object.freeze(['MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MPL-2.0', 'PostgreSQL', '0BSD', 'Unlicense', 'BlueOak-1.0.0']);
 
 /** Allowed licences whose condition the report repeats on every run. */
 export const NOTICE_LICENCES = Object.freeze({
@@ -590,6 +592,8 @@ function describeDeclaration(declaration) {
 /**
  * Validate the exemptions file's content. An entry is
  *   "<package name>": { "licence": "<SPDX>", "reason": "…", "adr": "docs/adr/000N-….md", "version"?: "x.y.z" }
+ * (`"version"` may also be an array of exact versions, when the same package
+ * is installed at more than one version and each was read.)
  * `licence` is the licence a person verified, as an SPDX expression
  * (`LicenseRef-…` for a proprietary one). `reason` and `adr` are required:
  * an exemption nobody can trace to a decision does not apply. The ADR file
@@ -651,8 +655,13 @@ export function validateExemptions(raw, root) {
                     }
                 }
             }
-            if ('version' in value && (typeof value.version !== 'string' || value.version.trim() === '')) {
-                problems.push('"version", when present, must be a non-empty string');
+            if ('version' in value) {
+                const list = Array.isArray(value.version) ? value.version : [value.version];
+                if (list.length === 0 || list.some((v) => typeof v !== 'string' || v.trim() === '')) {
+                    problems.push('"version", when present, must be a non-empty string or a non-empty array of non-empty strings');
+                } else if (new Set(list.map((v) => v.trim())).size !== list.length) {
+                    problems.push('"version" lists the same version twice');
+                }
             }
         }
         if (problems.length > 0) errors.push({ name, code: 'EXEMPTION_INVALID', problem: problems.join('; ') });
@@ -666,7 +675,7 @@ export function validateExemptions(raw, root) {
             licenceKey: expressionKey(ast),
             reason: value.reason.trim(),
             adr: value.adr.trim(),
-            version: typeof value.version === 'string' ? value.version.trim() : null,
+            versions: 'version' in value ? (Array.isArray(value.version) ? value.version : [value.version]).map((v) => v.trim()) : null,
         });
     }
     return { entries, errors };
@@ -715,14 +724,15 @@ export function isAcceptedAdr(text) {
 
 /** Why an exemption does not cover this package, or null when it does. */
 function exemptionMismatch(exemption, pkg) {
-    if (exemption.version !== null && exemption.version !== pkg.version) {
-        return `it is bound to version ${exemption.version} and the tree holds ${pkg.version}; re-read the licence and update the entry`;
+    if (exemption.versions !== null && !exemption.versions.includes(pkg.version)) {
+        const bound = exemption.versions.length === 1 ? `version ${exemption.versions[0]}` : `versions ${exemption.versions.join(', ')}`;
+        return `it is bound to ${bound} and the tree holds ${pkg.version}; re-read the licence and update the entry`;
     }
     if (pkg.declaration.kind === 'spdx') {
         if (exemption.licenceKey !== pkg.declaration.key) {
             return `it records "${exemption.licence}" but the package declares "${pkg.declaration.expression}"`;
         }
-    } else if (exemption.version === null) {
+    } else if (exemption.versions === null) {
         // Without an SPDX declaration there is nothing to bind the entry to
         // but the version a person read: the package could change its
         // "SEE LICENSE IN" file, or drop its licence, and keep the exemption.
@@ -1217,9 +1227,18 @@ export function checkDependencies(lock, { root, exemptions: rawExemptions = {}, 
         for (const notice of verdict.notices) notices.push({ ...notice, message: `${pkg.name}@${pkg.version}: ${notice.message}` });
         if (verdict.exemptionProblem) exemptionProblems.push({ name: pkg.name, code: 'EXEMPTION_NOT_NEEDED', problem: verdict.exemptionProblem });
     }
-    for (const name of entries.keys()) {
+    for (const [name, entry] of entries) {
         if (!namesInTree.has(name)) {
             exemptionProblems.push({ name, code: 'EXEMPTION_STALE', problem: 'stale: no production package of that name is in the tree; delete the entry' });
+        } else if (entry.versions !== null) {
+            // A pinned version nobody installs any more is evidence for nothing:
+            // the entry must list only the versions the tree holds.
+            const held = new Set(tree.packages.filter((p) => p.name === name).map((p) => p.version));
+            for (const version of entry.versions) {
+                if (!held.has(version)) {
+                    exemptionProblems.push({ name, code: 'EXEMPTION_STALE', problem: `stale: version ${version} is not in the tree; remove it from the entry` });
+                }
+            }
         }
     }
     // One problem per name, in a stable order.

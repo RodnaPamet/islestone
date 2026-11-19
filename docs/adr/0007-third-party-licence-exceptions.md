@@ -109,13 +109,30 @@ Options for the Unlicense were: exempt `robust-predicates` alone; add the Unlice
 
 **`@visx/vendor`** needs no new licence: its exemption in `scripts/licence-exemptions.json` reads the declaration as `MIT AND ISC`, pinned to version 4.0.0 because the declaration is not SPDX. A visx upgrade fails the gate until a person re-reads the new version.
 
+### E7 — The Prisma CLI's tree: BlueOak-1.0.0, `elkjs` and a second `@visx/vendor` (sub-phase 1.3)
+
+Sub-phase 1.3 adds Prisma 7. `@prisma/client` declares the `prisma` CLI as an optional peer, so with `prisma` in devDependencies npm marks the CLI and its whole tree `devOptional`, and `npm ci --omit=dev` installs it: the gate rightly treats it as production. The CLI also runs migrations in the image sub-phase 1.8 builds.
+
+**Verified** on 2026-11-19 in the installed tree:
+
+- `graceful-fs` 4.2.12 (reached through many packages, the CLI among them) declares `BlueOak-1.0.0`, and its `LICENSE.md` is the Blue Oak Model License 1.0.0: a permissive licence that grants every right on condition the notice is kept, like MIT. 4.2.11 was ISC.
+- `elkjs` 0.11.1 (`prisma` > `@prisma/studio-core` > `elkjs`, used by Prisma Studio's graph layout) declares `EPL-2.0`, and its `LICENSE.md` is the Eclipse Public License 2.0. EPL-2.0 is a weak, file-level copyleft: a modified EPL file must be published under EPL-2.0, while using it unmodified alongside other code imposes nothing on that code. Islestone uses it unmodified and never imports it.
+- `@visx/vendor` 4.0.0-alpha.0 (through `@prisma/studio-core` and its `@visx/grid`) declares `"MIT and ISC"` like 4.0.0 (E6), which is not valid SPDX.
+
+Options were: add BlueOak-1.0.0 to the allowlist and exempt the other two; exempt all three; or install the CLI outside the root lockfile as a separate tools manifest.
+
+**Decision: add `BlueOak-1.0.0` to `ALLOWED_LICENCES`, and exempt `elkjs` and the second `@visx/vendor`.** Owner decision, 2026-11-19; the owner chose "BlueOak + 2 exemptions".
+
+- `elkjs` is exempted as `EPL-2.0`, pinned to 0.11.1. Any image that contains it (sub-phase 1.8) carries its EPL-2.0 notice, and `NOTICE` gains an entry in that change; it is never modified in place.
+- The `@visx/vendor` exemption (E6) now lists both versions, `4.0.0` and `4.0.0-alpha.0`. The gate accepts a list of exact versions for one package, and reports a listed version the tree no longer holds as stale.
+
 ## Consequences
 
-- The state of the gate: `ALLOWED_LICENCES` holds roadmap 0.3's list plus `0BSD` (E2b) and `Unlicense` (E6). `scripts/licence-exemptions.json` holds 17 entries: 16 cite this ADR (the 14 sharp packages, E1a; `caniuse-lite`, E3a; `@visx/vendor`, E6) and one cites ADR 0001 (`@inflect/ui`, the BUSL-1.1 mirror). There is no `tslib` entry (E2b).
+- The state of the gate: `ALLOWED_LICENCES` holds roadmap 0.3's list plus `0BSD` (E2b), `Unlicense` (E6) and `BlueOak-1.0.0` (E7). `scripts/licence-exemptions.json` holds 18 entries: 17 cite this ADR (the 14 sharp packages, E1a; `caniuse-lite`, E3a; `@visx/vendor` at two versions, E6 and E7; `elkjs`, E7) and one cites ADR 0001 (`@inflect/ui`, the BUSL-1.1 mirror). There is no `tslib` entry (E2b).
 - The gate accepts an exemption only when the ADR it cites exists, names the package, and has an Accepted status line. An exemption that cites a Proposed ADR fails the gate.
 - The LGPL entries are pinned to versions, so a `next` or `sharp` upgrade that moves them fails the gate until a person re-reads the new versions.
 - The `caniuse-lite` entry is bound to its declared licence. A licence change fails the gate; a version change does not.
-- Sub-phase 1.8 inherits two obligations from E1a: the LGPL notice in the image, with a `NOTICE` entry in the same change, and a replaceable library.
+- Sub-phase 1.8 inherits the EPL-2.0 notice for `elkjs` (E7) and two obligations from E1a: the LGPL notice in the image, with a `NOTICE` entry in the same change, and a replaceable library.
 - Widening `ALLOWED_LICENCES` stays an amendment to this ADR, never a change made to get a build through.
 
 ## What would change this decision
@@ -129,4 +146,4 @@ Options for the Unlicense were: exempt `robust-predicates` alone; add the Unlice
 - Roadmap (`docs/ROADMAP.md`): 0.3 and H0; 2.5 (licence traps); 1.8 (container build).
 - `scripts/licence-gate.mjs` (the policy constants at the top) and `scripts/licence-exemptions.json`.
 - ADR 0001 (provenance and the tldraw exception), ADR 0002 (option F2, `fractional-indexing`).
-- npm packages as installed from `package-lock.json`: `robust-predicates` 3.0.3 and `@visx/vendor` 4.0.0 (E6), `tslib` 2.9.1, `caniuse-lite` 1.0.30001826, `sharp` 0.35.5 and the `@img/*` packages listed in E1.
+- npm packages as installed from `package-lock.json`: `robust-predicates` 3.0.3 and `@visx/vendor` 4.0.0 (E6), `graceful-fs` 4.2.12, `elkjs` 0.11.1 and `@visx/vendor` 4.0.0-alpha.0 (E7), `tslib` 2.9.1, `caniuse-lite` 1.0.30001826, `sharp` 0.35.5 and the `@img/*` packages listed in E1.

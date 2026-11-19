@@ -138,8 +138,8 @@ describe('licence declarations', () => {
         expect(normaliseDeclaration({ license: '(MIT OR ISC) AND 0BSD' })).toMatchObject({ expression: '(MIT OR ISC) AND 0BSD' });
     });
 
-    it.each(['CC0-1.0', 'MIT-0', 'BlueOak-1.0.0', 'Python-2.0', 'CC-BY-4.0'])(
-        'fails %s: the allowlist is roadmap 0.3\'s list plus 0BSD and the Unlicense, and anything else needs an exemption (ADR 0007 E4)',
+    it.each(['CC0-1.0', 'MIT-0', 'Python-2.0', 'CC-BY-4.0', 'EPL-2.0'])(
+        'fails %s: the allowlist is roadmap 0.3\'s list plus 0BSD, the Unlicense and BlueOak-1.0.0, and anything else needs an exemption (ADR 0007 E4)',
         (id) => {
             expect(judge({ license: id })).toMatchObject({ verdict: 'fail', code: 'NOT_ALLOWED' });
         },
@@ -255,7 +255,7 @@ describe('licence declarations', () => {
     });
 
     it('holds exactly roadmap 0.3\'s licences, with BSD read as the 2- and 3-clause forms, plus 0BSD (ADR 0007 E2b)', () => {
-        expect([...ALLOWED_LICENCES].sort()).toEqual(['0BSD', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MIT', 'MPL-2.0', 'PostgreSQL', 'Unlicense']);
+        expect([...ALLOWED_LICENCES].sort()).toEqual(['0BSD', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'BlueOak-1.0.0', 'ISC', 'MIT', 'MPL-2.0', 'PostgreSQL', 'Unlicense']);
     });
 
     it('compares expressions by meaning, not spelling', () => {
@@ -612,6 +612,9 @@ describe('exemptions', () => {
         ['a licence that is not SPDX', { ...valid, licence: 'GPL v3' }, 'not an SPDX expression'],
         ['an unknown field', { ...valid, reviewBy: '2027-01-01' }, 'unknown field "reviewBy"'],
         ['a blank version', { ...valid, version: '' }, '"version"'],
+        ['an empty version list', { ...valid, version: [] }, '"version"'],
+        ['a blank entry in the version list', { ...valid, version: ['1.0.0', ' '] }, '"version"'],
+        ['a version listed twice', { ...valid, version: ['1.0.0', '1.0.0'] }, 'the same version twice'],
     ])('does not apply an exemption with %s', (_label, exemption, problem) => {
         const report = check({ 'fixture-gpl-lib': exemption });
         expect(report.failures.map((f) => f.name)).toEqual(['fixture-gpl-lib']);
@@ -634,6 +637,31 @@ describe('exemptions', () => {
         expect(check({ 'fixture-gpl-lib': { ...valid, version: '1.0.0' } }).failures).toEqual([]);
         const upgraded = check({ 'fixture-gpl-lib': { ...valid, version: '0.9.0' } });
         expect(upgraded.failures[0]?.reason).toContain('bound to version 0.9.0 and the tree holds 1.0.0');
+    });
+
+    it('binds an exemption to a list of versions, each of which must be in the tree', () => {
+        // The fixture tree holds fixture-gpl-lib at 1.0.0 only.
+        expect(check({ 'fixture-gpl-lib': { ...valid, version: ['1.0.0'] } }).exemptionProblems).toEqual([]);
+        const notListed = check({ 'fixture-gpl-lib': { ...valid, version: ['0.9.0', '0.8.0'] } });
+        expect(notListed.failures[0]?.reason).toContain('bound to versions 0.9.0, 0.8.0 and the tree holds 1.0.0');
+        const extra = check({ 'fixture-gpl-lib': { ...valid, version: ['1.0.0', '2.0.0'] } });
+        expect(extra.failures).toEqual([]);
+        expect(extra.exemptionProblems).toEqual([
+            { name: 'fixture-gpl-lib', code: 'EXEMPTION_STALE', problem: expect.stringContaining('version 2.0.0 is not in the tree') },
+        ]);
+    });
+
+    it('exempts each listed version of a package installed at several versions', () => {
+        const { entries, errors } = validateExemptions(
+            { 'fixture-lib': { licence: 'MIT', version: ['1.0.0', '2.0.0-alpha.0'], reason: 'Fixture: both versions read.', adr: FIXTURE_ADR } },
+            FIXTURE_ROOT,
+        );
+        expect(errors).toEqual([]);
+        const at = (version: string) =>
+            judgePackage({ name: 'fixture-lib', version, location: 'node_modules/fixture-lib', declaration: normaliseDeclaration({ license: 'MIT and ISC' }) }, entries).verdict;
+        expect(at('1.0.0')).toBe('exempt');
+        expect(at('2.0.0-alpha.0')).toBe('exempt');
+        expect(at('3.0.0')).toBe('fail');
     });
 
     it('exempts a "SEE LICENSE IN" package at the version whose file a person read', () => {
@@ -997,7 +1025,7 @@ describe('the import scan', () => {
             licenceKey: 'licenseref-n8n-sustainable-use',
             reason: 'Fixture: an exemption for a deny-listed package.',
             adr: FIXTURE_ADR,
-            version: '1.0.0',
+            versions: ['1.0.0'],
         };
         const result = judge({ license: 'SEE LICENSE IN LICENSE.md' }, 'n8n-workflow', new Map([['n8n-workflow', exemption]]));
         expect(result).toMatchObject({ verdict: 'fail', code: 'DENY_LISTED' });
