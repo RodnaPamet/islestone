@@ -27,40 +27,89 @@
  * for as long as the entry existed (#2103).
  *
  * Copied from inflect-compliance at 5528464fc54a8681956f3b9ce23ca9c075f0420e.
- * In sub-phase 1.4 `MACHINE_CALLER_PREFIXES` is EMPTY: SCIM (8.3), the
- * webhook receivers, the CSP report (1.5), MCP, A2A and the platform-operator
- * `/api/admin` routes have not arrived. The parent's per-prefix contracts and
- * its `/api/admin` and `/api/a2a` directory sweeps are therefore not ported;
- * what is kept is the rule that binds the day the first entry is added — it
- * must come with a contract here naming its in-handler gate — and the checks
- * that the list opens nothing it does not mean to.
+ * Sub-phase 1.6 adds the first entries, the credential-less beacons: the CSP
+ * report sink and its legacy alias, and the web-vitals beacon. SCIM (8.3),
+ * the webhook receivers, MCP, A2A and the platform-operator `/api/admin`
+ * routes have not arrived, so the parent's contracts and directory sweeps for
+ * them are not ported. Each entry's contract names, per exported METHOD, the
+ * gate the handler carries; a method a contract does not list fails, so a GET
+ * added to a beacon cannot ride its POST's public path ungated.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { MACHINE_CALLER_PREFIXES, isPublicPath } from '@/lib/auth/guard';
-import { codeOf } from '../helpers/source-blocks';
+import { codeOf, functionBodyOf } from '../helpers/source-blocks';
 
 const APP = path.resolve(__dirname, '../../src/app');
 
 /**
- * prefix → the handler that must authenticate it and the gate it must contain
- * (a regex over the handler source, comments stripped, so a docblock
- * promising a check cannot satisfy it). Empty while the list is.
+ * prefix → the handler file, and for EVERY method it exports the gate that
+ * method's body must contain (a regex over the body, comments stripped, so a
+ * docblock promising a check cannot satisfy it). A credential-less sink's
+ * gate is its abuse bound (rate limit, size cap); an operator method's gate
+ * is its credential check.
  */
 const CONTRACTS: ReadonlyArray<{
     prefix: string;
     handler: string;
-    gate: RegExp;
+    methods: Readonly<Record<string, RegExp>>;
     why: string;
-}> = [];
+}> = [
+    {
+        prefix: '/api/security/csp-report',
+        handler: 'api/security/csp-report/route.ts',
+        methods: {
+            POST: /checkReportRateLimit\s*\(/,
+            GET: /verifyPlatformApiKey\s*\(/,
+        },
+        why: 'POST is the credential-less browser report sink (per-IP limit, 16 KB cap); GET returns the process-wide violation buffer and needs PLATFORM_ADMIN_API_KEY.',
+    },
+    {
+        prefix: '/api/csp-report',
+        handler: 'api/csp-report/route.ts',
+        methods: { POST: /cspReportSink\s*\(\s*request\s*\)/ },
+        why: 'The legacy alias: its only method hands the request to the canonical sink, limits included.',
+    },
+    {
+        prefix: '/api/telemetry/vitals',
+        handler: 'api/telemetry/vitals/route.ts',
+        methods: { POST: /acceptVitalBeacon\s*\(/ },
+        why: 'The web-vitals beacon: per-IP limited, size-capped, always 204.',
+    },
+];
+
+const HTTP_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
+
+/** The HTTP methods a route file exports (function or const). */
+function exportedMethods(src: string): string[] {
+    return HTTP_METHODS.filter((m) =>
+        new RegExp(`export\\s+(async\\s+function\\s+${m}\\b|const\\s+${m}\\b)`).test(src),
+    );
+}
 
 describe('machine-caller paths authenticate themselves', () => {
-    it('each contract\'s handler carries its gate', () => {
-        // A loop rather than `it.each`, which refuses an empty table.
-        for (const { prefix, handler, gate } of CONTRACTS) {
+    it('each contract names exactly the methods its handler exports, and each method carries its gate', () => {
+        for (const { prefix, handler, methods } of CONTRACTS) {
             const src = codeOf(fs.readFileSync(path.join(APP, handler), 'utf8'));
-            expect({ prefix, gated: gate.test(src) }).toEqual({ prefix, gated: true });
+            expect({ prefix, exports: exportedMethods(src).sort() }).toEqual({
+                prefix,
+                exports: Object.keys(methods).sort(),
+            });
+            for (const [method, gate] of Object.entries(methods)) {
+                const body = functionBodyOf(src, method);
+                expect(body.length).toBeGreaterThan(0);
+                expect({ prefix, method, gated: gate.test(body) }).toEqual({ prefix, method, gated: true });
+            }
         }
+    });
+
+    it('the method check catches a planted ungated GET (the detector is not vacuous)', () => {
+        const planted = codeOf(
+            'export async function POST(request: Request) { return cspReportSink(request); }\n' +
+                'export async function GET() { return new Response(JSON.stringify(getViolationSummary(50))); }\n',
+        );
+        expect(exportedMethods(planted).sort()).toEqual(['GET', 'POST']);
+        expect(/verifyPlatformApiKey\s*\(/.test(functionBodyOf(planted, 'GET'))).toBe(false);
     });
 
     it('every prefix has a contract here, and every contract names a listed prefix', () => {
@@ -69,8 +118,12 @@ describe('machine-caller paths authenticate themselves', () => {
         expect(CONTRACTS.filter((c) => !MACHINE_CALLER_PREFIXES.includes(c.prefix))).toEqual([]);
     });
 
-    it('the list is empty in sub-phase 1.4 — a new entry is a reviewed edit here', () => {
-        expect(MACHINE_CALLER_PREFIXES).toEqual([]);
+    it('the list holds exactly the sub-phase 1.6 beacons — a new entry is a reviewed edit here', () => {
+        expect([...MACHINE_CALLER_PREFIXES].sort()).toEqual([
+            '/api/csp-report',
+            '/api/security/csp-report',
+            '/api/telemetry/vitals',
+        ]);
     });
 });
 
@@ -83,7 +136,8 @@ describe('the allowlist opens what it means to open, and nothing else', () => {
             '/api/scim/v2/Users',
             '/api/admin/diagnostics',
             '/api/mcp',
-            '/api/security/csp-report',
+            '/api/security/csp-report-admin',
+            '/api/telemetry/vitals-dump',
             '/api/stripe/webhook',
         ]) {
             expect({ p, public: isPublicPath(p) }).toEqual({ p, public: false });

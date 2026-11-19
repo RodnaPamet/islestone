@@ -60,6 +60,16 @@ const ALLOWED_API_DIRS = new Set([
     'org',
     // The person's own profile, account-wide.
     'account',
+    // Sub-phase 1.6. The CSP violation-report sink (`security/csp-report`):
+    // browsers POST reports with no session, and the buffer has no tenant
+    // dimension (its operator GET is gated on PLATFORM_ADMIN_API_KEY, never a
+    // tenant role, because reading it is deployment-wide).
+    'security',
+    // Its legacy alias, which hands the request to the same sink in-process.
+    'csp-report',
+    // The web-vitals beacon: a credential-less sendBeacon from any page,
+    // recording route-shaped metrics with no tenant or user attached.
+    'telemetry',
 ]);
 
 /** Global (non-tenant-scoped) API prefixes a tenant page may fetch with a flat path. */

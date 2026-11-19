@@ -97,10 +97,22 @@ export const PUBLIC_API_REGEXES: readonly RegExp[] = [];
  * itself in code — there is no way to say so here.
  */
 export const MACHINE_CALLER_PREFIXES: readonly string[] = [
-    // Empty in sub-phase 1.4. Sub-phase 8.3 adds `/api/scim` (bearer SCIM
-    // token, `authenticateScimRequest`); later sub-phases add their webhook
-    // receivers and the platform-operator `/api/admin` routes, each with the
-    // in-handler gate the guard test requires.
+    // The CSP violation-report sink (sub-phase 1.6). A browser sends a report
+    // with no cookie, so requiring credentials here guarantees zero reports
+    // forever. The POST is the credential-less sink, rate-limited and
+    // size-capped in its handler; the GET returns the process-wide violation
+    // buffer and gates itself on PLATFORM_ADMIN_API_KEY, because this list
+    // cannot express a method (and the edge meters it, src/middleware.ts).
+    '/api/security/csp-report',
+    '/api/csp-report',
+    // Web-vitals beacon, same reasoning: `navigator.sendBeacon` from a page
+    // that may not yet have a session. POST only, always 204, rate-limited in
+    // the handler (`acceptVitalBeacon`).
+    '/api/telemetry/vitals',
+    // Sub-phase 8.3 adds `/api/scim` (bearer SCIM token,
+    // `authenticateScimRequest`); later sub-phases add their webhook receivers
+    // and the platform-operator `/api/admin` routes, each with the in-handler
+    // gate the guard test requires.
 ];
 
 /**

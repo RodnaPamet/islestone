@@ -231,19 +231,31 @@ describe('MFA gate — class 3b: the workspace picker', () => {
 
 describe('MFA gate — class 4: the parent machine surfaces', () => {
     // The parent exempted its token-authenticated machine callers (SCIM, MCP,
-    // webhooks, beacons) at step 1. Islestone ports none of them yet
-    // (`MACHINE_CALLER_PREFIXES` is empty), so each path is an ordinary
-    // session path and a pending principal is refused. A later sub-phase that
-    // adds one moves its row back to "untouched".
+    // webhooks, beacons) at step 1. Islestone ports SCIM, MCP and the
+    // webhooks later, so each of those is an ordinary session path and a
+    // pending principal is refused. A later sub-phase that adds one moves its
+    // row to the "untouched" case below.
     it.each([
         ['SCIM', '/api/scim/v2/Users'],
         ['MCP', '/api/mcp'],
         ['the Stripe webhook', '/api/stripe/webhook'],
-        ['the CSP report beacon', '/api/csp-report'],
     ])('%s is not exempt (%s)', async (_label, path) => {
         const res = await middleware(req('POST', path), {} as any);
         expect(res.status).toBe(403);
         expect(mockGetToken).toHaveBeenCalled();
+    });
+
+    // Sub-phase 1.6 brought the credential-less beacons into
+    // `MACHINE_CALLER_PREFIXES`: the edge never reads a session for them, so
+    // the MFA gate cannot hold them (a browser sends no cookie with a report).
+    it.each([
+        ['the CSP report beacon', '/api/security/csp-report'],
+        ['the legacy CSP report alias', '/api/csp-report'],
+        ['the web-vitals beacon', '/api/telemetry/vitals'],
+    ])('%s is untouched (%s)', async (_label, path) => {
+        const res = await middleware(req('POST', path), {} as any);
+        expect(res.status).toBe(200);
+        expect(mockGetToken).not.toHaveBeenCalled();
     });
 
     it('the gate is a no-op for any caller with no mfaPending claim', async () => {

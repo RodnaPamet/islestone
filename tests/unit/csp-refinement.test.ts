@@ -15,6 +15,8 @@ import {
     isCspReportOnly,
     CSP_HEADER_ENFORCE,
     CSP_HEADER_REPORT_ONLY,
+    CSP_REPORT_GROUP,
+    CSP_REPORT_PATH,
 } from '@/lib/security/csp';
 
 // ─── Nonce Generation ────────────────────────────────────────────────
@@ -163,9 +165,12 @@ describe('buildCspHeader', () => {
             expect(header).toContain('upgrade-insecure-requests');
         });
 
-        test('names no report endpoint (the violation-report sink is not ported yet)', () => {
-            expect(header).not.toContain('report-uri');
-            expect(header).not.toContain('report-to');
+        test('includes report-uri (the violation-report sink, sub-phase 1.6)', () => {
+            expect(header).toContain(`report-uri ${CSP_REPORT_PATH}`);
+        });
+
+        test('includes report-to directive', () => {
+            expect(header).toContain(`report-to ${CSP_REPORT_GROUP}`);
         });
 
         test('includes worker-src', () => {
@@ -219,6 +224,8 @@ describe('CSP completeness guardrails', () => {
         'form-action',
         'worker-src',
         'manifest-src',
+        'report-uri',
+        'report-to',
     ];
 
     for (const directive of REQUIRED_DIRECTIVES) {
