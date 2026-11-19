@@ -19,8 +19,8 @@
  * at 5528464fc54a8681956f3b9ce23ca9c075f0420e. Islestone has one stream route,
  * the workspace's (the flat `/api/notifications/stream` used a context 1.3
  * deleted and is not ported); part 3 asserts the two Islestone bell writers in
- * place of `task-due.ts` (2.2); part 4, the bell client, comes with the bell
- * in sub-phase 1.7.
+ * place of `task-due.ts` (2.2); part 4, the bell client, came with the bell
+ * in sub-phase 1.7, against the workspace stream only.
  */
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -135,6 +135,45 @@ describe('PR-C SSE notification streaming wiring', () => {
 
         it.each(WRITERS)('$file publishes with the canonical (tenantId, userId, event) signature', ({ file, signature }) => {
             expect(read(file)).toMatch(signature);
+        });
+    });
+
+    describe('4. Client (notifications-bell) cutover to EventSource', () => {
+        const PATH_BELL = 'src/components/layout/notifications-bell.tsx';
+
+        it("opens an EventSource against the base it lists from: the open workspace's", () => {
+            const s = read(PATH_BELL);
+            expect(s).toMatch(/new EventSource\(`\$\{notificationsUrl\}\/stream`/);
+            expect(s).toMatch(/`\/api\/t\/\$\{encodeURIComponent\(tenantSlug\)\}\/notifications`/);
+            // No flat, session-wide route: Islestone does not have one.
+            expect(s).not.toMatch(/['"`]\/api\/notifications/);
+        });
+
+        it('guards EventSource construction with typeof check (SSR + jsdom safe)', () => {
+            expect(read(PATH_BELL)).toMatch(/typeof EventSource !== ['"]undefined['"]/);
+        });
+
+        it('gates the stream behind NEXT_PUBLIC_NOTIFICATIONS_SSE=1, read from the client env module', () => {
+            const s = read(PATH_BELL);
+            expect(s).toMatch(/env\.NEXT_PUBLIC_NOTIFICATIONS_SSE === ['"]1['"]/);
+            expect(s).toMatch(/import\s*\{\s*env\s*\}\s*from\s+['"]@\/env-client['"]/);
+            expect(s).not.toMatch(/from\s+['"]@\/env['"]/);
+        });
+
+        it('wires onmessage to prepend the parsed event into state', () => {
+            const s = read(PATH_BELL);
+            expect(s).toMatch(/es\.onmessage\s*=/);
+            expect(s).toMatch(/JSON\.parse\(msg\.data\)/);
+        });
+
+        it('throttles fallback poll to 5min when SSE is healthy', () => {
+            expect(read(PATH_BELL)).toMatch(/NOTIFICATIONS_FALLBACK_POLL_INTERVAL_MS\s*=\s*5\s*\*\s*60_000/);
+        });
+
+        it('cleans up EventSource + interval on unmount', () => {
+            const s = read(PATH_BELL);
+            expect(s).toMatch(/if \(es\) es\.close\(\)/);
+            expect(s).toMatch(/window\.clearInterval\(intervalId\)/);
         });
     });
 });
