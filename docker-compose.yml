@@ -9,8 +9,8 @@
 # store (sub-phase 1.8).
 #
 # Ports bind to 127.0.0.1 so the stack is not reachable from the network.
-# The app connects through PgBouncer (6432); migrations will use Postgres
-# directly (5432) once Prisma arrives in sub-phase 1.3.
+# The app connects through PgBouncer (6432); migrations use Postgres directly
+# (5432): `npm run migrate:deploy`, or `npm run db:migrate` while developing.
 
 name: islestone
 
@@ -25,6 +25,9 @@ services:
       - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      # Creates the app_user role that row-level security switches to, and
+      # makes POSTGRES_USER a member of it. Runs on a fresh volume only.
+      - ./prisma/init-roles.sh:/docker-entrypoint-initdb.d/01-init-roles.sh:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 5s

@@ -1,0 +1,42 @@
+// Every enum in the schema lives here (prisma/schema/README.md, "Enum
+// policy"). Names and values follow ADR 0006 (docs/adr/0006-vocabulary.md).
+//
+// Adding a value to an enum is a migration of its own: a bare
+// `ALTER TYPE … ADD VALUE` never shares a migration with other DDL
+// (tests/guards/migration-enum-isolation.test.ts). Declaration order is
+// physical order, and tests/guards/enum-member-order-matches-migrations.test.ts
+// holds the two equal.
+
+/// A workspace membership's role (ADR 0006, decided by the owner on
+/// 2026-11-18). Declared in seniority order, Owner > Admin > Member >
+/// Viewer > Guest, because code that looks for the most senior member
+/// sorts `TenantMembership.role` ascending. A role that cannot be resolved
+/// falls back to VIEWER, never GUEST.
+enum Role {
+  /// OWNER — workspace lifecycle and owner management. The last ACTIVE
+  /// OWNER of a workspace cannot be removed or demoted (DB trigger
+  /// `tenant_membership_last_owner_guard`; the usecase guard arrives with
+  /// member management in sub-phase 1.4).
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+  GUEST
+}
+
+/// An organization membership's role. Compare roles through
+/// `src/lib/org-roles.ts`, never with a literal 'ORG_ADMIN'. The last
+/// ORG_OWNER of an organization cannot be removed or demoted (DB trigger
+/// `org_membership_last_owner_guard`).
+enum OrgRole {
+  ORG_OWNER
+  ORG_ADMIN
+  ORG_READER
+}
+
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  DEACTIVATED
+  REMOVED
+}

@@ -1,0 +1,119 @@
+// Tenancy: organizations, workspaces (the `Tenant` model), users and the two
+// membership tables. Names follow ADR 0006: the workspace is `Tenant` in code
+// and the database, "Workspace" in everything a customer reads.
+//
+// Row-level security (prisma/migrations/*_tenancy_core):
+//   TenantMembership   tenant axis, Class A (app.tenant_id)
+//   Organization       org axis (app.user_id)
+//   OrgMembership      org axis (app.user_id)
+//   Tenant, User       global, no RLS
+// See docs/rls-tenant-isolation.md.
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenants                      Tenant[]
+  memberships                  OrgMembership[]
+  provisionedTenantMemberships TenantMembership[] @relation("OrgProvisionedTenantMemberships")
+}
+
+model OrgMembership {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  role           OrgRole  @default(ORG_READER)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+}
+
+/// A workspace: the unit of isolation, billing and membership. Every tenant
+/// table carries its id as `tenantId`.
+model Tenant {
+  id             String    @id @default(cuid())
+  name           String
+  slug           String    @unique
+  /// Hub-and-spoke parent. Nullable: a workspace need not belong to an
+  /// organization. ON DELETE SET NULL, so removing an organization does not
+  /// take its workspaces with it.
+  organizationId String?
+  /// Soft delete. When set, the workspace is filtered out of tenant
+  /// resolution (`resolveTenantContext` answers 404) while its data is
+  /// retained. The last-owner trigger lets a soft-deleted workspace lose its
+  /// last OWNER, so a purge can remove its memberships.
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization?      @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  memberships  TenantMembership[]
+
+  @@index([organizationId])
+}
+
+/// A user's membership in one workspace, with one role ("Member" in the UI).
+model TenantMembership {
+  id                 String           @id @default(cuid())
+  tenantId           String
+  userId             String
+  /// Least privilege by default: VIEWER is also the fallback role (ADR 0006).
+  role               Role             @default(VIEWER)
+  status             MembershipStatus @default(ACTIVE)
+  invitedAt          DateTime?
+  invitedByUserId    String?
+  deactivatedAt      DateTime?
+  /// When non-NULL, this membership was created by an organization's
+  /// provisioning (sub-phase 1.4) for the named organization. NULL means
+  /// it was created directly. ON DELETE SET NULL on the organization.
+  provisionedByOrgId String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  tenant           Tenant        @relation(fields: [tenantId], references: [id])
+  user             User          @relation(fields: [userId], references: [id])
+  invitedBy        User?         @relation("MembershipInviter", fields: [invitedByUserId], references: [id])
+  provisionedByOrg Organization? @relation("OrgProvisionedTenantMemberships", fields: [provisionedByOrgId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, userId])
+  /// The composite an FK from a tenant-scoped child references. `id` alone is
+  /// already unique; this exists so Postgres accepts
+  /// ([childFk, tenantId]) -> ([id, tenantId]), which makes a cross-tenant
+  /// reference unrepresentable rather than merely filtered (ADR 0002).
+  @@unique([id, tenantId])
+  @@index([tenantId, status])
+  /// "Which workspaces does THIS user belong to" without a scan:
+  /// `@@unique([tenantId, userId])` leads with `tenantId`.
+  @@index([userId, status])
+  @@index([invitedByUserId])
+  @@index([provisionedByOrgId])
+}
+
+/// A person's global sign-in identity, independent of any workspace.
+model User {
+  id             String    @id @default(cuid())
+  /// Plaintext and unique in sub-phase 1.3. Sub-phase 1.5 adds the
+  /// deterministic `emailHash` lookup column and the PII extension, and moves
+  /// uniqueness in a forward migration. The column is never `@map`ped
+  /// (ADR 0006 rule 3).
+  email          String    @unique
+  name           String?
+  emailVerified  DateTime?
+  image          String?
+  passwordHash   String?
+  sessionVersion Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  tenantMemberships  TenantMembership[]
+  invitedMemberships TenantMembership[] @relation("MembershipInviter")
+  orgMemberships     OrgMembership[]
+}
