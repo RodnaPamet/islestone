@@ -1,0 +1,556 @@
+/**
+ * Guardrail: Epic C.2 — repository-wide secret-leak check.
+ *
+ * This is the CI half of the secret-detection layer. The local
+ * pre-commit hook (`scripts/detect-secrets.sh` via `.husky/pre-commit`)
+ * scans only staged files; if a developer commits with `--no-verify`,
+ * or pushes from a tooling environment without husky installed, this
+ * guardrail catches the leak before merge.
+ *
+ * Strategy:
+ *   - Patterns are loaded from `.secret-patterns` (the same source the
+ *     local hook reads). One source of truth; no drift.
+ *   - Files to scan come from `git ls-files`. Deterministic, ignores
+ *     `.gitignore`d artefacts, and stays fast (~1s on this repo).
+ *   - The same path-skip + inline-allowlist semantics as the local
+ *     scanner apply, so a developer who clears the local hook also
+ *     clears CI without learning a second mental model.
+ *
+ * Failure UX:
+ *   - One Jest failure per (file, pattern) hit.
+ *   - Each failure carries `file:line`, the pattern name, the offending
+ *     excerpt, and the same actionable footer the local scanner emits.
+ *   - The repo-baseline `REPO_BASELINE` exists so an
+ *     incidental new pattern can ratchet down without lying about
+ *     existing test fixtures. Adding to it requires writing the
+ *     reason in code, which a reviewer must approve.
+ */
+
+import { execFileSync, spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+import { BINARY_EXTENSIONS } from '../helpers/binary-extensions';
+import { gitEnvFor } from '../helpers/git-files';
+
+const REPO_ROOT = path.resolve(__dirname, '../..');
+const PATTERN_FILE = path.join(REPO_ROOT, '.secret-patterns');
+const ALLOWLIST_MARKER = 'pragma: allowlist secret';
+
+// ─── Path skips ─────────────────────────────────────────────────────
+//
+// Mirror the bash scanner's two lists so the local + CI scanners scan the
+// same surface. Any-depth for the first, ROOT-ANCHORED for the second.
+/**
+ * Names that may appear at ANY depth, because nothing here is ever genuinely
+ * called them — a nested install, and the lockfiles a nested package owns.
+ */
+const SKIP_ANY_DEPTH: readonly string[] = [
+    'node_modules/',
+    'package-lock.json',
+    'yarn.lock',
+    'pnpm-lock.yaml',
+];
+
+/**
+ * Build output and fixed locations, matched only at the REPOSITORY ROOT
+ * (#5631).
+ *
+ * The whole list used to be a bare substring match, and `coverage/` is an
+ * ordinary word: it skipped `src/app/api/t/[tenantSlug]/coverage/route.ts`,
+ * the agent coverage route and all three
+ * `src/app/t/[tenantSlug]/(app)/coverage/` files. Five source files, scanned
+ * by neither this guardrail nor the pre-commit hook, both reporting success
+ * because neither looked.
+ */
+const SKIP_PATHS: readonly string[] = [
+    '.next/',
+    'dist/',
+    'build/',
+    'coverage/',
+    'playwright-report/',
+    'test-results/',
+    '.git/',
+    '.husky/_/',
+    'prisma/migrations/',
+    'public/',
+
+    // Self-skip: the scanner, the pattern source, and the unit test that
+    // exercises both — all contain secret-shaped strings on purpose.
+    // An entry must EARN its place. THIS file is deliberately absent:
+    // its planted string went with the describe block above, so it is
+    // scanned like any other file. Re-adding it would be a standing
+    // hole in the gate, in the one file somebody is most likely to
+    // paste a real credential into.
+    'scripts/detect-secrets.sh',
+    '.secret-patterns',
+    'tests/unit/security/detect-secrets.test.ts',
+
+    // Canonical home for intentional secret-shaped fixtures.
+    'tests/fixtures/secrets/',
+];
+
+export function isSkippedPath(rel: string): boolean {
+    if (SKIP_ANY_DEPTH.some((skip) => rel.includes(skip))) return true;
+    return SKIP_PATHS.some((skip) => rel.startsWith(skip));
+}
+
+// ─── Repo-baseline allowlist ───────────────────────────────────────
+//
+// Pre-existing test fixtures and example envs that contain
+// secret-shaped placeholders (NOT real credentials). Each entry must
+// carry a one-line `reason`. New entries should almost always be
+// avoided in favour of an inline `// pragma: allowlist secret`
+// comment or moving the file under `tests/fixtures/secrets/`.
+
+interface KnownHit {
+    file: string;
+    pattern: string;
+    reason: string;
+}
+
+const REPO_BASELINE: readonly KnownHit[] = [
+    // Baseline cleared in cleanup-6-secret-scan-pragmas
+    // (2026-06-14). Every previously-baselined fixture and the
+    // `.env.example` placeholders now carry an inline
+    // `// pragma: allowlist secret` (or `# pragma: …`) comment with
+    // a one-line reason. The pragma form lives next to the literal
+    // it describes — durable, grep-able, and reviewer-visible at the
+    // exact line — so the baseline array became stale and was
+    // removed in the same diff. The "no stale entries" sanity check
+    // below also closes the GitHub Secret Scanning (Generic) alerts
+    // that surfaced these fixtures.
+];
+
+function isBaselineHit(file: string, patternName: string): boolean {
+    return REPO_BASELINE.some(
+        (h) => h.file === file && h.pattern === patternName,
+    );
+}
+
+// ─── Pattern loader ─────────────────────────────────────────────────
+
+interface Pattern {
+    name: string;
+    regex: RegExp;
+}
+
+function loadPatterns(file: string): Pattern[] {
+    const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+    const out: Pattern[] = [];
+    for (const raw of lines) {
+        const line = raw.trim();
+        if (!line) continue;
+        if (line.startsWith('#')) continue;
+        const idx = line.indexOf('|');
+        if (idx <= 0) {
+            throw new Error(
+                `Malformed line in .secret-patterns: ${JSON.stringify(raw)}`,
+            );
+        }
+        const name = line.slice(0, idx).trim();
+        const pcre = line.slice(idx + 1).trim();
+        // The pattern file uses PCRE syntax that bash's `grep -P`
+        // accepts. The Node `RegExp` engine accepts everything we use
+        // (`(?i)`, alternation, character classes) once we strip the
+        // inline-modifier and lift it to the flag set. Translate
+        // `(?i)` → flags = 'i'; otherwise use no flags.
+        let flags = '';
+        let body = pcre;
+        if (body.startsWith('(?i)')) {
+            flags = 'i';
+            body = body.slice(4);
+        }
+        // PCRE `\x27` is `'` — Node RegExp accepts this verbatim.
+        out.push({ name, regex: new RegExp(body, flags) });
+    }
+    if (out.length === 0) {
+        throw new Error('No patterns loaded from .secret-patterns');
+    }
+    return out;
+}
+
+const PATTERNS = loadPatterns(PATTERN_FILE);
+
+// ─── File discovery ────────────────────────────────────────────────
+
+/**
+ * `git ls-files` lists every tracked file. Deterministic, fast, and
+ * automatically respects `.gitignore`. We exclude binary blobs by
+ * filtering on extension first, then by reading the first ~1KB and
+ * checking for null bytes.
+ */
+function listTrackedFiles(root: string = REPO_ROOT): string[] {
+    const out = execFileSync('git', ['ls-files', '-z'], {
+        cwd: root,
+        encoding: 'utf8',
+        env: gitEnvFor(),
+    });
+    return out.split('\0').filter(Boolean);
+}
+
+// BINARY_EXTENSIONS moved to tests/helpers/binary-extensions.ts when
+// tests/guardrails/no-control-bytes-in-source.test.ts came to need the same
+// set; two copies could narrow one sweep without anything failing.
+function isBinaryFile(absPath: string): boolean {
+    const ext = path.extname(absPath).toLowerCase();
+    if (BINARY_EXTENSIONS.has(ext)) return true;
+    // First-1KB null-byte sniff for unknown extensions.
+    try {
+        const fd = fs.openSync(absPath, 'r');
+        const buf = Buffer.alloc(1024);
+        const bytes = fs.readSync(fd, buf, 0, buf.length, 0);
+        fs.closeSync(fd);
+        for (let i = 0; i < bytes; i++) {
+            if (buf[i] === 0) return true;
+        }
+    } catch {
+        // Unreadable / dangling symlink — skip.
+        return true;
+    }
+    return false;
+}
+
+// ─── Scan ──────────────────────────────────────────────────────────
+
+interface Finding {
+    file: string;
+    line: number;
+    pattern: string;
+    excerpt: string;
+}
+
+function scanRepo(root: string = REPO_ROOT): Finding[] {
+    const findings: Finding[] = [];
+    const files = listTrackedFiles(root);
+
+    for (const rel of files) {
+        if (isSkippedPath(rel)) continue;
+        const abs = path.join(root, rel);
+        if (!fs.existsSync(abs)) continue;
+        if (isBinaryFile(abs)) continue;
+
+        const text = fs.readFileSync(abs, 'utf8');
+        // Defer line splitting until at least one pattern matches —
+        // keeps the average-case fast on a clean repo.
+        let lines: string[] | null = null;
+
+        for (const { name, regex } of PATTERNS) {
+            // Compile a "global" variant per scan to walk all matches.
+            const global = new RegExp(regex.source, regex.flags + 'g');
+            let m: RegExpExecArray | null;
+            while ((m = global.exec(text)) !== null) {
+                if (lines === null) lines = text.split('\n');
+                const upToMatch = text.slice(0, m.index);
+                const lineNo = upToMatch.split('\n').length;
+                const lineText = lines[lineNo - 1] ?? '';
+                if (lineText.includes(ALLOWLIST_MARKER)) continue;
+                const excerpt =
+                    lineText.length > 200
+                        ? `${lineText.slice(0, 200)}…`
+                        : lineText;
+                findings.push({ file: rel, line: lineNo, pattern: name, excerpt });
+                // Avoid infinite loop on zero-width matches.
+                if (m.index === global.lastIndex) global.lastIndex++;
+            }
+        }
+    }
+    return findings;
+}
+
+const findings = scanRepo();
+
+// ─── Tests ─────────────────────────────────────────────────────────
+
+describe('Epic C.2 — repository-wide secret-leak guardrail', () => {
+    it('loads the .secret-patterns file', () => {
+        expect(PATTERNS.length).toBeGreaterThan(0);
+        for (const p of PATTERNS) {
+            expect(p.name.length).toBeGreaterThan(0);
+            expect(p.regex).toBeInstanceOf(RegExp);
+        }
+    });
+
+    it('discovers tracked files (sanity check)', () => {
+        // inflect-compliance floored this at 100 files; the planted
+        // repository below is the proof that the scan finds what it must.
+        expect(listTrackedFiles()).toEqual(expect.arrayContaining(['package.json', 'LICENSE']));
+    });
+
+    it('reports a planted secret, and not an allowlisted line or a skipped path (planted repository)', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'islestone-no-secrets-'));
+        try {
+            execFileSync('git', ['init', '-q'], { cwd: root, env: gitEnvFor() });
+            // Assembled at run time, so this file carries no secret-shaped
+            // literal of its own for the real scan to report.
+            const key = 'AKIA' + 'QWERTYUIOPASDFGH';
+            const plant: Record<string, string> = {
+                'src/config.ts': `export const k = '${key}';\n`,
+                'src/allowed.ts': `export const k = '${key}'; // ${ALLOWLIST_MARKER}\n`,
+                'tests/fixtures/secrets/sample.ts': `export const k = '${key}';\n`,
+            };
+            for (const [rel, body] of Object.entries(plant)) {
+                fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+                fs.writeFileSync(path.join(root, rel), body);
+            }
+            execFileSync('git', ['add', '-A'], { cwd: root, env: gitEnvFor() });
+            const found = scanRepo(root);
+            expect(found.map((f) => f.file)).toEqual(['src/config.ts']);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('the scanner itself is excluded from self-scan', () => {
+        const selfScan = findings.find(
+            (f) => f.file === 'scripts/detect-secrets.sh',
+        );
+        expect(selfScan).toBeUndefined();
+    });
+
+    it('produces no NEW secret-shaped findings outside the documented baseline', () => {
+        const novel = findings.filter(
+            (f) => !isBaselineHit(f.file, f.pattern),
+        );
+
+        if (novel.length === 0) return;
+
+        // Build a copy-paste-actionable failure message.
+        const grouped = new Map<string, Finding[]>();
+        for (const f of novel) {
+            const key = `${f.file}::${f.pattern}`;
+            const arr = grouped.get(key) ?? [];
+            arr.push(f);
+            grouped.set(key, arr);
+        }
+
+        const lines: string[] = [];
+        lines.push('Possible secrets detected outside the allowed baseline:');
+        lines.push('');
+        for (const [key, hits] of grouped) {
+            const [file, pattern] = key.split('::');
+            lines.push(`  ${file}`);
+            lines.push(`    ${pattern}`);
+            for (const h of hits) {
+                lines.push(`      :${h.line} ${h.excerpt.trim()}`);
+            }
+            lines.push('');
+        }
+        lines.push('How to proceed:');
+        lines.push("  1. If this is a real secret — remove it, rotate it");
+        lines.push('     immediately at the issuer, and re-push.');
+        lines.push('  2. If this is a sample / fixture / unit-test input —');
+        lines.push('     move it under tests/fixtures/secrets/ (auto-skipped)');
+        lines.push('     OR append `// pragma: allowlist secret` to the line');
+        lines.push('     with a short comment explaining why it is safe.');
+        lines.push('  3. Re-run locally:  npm run secret-scan -- --all');
+        lines.push('  4. Only if a hit is a known long-lived placeholder, add a');
+        lines.push('     REPO_BASELINE entry in tests/guards/no-secrets.test.ts');
+        lines.push('     with the file, pattern, and a written reason.');
+
+        throw new Error(lines.join('\n'));
+    });
+
+    it('every REPO_BASELINE entry still applies (no stale entries)', () => {
+        // Catches the case where a file was deleted/cleaned but its
+        // baseline entry was forgotten — the entry quietly weakens
+        // future enforcement.
+        const stale = REPO_BASELINE.filter(
+            (entry) =>
+                !findings.some(
+                    (f) => f.file === entry.file && f.pattern === entry.pattern,
+                ),
+        );
+
+        if (stale.length > 0) {
+            const msg = [
+                'REPO_BASELINE in tests/guards/no-secrets.test.ts contains stale entries.',
+                'Either the file was deleted or the secret-shaped content was cleaned;',
+                'remove the entry from the array.',
+                '',
+                ...stale.map(
+                    (s) => `  - ${s.file} (${s.pattern}) — ${s.reason}`,
+                ),
+            ].join('\n');
+            throw new Error(msg);
+        }
+    });
+});
+
+// ─── GAP-16 — env-file filename guard ─────────────────────────────────
+//
+// Pre-commit hook (scripts/detect-secrets.sh) refuses staged `.env` /
+// `.env.<name>` files by name. The CI side mirrors that as a tracked-
+// files invariant: no `.env` or `.env.<name>` should EVER exist in
+// `git ls-files`. Templates (.env.<name>.example) are explicitly
+// allowed.
+//
+// This complements the content-pattern scan above. Together they cover:
+//   - accidental commits of secret-bearing .env files (content scan)
+//   - deliberate -f overrides committing placeholder-only .env files
+//     that don't trip any secret pattern (this filename guard)
+
+describe('GAP-16 — no tracked .env files (filename guard)', () => {
+    it('no `.env` or `.env.<name>` is in the git index (only .env.<>.example templates allowed)', () => {
+        // Use git ls-files to enumerate tracked files. Cheaper than
+        // walking the tree, and matches what reviewers see on the PR.
+        const tracked = execFileSync('git', ['ls-files', '-z'], {
+            encoding: 'utf8',
+            cwd: REPO_ROOT,
+        })
+            .split('\0')
+            .filter(Boolean);
+
+        const violations: string[] = [];
+        for (const file of tracked) {
+            // basename() of the path
+            const base = file.split('/').pop() ?? file;
+            // Allow templates first.
+            if (base.endsWith('.example')) continue;
+            // Match `.env` or `.env.<anything>`.
+            if (base === '.env' || base.startsWith('.env.')) {
+                violations.push(file);
+            }
+        }
+
+        if (violations.length > 0) {
+            throw new Error(
+                'Tracked .env files detected (forbidden by GAP-16):\n' +
+                    violations.map((v) => `  ${v}`).join('\n') +
+                    '\n\n' +
+                    'Templates must be named .env.<name>.example. Real env files ' +
+                    'must never be committed. See scripts/detect-secrets.sh ' +
+                    'env_reject_findings for the pre-commit equivalent.',
+            );
+        }
+    });
+
+    it('the pre-commit env-file guard refuses a planted .env file', () => {
+        // Plant a `.env` file containing PLACEHOLDER content that does
+        // NOT match any secret pattern. The filename guard MUST still
+        // refuse it — that's the whole point of having a separate
+        // filename check on top of content scanning.
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'env-guard-'));
+        const planted = path.join(tmp, '.env');
+        fs.writeFileSync(planted, 'FOO=bar\nBAZ=qux\n');
+        try {
+            const result = spawnSync(
+                'bash',
+                [path.join(REPO_ROOT, 'scripts/detect-secrets.sh'), planted],
+                { encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' } },
+            );
+            expect(result.status).toBe(1);
+            expect(result.stdout).toMatch(/Refusing to commit env file/);
+        } finally {
+            fs.rmSync(tmp, { recursive: true, force: true });
+        }
+    });
+
+    it('the pre-commit env-file guard ALLOWS a .env.example template', () => {
+        // Templates with the `.example` suffix are the canonical
+        // committed-template shape. The filename guard must let them
+        // through (the content scan still applies separately, but
+        // a placeholder-only template should pass that too).
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'env-guard-'));
+        const planted = path.join(tmp, '.env.example');
+        fs.writeFileSync(planted, 'FOO=replace-me\n');
+        try {
+            const result = spawnSync(
+                'bash',
+                [path.join(REPO_ROOT, 'scripts/detect-secrets.sh'), planted],
+                { encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' } },
+            );
+            expect(result.status).toBe(0);
+        } finally {
+            fs.rmSync(tmp, { recursive: true, force: true });
+        }
+    });
+});
+
+// ─── #5631: the skip lists, and keeping the two scanners in step ────────
+//
+// Both scanners matched their whole skip list mid-path, so `coverage/` — an
+// ordinary word — skipped five tenant coverage source files in the pre-commit
+// hook AND here. A credential in one of them shipped with both gates green,
+// because neither looked.
+describe('path skips are anchored where they must be (#5631)', () => {
+    const SCANNED = [
+        'src/app/api/t/[tenantSlug]/coverage/route.ts',
+        'src/app/api/t/[tenantSlug]/admin/agents/[agentId]/coverage/route.ts',
+        'src/app/t/[tenantSlug]/(app)/coverage/page.tsx',
+        'src/app/t/[tenantSlug]/(app)/coverage/CoverageClient.tsx',
+        'src/app/t/[tenantSlug]/(app)/coverage/loading.tsx',
+    ];
+
+    it.each(SCANNED)('scans %s', (rel) => {
+        expect(isSkippedPath(rel)).toBe(false);
+    });
+
+    it('still skips the build output these words were listed for', () => {
+        // The control. Anchoring must not stop skipping the real coverage
+        // report, or this gate drowns in generated noise and gets disabled.
+        expect(isSkippedPath('coverage/lcov-report/index.html')).toBe(true);
+        expect(isSkippedPath('coverage/coverage-final.json')).toBe(true);
+        expect(isSkippedPath('.next/server/app/page.js')).toBe(true);
+        expect(isSkippedPath('dist/index.js')).toBe(true);
+        expect(isSkippedPath('public/favicon.ico')).toBe(true);
+        expect(isSkippedPath('playwright-report/index.html')).toBe(true);
+    });
+
+    it('skips a NESTED lockfile and a nested install, which are any-depth by design', () => {
+        // Why the list is split rather than wholly anchored: these are real
+        // paths in this repo and are noise, not surface.
+        expect(isSkippedPath('site/package-lock.json')).toBe(true);
+        expect(isSkippedPath('packages/ui/node_modules/x/index.js')).toBe(true);
+    });
+
+    it('a directory merely NAMED like build output, at depth, is scanned', () => {
+        // The general form of the defect, so a future list entry inherits the
+        // property rather than needing its own case.
+        expect(isSkippedPath('src/app/t/[tenantSlug]/(app)/dist/page.tsx')).toBe(false);
+        expect(isSkippedPath('src/lib/build/plan.ts')).toBe(false);
+        expect(isSkippedPath('src/components/public/Banner.tsx')).toBe(false);
+    });
+
+    it('the fix only ever WIDENS what is scanned, measured over the real tree', () => {
+        // The safety property for a security gate: anchoring must not newly
+        // exempt anything. Compared against the old bare-substring rule over
+        // every tracked file, so this is a measurement rather than a claim.
+        const oldRule = (rel: string) =>
+            [...SKIP_ANY_DEPTH, ...SKIP_PATHS].some((skip) => rel.includes(skip));
+        const newlySkipped = listTrackedFiles()
+            .filter((rel) => isSkippedPath(rel) && !oldRule(rel));
+        expect(newlySkipped).toEqual([]);
+    });
+});
+
+describe('the bash scanner and this guardrail skip the SAME surface (#5631)', () => {
+    // The TS comment above claims to mirror the bash lists, and until now
+    // nothing checked it. A fix applied to one scanner only is precisely the
+    // half-fix #5631 warns about, so the claim is now enforced.
+    const sh = fs.readFileSync(path.join(REPO_ROOT, 'scripts/detect-secrets.sh'), 'utf-8');
+
+    const bashArray = (name: string): string[] => {
+        const m = new RegExp(`${name}=\\(([\\s\\S]*?)\\n\\)`).exec(sh);
+        if (!m) throw new Error(`${name} not found in detect-secrets.sh`);
+        return [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]).sort();
+    };
+
+    it('the any-depth lists are identical', () => {
+        expect(bashArray('SKIP_ANY_DEPTH')).toEqual([...SKIP_ANY_DEPTH].sort());
+    });
+
+    it('the root-anchored lists are identical', () => {
+        expect(bashArray('SKIP_PATHS')).toEqual([...SKIP_PATHS].sort());
+    });
+
+    it('the bash scanner anchors its SKIP_PATHS loop and not its any-depth loop', () => {
+        // The lists agreeing is not enough: they are applied by two different
+        // loops, and the defect was in the APPLICATION, not the list.
+        const anyDepthLoop = /SKIP_ANY_DEPTH\[@\]\}"; do\s*\n\s*case "\$file" in\s*\n\s*"\$skip"\*\|\*"\/\$skip"\*\)/;
+        const anchoredLoop = /SKIP_PATHS\[@\]\}"; do\s*\n\s*case "\$file" in\s*\n\s*"\$skip"\*\)/;
+        expect(anyDepthLoop.test(sh)).toBe(true);
+        expect(anchoredLoop.test(sh)).toBe(true);
+    });
+});

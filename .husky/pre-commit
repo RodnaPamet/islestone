@@ -1,0 +1,18 @@
+# Epic C.2 — secret-detection pre-commit hook (sub-phase 1.5).
+#
+# scripts/detect-secrets.sh: a regex scan of the staged files for AWS keys,
+# GitHub / Slack / Anthropic / OpenAI / Stripe tokens, JWTs, PEM private keys,
+# npm tokens and suspicious password assignments. Aborts the commit on a
+# finding. The CI half is tests/guards/no-secrets.test.ts, over every tracked
+# file.
+#
+# Copied from inflect-compliance `.husky/pre-commit` at
+# 5528464fc54a8681956f3b9ce23ca9c075f0420e, without its lint-staged step,
+# which only re-ran the same scan on the staged subset.
+#
+# Bypass (use sparingly + flag in the commit message):
+#   git commit --no-verify
+
+set -e
+
+bash scripts/detect-secrets.sh

@@ -73,7 +73,8 @@ const swcEsm = [
  * CommonJS path, so these are compiled like our own code; everything else in
  * node_modules is required as it is. TanStack Table v9 has no `require`
  * condition at all; visx re-exports d3 modules (and `internmap`, d3-array's
- * dependency); react-grid-layout v2 ships ESM at its main entry.
+ * dependency); react-grid-layout v2 ships ESM at its main entry. The node
+ * project shares the list, for sanitize-html's ESM-only parser.
  */
 const ESM_PACKAGES = [
     '@tanstack/(?:react-table|table-core)',
@@ -85,6 +86,16 @@ const ESM_PACKAGES = [
     'react-grid-layout',
     'react-resizable',
     'react-draggable',
+    // sanitize-html's parser (src/lib/security/sanitize.ts, sub-phase 1.5).
+    // Node 22.12+ requires ESM natively and Jest 30 does on Node 24.9+, so
+    // the app and CI's Node 24 do not need this; a contributor on Node 22
+    // running Jest does.
+    'htmlparser2',
+    'domhandler',
+    'domutils',
+    'dom-serializer',
+    'domelementtype',
+    'entities',
 ];
 
 const moduleNameMapper = {
