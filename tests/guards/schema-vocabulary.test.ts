@@ -256,6 +256,8 @@ describe('the schema speaks ADR 0006', () => {
             'Account',
             'AuditLog',
             'AuditOutbox',
+            'Comment',
+            'Label',
             'Notification',
             'NotificationOutbox',
             'OrgAuditLog',
@@ -263,6 +265,10 @@ describe('the schema speaks ADR 0006', () => {
             'OrgMembership',
             'Organization',
             'PasswordResetToken',
+            'Project',
+            'ProjectKeyPrefix',
+            'ProjectKeySequence',
+            'Team',
             'Tenant',
             'TenantCustomRole',
             'TenantInvite',
@@ -273,8 +279,16 @@ describe('the schema speaks ADR 0006', () => {
             'UserMfaEnrollment',
             'UserSession',
             'VerificationToken',
+            'WorkItem',
+            'WorkItemKeyAlias',
+            'WorkItemLabel',
+            'WorkItemLink',
+            'WorkItemRelation',
+            'WorkItemType',
+            'WorkItemWatcher',
+            'WorkflowState',
         ]);
-        expect(ids.filter((i) => i.kind === 'enum').length).toBe(10);
+        expect(ids.filter((i) => i.kind === 'enum').length).toBe(13);
         expect(ids).toEqual(expect.arrayContaining([{ kind: 'value', name: 'MEMBER', where: 'Role.MEMBER' }]));
     });
 });

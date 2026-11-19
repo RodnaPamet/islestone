@@ -37,6 +37,21 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     Notification: 'tests/integration/notification-tables-isolation.test.ts',
     NotificationOutbox: 'tests/integration/notification-tables-isolation.test.ts',
     TenantNotificationSettings: 'tests/integration/notification-tables-isolation.test.ts',
+    // Sub-phases 2.1–2.2.
+    Team: 'tests/integration/work-tables-isolation.test.ts',
+    WorkflowState: 'tests/integration/work-tables-isolation.test.ts',
+    Project: 'tests/integration/work-tables-isolation.test.ts',
+    ProjectKeyPrefix: 'tests/integration/work-tables-isolation.test.ts',
+    ProjectKeySequence: 'tests/integration/work-tables-isolation.test.ts',
+    WorkItemType: 'tests/integration/work-tables-isolation.test.ts',
+    WorkItem: 'tests/integration/work-tables-isolation.test.ts',
+    WorkItemKeyAlias: 'tests/integration/work-tables-isolation.test.ts',
+    WorkItemRelation: 'tests/integration/work-tables-isolation.test.ts',
+    Label: 'tests/integration/work-tables-isolation.test.ts',
+    WorkItemLabel: 'tests/integration/work-tables-isolation.test.ts',
+    Comment: 'tests/integration/work-tables-isolation.test.ts',
+    WorkItemWatcher: 'tests/integration/work-tables-isolation.test.ts',
+    WorkItemLink: 'tests/integration/work-tables-isolation.test.ts',
 };
 
 /** Models proven only structurally, pending a two-tenant test. Empty, and should stay so. */

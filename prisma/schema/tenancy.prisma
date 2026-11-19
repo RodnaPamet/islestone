@@ -81,6 +81,21 @@ model Tenant {
   notificationOutbox   NotificationOutbox[]
   notificationSettings TenantNotificationSettings?
 
+  teams              Team[]
+  workflowStates     WorkflowState[]
+  projects           Project[]
+  projectKeyPrefixes ProjectKeyPrefix[]
+  projectKeySeqs     ProjectKeySequence[]
+  workItemTypes      WorkItemType[]
+  workItems          WorkItem[]
+  workItemKeyAliases WorkItemKeyAlias[]
+  workItemRelations  WorkItemRelation[]
+  labels             Label[]
+  workItemLabels     WorkItemLabel[]
+  comments           Comment[]
+  workItemWatchers   WorkItemWatcher[]
+  workItemLinks      WorkItemLink[]
+
   @@index([organizationId])
 }
 
@@ -110,6 +125,10 @@ model TenantMembership {
   invitedBy        User?             @relation("MembershipInviter", fields: [invitedByUserId], references: [id])
   provisionedByOrg Organization?     @relation("OrgProvisionedTenantMemberships", fields: [provisionedByOrgId], references: [id], onDelete: SetNull)
   customRole       TenantCustomRole? @relation(fields: [customRoleId], references: [id])
+
+  /// Work items this member is the assignee of (ADR 0003, RESTRICT).
+  assignedWorkItems WorkItem[]        @relation("WorkItemAssignee")
+  watching          WorkItemWatcher[] @relation("WorkItemWatcherMember")
 
   @@unique([tenantId, userId])
   /// The composite an FK from a tenant-scoped child references. `id` alone is
@@ -169,4 +188,9 @@ model User {
   orgAuditLogSubjects OrgAuditLog[] @relation("OrgAuditLogSubject")
 
   notifications Notification[]
+
+  createdWorkItems         WorkItem[]         @relation("WorkItemCreator")
+  createdWorkItemRelations WorkItemRelation[] @relation("WorkItemRelationCreator")
+  createdWorkItemLinks     WorkItemLink[]     @relation("WorkItemLinkCreator")
+  comments                 Comment[]          @relation("CommentAuthor")
 }

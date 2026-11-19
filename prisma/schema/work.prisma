@@ -1,0 +1,380 @@
+// ─────────────────────────────────────────────────────────────────
+//  Work: teams, workflows, projects, work items (sub-phases 2.1–2.2)
+//
+//  ADR 0002 (the work-item model) and ADR 0006 (names). Written fresh from
+//  ADR 0002 §12; the composite parent keys follow inflect-compliance
+//  `prisma/schema/tasks.prisma` lines 92–97 at
+//  5528464fc54a8681956f3b9ce23ca9c075f0420e (Postgres runs foreign-key
+//  checks as the table owner, which bypasses RLS, so a child that references
+//  its parent by id alone could name another workspace's row; every child
+//  here references `(parentId, tenantId)`).
+//
+//  Migration `20261119160000_work_core` holds what Prisma cannot declare, each
+//  with a catalogue test (tests/integration/work-sql-constructs.test.ts):
+//    - `COLLATE "C"` on every `sortKey` (ADR 0002 §5);
+//    - the parent link `NO ACTION DEFERRABLE INITIALLY DEFERRED`;
+//    - the relation CHECKs and the one-duplicate partial unique;
+//    - the one-default-state partial unique, the workspace-label partial unique;
+//    - the `workflow_state_category_immutable` trigger;
+//    - row-level security and the grants for every table.
+// ─────────────────────────────────────────────────────────────────
+
+/// A group of members in a workspace. A team owns its workflow (its
+/// `WorkflowState` rows) and its projects. Deleting a team is refused while
+/// it has projects.
+model Team {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflowStates WorkflowState[]
+  projects       Project[]
+  labels         Label[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, name])
+}
+
+/// One named step in a team's workflow ("Status" in the UI, ADR 0006). The
+/// category is fixed at creation (trigger `workflow_state_category_immutable`):
+/// that is what lets `WorkItem.stateCategory` be held by a foreign key.
+model WorkflowState {
+  id         String                @id @default(cuid())
+  tenantId   String
+  teamId     String
+  name       String
+  category   WorkflowStateCategory
+  /// Fractional index within the team (ADR 0002 §5); `COLLATE "C"` in SQL.
+  sortKey    String
+  /// Exactly one live default per team: the partial unique
+  /// `WorkflowState_one_default_per_team` (SQL).
+  isDefault  Boolean               @default(false)
+  archivedAt DateTime?
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  team      Team       @relation(fields: [teamId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  workItems WorkItem[]
+
+  @@unique([tenantId, teamId, name])
+  /// Target of WorkItem's composite FK: a state of another team, or a stale
+  /// category, cannot be stored on an item (ADR 0002 §10).
+  @@unique([id, teamId, category, tenantId])
+  @@index([tenantId, teamId, sortKey])
+}
+
+/// A body of work owned by one team, with its own key prefix. Soft delete
+/// hides the project's items through the visibility predicate
+/// (`projectVisibilityWhere`); the items' own `deletedAt` is not touched, so a
+/// project restore brings every item back as it was.
+model Project {
+  id              String    @id @default(cuid())
+  tenantId        String
+  teamId          String
+  name            String
+  /// The current prefix of the project's keys (`ISL` in `ISL-123`). Every
+  /// prefix it has had is in `ProjectKeyPrefix`; no prefix is ever reused.
+  keyPrefix       String
+  version         Int       @default(1)
+  archivedAt      DateTime?
+  deletedAt       DateTime?
+  /// An actor stamp, like an audit row's user id: a plain column, no FK.
+  deletedByUserId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  team      Team       @relation(fields: [teamId, tenantId], references: [id, tenantId])
+  workItems WorkItem[]
+
+  @@unique([id, tenantId])
+  /// Target of WorkItem's composite FK: an item's team is its project's team.
+  @@unique([id, teamId, tenantId])
+  @@unique([tenantId, keyPrefix])
+  @@index([tenantId, teamId])
+  /// The purge sweep across every workspace (ADR 0002 §13's one exception).
+  @@index([deletedAt])
+}
+
+/// Every prefix a project has had. The primary key makes a prefix unique in
+/// the workspace for ever. No FK to `Project`: the row survives the
+/// project's purge, so the prefix stays retired and old keys of moved items
+/// keep resolving through `WorkItemKeyAlias`.
+model ProjectKeyPrefix {
+  tenantId  String
+  prefix    String
+  projectId String
+  createdAt DateTime  @default(now())
+  retiredAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, prefix])
+  @@index([tenantId, projectId])
+}
+
+/// A project's key counter, incremented atomically (`INSERT … ON CONFLICT DO
+/// UPDATE`) in the transaction that inserts the item, so a failed create
+/// uses no number and numbers are never reused. The pattern of
+/// inflect-compliance's `TaskKeySequence` (`tasks.prisma` lines 100–114),
+/// scoped to a project. No FK to `Project`, for the reason on
+/// `ProjectKeyPrefix`: key bookkeeping is never pruned.
+model ProjectKeySequence {
+  projectId String   @id
+  tenantId  String
+  lastValue Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+/// A workspace-configured kind of work item (ADR 0002 §1). Types carry no
+/// behaviour. An archived type is refused for new items and kept on old ones.
+model WorkItemType {
+  id         String    @id @default(cuid())
+  tenantId   String
+  name       String
+  /// A key of the shared icon set, never a URL or markup.
+  icon       String?
+  /// A token name or `#RRGGBB`.
+  color      String?
+  /// Fractional index; `COLLATE "C"` in SQL.
+  sortKey    String
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workItems WorkItem[]
+
+  @@unique([tenantId, name])
+  @@unique([id, tenantId])
+}
+
+/// The single unit of tracked work (ADR 0002). Sub-items are work items
+/// whose `parentId` names another item of the same project.
+model WorkItem {
+  id              String                @id @default(cuid())
+  tenantId        String
+  /// The project's team, held by the composite FK to `Project`.
+  teamId          String
+  projectId       String
+  /// Key = `Project.keyPrefix` + "-" + number. Never reused.
+  number          Int
+  typeId          String
+  /// Plaintext: searched, shown in notifications, quoted in commits.
+  title           String
+  /// ENCRYPTED (manifest `src/lib/security/encrypted-fields.ts`) and
+  /// sanitised on write. Audit entries record that it changed, never its text.
+  description     String?
+  stateId         String
+  /// Denormalised; held by the composite FK to `WorkflowState`.
+  stateCategory   WorkflowStateCategory
+  priority        WorkItemPriority      @default(NONE)
+  /// The one accountable person (ADR 0003): a member, FK to
+  /// `TenantMembership(tenantId, userId)`, ON DELETE RESTRICT.
+  assigneeId      String?
+  createdByUserId String
+  /// `NO ACTION DEFERRABLE INITIALLY DEFERRED` in SQL, so a move updates a
+  /// parent and its sub-items in one transaction.
+  parentId        String?
+  /// Fractional index; `COLLATE "C"` in SQL. Not part of `version`.
+  sortKey         String
+  startDate       DateTime?             @db.Date
+  dueDate         DateTime?             @db.Date
+  startedAt       DateTime?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  /// Optimistic concurrency (ADR 0002 §9): every write that changes what the
+  /// item shows increases it; `sortKey` does not.
+  version         Int                   @default(1)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  deletedAt       DateTime?
+  /// An actor stamp: a plain column, no FK.
+  deletedByUserId String?
+  /// Rows deleted together share it, so a restore brings back exactly them.
+  deletionId      String?
+
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project   Project           @relation(fields: [projectId, teamId, tenantId], references: [id, teamId, tenantId], onDelete: Cascade)
+  state     WorkflowState     @relation(fields: [stateId, teamId, stateCategory, tenantId], references: [id, teamId, category, tenantId], onDelete: Restrict)
+  type      WorkItemType      @relation(fields: [typeId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  assignee  TenantMembership? @relation("WorkItemAssignee", fields: [tenantId, assigneeId], references: [tenantId, userId], onDelete: Restrict)
+  createdBy User              @relation("WorkItemCreator", fields: [createdByUserId], references: [id])
+  parent    WorkItem?         @relation("WorkItemParent", fields: [parentId, projectId, tenantId], references: [id, projectId, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  subItems  WorkItem[]        @relation("WorkItemParent")
+
+  relationsFrom WorkItemRelation[] @relation("WorkItemRelationFrom")
+  relationsTo   WorkItemRelation[] @relation("WorkItemRelationTo")
+  labels        WorkItemLabel[]
+  comments      Comment[]
+  watchers      WorkItemWatcher[]
+  links         WorkItemLink[]
+
+  @@unique([tenantId, projectId, number])
+  @@unique([id, tenantId])
+  /// Target of the parent link: a parent in another project cannot be stored.
+  @@unique([id, projectId, tenantId])
+  // List indexes, ADR 0002 §13 (each backs a named query).
+  @@index([tenantId, projectId, sortKey, id])
+  @@index([tenantId, projectId, stateId, sortKey])
+  @@index([tenantId, teamId, stateCategory, sortKey])
+  @@index([tenantId, assigneeId, stateCategory, dueDate])
+  @@index([tenantId, parentId, sortKey])
+  @@index([tenantId, createdByUserId, createdAt])
+  @@index([tenantId, projectId, updatedAt, id])
+  @@index([tenantId, stateCategory, dueDate])
+  @@index([tenantId, typeId])
+  /// Deleting or merging a state finds its items across projects.
+  @@index([tenantId, stateId])
+  @@index([tenantId, deletionId])
+  /// The purge sweep across every workspace (ADR 0002 §13's one exception).
+  @@index([deletedAt])
+}
+
+/// The old key of an item that moved to another project (ADR 0002 §4). No
+/// FK: key bookkeeping survives the purge, and a lookup that reaches a
+/// purged item answers 404.
+model WorkItemKeyAlias {
+  tenantId   String
+  projectId  String
+  number     Int
+  workItemId String
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, projectId, number])
+  @@index([tenantId, workItemId])
+}
+
+/// A typed link between two work items (ADR 0002 §6). BLOCKS is directed;
+/// RELATES is stored once with `fromId < toId`; DUPLICATES points from the
+/// duplicate to the original. The index column order differs from the ADR
+/// sketch so both foreign keys sit second after `tenantId` (ADR 0002 §13).
+model WorkItemRelation {
+  id              String               @id @default(cuid())
+  tenantId        String
+  type            WorkItemRelationType
+  fromId          String
+  toId            String
+  createdByUserId String
+  createdAt       DateTime             @default(now())
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  from      WorkItem @relation("WorkItemRelationFrom", fields: [fromId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  to        WorkItem @relation("WorkItemRelationTo", fields: [toId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  createdBy User     @relation("WorkItemRelationCreator", fields: [createdByUserId], references: [id])
+
+  @@unique([tenantId, fromId, type, toId])
+  @@index([tenantId, toId, type])
+  @@index([tenantId, createdByUserId])
+}
+
+/// A workspace-defined label, optionally limited to one team.
+model Label {
+  id                String    @id @default(cuid())
+  tenantId          String
+  /// NULL: a workspace label.
+  teamId            String?
+  name              String
+  color             String?
+  /// Fractional index; `COLLATE "C"` in SQL.
+  sortKey           String
+  /// Set while a delete detaches the label; attach refuses it (409).
+  deletionStartedAt DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  team      Team?           @relation(fields: [teamId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  workItems WorkItemLabel[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, teamId, name])
+  @@index([tenantId, teamId])
+}
+
+/// A label on a work item.
+model WorkItemLabel {
+  tenantId   String
+  workItemId String
+  labelId    String
+  createdAt  DateTime @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workItem WorkItem @relation(fields: [workItemId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  label    Label    @relation(fields: [labelId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@id([workItemId, labelId])
+  @@index([tenantId, labelId, workItemId])
+}
+
+/// A person's comment on a work item. `body` is ENCRYPTED (manifest) and
+/// sanitised on write; a delete is soft.
+model Comment {
+  id           String    @id @default(cuid())
+  tenantId     String
+  workItemId   String
+  authorUserId String
+  body         String
+  editedAt     DateTime?
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workItem WorkItem @relation(fields: [workItemId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  author   User     @relation("CommentAuthor", fields: [authorUserId], references: [id])
+
+  @@index([tenantId, workItemId, createdAt])
+  @@index([tenantId, authorUserId])
+}
+
+/// A member watching a work item. The member FK cascades: a removed member
+/// stops watching.
+model WorkItemWatcher {
+  tenantId   String
+  workItemId String
+  userId     String
+  createdAt  DateTime @default(now())
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workItem WorkItem         @relation(fields: [workItemId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  member   TenantMembership @relation("WorkItemWatcherMember", fields: [tenantId, userId], references: [tenantId, userId], onDelete: Cascade)
+
+  @@id([workItemId, userId])
+  @@index([tenantId, userId])
+  @@index([tenantId, workItemId])
+}
+
+/// A reference from a work item to something that is not a work item: a URL,
+/// pull request, commit, page or canvas (ADR 0006 "Link"). `type` is one of
+/// `WORK_ITEM_LINK_TYPES`, validated in the usecase; `location` is the URL
+/// (or, from 4.1/4.2, the page or canvas id). ADR 0002's sketch names them
+/// `kind` and `target`, two words ADR 0006 bans in the schema ("Kind" for a
+/// type, "Target" for a goal); the sketch is illustrative.
+model WorkItemLink {
+  id              String   @id @default(cuid())
+  tenantId        String
+  workItemId      String
+  type            String
+  location        String
+  title           String?
+  createdByUserId String
+  createdAt       DateTime @default(now())
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workItem  WorkItem @relation(fields: [workItemId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  createdBy User     @relation("WorkItemLinkCreator", fields: [createdByUserId], references: [id])
+
+  @@index([tenantId, workItemId])
+  @@index([tenantId, createdByUserId])
+}

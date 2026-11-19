@@ -85,6 +85,7 @@ enum NotificationType {
   GENERAL
   WORK_ITEM_ASSIGNED
   WORK_ITEM_WATCH_UPDATE
+  WORK_ITEM_DUE
 }
 
 /// The kind of an outbound email in `NotificationOutbox` (sub-phase 1.6).
@@ -98,4 +99,32 @@ enum EmailOutboxStatus {
   PENDING
   SENT
   FAILED
+}
+
+/// The fixed category every workflow state belongs to (ADR 0002 §3, ADR 0006
+/// spelling). "Open" (BACKLOG, UNSTARTED, STARTED) and "closed" (DONE,
+/// CANCELLED) are derived, never stored. Adding a category is a two-deploy
+/// change: readers first, the writer second.
+enum WorkflowStateCategory {
+  BACKLOG
+  UNSTARTED
+  STARTED
+  DONE
+  CANCELLED
+}
+
+/// A work item's priority: a fixed scale (ADR 0006 "Priority").
+enum WorkItemPriority {
+  NONE
+  URGENT
+  HIGH
+  MEDIUM
+  LOW
+}
+
+/// The type of a `WorkItemRelation` (ADR 0002 §6).
+enum WorkItemRelationType {
+  BLOCKS
+  RELATES
+  DUPLICATES
 }
