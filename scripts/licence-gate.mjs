@@ -132,12 +132,17 @@ import { fileURLToPath } from 'node:url';
  * 2026-11-19, ADR 0007 E6, when visx brought `robust-predicates`. BlueOak-1.0.0
  * (the Blue Oak Model License, permissive like MIT) was added by owner decision
  * of 2026-11-19, ADR 0007 E7, when the Prisma CLI's tree brought `graceful-fs`
- * 4.2.12. Anything else (CC0-1.0, CC-BY-4.0 data, EPL, LGPL) passes only through a recorded exemption,
+ * 4.2.12. MIT-0 (MIT without the attribution condition) was added by owner
+ * decision of 2026-11-19, ADR 0007 E8, when the mail transport brought
+ * `nodemailer`. FSL-1.1-Apache-2.0 (the Functional Source License, which
+ * forbids a competing product for two years and then converts to Apache-2.0)
+ * was added by owner decision of 2026-11-19, ADR 0007 E9, when error reporting
+ * brought the Sentry SDK. Anything else (CC0-1.0, CC-BY-4.0 data, EPL, LGPL) passes only through a recorded exemption,
  * and ADR 0007 E4 adds no other licence until a dependency needs one. Widening this list is an
  * owner decision, recorded in an ADR, never a change made to get a build
  * through.
  */
-export const ALLOWED_LICENCES = Object.freeze(['MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MPL-2.0', 'PostgreSQL', '0BSD', 'Unlicense', 'BlueOak-1.0.0']);
+export const ALLOWED_LICENCES = Object.freeze(['MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MPL-2.0', 'PostgreSQL', '0BSD', 'Unlicense', 'BlueOak-1.0.0', 'MIT-0', 'FSL-1.1-Apache-2.0']);
 
 /** Allowed licences whose condition the report repeats on every run. */
 export const NOTICE_LICENCES = Object.freeze({
