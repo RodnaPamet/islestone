@@ -134,6 +134,16 @@ jobs:
         options: >-
           --health-cmd "pg_isready -h 127.0.0.1 -p 5432"
           --health-interval 5s --health-timeout 5s --health-retries 20
+      # Sub-phase 1.6: the queue round trip (tests/integration/jobs-queue-roundtrip.test.ts)
+      # runs against a real Redis, configured as docker-compose.yml's
+      # (noeviction, a password).
+      redis:
+        image: redis:7.4.12-alpine3.22
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       # Migrations and the drift check go to Postgres directly; the suites go
       # through PgBouncer (tests/helpers/db.ts).
@@ -141,6 +151,7 @@ jobs:
       DIRECT_DATABASE_URL: postgresql://islestone:islestone_ci@127.0.0.1:5432/islestone_test
       DATABASE_URL_TEST: postgresql://islestone:islestone_ci@127.0.0.1:6432/islestone_test
       DIRECT_DATABASE_URL_TEST: postgresql://islestone:islestone_ci@127.0.0.1:5432/islestone_test
+      REDIS_URL: redis://:islestone_ci@127.0.0.1:6379
     steps:
       - uses: actions/checkout@v7
         with:
@@ -158,6 +169,13 @@ jobs:
         run: >-
           docker exec -i -e POSTGRES_USER=islestone -e POSTGRES_DB=islestone_test
           ${{ job.services.postgres.id }} bash -s < prisma/init-roles.sh
+      # A service container takes no command line, so docker-compose.yml's
+      # flags are set at run time: the policy BullMQ needs, then the
+      # password REDIS_URL names (a throwaway CI value).
+      - name: Configure Redis (noeviction, password)
+        run: |
+          docker exec ${{ job.services.redis.id }} redis-cli CONFIG SET maxmemory-policy noeviction
+          docker exec ${{ job.services.redis.id }} redis-cli CONFIG SET requirepass islestone_ci
       - run: npm run migrate:deploy
       # A database built only from prisma/migrations must reproduce
       # prisma/schema, both ways (scripts/check-fresh-db-schema-drift.mjs).
@@ -246,6 +264,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # The worker, scheduler and healthcheck bundles (scripts/build-worker.mjs,
+      # sub-phase 1.6), into dist/; not uploaded.
+      - run: npm run build:worker
       - name: Upload the build for e2e
         uses: actions/upload-artifact@v7
         with:
@@ -298,9 +319,19 @@ jobs:
         options: >-
           --health-cmd "pg_isready -h 127.0.0.1 -p 5432"
           --health-interval 5s --health-timeout 5s --health-retries 20
+      # Sub-phase 1.6: `next start` (production) refuses to run without an
+      # authenticated REDIS_URL and checks the eviction policy at boot.
+      redis:
+        image: redis:7.4.12-alpine3.22
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       DATABASE_URL: postgresql://islestone:islestone_ci@127.0.0.1:6432/islestone_e2e
       DIRECT_DATABASE_URL: postgresql://islestone:islestone_ci@127.0.0.1:5432/islestone_e2e
+      REDIS_URL: redis://:islestone_ci@127.0.0.1:6379
     steps:
       - uses: actions/checkout@v7
         with:
@@ -319,6 +350,13 @@ jobs:
         run: >-
           docker exec -i -e POSTGRES_USER=islestone -e POSTGRES_DB=islestone_e2e
           ${{ job.services.postgres.id }} bash -s < prisma/init-roles.sh
+      # A service container takes no command line, so docker-compose.yml's
+      # flags are set at run time: the policy BullMQ needs, then the
+      # password REDIS_URL names (a throwaway CI value).
+      - name: Configure Redis (noeviction, password)
+        run: |
+          docker exec ${{ job.services.redis.id }} redis-cli CONFIG SET maxmemory-policy noeviction
+          docker exec ${{ job.services.redis.id }} redis-cli CONFIG SET requirepass islestone_ci
       - run: npm run migrate:deploy
       - name: Install Chromium for Playwright
         run: npx playwright install --with-deps chromium
