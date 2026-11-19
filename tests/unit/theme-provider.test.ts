@@ -23,7 +23,7 @@
 
 import * as fs from 'fs';
 import { functionBodyOf } from '../helpers/source-blocks';
-import { DEFAULT_THEME, THEME_STORAGE_KEY, THEME_COOKIE } from '@/lib/theme-constants';
+import { DEFAULT_THEME, SYSTEM_DARK_QUERY, THEME_STORAGE_KEY, THEME_COOKIE } from '@/lib/theme-constants';
 import * as path from 'path';
 
 const ROOT = path.resolve(__dirname, '../../');
@@ -89,7 +89,7 @@ describe('ThemeProvider — source contract', () => {
         expect(src).toMatch(/setAttribute\(ATTR/);
     });
 
-    it('resolves initial theme in the documented order: cookie → storage → light', () => {
+    it('resolves initial theme in the documented order: cookie → storage → the OS', () => {
         // The provider builds this regex FROM `THEME_COOKIE` now, so asserting
         // the literal would assert the very drift this change removes. What
         // still matters is the ORDER — the cookie is consulted before storage,
@@ -105,12 +105,12 @@ describe('ThemeProvider — source contract', () => {
         expect(resolve.indexOf('STORAGE_KEY')).toBeGreaterThanOrEqual(0);
         expect(resolve.indexOf('THEME_COOKIE')).toBeLessThan(resolve.indexOf('STORAGE_KEY'));
         expect(src).toMatch(/localStorage\.getItem\(STORAGE_KEY\)/);
-        // Light is the documented fallback, and the OS colour scheme is not
-        // read (an owner decision: docs/HANDOFF.md).
+        // With nothing stored the OS decides (owner decision, 2026-11-19);
+        // light is the server's baseline and the no-matchMedia fallback.
         expect(DEFAULT_THEME).toBe('light');
-        expect(src).toMatch(/readStoredTheme\(\)\s*\?\?\s*DEFAULT_THEME/);
-        expect(src).not.toMatch(/matchMedia/);
-        expect(constants).not.toMatch(/matchMedia/);
+        expect(src).toMatch(/const next = stored \?\? systemTheme\(\)/);
+        expect(src).toMatch(/matchMedia\?\.\(SYSTEM_DARK_QUERY\)/);
+        expect(SYSTEM_DARK_QUERY).toBe('(prefers-color-scheme: dark)');
     });
 
     it('`useTheme()` is safe outside a provider (SSR-friendly no-op fallback)', () => {

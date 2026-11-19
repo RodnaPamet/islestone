@@ -12,8 +12,9 @@ import { CSP_NONCE_HEADER } from '@/lib/security/csp';
 //
 // THEME_INIT_SCRIPT is the anti-FOUC script, the SECOND line of defence behind
 // the SSR cookie. A member who has CHOSEN a theme has the cookie, so their
-// `<html>` is already correct in the first SSR byte. The script covers a
-// choice kept only in localStorage; it writes nothing.
+// `<html>` is already correct in the first SSR byte. The script covers
+// everyone else: a choice kept only in localStorage, and a visitor who never
+// chose, whose theme follows the operating system. It writes nothing.
 import { DEFAULT_THEME, THEME_COOKIE, THEME_INIT_SCRIPT } from '@/lib/theme-constants';
 import type { Theme } from '@/lib/theme-constants';
 
@@ -57,16 +58,16 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     // Flash-proof theme: render `data-theme` from the persisted cookie so the
     // FIRST SSR byte is already the member's theme. The cookie exists only
     // once the member has CHOSEN a theme; without it this renders the light
-    // default (Islestone does not follow the OS colour scheme: see
-    // src/components/theme/ThemeProvider.tsx).
+    // baseline, and the blocking script below switches to the operating
+    // system's theme before the browser paints, so there is no flash.
     const cookieTheme = (await cookies()).get(THEME_COOKIE)?.value;
     const initialTheme: Theme = cookieTheme === 'light' || cookieTheme === 'dark' ? cookieTheme : DEFAULT_THEME;
 
     return (
         <html lang={locale} data-theme={initialTheme} suppressHydrationWarning>
             <head>
-                {/* Anti-FOUC: apply a theme kept only in localStorage before
-                    the browser paints. Carries the CSP nonce. */}
+                {/* Anti-FOUC: apply the stored or the OS theme before the
+                    browser paints. Carries the CSP nonce. */}
                 <script nonce={nonce} suppressHydrationWarning dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
                 {/*
                     The bundler's chunk loader injects code-split chunks with

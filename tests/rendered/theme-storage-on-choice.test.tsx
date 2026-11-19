@@ -18,10 +18,9 @@
  * preference is a controllable `matchMedia` double, because jsdom has none.
  *
  * Copied from inflect-compliance at 5528464fc54a8681956f3b9ce23ca9c075f0420e
- * (sub-phase 1.7). Islestone does not follow the OS colour scheme: the
- * default is light, whatever the OS says, until the owner decides otherwise
- * (docs/HANDOFF.md). The OS double stays, so these cases prove the OS is
- * not read: it is set to dark and the theme stays light.
+ * (sub-phase 1.7). As there, the theme follows the OS colour scheme until the
+ * person chooses (owner decision, 2026-11-19; docs/HANDOFF.md row 38); the
+ * cases cover a dark system, a light system, and a choice overriding either.
  */
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import * as React from 'react';
@@ -33,7 +32,10 @@ import { THEME_COOKIE, THEME_INIT_SCRIPT, THEME_STORAGE_KEY } from '@/lib/theme-
 type ChangeListener = (event: MediaQueryListEvent) => void;
 
 let systemLight = false;
-let listeners: ChangeListener[] = [];
+let listeners: Array<{ query: string; fn: ChangeListener }> = [];
+
+/** What a query reports for the current system setting. */
+const matchesFor = (query: string) => (query === '(prefers-color-scheme: light)' ? systemLight : !systemLight);
 
 // tests/rendered/setup.ts installs a writable (not configurable) static stub;
 // this one is assigned over it per test and the stub is put back afterwards.
@@ -42,15 +44,15 @@ const setupMatchMedia = window.matchMedia;
 function installMatchMedia() {
     window.matchMedia = ((query: string) => ({
         get matches() {
-            return query === '(prefers-color-scheme: light)' ? systemLight : !systemLight;
+            return matchesFor(query);
         },
         media: query,
         onchange: null,
         addEventListener: (_type: string, fn: ChangeListener) => {
-            listeners.push(fn);
+            listeners.push({ query, fn });
         },
         removeEventListener: (_type: string, fn: ChangeListener) => {
-            listeners = listeners.filter((l) => l !== fn);
+            listeners = listeners.filter((l) => l.fn !== fn);
         },
         addListener: () => {},
         removeListener: () => {},
@@ -62,7 +64,7 @@ function installMatchMedia() {
 function systemSwitchesTo(theme: 'light' | 'dark') {
     systemLight = theme === 'light';
     act(() => {
-        for (const fn of listeners) fn({ matches: systemLight } as MediaQueryListEvent);
+        for (const { query, fn } of listeners) fn({ matches: matchesFor(query), media: query } as MediaQueryListEvent);
     });
 }
 
@@ -156,29 +158,43 @@ afterEach(() => {
 
 // ─── ThemeProvider ──────────────────────────────────────────────────────
 
-describe('ThemeProvider — a theme is stored only when the user picks one', () => {
-    it('a first visit shows the light default and writes NOTHING: no cookie, no localStorage', () => {
+describe('ThemeProvider — the OS until a choice, stored only when the user picks one', () => {
+    it('on a dark system, a first visit is dark and writes NOTHING', () => {
         systemLight = false;
         renderApp();
 
-        expect(shownTheme()).toBe('light');
-        expect(htmlTheme()).toBe('light');
+        expect(shownTheme()).toBe('dark');
+        expect(htmlTheme()).toBe('dark');
         expect(themeWrites()).toEqual({ cookie: [], storage: [] });
         expect(document.cookie).not.toContain(`${THEME_COOKIE}=`);
         expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
     });
 
-    it('does not follow the OS colour scheme while open', () => {
+    it('on a light system, a first visit is light and writes NOTHING', () => {
+        systemLight = true;
         renderApp();
-        expect(shownTheme()).toBe('light');
 
-        systemSwitchesTo('dark');
         expect(shownTheme()).toBe('light');
         expect(htmlTheme()).toBe('light');
         expect(themeWrites()).toEqual({ cookie: [], storage: [] });
     });
 
+    it('with nothing stored it keeps following the OS while open, still writing nothing', () => {
+        systemLight = true;
+        renderApp();
+        expect(shownTheme()).toBe('light');
+
+        systemSwitchesTo('dark');
+        expect(shownTheme()).toBe('dark');
+        expect(htmlTheme()).toBe('dark');
+
+        systemSwitchesTo('light');
+        expect(shownTheme()).toBe('light');
+        expect(themeWrites()).toEqual({ cookie: [], storage: [] });
+    });
+
     it('the user toggling writes BOTH the cookie and localStorage', () => {
+        systemLight = true;
         renderApp();
         fireEvent.click(screen.getByRole('button', { name: 'Toggle theme' }));
 
@@ -190,27 +206,32 @@ describe('ThemeProvider — a theme is stored only when the user picks one', () 
         expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark');
     });
 
-    it('once the user has chosen, the OS does not move the theme either', () => {
+    it('once the user has chosen, the OS no longer moves the theme', () => {
+        systemLight = true;
         renderApp();
         fireEvent.click(screen.getByRole('button', { name: 'Toggle theme' }));
         systemSwitchesTo('light');
         expect(shownTheme()).toBe('dark');
-    });
-
-    it('a stored choice wins, and mounting does not write it again', () => {
-        seedCookie('dark');
-        systemLight = true;
-        renderApp();
-
-        expect(shownTheme()).toBe('dark');
-        expect(htmlTheme()).toBe('dark');
+        systemSwitchesTo('dark');
         systemSwitchesTo('light');
         expect(shownTheme()).toBe('dark');
+    });
+
+    it('a stored choice overrides the system, and mounting does not write it again', () => {
+        seedCookie('light');
+        systemLight = false;
+        renderApp();
+
+        expect(shownTheme()).toBe('light');
+        expect(htmlTheme()).toBe('light');
+        systemSwitchesTo('dark');
+        expect(shownTheme()).toBe('light');
         expect(themeWrites()).toEqual({ cookie: [], storage: [] });
     });
 
-    it('a localStorage-only choice still wins, and is not copied into a cookie on mount', () => {
+    it('a localStorage-only choice still overrides the system, and is not copied into a cookie on mount', () => {
         seedStorage('dark');
+        systemLight = true;
         renderApp();
 
         expect(shownTheme()).toBe('dark');
@@ -226,26 +247,40 @@ describe('THEME_INIT_SCRIPT — the pre-paint script follows the same rule', () 
     // browser would, so the assertion is about what it DOES.
     const runScript = () => new Function(THEME_INIT_SCRIPT)();
 
-    it('with nothing stored it paints the light default, ignoring a dark OS, and writes no cookie', () => {
+    it('on a dark system with nothing stored it paints dark, writing nothing', () => {
         systemLight = false;
         runScript();
-        expect(htmlTheme()).toBe('light');
+        expect(htmlTheme()).toBe('dark');
         expect(themeWrites()).toEqual({ cookie: [], storage: [] });
         expect(document.cookie).not.toContain(`${THEME_COOKIE}=`);
     });
 
-    it('paints a stored cookie choice, without writing', () => {
-        seedCookie('dark');
+    it('on a light system with nothing stored it paints light', () => {
+        systemLight = true;
+        runScript();
+        expect(htmlTheme()).toBe('light');
+        expect(themeWrites()).toEqual({ cookie: [], storage: [] });
+    });
+
+    it('paints a stored cookie choice over the system, without writing', () => {
+        seedCookie('light');
+        systemLight = false;
+        runScript();
+        expect(htmlTheme()).toBe('light');
+        expect(themeWrites()).toEqual({ cookie: [], storage: [] });
+    });
+
+    it('paints a localStorage-only choice over the system, without writing', () => {
+        seedStorage('dark');
         systemLight = true;
         runScript();
         expect(htmlTheme()).toBe('dark');
         expect(themeWrites()).toEqual({ cookie: [], storage: [] });
     });
 
-    it('paints a localStorage-only choice, without writing', () => {
-        seedStorage('dark');
+    it('paints light where the browser has no matchMedia', () => {
+        (window as unknown as { matchMedia?: unknown }).matchMedia = undefined;
         runScript();
-        expect(htmlTheme()).toBe('dark');
-        expect(themeWrites()).toEqual({ cookie: [], storage: [] });
+        expect(htmlTheme()).toBe('light');
     });
 });

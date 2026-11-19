@@ -3,10 +3,10 @@
 /**
  * Epic 51 — theme provider & `useTheme()` hook.
  *
- * Thin client-side layer that flips `html[data-theme]` between `"light"` (the
- * default) and `"dark"`. It persists the user's CHOICE, in the cookie and in
- * localStorage. Until there is one, it shows the light default and writes
- * nothing.
+ * Thin client-side layer that flips `html[data-theme]` between `"light"` and
+ * `"dark"`. It persists the user's CHOICE, in the cookie and in localStorage.
+ * Until there is one, it follows the operating system's
+ * `prefers-color-scheme`, live, and writes nothing.
  *
  * ── WHEN IT WRITES ──────────────────────────────────────────────────────
  *
@@ -16,13 +16,14 @@
  * so a host that promises "only essential cookies" depends on this. The
  * pre-paint script in `@/lib/theme-constants` follows the same rule.
  *
- * ── NO OS FOLLOWING ─────────────────────────────────────────────────────
+ * ── THE OS UNTIL A CHOICE ───────────────────────────────────────────────
  *
- * inflect-compliance follows the system `prefers-color-scheme` until the user
- * chooses, with a dark default. Islestone keeps light as the default and does
- * not read the OS preference: following it would be a new behaviour, and it
- * is an owner decision (docs/HANDOFF.md). Adding it back is the `matchMedia`
- * read in `systemTheme` and its `change` listener, both cut here.
+ * With nothing stored the theme is the OS's (`SYSTEM_DARK_QUERY`): dark when
+ * the system asks for dark, else light, and it moves when the system does
+ * (owner decision, 2026-11-19; docs/HANDOFF.md row 38). Once the person
+ * toggles, the choice is stored and the OS no longer moves it. The toggle
+ * offers light and dark; there is no "system" option, as in
+ * inflect-compliance, because forgetting a choice is not a control it has.
  *
  * The actual colour values live in `src/styles/tokens.css`. This file only
  * decides *which palette* is active; every token-driven component gets the
@@ -30,8 +31,8 @@
  *
  * The provider must mount inside the root layout (client-side); it does not
  * render anything and has no performance cost on SSR. Reading `useTheme()`
- * before the provider mounts returns `"light"` (the baseline) — consistent
- * with SSR snapshots.
+ * before the provider mounts returns `"light"` (the server's baseline) —
+ * consistent with SSR snapshots.
  */
 
 import {
@@ -53,6 +54,7 @@ import {
 import {
     type Theme,
     DEFAULT_THEME,
+    SYSTEM_DARK_QUERY,
     THEME_STORAGE_KEY as STORAGE_KEY,
     THEME_COOKIE,
 } from '@/lib/theme-constants';
@@ -112,6 +114,12 @@ function readStoredTheme(): Theme | null {
     return null;
 }
 
+/** The OS preference: dark when the system asks for it, else light. */
+function systemTheme(): Theme {
+    if (typeof window === 'undefined') return DEFAULT_THEME;
+    return window.matchMedia?.(SYSTEM_DARK_QUERY).matches ? 'dark' : 'light';
+}
+
 function applyTheme(theme: Theme) {
     if (typeof document === 'undefined') return;
     document.documentElement.setAttribute(ATTR, theme);
@@ -123,21 +131,42 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // from the SSR snapshot.
     const [theme, setThemeState] = useState<Theme>(DEFAULT_THEME);
     const hasHydrated = useRef(false);
+    // Whether the person has CHOSEN a theme: one is stored, or `setTheme`
+    // ran. Until then the theme follows the OS and nothing is written.
+    const chosen = useRef(false);
 
     useEffect(() => {
         if (hasHydrated.current) return;
         hasHydrated.current = true;
-        const next = readStoredTheme() ?? DEFAULT_THEME;
+        const stored = readStoredTheme();
+        chosen.current = stored !== null;
+        const next = stored ?? systemTheme();
         setThemeState(next);
         applyTheme(next);
-        // Nothing is written here: a stored theme is already stored, and
-        // with none the default stays unstored (see the file header). A
-        // localStorage-only choice renders the server default, and the
-        // pre-paint script applies it before the browser paints.
+        // Nothing is written here: a stored theme is already stored, and the
+        // OS preference is re-read on every visit rather than kept (see the
+        // file header). The pre-paint script applied the same theme before
+        // the browser painted.
+    }, []);
+
+    // With no stored choice, keep following the OS while the page is open:
+    // a system switch at dusk repaints without a reload. Never written.
+    useEffect(() => {
+        if (typeof window === 'undefined' || !window.matchMedia) return;
+        const query = window.matchMedia(SYSTEM_DARK_QUERY);
+        const follow = (event: MediaQueryListEvent) => {
+            if (chosen.current) return;
+            const next: Theme = event.matches ? 'dark' : 'light';
+            setThemeState(next);
+            applyTheme(next);
+        };
+        query.addEventListener?.('change', follow);
+        return () => query.removeEventListener?.('change', follow);
     }, []);
 
     const setTheme = useCallback((next: Theme) => {
         // The one place a theme is stored: the user picked it.
+        chosen.current = true;
         setThemeState(next);
         applyTheme(next);
         persistTheme(next);

@@ -21,8 +21,15 @@ import { uiStorageKey, uiCookieName } from '@/lib/ui-storage';
 
 export type Theme = 'dark' | 'light';
 
-/** The theme with no stored choice, on the server and the client alike. */
+/**
+ * The theme the server renders when no choice is stored. The browser then
+ * follows the operating system (`SYSTEM_DARK_QUERY`) until the person picks
+ * one; this is also the theme a browser with no `matchMedia` keeps.
+ */
 export const DEFAULT_THEME: Theme = 'light';
+
+/** The media query that says the operating system prefers dark. */
+export const SYSTEM_DARK_QUERY = '(prefers-color-scheme: dark)';
 
 /** localStorage key (legacy/back-compat mirror, client-only). */
 export const THEME_STORAGE_KEY = uiStorageKey('theme');
@@ -55,17 +62,18 @@ function escapeUnsafeChars(str: string): string {
  * Anti-FOUC theme script, rendered by the root layout in `<head>` before the
  * body, so it runs before first paint.
  *
- * It resolves cookie → localStorage → the `light` default and sets
+ * It resolves cookie → localStorage → the operating system's
+ * `prefers-color-scheme` (dark when it asks for dark, else light) and sets
  * `data-theme`. It WRITES NOTHING. A theme is stored only when the user picks
- * one (`ThemeProvider`'s `setTheme` / `toggle`), never on a first visit: a
- * UI-customisation cookie is exempt from consent only when the user asked for
- * the preference to be kept (Article 29 WP194).
+ * one (`ThemeProvider`'s `setTheme` / `toggle`), never on a first visit and
+ * never from the OS preference: reading `prefers-color-scheme` needs no
+ * storage at all, and a UI-customisation cookie is exempt from consent only
+ * when the user asked for the preference to be kept (Article 29 WP194).
  *
- * Islestone does not follow the operating system's `prefers-color-scheme`
- * (inflect-compliance does, with a dark default). Light is the default until
- * the owner decides otherwise; see docs/HANDOFF.md. The server renders the
- * cookie's theme, or light, so this script only corrects a theme kept in
- * localStorage alone.
+ * Following the OS until the person chooses is the owner's decision of
+ * 2026-11-19 (docs/HANDOFF.md, row 38). The server renders the cookie's
+ * theme, or light; for a visitor who never chose, this script switches to
+ * the OS theme before the browser paints, so there is no flash.
  *
  * Lives here, not in `layout.tsx`, for two reasons. A layout may only export the
  * fields Next allows. And the script is code that runs in a browser, so
@@ -78,4 +86,4 @@ function escapeUnsafeChars(str: string): string {
  * ever stops being a constant, because `JSON.stringify` alone leaves `<` intact,
  * and a `</script>` in an inlined string ends the element.
  */
-export const THEME_INIT_SCRIPT = `(function(){try{var d=document.documentElement;var ck=${escapeUnsafeChars(JSON.stringify(THEME_COOKIE))};var lk=${escapeUnsafeChars(JSON.stringify(THEME_STORAGE_KEY))};var t=null;var m=document.cookie.match(new RegExp('(?:^|;\\\\s*)'+ck+'=(light|dark)\\\\b'));if(m){t=m[1];}if(!t){var s=null;try{s=localStorage.getItem(lk);}catch(e){}if(s==='light'||s==='dark'){t=s;}}if(!t){t='light';}d.setAttribute('data-theme',t);}catch(e){}})();`;
+export const THEME_INIT_SCRIPT = `(function(){try{var d=document.documentElement;var ck=${escapeUnsafeChars(JSON.stringify(THEME_COOKIE))};var lk=${escapeUnsafeChars(JSON.stringify(THEME_STORAGE_KEY))};var t=null;var m=document.cookie.match(new RegExp('(?:^|;\\\\s*)'+ck+'=(light|dark)\\\\b'));if(m){t=m[1];}if(!t){var s=null;try{s=localStorage.getItem(lk);}catch(e){}if(s==='light'||s==='dark'){t=s;}}if(!t){t=(window.matchMedia&&window.matchMedia(${escapeUnsafeChars(JSON.stringify(SYSTEM_DARK_QUERY))}).matches)?'dark':'light';}d.setAttribute('data-theme',t);}catch(e){}})();`;

@@ -8,8 +8,9 @@
  *     the cookie read and the inline script in inflect-compliance.
  *   - The layout renders `<html data-theme>` from the theme cookie, light by
  *     default, and inlines the pre-paint script in `<head>` with the CSP
- *     nonce. The script writes nothing and does not read the OS colour
- *     scheme (an owner decision, docs/HANDOFF.md).
+ *     nonce. With nothing stored the script applies the OS colour scheme
+ *     before first paint (owner decision, 2026-11-19; docs/HANDOFF.md row
+ *     38), through the same `data-theme` attribute, and writes nothing.
  *
  * Written for Islestone from inflect-compliance's
  * `tests/guards/theme-flash-init.test.ts` at
@@ -19,7 +20,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { DEFAULT_THEME, THEME_COOKIE, THEME_INIT_SCRIPT, THEME_STORAGE_KEY } from '@/lib/theme-constants';
+import { DEFAULT_THEME, SYSTEM_DARK_QUERY, THEME_COOKIE, THEME_INIT_SCRIPT, THEME_STORAGE_KEY } from '@/lib/theme-constants';
 
 import { REPO_ROOT } from '../helpers/git-files';
 import { codeOf } from '../helpers/source-blocks';
@@ -59,11 +60,18 @@ describe('theme anti-FOUC', () => {
         expect(layout).toMatch(/<script nonce=\{nonce\} suppressHydrationWarning dangerouslySetInnerHTML=\{\{ __html: THEME_INIT_SCRIPT \}\} \/>/);
     });
 
-    it('the script reads the same names, writes nothing and ignores the OS colour scheme', () => {
+    it('the script reads the same names, falls back to the OS colour scheme, and writes nothing', () => {
         expect(THEME_INIT_SCRIPT).toContain(JSON.stringify(THEME_STORAGE_KEY));
         expect(THEME_INIT_SCRIPT).toContain(JSON.stringify(THEME_COOKIE));
         expect(THEME_INIT_SCRIPT).not.toMatch(/document\.cookie\s*=(?!=)/);
         expect(THEME_INIT_SCRIPT).not.toMatch(/localStorage\.setItem/);
-        expect(THEME_INIT_SCRIPT).not.toMatch(/prefers-color-scheme|matchMedia/);
+        // The OS is the last step, after the cookie and localStorage.
+        const cookieRead = THEME_INIT_SCRIPT.indexOf('document.cookie.match');
+        const storageRead = THEME_INIT_SCRIPT.indexOf('localStorage.getItem');
+        const osRead = THEME_INIT_SCRIPT.indexOf(`matchMedia(${JSON.stringify(SYSTEM_DARK_QUERY)})`);
+        expect(cookieRead).toBeGreaterThanOrEqual(0);
+        expect(storageRead).toBeGreaterThan(cookieRead);
+        expect(osRead).toBeGreaterThan(storageRead);
+        expect(THEME_INIT_SCRIPT).toContain("setAttribute('data-theme',t)");
     });
 });
