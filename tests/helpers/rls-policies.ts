@@ -36,11 +36,11 @@ export const ORG_SCOPED_MODELS: ReadonlyMap<string, string> = new Map([
  * Direct-tenantId tables that use ONE asymmetric policy (USING permissive,
  * WITH CHECK strict) instead of the split `tenant_isolation_insert` form,
  * because a permissive INSERT sibling would OR with the USING and leak.
- * Empty in sub-phase 1.3. `UserSession` (nullable tenantId) joins it in 1.4
+ * `UserSession` (nullable tenantId) joined it in sub-phase 1.4
  * as the first such table; the live suite verifies each entry really carries
  * both clauses.
  */
-export const SINGLE_POLICY_EXCEPTIONS: ReadonlySet<string> = new Set<string>([]);
+export const SINGLE_POLICY_EXCEPTIONS: ReadonlySet<string> = new Set<string>(['UserSession']);
 
 /** The migration files of the repository at `root`, from git. */
 export function migrationFiles(root: string): string[] {

@@ -132,7 +132,9 @@ describe('schema-index-coverage — parser sanity', () => {
     // If the parser silently broke, every layer below would pass vacuously.
     it('parses the tenancy models, their indexes and their relation FK groups', () => {
         const membership = MODELS.find((m) => m.name === 'TenantMembership');
-        expect(MODELS.map((m) => m.name).sort()).toEqual(['OrgMembership', 'Organization', 'Tenant', 'TenantMembership', 'User']);
+        expect(MODELS.map((m) => m.name).sort()).toEqual([
+            'Account', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken',
+        ]);
         expect(membership?.fieldIdName).toBe('id');
         expect(membership?.blockIndexes).toContainEqual(['tenantId', 'status']);
         expect(membership?.relationFkFieldGroups).toContainEqual(['tenantId']);

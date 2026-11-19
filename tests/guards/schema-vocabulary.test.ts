@@ -253,13 +253,22 @@ describe('the schema speaks ADR 0006', () => {
     it('scans every model, enum, field and value in the schema', () => {
         const ids = schemaIdentifiers(schema);
         expect(ids.filter((i) => i.kind === 'model').map((i) => i.name).sort()).toEqual([
+            'Account',
+            'OrgInvite',
             'OrgMembership',
             'Organization',
+            'PasswordResetToken',
             'Tenant',
+            'TenantCustomRole',
+            'TenantInvite',
             'TenantMembership',
+            'TenantSecuritySettings',
             'User',
+            'UserMfaEnrollment',
+            'UserSession',
+            'VerificationToken',
         ]);
-        expect(ids.filter((i) => i.kind === 'enum').length).toBe(3);
+        expect(ids.filter((i) => i.kind === 'enum').length).toBe(6);
         expect(ids).toEqual(expect.arrayContaining([{ kind: 'value', name: 'MEMBER', where: 'Role.MEMBER' }]));
     });
 });

@@ -1,0 +1,203 @@
+// ─────────────────────────────────────────────────────────────────
+//  Authentication, sign-in sessions, MFA, invites and custom roles
+//  (sub-phase 1.4, docs/porting/maps/1.4.md, "Prisma models").
+//
+//  Copied from inflect-compliance `prisma/schema/auth.prisma` at
+//  5528464fc54a8681956f3b9ce23ca9c075f0420e and pruned: no SSO, SCIM,
+//  Entra or API-key models (ADR 0004 A2: 8.3 and 5.2), and none of the
+//  compliance columns of `TenantSecuritySettings`.
+//
+//  Tenant-scoped (RLS in the migration that creates them):
+//    UserMfaEnrollment, TenantSecuritySettings, TenantInvite,
+//    TenantCustomRole, and UserSession (nullable tenantId, the asymmetric
+//    single policy).
+//  Global, no RLS: Account, VerificationToken, PasswordResetToken;
+//  org-scoped, no RLS: OrgInvite.
+//
+//  NextAuth's adapter `Session` model is deliberately absent: the session
+//  strategy is `jwt`, under which the adapter never reads or writes it, and
+//  ADR 0006 rule 3 admits no `@@map` to keep the parent's `AuthSession`
+//  name on a `Session` table.
+// ─────────────────────────────────────────────────────────────────
+
+/// A sign-in provider link (NextAuth adapter shape). Not tenant-scoped.
+model Account {
+  id                    String  @id @default(cuid())
+  userId                String
+  type                  String
+  provider              String
+  providerAccountId     String
+  refresh_token         String?
+  access_token          String?
+  expires_at            Int?
+  token_type            String?
+  scope                 String?
+  id_token              String?
+  session_state         String?
+  /// Filled by the field-encryption extension of sub-phase 1.5.
+  accessTokenEncrypted  String?
+  /// Filled by the field-encryption extension of sub-phase 1.5.
+  refreshTokenEncrypted String?
+  user                  User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+/// A sign-in session: one row per sign-in, checked on every token pass
+/// (revocation, expiry, the per-workspace age and concurrency limits).
+/// `tenantId` is nullable (a session opened before a workspace is chosen),
+/// so RLS is the asymmetric single policy.
+model UserSession {
+  id                 String    @id @default(cuid())
+  sessionId          String    @unique
+  userId             String
+  tenantId           String?
+  ipAddress          String?
+  userAgent          String?
+  createdAt          DateTime  @default(now())
+  expiresAt          DateTime
+  lastActiveAt       DateTime  @default(now())
+  revokedAt          DateTime?
+  revokedReason      String?
+  /// Workspaces whose MFA challenge THIS session passed.
+  mfaPassedTenantIds String[]  @default([])
+
+  user User @relation("UserSessionOwner", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, revokedAt])
+  @@index([userId])
+  @@index([userId, revokedAt])
+}
+
+/// Email-verification tokens (NextAuth adapter shape). Not tenant-scoped.
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+/// Password-reset tokens, SHA-256 hashed at rest, single use, one hour.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation("UserPasswordResetTokens", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// A member's MFA enrolment in one workspace.
+model UserMfaEnrollment {
+  id                   String    @id @default(cuid())
+  userId               String
+  tenantId             String
+  type                 MfaType   @default(TOTP)
+  /// Encrypted by the application (src/lib/security/totp-crypto.ts).
+  secretEncrypted      String
+  isVerified           Boolean   @default(false)
+  verifiedAt           DateTime?
+  lastChallengeAt      DateTime?
+  /// The TOTP step of the last accepted code; a code is accepted once.
+  lastAcceptedTotpStep Int?
+  backupCodesHashJson  String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  tenant               Tenant    @relation(fields: [tenantId], references: [id])
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId, type])
+  @@index([tenantId])
+  @@index([userId])
+}
+
+/// A workspace's security settings: the MFA policy and the sign-in session
+/// limits. Sub-phase 1.5 adds the audit-stream columns, 5.2 the API-key
+/// rotation age.
+model TenantSecuritySettings {
+  id                    String    @id @default(cuid())
+  tenantId              String    @unique
+  mfaPolicy             MfaPolicy @default(DISABLED)
+  sessionMaxAgeMinutes  Int?
+  maxConcurrentSessions Int?
+  mfaFailClosed         Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  tenant                Tenant    @relation(fields: [tenantId], references: [id])
+}
+
+/// An invitation into a workspace, redeemed once by the invited address.
+model TenantInvite {
+  id          String    @id @default(cuid())
+  tenantId    String
+  email       String
+  role        Role      @default(VIEWER)
+  token       String    @unique
+  invitedById String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  invitedBy   User      @relation(fields: [invitedById], references: [id])
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([invitedById])
+}
+
+/// An invitation into an organization. Org-scoped, no RLS (getOrgCtx
+/// isolates it).
+model OrgInvite {
+  id             String    @id @default(cuid())
+  organizationId String
+  email          String
+  role           OrgRole   @default(ORG_READER)
+  token          String    @unique
+  invitedById    String
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("OrgInviteInviter", fields: [invitedById], references: [id])
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@index([invitedById])
+}
+
+/// A workspace-defined role: a built-in base role plus a stored grant set
+/// that replaces the base role's defaults key by key.
+model TenantCustomRole {
+  id          String             @id @default(cuid())
+  tenantId    String
+  name        String
+  description String?
+  baseRole    Role               @default(VIEWER)
+  /// The typed PermissionSet (src/lib/permissions.ts). Named `grantsJson`,
+  /// not the parent's `permissionsJson`: ADR 0006 bans "Permissions" as a
+  /// word in identifiers (the policy-card row).
+  grantsJson  Json
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  tenant      Tenant             @relation(fields: [tenantId], references: [id])
+  memberships TenantMembership[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@index([tenantId, name])
+}

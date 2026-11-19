@@ -40,3 +40,31 @@ enum MembershipStatus {
   DEACTIVATED
   REMOVED
 }
+
+/// A workspace's MFA policy (sub-phase 1.4). Copied verbatim from
+/// inflect-compliance.
+enum MfaPolicy {
+  DISABLED
+  OPTIONAL
+  REQUIRED
+}
+
+/// MFA factor kind. TOTP only.
+enum MfaType {
+  TOTP
+}
+
+/// Organization audit actions (sub-phase 1.4 creates the enum because it
+/// lands before 1.5; 1.5 adds the `OrgAuditLog` table that stores them).
+/// The nine values of docs/porting/maps/1.5.md.
+enum OrgAuditAction {
+  ORG_MEMBER_ADDED
+  ORG_MEMBER_REMOVED
+  ORG_MEMBER_ROLE_CHANGED
+  ORG_ADMIN_PROVISIONED_TO_TENANTS
+  ORG_ADMIN_DEPROVISIONED_FROM_TENANTS
+  ORG_INVITE_CREATED
+  ORG_INVITE_REDEEMED
+  ORG_INVITE_REVOKED
+  ORG_AUTHZ_DENIED
+}
