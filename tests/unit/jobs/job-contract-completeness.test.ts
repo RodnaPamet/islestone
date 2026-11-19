@@ -25,6 +25,9 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     'audit-outbox-flush',
     'health-check',
     'notification-outbox-flush',
+    'work-item-due-notification',
+    'work-item-purge',
+    'work-item-sortkey-rebalance',
 ];
 
 function readPackageJson(): {

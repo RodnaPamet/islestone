@@ -43,7 +43,7 @@ describe('resolveRoutePermission', () => {
 
     it('returns null for an uncovered tenant route', () => {
         expect(
-            resolveRoutePermission('/api/t/acme/projects', 'GET'),
+            resolveRoutePermission('/api/t/acme/notifications', 'GET'),
         ).toBeNull();
     });
 
@@ -119,7 +119,7 @@ describe('isRouteCovered', () => {
     });
 
     it('is false for an uncovered route', () => {
-        expect(isRouteCovered('/api/t/acme/work-items')).toBe(false);
+        expect(isRouteCovered('/api/t/acme/notifications')).toBe(false);
     });
 });
 

@@ -53,7 +53,7 @@ describe('buildWatcherDedupeKey', () => {
 
     it('distinct kinds produce distinct keys', () => {
         const c = buildWatcherDedupeKey(activity({ kind: 'commented', discriminator: 'x' }), 'w1');
-        const s = buildWatcherDedupeKey(activity({ kind: 'status_changed', discriminator: 'x' }), 'w1');
+        const s = buildWatcherDedupeKey(activity({ kind: 'state_changed', discriminator: 'x' }), 'w1');
         expect(c).not.toBe(s);
     });
 });

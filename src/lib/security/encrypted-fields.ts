@@ -71,6 +71,16 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // Never rendered and never searched; encrypted because a leaked secret
     // lets anyone forge the workspace's SIEM deliveries.
     TenantSecuritySettings: ['auditStreamSecretEncrypted'],
+    // Work items and comments (sub-phase 2.2, ADR 0002 §11). Copied from
+    // inflect-compliance `src/lib/security/encrypted-fields.ts` lines 292–296
+    // at 5528464fc54a8681956f3b9ce23ca9c075f0420e (`Task: ['description',
+    // 'resolution']` → `WorkItem: ['description']`, `TaskComment: ['body']` →
+    // `Comment: ['body']`). The repository searches `title` and the key
+    // number, never the description, so `description` is safe to encrypt;
+    // `title` stays plaintext (searched, shown in notifications, quoted in
+    // commit messages). Both are sanitised before they are stored.
+    WorkItem: ['description'],
+    Comment: ['body'],
 } as const;
 
 /** Set of model names with at least one encrypted field. Fast-path check. */

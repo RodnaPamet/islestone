@@ -541,3 +541,43 @@ executorRegistry.register('tenant-dek-rotation', async (payload, ctx) => {
             : { status: 'PASSED' },
     );
 });
+
+// ── Work items (sub-phase 2.2) ───────────────────────────────────────
+//
+// `tenantId` is NAMED rather than the payload spread: absent is the
+// platform-wide sweep, present is an operator re-running one workspace.
+
+executorRegistry.register('work-item-due-notification', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processWorkItemDueNotifications } = await import('./work-item-due-notification');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId };
+    const r = await processWorkItemDueNotifications(forwarded);
+    return makeResult(
+        'work-item-due-notification', startedAt, startMs,
+        r.itemsScanned, r.notificationsCreated, r.itemsScanned - r.notificationsCreated,
+        { tenantsScanned: r.tenantsScanned },
+    );
+});
+
+executorRegistry.register('work-item-purge', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processWorkItemPurge } = await import('./work-item-purge');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId };
+    const r = await processWorkItemPurge(forwarded);
+    return makeResult('work-item-purge', startedAt, startMs, r.items + r.projects, r.items + r.projects, 0, {
+        tenants: r.tenants,
+        items: r.items,
+        projects: r.projects,
+    });
+});
+
+executorRegistry.register('work-item-sortkey-rebalance', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processSortKeyRebalance } = await import('./work-item-sortkey-rebalance');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId };
+    const r = await processSortKeyRebalance(forwarded);
+    return makeResult('work-item-sortkey-rebalance', startedAt, startMs, r.items, r.items, 0, { projects: r.projects });
+});

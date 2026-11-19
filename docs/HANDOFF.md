@@ -62,6 +62,8 @@ porting maps now record them (next step 2); the last column says where.
 | 49 | The GHCR packages (`islestone`, `islestone-worker`) are public, set so after the first publish; no registry credential goes on the VM. Decided 2026-11-19, relayed. Applied: the `docker login` step and Watchtower's `config.json` mount are removed. | relayed | `deploy/docker-compose.prod.yml`; `docs/deployment.md`; `tests/unit/deploy/compose-prod.test.ts` |
 | 50 | Production uses `RATE_LIMIT_MODE=memory`: a single app container, so the limits are exact. Revisit when the app scales past one container. Decided 2026-11-19, relayed. Applied. | relayed | `deploy/.env.prod.example`; `docs/deployment.md` |
 | 51 | Pull request titles follow Conventional Commits from now on, so the squash-merge subject lets semantic-release cut versions; a CI check fails a title that does not. Decided 2026-11-19, relayed. Applied. | relayed | `.github/workflows/pr-title.yml`; `scripts/check-pr-title.mjs`; `CLAUDE.md` ("Delivery"); `docs/change-management-policy.md` ("Versioning") |
+| 52 | The work configuration's keys are kept as built: `admin.manage` changes teams, workflow states, work item types and labels; `projects.view` reads them; `projects.archive` covers project archive, delete and restore. Admins configure, and a custom role can grant `admin.manage`. Decided 2026-11-19, relayed. Applied. | relayed | `src/app-layer/policies/work-config.policies.ts`; `docs/work-items.md` ("Who may do what") |
+| 53 | Comments: only the author edits a comment (an admin never rewrites someone else's words); the author or a workspace admin deletes one, for moderation, and an admin's delete of someone else's comment is audited as a moderation action (`COMMENT_MODERATED`). Decided 2026-11-19, relayed. Applied. | relayed | `src/app-layer/policies/comment.policies.ts`; `src/app-layer/usecases/work-item-collab.ts`; `tests/integration/work-items-api.test.ts` |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
@@ -510,3 +512,45 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    Still open for the owner: whether the H1 "dependency audit blocking" item
    needs more than CI's existing `Audit` job (it already fails on a moderate
    advisory).
+
+   **2.1–2.2 (the work-item model; usecases, API and activity) have landed** on branch
+   `wt/p21` (not pushed), by `docs/porting/maps/2.1-2.2.md` (`PROVENANCE.md`, "Copied:
+   work-item model and API"; `docs/work-items.md`):
+   - The model in `prisma/schema/work.prisma` and migration `20261119160100_work_core`:
+     teams, workflow states by category (the category immutable by trigger), projects
+     with key prefixes (never reused) and per-project key sequences, types (Feature, Bug
+     and Chore seeded), work items with sub-items (five levels), relations (BLOCKS cycles
+     refused under the graph lock; a property test and a concurrent pair), labels,
+     comments, watchers and links. Fourteen tenant tables with RLS, grants, composite
+     keys and a two-tenant test. `COLLATE "C"` sort keys from an in-house fractional
+     index with property tests (ADR 0002 F1). `WORK_ITEM_DUE` in its own migration.
+   - Usecases, repositories and 37 routes: cursor lists, get, key lookup (aliases and
+     retired prefixes), create, update with `version`/`If-Match` (409, 428), state with
+     the effects, assign, the bulk verbs, subtree soft delete by `deletionId` and
+     restore, moves (reorder, re-parent, change project and team), comments (encrypted,
+     sanitised, edit and soft delete), watchers (audited, split self/other), links,
+     labels, metrics and the Activity feed; project visibility at every read and write,
+     GUEST failing closed until 8.4.
+   - Due-date reminders (owner decision row 16): the shared helper and the daily job in
+     `NOTIFICATIONS_TZ`, date-only; the `work-item-purge` (30 days, row 24) and
+     `work-item-sortkey-rebalance` jobs. `removeTenantMember` now unassigns the member's
+     items first (ADR 0003 §1).
+   - A defect fixed in 1.5's encryption extension: it fanned out by field name at the top
+     level of a non-manifest model's write, so `Comment.body` in the manifest would have
+     sealed `Notification.body` and `TenantCustomRole.description` outside the rotation
+     sweeps.
+   - `fast-check` 4.10.2 (MIT, dev). Kaneo moved to Adopted in `PROVENANCE.md` (pattern
+     only).
+   The owner decided the two permission questions on 2026-11-19 (rows 52 and 53): the
+   configuration keys are kept as built, and a comment is edited by its author only and
+   deleted by its author or a workspace admin (moderation, audited). Both are applied.
+   The branch was rebased onto `origin/main` (3050d5b).
+   Open for the owner (none blocks 2.3):
+   - **GUEST project grants** stay with 8.4 (the map's choice); until then a guest sees no
+     project and no item.
+   - **Retention classification** (`retention-policy-coverage`) waits for 8.3, which
+     brings the data-lifecycle job; `docs/work-items.md` records the purge window and the
+     never-pruned key tables.
+   - ADR 0002's sketch is refined in three places, named in `docs/work-items.md`: the
+     relation index order, `WorkItemLink.type`/`location` (the schema guard refuses
+     `kind` and `target`), and `createdByUserId` kept (the map said `creatorId`).

@@ -32,6 +32,8 @@
  *
  * @module app-layer/jobs/schedules
  */
+import { env } from '@/env';
+
 import type { JobName } from './types';
 
 export interface ScheduleDefinition {
@@ -131,6 +133,29 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         // is the right trade against a worker slot.
         description: 'Replay queued audit entries onto the hash chain, oldest event first. A row that exhausts its attempts is parked FAILED, never deleted.',
         // Empty: every workspace's queue, as a platform-level drain must.
+        defaultPayload: {},
+    },
+    {
+        name: 'work-item-due-notification',
+        pattern: '0 8 * * *',     // 08:00 in NOTIFICATIONS_TZ
+        // In the reminder zone, so "due today" is the reader's today and the
+        // bell lands at the start of their working day (DST-aware).
+        tz: env.NOTIFICATIONS_TZ,
+        description: 'In-app reminders for open, assigned work items due today, tomorrow or in seven days. Paged per workspace; idempotent through the dedupe key.',
+        defaultPayload: {},
+    },
+    {
+        name: 'work-item-purge',
+        pattern: '30 2 * * *',    // 02:30 UTC
+        // Off the hour, and away from the 08:00 reminder: a purge holds
+        // write locks on the rows it removes.
+        description: 'Hard-delete work items and projects soft-deleted more than WORK_ITEM_PURGE_DAYS (30) ago. Counts-only audit entry per workspace.',
+        defaultPayload: {},
+    },
+    {
+        name: 'work-item-sortkey-rebalance',
+        pattern: '45 3 * * *',    // 03:45 UTC
+        description: 'Rewrite the sort keys of projects whose keys passed 64 characters, keeping their order.',
         defaultPayload: {},
     },
 ];

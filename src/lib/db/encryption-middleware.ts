@@ -730,9 +730,20 @@ export function withEncryptionExtension<T extends object>(
 
                     // ── Write path ──
                     if (isWrite) {
-                        const targetModel = isEncryptedModel(model)
-                            ? model
-                            : '*';
+                        // The TOP-LEVEL model is known, so its own fields are
+                        // encrypted by its own manifest entry, and a model
+                        // outside the manifest has none: `encryptDataNode`
+                        // returns early for it, and only its NESTED writes
+                        // (whose target model the payload does not name)
+                        // fan out by field name. Islestone, sub-phase 2.2:
+                        // inflect-compliance fanned out at the top level too,
+                        // which encrypted ANY column sharing a manifest
+                        // field's name. With `Comment.body` in the manifest
+                        // that sealed `Notification.body` and
+                        // `TenantCustomRole.description` under the workspace
+                        // DEK, outside the rotation sweeps' reach, so a DEK
+                        // rotation would have left them unreadable.
+                        const targetModel = model;
 
                         // Writes always use the primary DEK (or fall
                         // back to global KEK when null). The previous

@@ -57,6 +57,9 @@ describe('GUARD: executors read their payload', () => {
             'key-rotation',
             'notification-outbox-flush',
             'tenant-dek-rotation',
+            'work-item-due-notification',
+            'work-item-purge',
+            'work-item-sortkey-rebalance',
         ]);
         expect(regs).toHaveLength(calls.length);
     });

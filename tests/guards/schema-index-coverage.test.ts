@@ -63,8 +63,26 @@ interface CompositeIndex {
     justification: string;
 }
 
-/** Composite indexes backing real list filter/sort paths. */
-const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [];
+/**
+ * Composite indexes backing real list filter/sort paths: ADR 0002 §13, one
+ * named query each (sub-phases 2.1–2.2).
+ */
+const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
+    { model: 'WorkItem', fields: ['tenantId', 'projectId', 'sortKey', 'id'], justification: 'Project list, manual order, keyset over (sortKey, id).' },
+    { model: 'WorkItem', fields: ['tenantId', 'projectId', 'stateId', 'sortKey'], justification: 'Board columns by state.' },
+    { model: 'WorkItem', fields: ['tenantId', 'teamId', 'stateCategory', 'sortKey'], justification: 'Team backlog across projects, by category.' },
+    { model: 'WorkItem', fields: ['tenantId', 'assigneeId', 'stateCategory', 'dueDate'], justification: 'My Work: assigned and open, by due date.' },
+    { model: 'WorkItem', fields: ['tenantId', 'parentId', 'sortKey'], justification: 'Sub-items of an item, in order; the progress groupBy.' },
+    { model: 'WorkItem', fields: ['tenantId', 'createdByUserId', 'createdAt'], justification: 'Created by me.' },
+    { model: 'WorkItem', fields: ['tenantId', 'projectId', 'updatedAt', 'id'], justification: 'Recently changed, keyset over (updatedAt, id).' },
+    { model: 'WorkItem', fields: ['tenantId', 'stateCategory', 'dueDate'], justification: 'The due-date reminder scan and the overdue filter.' },
+    { model: 'WorkItem', fields: ['tenantId', 'deletionId'], justification: 'Restore: the rows deleted together.' },
+    { model: 'Comment', fields: ['tenantId', 'workItemId', 'createdAt'], justification: "An item's comments, newest first (keyset)." },
+    { model: 'WorkflowState', fields: ['tenantId', 'teamId', 'sortKey'], justification: "A team's workflow in order." },
+    { model: 'WorkItemRelation', fields: ['tenantId', 'toId', 'type'], justification: 'Incoming relations ("blocked by").' },
+    { model: 'WorkItemLabel', fields: ['tenantId', 'labelId', 'workItemId'], justification: 'Filter by label; the batched detach.' },
+    { model: 'AuditLog', fields: ['tenantId', 'entityId', 'createdAt'], justification: "A work item's Activity, newest first (keyset)." },
+];
 
 /** Tenant models whose list queries are fully served by Layers A + B, with the reason. */
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
@@ -78,6 +96,13 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
         '@@index([tenantId]) narrows to one workspace, whose invites are few.',
     TenantCustomRole:
         "A workspace's custom roles, filtered by tenantId and isActive: @@index([tenantId, isActive]).",
+    // Sub-phases 2.1–2.2: small per-workspace sets read whole and capped.
+    Team: 'A workspace\'s teams, by name, capped at 200: @@unique([tenantId, name]).',
+    Project: 'A workspace\'s projects (optionally of one team), capped at 200: @@index([tenantId, teamId]).',
+    WorkItemType: 'A workspace\'s types, capped at 200: @@unique([tenantId, name]) narrows to the workspace.',
+    Label: 'A workspace\'s labels (and one team\'s), capped at 500: @@index([tenantId, teamId]).',
+    WorkItemLink: "One item's links, capped at 50: @@index([tenantId, workItemId]).",
+    WorkItemWatcher: "One item's watchers (or a page of items' for the fan-out): @@index([tenantId, workItemId]).",
     // Sub-phase 1.6.
     Notification:
         "The bell: one user's rows in one workspace, newest first, capped at 50: @@index([tenantId, userId, createdAt]).",
@@ -155,7 +180,7 @@ describe('schema-index-coverage — parser sanity', () => {
     it('parses the tenancy models, their indexes and their relation FK groups', () => {
         const membership = MODELS.find((m) => m.name === 'TenantMembership');
         expect(MODELS.map((m) => m.name).sort()).toEqual([
-            'Account', 'AuditLog', 'AuditOutbox', 'Notification', 'NotificationOutbox', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken',
+            'Account', 'AuditLog', 'AuditOutbox', 'Comment', 'Label', 'Notification', 'NotificationOutbox', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Project', 'ProjectKeyPrefix', 'ProjectKeySequence', 'Team', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken', 'WorkItem', 'WorkItemKeyAlias', 'WorkItemLabel', 'WorkItemLink', 'WorkItemRelation', 'WorkItemType', 'WorkItemWatcher', 'WorkflowState',
         ]);
         expect(membership?.fieldIdName).toBe('id');
         expect(membership?.blockIndexes).toContainEqual(['tenantId', 'status']);

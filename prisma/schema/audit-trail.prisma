@@ -52,6 +52,9 @@ model AuditLog {
   @@index([tenantId])
   @@index([tenantId, createdAt])
   @@index([tenantId, entity])
+  /// A work item's Activity (sub-phase 2.2, `ActivityRepository`): the
+  /// entries about one entity, newest first.
+  @@index([tenantId, entityId, createdAt])
   @@index([tenantId, action])
   @@index([tenantId, entryHash])
   @@index([userId])

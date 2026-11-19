@@ -57,9 +57,9 @@ type Sanitizer = 'sanitizeRichTextHtml' | 'sanitizePlainText' | 'sanitizePolicyC
 const RICH_TEXT_COVERAGE: Readonly<
     Record<string, { usecases: readonly string[]; sanitizer: Sanitizer }>
 > = {
-    // EMPTY in sub-phase 1.5: the manifest's one entry is a secret, not text
-    // a person writes for others to read. Sub-phase 2.2 adds the work-item and
-    // comment bodies here with their usecases.
+    // Sub-phase 2.2: the work-item description and the comment body.
+    WorkItem: { usecases: ['src/app-layer/usecases/work-item.ts'], sanitizer: 'sanitizePlainText' },
+    Comment: { usecases: ['src/app-layer/usecases/work-item-collab.ts'], sanitizer: 'sanitizePlainText' },
 };
 
 /**
@@ -165,10 +165,9 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
     );
 
     it('has a population to check, or says why it has none', () => {
-        // `it.each([])` throws, so the per-entry cases below run through a
-        // loop that is allowed to be empty. Empty is the truth in 1.5: the
-        // manifest holds no rich text yet. This case makes that a stated fact.
-        expect(coverageEntries).toEqual([]);
+        // The population is the two bodies sub-phase 2.2 encrypts; a third
+        // encrypted free-text model must be classified before it lands.
+        expect(coverageEntries.map(([model]) => model).sort()).toEqual(['Comment', 'WorkItem']);
         expect(Object.keys(NON_RICH_TEXT_MODELS)).toEqual(['TenantSecuritySettings']);
     });
 

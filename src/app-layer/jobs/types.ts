@@ -238,6 +238,27 @@ export interface TenantDekRotationPayload {
 }
 
 /**
+ * Daily in-app due-date reminders for work items (sub-phase 2.2). No
+ * `tenantId` sweeps every live workspace; a `tenantId` re-runs one.
+ */
+export interface WorkItemDueNotificationPayload {
+    tenantId?: string;
+}
+
+/**
+ * Daily hard delete of work items and projects past the soft-delete window
+ * (ADR 0002 §8). No `tenantId` sweeps every workspace.
+ */
+export interface WorkItemPurgePayload {
+    tenantId?: string;
+}
+
+/** Daily rebalance of projects whose sort keys passed the length bound (ADR 0002 §5). */
+export interface WorkItemSortKeyRebalancePayload {
+    tenantId?: string;
+}
+
+/**
  * Every key of `T` required to be PRESENT, keeping each key's own value type.
  *
  * The executor registrations name payload fields one by one rather than
@@ -266,6 +287,9 @@ export interface JobPayloadMap {
     'audit-outbox-flush': AuditOutboxFlushPayload;
     'key-rotation': KeyRotationPayload;
     'tenant-dek-rotation': TenantDekRotationPayload;
+    'work-item-due-notification': WorkItemDueNotificationPayload;
+    'work-item-purge': WorkItemPurgePayload;
+    'work-item-sortkey-rebalance': WorkItemSortKeyRebalancePayload;
 }
 
 /** Union of all valid job names */
@@ -347,6 +371,29 @@ export const JOB_DEFAULTS: Record<JobName, {
         backoff: { type: 'fixed', delay: 0 },
         removeOnComplete: 100,
         removeOnFail: 500,
+    },
+    'work-item-due-notification': {
+        // Two attempts with exponential back-off from 5 s (the source's
+        // `task-due-notification` options): a retry the same morning is
+        // harmless, the dedupe key absorbs a re-run.
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 30,
+        removeOnFail: 100,
+    },
+    'work-item-purge': {
+        // One attempt: the next daily run is the retry, and every batch it
+        // finished is already committed.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 60_000 },
+        removeOnComplete: 30,
+        removeOnFail: 100,
+    },
+    'work-item-sortkey-rebalance': {
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 60_000 },
+        removeOnComplete: 30,
+        removeOnFail: 100,
     },
 };
 

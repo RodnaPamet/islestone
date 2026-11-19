@@ -7,7 +7,8 @@
  * setting that reads as working while every bell still rings. So:
  *
  *   1. the catalogue is exactly the emitters' copy tables (assignment's kinds
- *      and the watcher's type), each a real `NotificationType`;
+ *      the watcher's type and the due reminder's, sub-phase 2.2), each a real
+ *      `NotificationType`;
  *   2. every emitter that writes a listed type asks `isInAppTypeEnabled`
  *      BEFORE its `createMany` (behaviourally, in assignment.test.ts and
  *      watcher.test.ts; structurally here, so a new emitter is held to it);
@@ -24,6 +25,7 @@ import { NotificationType } from '@prisma/client';
 import { ASSIGNMENT_COPY } from '@/app-layer/notifications/assignment';
 import { listInAppNotificationTypes } from '@/app-layer/notifications/in-app-types';
 import { WATCHER_NOTIFICATION_TITLE, WATCHER_NOTIFICATION_TYPE } from '@/app-layer/notifications/watcher';
+import { WORK_ITEM_DUE_NOTIFICATION_TITLE, WORK_ITEM_DUE_NOTIFICATION_TYPE } from '@/app-layer/notifications/work-item-due';
 
 import { codeOf } from '../../helpers/source-blocks';
 
@@ -42,6 +44,7 @@ describe('the in-app type catalogue', () => {
         expect(listInAppNotificationTypes()).toEqual([
             ...Object.entries(ASSIGNMENT_COPY).map(([type, copy]) => ({ type, title: copy.title })),
             { type: WATCHER_NOTIFICATION_TYPE, title: WATCHER_NOTIFICATION_TITLE },
+            { type: WORK_ITEM_DUE_NOTIFICATION_TYPE, title: WORK_ITEM_DUE_NOTIFICATION_TITLE },
         ]);
     });
 
@@ -53,7 +56,11 @@ describe('the in-app type catalogue', () => {
     });
 
     it('every emitter of a listed type asks isInAppTypeEnabled before it writes', () => {
-        for (const file of ['src/app-layer/notifications/assignment.ts', 'src/app-layer/notifications/watcher.ts']) {
+        for (const file of [
+            'src/app-layer/notifications/assignment.ts',
+            'src/app-layer/notifications/watcher.ts',
+            'src/app-layer/notifications/work-item-due.ts',
+        ]) {
             expect({ file, mutesFirst: checksMuteBeforeWrite(read(file)) }).toEqual({ file, mutesFirst: true });
         }
     });

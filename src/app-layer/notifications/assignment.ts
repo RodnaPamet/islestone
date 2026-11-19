@@ -14,8 +14,8 @@
  *     neither the bell list, nor the badge, nor the SSE stream.
  *
  * Fire-and-forget — callers isolate the write in its own transaction so a
- * notification failure never rolls back the parent operation. No caller
- * until sub-phase 2.2 (the assignment usecase).
+ * notification failure never rolls back the parent operation. Callers: the
+ * work-item create, assign and bulk-assign usecases (sub-phase 2.2).
  *
  * Copied from inflect-compliance `src/app-layer/notifications/assignment.ts`
  * at 5528464fc54a8681956f3b9ce23ca9c075f0420e: one kind,

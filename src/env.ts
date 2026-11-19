@@ -324,6 +324,27 @@ export const env = createEnv({
         SMTP_HOST: z.string().min(1).optional(),
         /** SMTP port. Defaults to 587; 465 means implicit TLS. */
         SMTP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
+        /**
+         * The IANA zone the due-date reminder counts calendar days in and the
+         * daily `work-item-due-notification` cron runs in (sub-phase 2.2).
+         */
+        NOTIFICATIONS_TZ: z
+            .string()
+            .default('Europe/London')
+            .refine((tz) => {
+                try {
+                    new Intl.DateTimeFormat('en-GB', { timeZone: tz });
+                    return true;
+                } catch {
+                    return false;
+                }
+            }, 'NOTIFICATIONS_TZ must be an IANA time zone, such as Europe/London'),
+        /**
+         * Days a soft-deleted work item or project stays restorable before
+         * `work-item-purge` hard-deletes it (ADR 0002 §8: 30, owner decision
+         * 2026-11-19).
+         */
+        WORK_ITEM_PURGE_DAYS: z.coerce.number().int().min(1).default(30),
         /** SMTP user; with SMTP_PASS, the relay's credentials. Both or neither. */
         SMTP_USER: z.string().min(1).optional(),
         /** SMTP password. A secret: never logged. */
@@ -402,6 +423,8 @@ export const env = createEnv({
         npm_package_version: process.env.npm_package_version,
         SMTP_HOST: process.env.SMTP_HOST,
         SMTP_PORT: process.env.SMTP_PORT,
+        NOTIFICATIONS_TZ: process.env.NOTIFICATIONS_TZ,
+        WORK_ITEM_PURGE_DAYS: process.env.WORK_ITEM_PURGE_DAYS,
         SMTP_USER: process.env.SMTP_USER,
         SMTP_PASS: process.env.SMTP_PASS,
         SMTP_FROM: process.env.SMTP_FROM,

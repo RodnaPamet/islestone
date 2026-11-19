@@ -47,6 +47,9 @@ describe('executorRegistry — default registrations', () => {
             'key-rotation',
             'notification-outbox-flush',
             'tenant-dek-rotation',
+            'work-item-due-notification',
+            'work-item-purge',
+            'work-item-sortkey-rebalance',
         ]);
     });
 
