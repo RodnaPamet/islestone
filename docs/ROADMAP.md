@@ -26,8 +26,8 @@ Drafted 2026-11-18. Islestone is an AI-enabled project-management SaaS spun off 
 
 Two blockers come out of this inventory:
 
-1. **inflect-compliance is BUSL-1.1**, licensor Inflect Ltd. Islestone may use the code only if Inflect Ltd. grants it or owns Islestone. Get that in writing first (sub-phase 0.1).
-2. **tldraw is proprietary.** inflect-compliance pins `tldraw ^3.15.6`, where production use is allowed with the watermark. Version 4 and later refuse to run in production without a paid key, and the current release is 5.x, so staying on 3.x means no upgrades. Islestone must choose: stay on 3.x, buy a key (price by quote), or move the canvas to Excalidraw (MIT).
+1. **inflect-compliance is BUSL-1.1**, licensor Inflect Ltd. Islestone may use the code only if Inflect Ltd. grants it or owns Islestone. Get that in writing first (sub-phase 0.1). **Decided 2026-11-18 ([ADR 0001](adr/0001-code-provenance-and-licences.md) D1, with D2):** copying is allowed, every copied file gets a `PROVENANCE.md` row, and Islestone is BUSL-1.1 from the same licensor.
+2. **tldraw is proprietary.** inflect-compliance pins `tldraw ^3.15.6`, where production use is allowed with the watermark. Version 4 and later refuse to run in production without a paid key, and the current release is 5.x, so staying on 3.x means no upgrades. Islestone must choose: stay on 3.x, buy a key (price by quote), or move the canvas to Excalidraw (MIT). **Decided 2026-11-18 ([ADR 0001](adr/0001-code-provenance-and-licences.md) D3):** stay on tldraw 3.x (3.15.6) with the watermark visible.
 
 ### 2.2 Open-source project-management suites
 
@@ -56,11 +56,11 @@ Five ideas worth taking from the field:
 | Drag and drop | Atlassian pragmatic-drag-and-drop (Apache-2.0) | Works with virtualised lists. `@dnd-kit/react` is still pre-1.0 |
 | Rich text | Tiptap MIT core (already in inflect-compliance) | Tiptap comments, AI toolkit and conversion are paid: build those. Plate is the MIT fallback with an AI plugin |
 | Document collaboration | Yjs plus Hocuspocus (both MIT) | Self-hosted Node, Redis extension |
-| Canvas | tldraw 3.x or licensed, or Excalidraw (MIT) | Decision in 0.1 |
+| Canvas | tldraw 3.x (3.15.6), watermark visible | Decided 2026-11-18 (ADR 0001 D3). The licensed tldraw and Excalidraw (MIT) were the options not chosen |
 | Calendar | inflect-compliance calendar surface; FullCalendar MIT core if more is needed | Resource timelines are premium |
 | Scheduling | In-house critical path and Monte Carlo; Timefold Community (Apache-2.0, JVM sidecar) later | No credible JavaScript critical-path library exists |
 | Workflow | BullMQ flows (already used) plus React Flow (MIT) for a visual builder | |
-| Search | Postgres full-text search plus pgvector | Row-level security applies for free |
+| Search | Postgres full-text search plus pgvector | Row-level security applies for free. Encrypted fields (descriptions, comment bodies) need the search decision in ADR 0002 section 11 |
 | Tables | TanStack Table (already used) | Univer (Apache-2.0) if formulas are needed |
 | Charts | visx charts already in `@inflect/ui` | |
 | Integrations | Vendor SDKs: `octokit`, `@gitbeaker/rest`, `jira.js`, `@linear/sdk`, `asana`, `trello.js` | No good open-source importer library exists; write mappers |
@@ -96,7 +96,7 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 ## 3. Product principles
 
 1. **People are accountable; agents are delegated.** A work item has one human assignee and, optionally, one agent delegate.
-2. **Agents propose, people approve.** Every agent write goes through the proposal queue until a workspace owner raises a specific rung.
+2. **Agents propose, people approve.** Every agent write goes through the proposal queue until a workspace owner raises a specific rung. A session someone other than the item's assignee started proposes at every rung (ADR 0003, decision 10).
 3. **One work-item table.** Views, cycles, modules and roadmaps are scopes over it.
 4. **Deterministic numbers, explained by a model.** Schedules and forecasts come from code. A model explains them and never invents them.
 5. **Tenant isolation at the database.** Every tenant table has row-level security from its first migration.
@@ -114,6 +114,7 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 - **Build:** written grant from Inflect Ltd. for Islestone's use of the BUSL-1.1 code; Islestone's own licence choice; the tldraw decision.
 - **Prompt:** "Write `docs/adr/0001-code-provenance-and-licences.md`. Record: the inflect-compliance licence (BUSL-1.1, Additional Use Grant) and the exact grant Islestone relies on, with a placeholder for the signed reference; Islestone's own licence; the canvas decision among tldraw 3.x with watermark, a paid tldraw key, or Excalidraw, with the cost and upgrade consequence of each. List what you could not confirm from the repositories as open questions for the owner."
 - **Done when:** the owner has signed off each decision in the ADR.
+- **Decided, 2026-11-18** ([ADR 0001](adr/0001-code-provenance-and-licences.md), Accepted): code may be copied from inflect-compliance, each copied file recorded in `PROVENANCE.md` (D1); Islestone is BUSL-1.1, licensor Inflect Ltd. (D2); the canvas stays on tldraw 3.x with the watermark (D3). A fourth decision came out of the work: inflect-compliance's UI layer is largely derived from Dub (AGPL-3.0) and carries Nucleo icons, and the owner chose to copy it as is and accept the licence risk (D4).
 
 #### 0.2 Architecture decisions (S)
 - **Build:** ADRs for the work-item model, the assignee/delegate rule, the auth path, the sync strategy and the naming of the task aggregate.
@@ -143,6 +144,7 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 #### 1.4 Authentication and roles (L)
 - **Source:** `src/auth.ts`, `src/middleware.ts`, `lib/auth/`, `lib/scim/`, `lib/permissions.ts`, `lib/security/permission-middleware.ts`.
 - **Prompt:** "Port authentication: credentials, Google and Microsoft sign-in, session rows with revocation, MFA, password policy with the breach check, invites, and the tenant-access gate in middleware. Port SSO and SCIM behind a feature flag. Write a new `PermissionSet` for project management (workspace, projects, work items, views, cycles, docs, canvas, automations, integrations, agents, billing, admin) with roles OWNER, ADMIN, MEMBER, GUEST and VIEWER, and port `requirePermission` with its denial audit row. Port the guards for membership-creation paths and permission coverage."
+- **Decided 2026-11-18 ([ADR 0006](adr/0006-vocabulary.md)):** the roles rank Owner > Admin > Member > Viewer > Guest by breadth of access, and `Role` is declared in that order; a user whose role cannot be resolved falls back to Viewer, never Guest; public self-sign-up at `/api/auth/register` sits behind a switch, off by default in production, on in development, opened by an operator without a code change.
 
 #### 1.5 Security perimeter (M)
 - **Source:** `lib/security/` (encryption, sanitize, rate-limit), `lib/audit/`, `scripts/detect-secrets.sh`.
@@ -176,6 +178,7 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 #### 2.2 Usecases, API and activity (L)
 - **Source:** `usecases/task.ts`, `TaskRepository.ts`, the 19 task routes, comments, watchers.
 - **Prompt:** "Port the task usecases, repository and routes as work-item equivalents: list with cursor pagination, get, create, update, delete with restore, assign, bulk update, comments with sanitisation, watchers, and an activity feed built from the audit trail. Add optimistic concurrency with a version column and a 409 on conflict. Encrypt description and comment bodies through the manifest."
+- **Owner decision, 2026-11-18** ("In 2.2"): due-date reminders (the shared in-app helper and the daily job) land here with the work-item engine, not in 2.7. The email due digest is part of 2.7's digests.
 
 #### 2.3 List, board and detail views (L)
 - **Source:** `TasksClient.tsx`, task detail page; pragmatic-drag-and-drop; circle (MIT) for layout ideas.
@@ -192,7 +195,7 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 - **Prompt:** "Add an intake stage: public and internal forms built with react-hook-form, an inbound email address per project, and a triage inbox where an item is accepted, declined, merged into a duplicate or snoozed before it reaches the backlog. Rate-limit and sanitise every public entry point."
 
 #### 2.7 Search, inbox and My Work (M)
-- **Prompt:** "Add Postgres full-text search over items and comments with a tenant-leading index, a notification inbox with per-event preferences and digests, mentions, and a My Work page (assigned, created, watching, due soon). Search lives inside the filter popover and the command palette."
+- **Prompt:** "Add Postgres full-text search over items and comments with a tenant-leading index, searching encrypted description and comment bodies only as the search ADR called for by ADR 0002 section 11 decides, a notification inbox with per-event preferences and digests, mentions, and a My Work page (assigned, created, watching, due soon). Search lives inside the filter popover and the command palette."
 
 **Hardening H2.**
 - Performance: seeded tenants at 10,000 and 100,000 items; list, board and search stay under an agreed response budget; no query in a loop; every list query has a backing index (port the index and query-shape guardrails).
@@ -262,7 +265,8 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 
 #### 5.1 Automation engine and builder (L)
 - **Source:** `app-layer/automation`; `RuleBuilderModal`; React Flow; Paca web (Apache-2.0) for the graph builder.
-- **Prompt:** "Port the automation bus, rules, executions and action executor. Define the event contract for work items, cycles, comments, intake and integrations. Build a trigger, condition, action builder. Actions: set field, assign, comment, notify, create item, call webhook, start an agent run. Detect and stop rule loops with a per-chain depth limit."
+- **Prompt:** "Port the automation bus, rules, executions and action executor. Define the event contract for work items, cycles, comments, intake and integrations. Build a trigger, condition, action builder. Actions: set field, assign, comment, notify, create item, call webhook. Detect and stop rule loops with a per-chain depth limit."
+- **Owner decision, 2026-11-18** ("Add it in Phase 6"): 5.1 ships without an action that starts an agent run. Phase 6 adds it once the agent engine and its kill switch exist, in 6.3.
 
 #### 5.2 Public API and webhooks (M)
 - **Source:** API-key auth, `webhook-headers.ts`, the audit-stream delivery pattern.
@@ -299,7 +303,8 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 
 #### 6.3 Agents as delegates (L)
 - **Source:** Paperclip (MIT) for checkout locks, budgets and heartbeat; Linear's agent guidelines for the interaction model.
-- **Prompt:** "Add the delegate model: `Agent` as an actor separate from `User`, with an accountable human owner; `WorkItem.delegateAgentId` beside the human assignee; `AgentSession` with states pending, active, awaiting input, complete, error and stale; an append-only `AgentActivity` stream shown on the item. Add atomic checkout so two agents never hold one item, per-agent and per-project budgets with hard stops, and invocation by delegation, mention, schedule or automation."
+- **Prompt:** "Add the delegate model: `Agent` as an actor separate from `User`, with an accountable human owner; `WorkItem.delegateAgentId` beside the human assignee; `AgentSession` with states pending, active, awaiting input, complete, error and stale; an append-only `AgentActivity` stream shown on the item. Add atomic checkout so two agents never hold one item, per-agent and per-project budgets with hard stops, and invocation by delegation, mention, schedule or automation. Add the automation-rule action that starts an agent run, which 5.1 left out."
+- **Owner decision, 2026-11-18** ("Add it in Phase 6"): the automation-rule action that starts an agent run lands here, once the agent engine (6.1) and its kill switch exist.
 
 #### 6.4 Assistant surface (M)
 - **Source:** assistant-ui (MIT) or AI Elements (Apache-2.0).
@@ -439,14 +444,16 @@ Gaps found in review and how they were closed:
 - Live updates were implied by collaboration but not specified for boards; added as 4.3.
 - Forecast honesty on thin history was unstated; added to 3.6 and H3.
 
-Open decisions for the owner, none of which the research could settle:
+Decisions for the owner that the research could not settle. The first three were decided on 2026-11-18 and are recorded in [ADR 0001](adr/0001-code-provenance-and-licences.md):
 
-1. The written BUSL grant from Inflect Ltd. (0.1). Nothing should be ported before it.
-2. The canvas licence path (0.1).
-3. Whether Islestone itself is open source, and under which licence.
+1. The written BUSL grant from Inflect Ltd. (0.1). **Decided (D1):** copying from inflect-compliance is allowed; every copied file gets a `PROVENANCE.md` row. No separate grant document was produced: the owner's decision, recorded in the ADR, is the authority.
+2. The canvas licence path (0.1). **Decided (D3):** tldraw 3.x with the watermark visible.
+3. Whether Islestone itself is open source, and under which licence. **Decided (D2):** BUSL-1.1, licensor Inflect Ltd., Change License Apache-2.0; source-available, not open source.
 4. Auth: port NextAuth v4 now (recommended, because SSO, MFA and SCIM come with it) or start on Better Auth.
 5. Hosting target and data residency regions.
 6. Which embeddings provider, since a hosted one is a new sub-processor.
 7. Pricing and how AI usage is metered.
+
+Raised after the research and decided on 2026-11-18 (ADR 0001 D4): inflect-compliance's UI layer, which 1.2 copies, is largely derived from Dub (AGPL-3.0) and includes Nucleo icons whose notice forbids redistribution. The owner chose to copy it as is and accept the risk; `NOTICE` names both when `packages/ui` lands.
 
 Limits of the research: star counts, vendor prices and some maintenance claims came from secondary sources. Section 2 states licences as read from LICENSE files on 2026-11-18; re-read each one at the pinned commit before porting, as H0 requires.

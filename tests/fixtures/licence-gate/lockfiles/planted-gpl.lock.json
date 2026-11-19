@@ -1,0 +1,35 @@
+{
+  "name": "fixture-app",
+  "version": "1.0.0",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "fixture-app",
+      "version": "1.0.0",
+      "license": "UNLICENSED",
+      "dependencies": {
+        "fixture-mit-lib": "1.0.0"
+      },
+      "devDependencies": {
+        "fixture-dev-tool": "1.0.0"
+      }
+    },
+    "node_modules/fixture-dev-tool": {
+      "version": "1.0.0",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/fixture-gpl-lib": {
+      "version": "1.0.0",
+      "license": "GPL-3.0"
+    },
+    "node_modules/fixture-mit-lib": {
+      "version": "1.0.0",
+      "license": "MIT",
+      "dependencies": {
+        "fixture-gpl-lib": "^1.0.0"
+      }
+    }
+  }
+}

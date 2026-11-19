@@ -1,0 +1,183 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# No token permissions by default. Each job states the read-only scope it
+# needs, so widening one job is a change to that job, never an inherited one.
+# The jobs that run `npm ci` execute dependencies' install scripts, which is
+# why none of them may inherit a wider default.
+permissions: {}
+
+# A new push to a pull request cancels that PR's run in flight. Runs on main
+# are never cancelled, so every commit there gets a complete result.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  audit:
+    name: Audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      # Reads the lockfile only; installs nothing. Fails on a moderate or
+      # worse advisory in a production dependency.
+      - run: npm audit --omit=dev --audit-level=moderate
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    # No SKIP_ENV_VALIDATION here: `npm run typecheck` sets it for `next
+    # typegen` itself (scripts/next-typegen.mjs), so this job proves a fresh
+    # clone with no environment can type-check.
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
+  test:
+    name: Test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm test -- --ci
+      # The plain-ESM script tests (tests/unit/**/*.test.mjs) run under node --test,
+      # which Jest's projects do not match.
+      - run: npm run test:scripts
+
+  licence:
+    name: Licence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # The gate reads the lockfile and cross-checks each production package's
+      # installed package.json. It reads manifests and never runs package code,
+      # so install scripts are skipped.
+      - run: npm ci --ignore-scripts
+      # Production dependency licences against the allowlist, and no import
+      # from an open-core `ee` folder or a deny-listed package
+      # (scripts/licence-gate.mjs, roadmap 0.3 and H0).
+      - run: npm run licence:check
+
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      SKIP_ENV_VALIDATION: '1'
+      # Inlined into the client bundle; matches the e2e server's origin.
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3100
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Upload the build for e2e
+        uses: actions/upload-artifact@v7
+        with:
+          name: next-build
+          # `.next` is a hidden directory; the cache inside it is not needed to start.
+          path: |
+            .next
+            !.next/cache
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
+
+  e2e:
+    name: E2E
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Download the build
+        uses: actions/download-artifact@v8
+        with:
+          name: next-build
+          path: .next
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 7

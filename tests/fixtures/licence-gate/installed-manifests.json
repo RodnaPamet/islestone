@@ -1,0 +1,25 @@
+{
+  "node_modules/fixture-no-licence-recorded": {
+    "name": "fixture-no-licence-recorded",
+    "version": "1.0.0",
+    "licenses": [
+      { "type": "MIT", "url": "https://example.invalid/mit" },
+      { "type": "Apache-2.0", "url": "https://example.invalid/apache" }
+    ]
+  },
+  "node_modules/fixture-object-licence": {
+    "name": "fixture-object-licence",
+    "version": "1.0.0",
+    "license": { "type": "MIT", "url": "https://example.invalid/mit" }
+  },
+  "node_modules/fixture-stale-install": {
+    "name": "fixture-stale-install",
+    "version": "0.9.0",
+    "license": "MIT"
+  },
+  "node_modules/fixture-tampered": {
+    "name": "fixture-tampered",
+    "version": "1.0.0",
+    "license": "GPL-3.0-only"
+  }
+}

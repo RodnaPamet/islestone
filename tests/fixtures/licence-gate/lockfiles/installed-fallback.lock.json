@@ -1,0 +1,37 @@
+{
+  "name": "fixture-app",
+  "version": "1.0.0",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "fixture-app",
+      "version": "1.0.0",
+      "license": "UNLICENSED",
+      "dependencies": {
+        "fixture-no-licence-anywhere": "1.0.0",
+        "fixture-no-licence-recorded": "1.0.0",
+        "fixture-object-licence": "1.0.0",
+        "fixture-stale-install": "1.0.0",
+        "fixture-tampered": "1.0.0"
+      }
+    },
+    "node_modules/fixture-no-licence-anywhere": {
+      "version": "1.0.0"
+    },
+    "node_modules/fixture-no-licence-recorded": {
+      "version": "1.0.0"
+    },
+    "node_modules/fixture-object-licence": {
+      "version": "1.0.0",
+      "license": "MIT"
+    },
+    "node_modules/fixture-stale-install": {
+      "version": "1.0.0"
+    },
+    "node_modules/fixture-tampered": {
+      "version": "1.0.0",
+      "license": "MIT"
+    }
+  }
+}
