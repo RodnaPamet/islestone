@@ -83,6 +83,18 @@
     "reason": "Prebuilt sharp 0.35.5 for Windows x64: sharp's native addon (Apache-2.0) plus libvips 8.18.7 as separate DLLs (libvips-42.dll, libvips-cpp-8.18.7.dll; LGPL-3.0-or-later). Reached through next > sharp; installed only on Windows, so on developer machines and never in the Linux production image. Used unmodified and loaded at run time, as for the @img/sharp-libvips-* entries. Verified 2026-11-18: the lockfile and npm registry licence fields agree, the tarball's sha512 equals the lockfile integrity, and its README was read.",
     "adr": "docs/adr/0007-third-party-licence-exceptions.md"
   },
+  "@inflect/ui": {
+    "licence": "BUSL-1.1",
+    "version": "0.0.0",
+    "reason": "The byte-for-byte mirror of inflect-compliance's packages/ui at 5528464fc54a8681956f3b9ce23ca9c075f0420e (packages/ui/UPSTREAM.json), copied in sub-phase 1.2. Its package.json declares BUSL-1.1, licensor Inflect Ltd., the same licence and licensor as Islestone; copying it is owner decision D1 of ADR 0001, and the Dub and Nucleo material inside it is taken as is under D4. The gate checks a mirrored workspace like any dependency, so it needs this entry. Pinned to the mirrored version. Verified 2026-11-19.",
+    "adr": "docs/adr/0001-code-provenance-and-licences.md"
+  },
+  "@visx/vendor": {
+    "licence": "MIT AND ISC",
+    "version": "4.0.0",
+    "reason": "Reached through @inflect/ui's charts: @visx/scale, @visx/shape and @visx/axis 4.0.0 depend on it. It declares \"MIT and ISC\", which is not valid SPDX (lower-case operator), so the gate reads it as INVALID. The package bundles d3 modules (ISC) beside visx code; its LICENSE is MIT, \"Copyright (c) 2017-2018 Harrison Shoff\". Both licences are on the allowlist, so this entry only reads the declaration as SPDX. Pinned because the declaration is not SPDX. Verified 2026-11-19.",
+    "adr": "docs/adr/0007-third-party-licence-exceptions.md"
+  },
   "caniuse-lite": {
     "licence": "CC-BY-4.0",
     "reason": "Reached through next > caniuse-lite (browserslist build targets). The package is the caniuse.com browser-support database (data/) with a small decoder (dist/); its LICENSE at 1.0.30001826 is Creative Commons Attribution 4.0 International, which asks for attribution and has no copyleft. Exempted by name under owner decision of 2026-11-18 (ADR 0007 E3a): not pinned to a version, because the database is republished about weekly; the entry is bound to the declared licence, so a licence change fails the gate. Verified 2026-11-18.",

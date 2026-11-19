@@ -55,6 +55,10 @@ const moduleNameMapper = {
     '^@/env$': '<rootDir>/tests/mocks/env.ts',
     '^@/env-client$': '<rootDir>/tests/mocks/env.ts',
     '^@/(.*)$': '<rootDir>/src/$1',
+    // jest-resolve does not honour an exports-array fallback, so the shared
+    // package's subpath imports are mapped to its source directly.
+    '^@inflect/ui/(.*)$': '<rootDir>/packages/ui/src/$1',
+    '^@inflect/ui$': '<rootDir>/packages/ui/src/index.ts',
     '\\.css$': '<rootDir>/tests/mocks/style.ts',
 };
 
@@ -80,7 +84,8 @@ const config = {
             ...shared,
             displayName: 'jsdom',
             testEnvironment: 'jsdom',
-            testMatch: ['<rootDir>/tests/rendered/**/*.test.tsx'],
+            // Co-located tests inside workspace packages run here, in jsdom.
+            testMatch: ['<rootDir>/tests/rendered/**/*.test.tsx', '<rootDir>/packages/*/src/**/__tests__/**/*.test.{ts,tsx}'],
             setupFilesAfterEnv: ['<rootDir>/tests/setup/rendered.ts'],
         },
     ],

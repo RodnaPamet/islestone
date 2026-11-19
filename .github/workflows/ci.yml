@@ -118,6 +118,34 @@ jobs:
       # (scripts/licence-gate.mjs, roadmap 0.3 and H0).
       - run: npm run licence:check
 
+  shared-ui:
+    name: Shared UI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      # Straight after checkout, before any install or build: the filesystem is
+      # exactly the committed tree, so every file in packages/ui must match
+      # UPSTREAM.json and nothing may be added to it (docs/porting/shared-ui.md).
+      - run: node scripts/ui-drift.mjs verify --population fs
+      # Bind the manifest to upstream: inflect-compliance is public, so the
+      # pinned commit is fetched with no secret and the manifest must list
+      # exactly its packages/ui files, hashes and modes.
+      - name: Audit against inflect-compliance at the pinned commit
+        run: |
+          commit="$(node -p "require('./packages/ui/UPSTREAM.json').commit")"
+          git init -q "$RUNNER_TEMP/upstream"
+          git -C "$RUNNER_TEMP/upstream" fetch -q --depth 1 --no-tags \
+            https://github.com/RodnaPamet/inflect-compliance "$commit"
+          node scripts/ui-drift.mjs audit "$RUNNER_TEMP/upstream"
+
   build:
     name: Build
     runs-on: ubuntu-24.04

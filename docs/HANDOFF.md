@@ -29,6 +29,7 @@ porting maps now record them (next step 2); the last column says where.
 | 16 | Due-date reminders land in sub-phase 2.2 with the work-item engine, not in 2.7. | "In 2.2" | `docs/ROADMAP.md` 2.2; porting maps `1.6.md` and `2.1-2.2.md` |
 | 17 | Islestone's agents have no risk tier: every agent is governed by its grants and its autonomy rung alone. inflect-compliance's tier and what it drives (autonomy cap, policy-card defaults, approval count, readiness checks, re-assessment) are not ported. | "Drop it" | ADR 0003 section 4; porting maps `6.1.md` (section G, which names each replacement) and `6.2.md` |
 | 18 | Automation rules get an action that starts an agent run, added in Phase 6: 5.1 ships without it, and 6.3 adds it once the agent engine and its kill switch exist. | "Add it in Phase 6" | `docs/ROADMAP.md` 5.1 and 6.3; porting map `5.1.md`, open decision 7 |
+| 19 | The Unlicense joins the licence allowlist (first needed by visx's `robust-predicates`, sub-phase 1.2). Decided 2026-11-19. | "Allow the Unlicense" | ADR 0007 E6; `scripts/licence-gate.mjs` |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
@@ -144,23 +145,16 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      (5.1's prompt drops the agent-run action, 6.3's prompt and a bullet under it add it); the
      1.4, 1.6, 2.1–2.2, 5.1, 6.1 and 6.2 maps follow them; `README.md` and `CLAUDE.md`
      qualify the rung summary for decision 15, and `CLAUDE.md` says where decisions are recorded.
-3. **Land the shared UI (1.2 part A).** Run `pin` (above), then wire it in as listed in
-   `docs/porting/shared-ui.md`, "What the rest of Islestone must provide":
-   - a root `.gitattributes` with `packages/ui/** -text`;
-   - the root `tsconfig` options it extends;
-   - the runtime dependencies it imports;
-   - the Jest mapper and jsdom `testMatch`;
-   - CI running `verify --population fs` right after checkout, then `audit` against a
-     fetch of inflect-compliance. CI's `Test` job already runs `npm run test:scripts`;
-     once the package lands, its last case verifies `packages/ui` instead of skipping.
-
-   In the same change, per ADR 0001:
-   - add Dub's copyright and AGPL-3.0 statement and the Nucleo notice to `NOTICE`;
-   - move the rows from `docs/porting/provenance-shared-ui.md` into `PROVENANCE.md`. The
-     copy rule asks for a row per copied file, and the draft groups the package into
-     seven rows by folder, so either list each file or put the grouping to the owner;
-   - add the `@inflect/ui` exemption (`BUSL-1.1`, citing ADR 0001). The gate checks a
-     mirrored workspace like any dependency, so without it the build fails.
+3. **Land the shared UI (1.2 part A).** Done, in PR #2. `packages/ui` is pinned and verified;
+   `.gitattributes`, the root dependencies, `typecheck:ui`, the Jest mapper and jsdom
+   `testMatch`, the env guard's workspace resolution and CI's `Shared UI` job are in;
+   `NOTICE` carries the Dub and Nucleo notices; `PROVENANCE.md` lists all 397 files and
+   marks the 74 Dub-derived and 270 Nucleo ones; `@inflect/ui` and `@visx/vendor` are
+   exempted. Two consequences: the root `tsconfig.json` no longer sets
+   `noUncheckedIndexedAccess` (the package fails it, and inflect does not use it), so the
+   maps' "noUncheckedIndexedAccess fix" edits are no longer needed; and the owner added the
+   Unlicense to the allowlist (ADR 0007 E6, 2026-11-19) for visx's `robust-predicates`.
+   Add the new `Shared UI` check to the `main` ruleset.
 4. **1.2 part B (the GENERIC `src/components/ui` files).** Follow `docs/porting/maps/1.2.md`:
    109 files, 14 MIXED files that come along, a second manifest for Islestone-owned
    files, and a 10-batch copy order. Per ADR 0001 D4, the `PROVENANCE.md` row of each

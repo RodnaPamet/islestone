@@ -17,20 +17,33 @@ its source and commit as recorded in PROVENANCE.md, its copyright line and its
 licence. A component under Apache-2.0 also brings the contents of its own
 NOTICE file.
 
-None yet. No third-party code or data that needs a notice has been copied
-into this repository.
+Shared UI: packages/ui (@inflect/ui)
+-------------------------------------
 
+packages/ui is a byte-for-byte copy of inflect-compliance's packages/ui at
+commit 5528464fc54a8681956f3b9ce23ca9c075f0420e (BUSL-1.1, Inflect Ltd.).
 Code copied from inflect-compliance is not third-party code: it is BUSL-1.1
-from the same Licensor, Inflect Ltd. (ADR 0001, decision D1), and
-PROVENANCE.md records each copied file. Third-party material inside that code
-brings its notice here in the same change that copies it. Two are planned:
+from the same Licensor (ADR 0001, decision D1), and PROVENANCE.md records each
+copied file. Two third-party components are inside it, taken as they are with
+the licence risk accepted (ADR 0001, decision D4):
 
-- Dub (github.com/dubinc/dub), "Copyright (c) 2024-present Dub Technologies,
-  Inc.", licensed AGPL-3.0 outside Dub's (ee) folders; and the Nucleo icon
-  notice ("Copyright © Nucleo"; redistribution of the icons is prohibited;
-  they are restricted for use only within the product they are bundled with;
-  nucleoapp.com/license). Both are added with packages/ui in sub-phase 1.2,
-  per ADR 0001 decision D4. Neither is in the repository today.
+- Dub (github.com/dubinc/dub). Many of the package's charts, hooks, utilities
+  and icons derive from Dub's packages/ui and packages/utils; PROVENANCE.md
+  marks each such file.
+  Copyright (c) 2024-present Dub Technologies, Inc.
+  Licensed under the GNU Affero General Public License, version 3 (AGPL-3.0),
+  outside Dub's (ee) folders. The licence text is at
+  https://www.gnu.org/licenses/agpl-3.0.txt and in Dub's LICENSE.md.
+
+- Nucleo icons, packages/ui/src/components/ui/icons/nucleo/.
+  Copyright © Nucleo. Redistribution of the icons is prohibited; they are
+  restricted for use only within the product they are bundled with
+  (https://nucleoapp.com/license). The folder's README.md, which carries the
+  full notice, is kept.
+
+Planned
+-------
+
 - pipelock (Apache-2.0), added with a port of the AI guard (sub-phase 6.1).
 
 npm dependencies are not copied into the repository. Each package carries its

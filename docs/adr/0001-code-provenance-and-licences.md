@@ -240,7 +240,7 @@ The risk accepted, stated plainly:
 What the decision requires:
 
 - **`NOTICE`** carries Dub's copyright and AGPL-3.0 statement ("Copyright (c) 2024-present Dub Technologies, Inc.", AGPL-3.0 outside Dub's `(ee)` folders, source `github.com/dubinc/dub`) and the Nucleo notice ("Copyright © Nucleo"; redistribution prohibited; use restricted to the product the icons are bundled with; `nucleoapp.com/license`). Both are added in the same change that lands `packages/ui` (sub-phase 1.2). Neither is in the tree today, because no Dub-derived file or Nucleo icon is in the tree today.
-- **`PROVENANCE.md`** rows for the shared UI name the Dub origin of the files the measurement links to Dub, and the Nucleo terms for the Nucleo folder, as `docs/porting/provenance-shared-ui.md` drafts.
+- **`PROVENANCE.md`** rows for the shared UI name the Dub origin of the files the measurement links to Dub, and the Nucleo terms for the Nucleo folder, as `PROVENANCE.md` now lists them, file by file ("Copied: `@inflect/ui`").
 - The Nucleo `README.md` is copied with the icons and kept.
 
 D4 is about the Dub-derived files and Nucleo icons as they exist in inflect-compliance's UI. Taking anything from Dub's own repository, or from another Nucleo source, is not part of it and would need its own decision.
@@ -306,7 +306,7 @@ These remain after the decisions above.
   - 4.1, 4.2 and H4;
   - 6.1;
   - 7, open decisions 1 to 3, and the limits of the research.
-- Islestone: `LICENSE`, `LICENSING.md`, `NOTICE`, `PROVENANCE.md`; `docs/porting/licence/dub-nucleo-finding.md` and `docs/porting/licence/dub-overlap.py`; `docs/porting/provenance-shared-ui.md`; `docs/porting/shared-ui.md`; `docs/porting/oss/`; ADR 0007 (licence exceptions).
+- Islestone: `LICENSE`, `LICENSING.md`, `NOTICE`, `PROVENANCE.md`; `docs/porting/licence/dub-nucleo-finding.md` and `docs/porting/licence/dub-overlap.py`; `docs/porting/shared-ui.md`; `docs/porting/oss/`; ADR 0007 (licence exceptions).
 - inflect-compliance, read-only, at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`:
   - `LICENSE`, `LICENSING.md`, `NOTICE`, `CONTRIBUTING.md`;
   - `package.json` (lines 4, 5, 18, 141–142, 205) and `package-lock.json`;

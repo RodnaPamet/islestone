@@ -138,8 +138,8 @@ describe('licence declarations', () => {
         expect(normaliseDeclaration({ license: '(MIT OR ISC) AND 0BSD' })).toMatchObject({ expression: '(MIT OR ISC) AND 0BSD' });
     });
 
-    it.each(['CC0-1.0', 'Unlicense', 'MIT-0', 'BlueOak-1.0.0', 'Python-2.0', 'CC-BY-4.0'])(
-        'fails %s: the allowlist is roadmap 0.3\'s list plus 0BSD, and anything else needs an exemption (ADR 0007 E4)',
+    it.each(['CC0-1.0', 'MIT-0', 'BlueOak-1.0.0', 'Python-2.0', 'CC-BY-4.0'])(
+        'fails %s: the allowlist is roadmap 0.3\'s list plus 0BSD and the Unlicense, and anything else needs an exemption (ADR 0007 E4)',
         (id) => {
             expect(judge({ license: id })).toMatchObject({ verdict: 'fail', code: 'NOT_ALLOWED' });
         },
@@ -225,7 +225,12 @@ describe('licence declarations', () => {
     it('fails UNLICENSED, and tells it apart from the Unlicense', () => {
         expect(judge({ license: 'UNLICENSED' })).toMatchObject({ verdict: 'fail', code: 'UNLICENSED' });
         expect(judge({ license: 'unlicensed' })).toMatchObject({ verdict: 'fail', code: 'UNLICENSED' });
-        expect(judge({ license: 'Unlicense' })).toMatchObject({ verdict: 'fail', code: 'NOT_ALLOWED' });
+        expect(judge({ license: 'Unlicense' })).toMatchObject({ verdict: 'pass', relied: ['Unlicense'] });
+    });
+
+    it('passes the Unlicense, which the owner added to the allowlist on 2026-11-19 (ADR 0007 E6)', () => {
+        expect(judge({ license: 'Unlicense' }, 'robust-predicates')).toMatchObject({ verdict: 'pass', relied: ['Unlicense'], notices: [] });
+        expect(judge({ license: 'unlicense' }, 'robust-predicates').verdict).toBe('pass');
     });
 
     it.each([[{}], [{ license: null }], [{ license: '' }], [{ license: '   ' }], [undefined], [null]])(
@@ -250,7 +255,7 @@ describe('licence declarations', () => {
     });
 
     it('holds exactly roadmap 0.3\'s licences, with BSD read as the 2- and 3-clause forms, plus 0BSD (ADR 0007 E2b)', () => {
-        expect([...ALLOWED_LICENCES].sort()).toEqual(['0BSD', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MIT', 'MPL-2.0', 'PostgreSQL']);
+        expect([...ALLOWED_LICENCES].sort()).toEqual(['0BSD', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MIT', 'MPL-2.0', 'PostgreSQL', 'Unlicense']);
     });
 
     it('compares expressions by meaning, not spelling', () => {
