@@ -5,10 +5,10 @@
  * challenge's default `next`) cannot drift apart. inflect-compliance spelled
  * `/t/<slug>/dashboard` in each of them.
  *
- * Sub-phase 1.4 lands on the workspace root, `/t/<slug>`, a placeholder page;
- * sub-phase 1.7 builds the app shell and points this at My Work. No imports,
- * so client components and the edge can use it.
+ * It is My Work, `/t/<slug>/my-work` (ADR 0006; sub-phase 1.7, which built
+ * the app shell; 1.4 landed on the workspace root). No imports, so client
+ * components and the edge can use it.
  */
 export function tenantLandingPath(slug: string): string {
-    return `/t/${encodeURIComponent(slug)}`;
+    return `/t/${encodeURIComponent(slug)}/my-work`;
 }

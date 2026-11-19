@@ -71,10 +71,29 @@ const useLocale = () => 'en';
 const useMessages = () => en;
 const useNow = () => new Date(0);
 const useTimeZone = () => 'UTC';
+// `relativeTime` as next-intl formats it: the largest whole unit between
+// `date` and `now`, through Intl.RelativeTimeFormat in English, so a test
+// reads "5 minutes ago" rather than a stringified Date.
+const RELATIVE_UNITS = [
+    ['year', 365 * 24 * 3600],
+    ['month', 30 * 24 * 3600],
+    ['week', 7 * 24 * 3600],
+    ['day', 24 * 3600],
+    ['hour', 3600],
+    ['minute', 60],
+    ['second', 1],
+];
+const relativeTime = (date, now) => {
+    const then = new Date(date).getTime();
+    const base = now instanceof Date || typeof now === 'number' ? new Date(now).getTime() : Date.now();
+    const seconds = Math.round((then - base) / 1000);
+    const [unit, size] = RELATIVE_UNITS.find(([, sz]) => Math.abs(seconds) >= sz) || ['second', 1];
+    return new Intl.RelativeTimeFormat('en', { numeric: 'auto' }).format(Math.trunc(seconds / size), unit);
+};
 const useFormatter = () => ({
     dateTime: (d) => String(d),
     number: (n) => String(n),
-    relativeTime: (d) => String(d),
+    relativeTime,
     list: (l) => Array.from(l).join(', '),
 });
 const NextIntlClientProvider = ({ children }) =>

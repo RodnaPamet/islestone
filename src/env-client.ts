@@ -20,6 +20,11 @@ export const env = createEnv({
          * beacon (src/lib/observability/client-telemetry.ts).
          */
         NEXT_PUBLIC_TEST_MODE: z.enum(['0', '1']).optional(),
+        /**
+         * "1" opts the notification bell into the live stream
+         * (`/api/t/:slug/notifications/stream`); unset, it polls.
+         */
+        NEXT_PUBLIC_NOTIFICATIONS_SSE: z.enum(['0', '1']).optional(),
     },
 
     // Next.js only inlines `process.env.NEXT_PUBLIC_*` reads it can see
@@ -27,6 +32,7 @@ export const env = createEnv({
     runtimeEnv: {
         NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
         NEXT_PUBLIC_TEST_MODE: process.env.NEXT_PUBLIC_TEST_MODE,
+        NEXT_PUBLIC_NOTIFICATIONS_SSE: process.env.NEXT_PUBLIC_NOTIFICATIONS_SSE,
     },
 
     skipValidation: skipEnvValidation(),

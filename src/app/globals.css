@@ -106,6 +106,15 @@
   --animate-table-pinned-shadow: table-pinned-shadow cubic-bezier(0, 0, 1, 0);
   --animate-shimmer-sweep: shimmer-sweep 1.6s ease-in-out infinite;
 
+  /* App shell (sub-phase 1.7, from inflect-compliance's tailwind.config.js):
+     the sidebar row's living band, the brand mark's pulse, the row's liquid
+     sweep, and DashboardLayout's first paint. */
+  --animate-nav-brand-pulse: nav-brand-pulse 6s ease-in-out infinite;
+  --animate-nav-band-alive: nav-band-reveal-sweep 450ms ease-out, nav-band-shimmer 4s ease-in-out var(--nav-shimmer-delay, 0ms) infinite, nav-band-halo-breath 6s ease-in-out var(--nav-breath-delay, 0ms) infinite;
+  --animate-nav-band-active-alive: nav-band-starburst 700ms ease-out, nav-band-reveal-sweep 450ms ease-out, nav-band-shimmer 4s ease-in-out var(--nav-shimmer-delay, 0ms) infinite, nav-band-halo-breath 6s ease-in-out var(--nav-breath-delay, 0ms) infinite;
+  --animate-nav-row-liquid-sweep: nav-row-liquid-sweep 3.5s linear;
+  --animate-dashboard-rise-in: dashboard-rise-in 600ms ease-out;
+
   @keyframes accordion-down {
     from {
       height: 0;
@@ -195,6 +204,79 @@
       transform: translateX(100%);
     }
   }
+  @keyframes nav-band-shimmer {
+    0%,
+    100% {
+      background-position: 0% 0%;
+    }
+    50% {
+      background-position: 0% 100%;
+    }
+  }
+  @keyframes nav-brand-pulse {
+    0%,
+    100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+  @keyframes nav-band-halo-breath {
+    0%,
+    100% {
+      filter: brightness(1);
+    }
+    50% {
+      filter: brightness(1.25);
+    }
+  }
+  @keyframes nav-band-reveal-sweep {
+    0% {
+      clip-path: inset(100% 0 0 0);
+    }
+    100% {
+      clip-path: inset(0 0 0 0);
+    }
+  }
+  @keyframes nav-band-starburst {
+    0% {
+      box-shadow: 0 0 6px var(--brand-secondary-default);
+    }
+    30% {
+      box-shadow: 0 0 24px 4px var(--brand-secondary-default);
+    }
+    100% {
+      box-shadow: 0 0 6px var(--brand-secondary-default);
+    }
+  }
+  @keyframes nav-row-liquid-sweep {
+    0% {
+      background-position: -100% 0%;
+    }
+    11% {
+      background-position: -50% 0%;
+    }
+    74% {
+      background-position: -50% 0%;
+    }
+    86% {
+      background-position: 50% 0%;
+    }
+    100% {
+      background-position: 100% 0%;
+    }
+  }
+  @keyframes dashboard-rise-in {
+    0% {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 }
 
 /* Hides a scroll container's scrollbar but keeps it scrollable. */
@@ -261,6 +343,26 @@ body {
   .data-table tr:hover td {
     background: var(--bg-muted);
   }
+
+  /* Icon-only button (the app shell's sign-out, settings and theme
+     buttons; inflect-compliance globals.css, sub-phase 1.7): a touch
+     target and an accessible focus ring, one family so no half of the
+     state language is overridable while the other is not. */
+  .icon-btn {
+    @apply inline-flex items-center justify-center rounded-lg min-w-[36px] min-h-[36px] transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none;
+    color: var(--content-muted);
+  }
+  .icon-btn:hover {
+    color: var(--content-emphasis);
+    background: var(--bg-muted);
+  }
+  .icon-btn:focus-visible {
+    outline: 2px solid var(--brand-default);
+    outline-offset: 2px;
+  }
+  .icon-btn-sm {
+    @apply min-w-[28px] min-h-[28px];
+  }
 }
 
 @keyframes fadeIn {
@@ -309,5 +411,23 @@ body {
     height: 44px;
     transform: translate(-50%, -50%);
     background: transparent;
+  }
+}
+
+/*
+ * Reduced motion (from inflect-compliance tokens.css, sub-phase 1.7): the
+ * app shell brings perpetual animations (the sidebar band, the brand mark's
+ * pulse), so a member who asks the system for less motion gets every
+ * animation and transition cut to one near-instant pass. Unlayered, and
+ * `!important`, so no utility can put the motion back.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
   }
 }

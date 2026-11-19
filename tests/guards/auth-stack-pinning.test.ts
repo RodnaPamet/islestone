@@ -251,6 +251,6 @@ describe('ADR 0004 A3 — next-auth is loaded only behind the seam', () => {
         // Inside it: off, including a path whose brackets a glob would misread.
         expect([0, 'off']).toContain(severityFor('src/auth.ts'));
         expect([0, 'off']).toContain(severityFor('src/app/api/auth/[...nextauth]/route.ts'));
-        expect([0, 'off']).toContain(severityFor('src/app/t/[tenantSlug]/(app)/auth/mfa/page.tsx'));
+        expect([0, 'off']).toContain(severityFor('src/app/t/[tenantSlug]/(mfa)/auth/mfa/page.tsx'));
     }, 60_000);
 });

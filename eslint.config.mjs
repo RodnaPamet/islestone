@@ -35,7 +35,8 @@ export const NEXT_AUTH_SEAM = [
     'src/lib/auth/refresh-session-claims.ts',
     'src/app/login/page.tsx',
     'src/app/invite/_components/InviteSwitchAccountButton.tsx',
-    'src/app/t/[tenantSlug]/(app)/auth/mfa/page.tsx',
+    'src/app/t/[tenantSlug]/(mfa)/auth/mfa/page.tsx',
+    'src/lib/auth/client-sign-out.ts',
 ];
 
 // ESLint's `files` are globs, where `[` and `]` open a character class; the

@@ -127,6 +127,18 @@
   --chart-series-5-end: #14532d;
   --chart-series-6-start: #b45309;
   --chart-series-6-end: #78350f;
+
+  /* App shell sidebar (sub-phase 1.7): the nav row's band, its glows and
+     the brand mark. Built from the brand tokens so they follow the
+     placeholder palette; inflect-compliance spells its own brand colours. */
+  --brand-secondary-subtle: color-mix(in srgb, var(--brand-secondary-default) 9%, transparent);
+  --nav-band-glow: 0 0 6px color-mix(in srgb, var(--brand-default) 35%, transparent);
+  --nav-band-glow-active: 0 0 6px color-mix(in srgb, var(--brand-secondary-default) 35%, transparent);
+  --nav-band-active: var(--bg-page);
+  --nav-gloss-highlight: rgba(255, 255, 255, 0.7);
+  --nav-bevel-shadow: inset 0 -1px 1px 0 rgba(60, 50, 40, 0.08);
+  --nav-row-liquid-tint: color-mix(in srgb, var(--brand-default) 16%, transparent);
+  --nav-row-aura-color: color-mix(in srgb, var(--brand-secondary-default) 18%, transparent);
 }
 
 [data-theme="dark"] {
@@ -213,4 +225,14 @@
   --chart-series-5-end: #15803d;
   --chart-series-6-start: #fbbf24;
   --chart-series-6-end: #b45309;
+
+  /* App shell sidebar (sub-phase 1.7); see the light block. */
+  --brand-secondary-subtle: color-mix(in srgb, var(--brand-secondary-default) 18%, transparent);
+  --nav-band-glow: 0 0 6px color-mix(in srgb, var(--brand-default) 35%, transparent);
+  --nav-band-glow-active: 0 0 6px color-mix(in srgb, var(--brand-secondary-default) 35%, transparent);
+  --nav-band-active: var(--bg-page);
+  --nav-gloss-highlight: rgba(255, 255, 255, 0.08);
+  --nav-bevel-shadow: inset 0 -1px 1px 0 rgba(0, 0, 0, 0.25);
+  --nav-row-liquid-tint: color-mix(in srgb, var(--brand-default) 14%, transparent);
+  --nav-row-aura-color: color-mix(in srgb, var(--brand-secondary-default) 18%, transparent);
 }

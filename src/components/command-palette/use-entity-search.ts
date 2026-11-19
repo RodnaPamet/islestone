@@ -1,0 +1,171 @@
+'use client';
+
+/* TODO(swr-migration): this file has fetch-on-mount + setState
+ * patterns flagged by react-hooks/set-state-in-effect. Each call site
+ * carries an inline disable directive; collectively they should
+ * migrate to useTenantSWR (Epic 69 shape) so the rule can lift. */
+
+/**
+ * Command Palette entity search.
+ *
+ * One call to the workspace search API, `GET /api/t/<slug>/search?q=`, which
+ * owns ranking, per-type caps and the result shape (`@/lib/search/types`).
+ *
+ * INERT UNTIL SUB-PHASE 2.7. The endpoint does not exist yet, so
+ * `ENTITY_SEARCH_AVAILABLE` is false and the hook reports `unavailable`
+ * without fetching: without the gate every keystroke would call a route that
+ * answers 404 and the palette would say "Search failed". 2.7 ships the route
+ * and flips the constant.
+ *
+ * Characteristics:
+ *   - Debounces input (≈180 ms).
+ *   - Cancels in-flight requests via AbortController on every
+ *     keystroke, so a slow network can't paint stale results.
+ *   - Stays inert when the palette opens outside a workspace route
+ *     (`/login`, `/tenants`).
+ */
+
+import { useEffect, useRef, useState } from 'react';
+import type { SearchHit, SearchHitType, SearchResponse } from '@/lib/search/types';
+
+// ─── Public types — kept identical to the original hook ───────────────
+
+export type EntityKind = SearchHitType;
+
+export interface EntitySearchResult {
+    id: string;
+    kind: EntityKind;
+    primary: string;
+    secondary?: string;
+    badge?: string;
+    href: string;
+}
+
+export interface EntitySearchState {
+    loading: boolean;
+    results: EntitySearchResult[];
+    disabled: boolean;
+    /**
+     * Entity search is not offered in this build (`ENTITY_SEARCH_AVAILABLE`).
+     * Distinct from `disabled`, which means "outside a workspace": the
+     * palette hides its entity surface rather than asking anyone to sign in.
+     */
+    unavailable: boolean;
+    /**
+     * The last search did not answer: a non-2xx (a 500, a read-tier 429) or
+     * a network failure. Distinct from an empty answer, so the palette never
+     * reports "no results" for a search that never ran (#5309). An abort is
+     * neither — a newer query superseded it.
+     */
+    failed: boolean;
+}
+
+// ─── Tunables ─────────────────────────────────────────────────────────
+
+/**
+ * Whether the workspace search endpoint exists. False until sub-phase 2.7
+ * ships `GET /api/t/<slug>/search`; see the file header.
+ */
+export const ENTITY_SEARCH_AVAILABLE = false;
+
+const DEBOUNCE_MS = 180;
+const MIN_QUERY_LENGTH = 2;
+
+// ─── Adapter — typed `SearchHit` → palette-shaped row ─────────────────
+
+function adaptHit(h: SearchHit): EntitySearchResult {
+    return {
+        id: h.id,
+        kind: h.type,
+        primary: h.title,
+        secondary: h.subtitle ?? undefined,
+        badge: h.badge ?? undefined,
+        href: h.href,
+    };
+}
+
+// ─── Pathname → tenant slug ────────────────────────────────────────────
+
+/**
+ * Derive the current tenant slug from a pathname. Returns `null`
+ * on any non-tenant route, making the search hook inert there.
+ */
+export function tenantSlugFromPathname(pathname: string | null): string | null {
+    if (!pathname) return null;
+    const match = pathname.match(/^\/t\/([^/?#]+)/);
+    return match?.[1] ?? null;
+}
+
+// ─── Hook ──────────────────────────────────────────────────────────────
+
+export function useEntitySearch(
+    query: string,
+    tenantSlug: string | null,
+): EntitySearchState {
+    const [state, setState] = useState<EntitySearchState>({
+        loading: false,
+        results: [],
+        disabled: tenantSlug === null,
+        unavailable: !ENTITY_SEARCH_AVAILABLE,
+        failed: false,
+    });
+    // Track requests so a stale debounce doesn't overwrite a fresh
+    // result even if AbortController fires after the new request
+    // returns. Belt-and-braces alongside the abort signal.
+    const seqRef = useRef(0);
+
+    useEffect(() => {
+        const unavailable = !ENTITY_SEARCH_AVAILABLE;
+        if (tenantSlug === null) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setState({ loading: false, results: [], disabled: true, unavailable, failed: false });
+            return;
+        }
+        const trimmed = query.trim();
+        if (unavailable || trimmed.length < MIN_QUERY_LENGTH) {
+            setState({ loading: false, results: [], disabled: false, unavailable, failed: false });
+            return;
+        }
+
+        const seq = ++seqRef.current;
+        const controller = new AbortController();
+        const { signal } = controller;
+        const timer = setTimeout(async () => {
+            setState((prev) => ({ ...prev, loading: true, disabled: false }));
+            const url = `/api/t/${encodeURIComponent(tenantSlug)}/search?q=${encodeURIComponent(trimmed)}`;
+            let payload: SearchResponse | null = null;
+            let failed = false;
+            try {
+                const res = await fetch(url, { signal, credentials: 'same-origin' });
+                if (res.ok) payload = (await res.json()) as SearchResponse;
+                else failed = true;
+            } catch {
+                // Network failure, or an abort — which the check below drops.
+                failed = true;
+            }
+            if (signal.aborted || seq !== seqRef.current) return;
+
+            const hits = payload?.hits ?? [];
+            setState({
+                loading: false,
+                disabled: false,
+                unavailable: false,
+                results: hits.map(adaptHit),
+                failed,
+            });
+        }, DEBOUNCE_MS);
+
+        return () => {
+            clearTimeout(timer);
+            controller.abort();
+        };
+    }, [query, tenantSlug]);
+
+    return state;
+}
+
+// Exported for tests so they can assert against the same bounds.
+export const __SEARCH_TUNING__ = {
+    DEBOUNCE_MS,
+    MIN_QUERY_LENGTH,
+};
