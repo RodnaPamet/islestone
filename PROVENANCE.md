@@ -444,7 +444,7 @@ The whole of inflect-compliance's `packages/ui`, copied byte for byte. These fac
 
 The generic files under inflect-compliance's `src/components/ui` and `src/lib/hooks`, with the files they need to compile, copied to the same paths under Islestone's `src/` ([`docs/porting/maps/1.2.md`](docs/porting/maps/1.2.md), sections 1, 2 and 8). These facts hold for every row below:
 
-- **Source:** inflect-compliance at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`, the path named in each row (for the first two tables, the same path as in Islestone).
+- **Source:** inflect-compliance at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`, the path named in each row (for the first two tables, the same path as in Islestone). Re-pinned on 2026-11-20 to `f916dfaea78d9ed979c1ccf162cffcf9bfcbd8a1` (owner decision 56; inflect-compliance #5778): only `src/components/ui/filter/filter-select.tsx` and `filter-context.tsx` changed, so an unchanged search no longer writes the URL. `ui-mirror.json` names that commit.
 - **Licence:** BUSL-1.1, licensor Inflect Ltd. Copying is allowed by [ADR 0001](docs/adr/0001-code-provenance-and-licences.md) decision D1.
 - **Third-party origin:** as for `@inflect/ui` above, a file is marked Dub-derived when `docs/porting/licence/dub-overlap.py` finds at least 50% of its normalised lines in Dub's `packages/ui` or `packages/utils` at `6b463b4bdd9ed2fd9aa416f67b5b77d317b1471e`; 14 of the copied files are (13 primitives and `icons/icon-type.ts`). They are taken as they are, with the licence risk accepted (ADR 0001 D4); [`NOTICE`](NOTICE) carries Dub's attribution. The `dub-*` icons, `plan-feature-icons.tsx`, `form.tsx`, `number-stepper.tsx`, `slider.tsx` and `charts/funnel-chart.tsx`, which the measurement also links to Dub, are not copied.
 - **Mirror:** [`ui-mirror.json`](ui-mirror.json) records the sha256 of each "mirror" file. `node scripts/ui-mirror.mjs verify` fails on an edit, a missing file, or an unlisted file under `src/components/ui` or `src/lib/hooks`; `audit` fails unless every hash equals the upstream file at the commit. A "fork" is listed there as Islestone-owned. Two upstream files under the roots are excluded on purpose: `src/components/ui/filter/GUIDE.md` and `src/components/ui/table/GUIDE.md` (inflect's contributor guides).
@@ -687,6 +687,7 @@ Copied from the same path in inflect-compliance. Map section 5.2 lists the tests
 | `tests/rendered/use-kpi-filter.test.tsx` | None |
 | `tests/rendered/use-toast-with-undo.test.tsx` | One eslint-disable line naming the rules Islestone's config enforces and inflect's allows |
 | `tests/rendered/useUrlFilters.test.tsx` | One eslint-disable line naming the rules Islestone's config enforces and inflect's allows |
+| `tests/rendered/filter-toolbar-no-noop-url-write.test.tsx` (from inflect-compliance `f916dfaea78d9ed979c1ccf162cffcf9bfcbd8a1`, #5778) | None |
 | `tests/rendered/virtual-table-body.test.tsx` | None |
 | `tests/rendered/virtualized-list.test.tsx` | None |
 | `tests/unit/checklist-order.test.ts` | None |

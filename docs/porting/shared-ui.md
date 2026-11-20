@@ -329,6 +329,8 @@ byte-identical copy compiles without an edit. The same rule holds as for
 | `owned` | path → why, for Islestone's own files: the two stubs (`charts/index.ts`, `icons/index.tsx`) and the `src/lib/ui-storage.ts` fork (its `UI_STORAGE_PREFIX` is `islestone`) |
 | `excluded` | path → why, for upstream files inside a root that are deliberately not taken: `filter/GUIDE.md` and `table/GUIDE.md` |
 
+The manifest's `commit` was first `5528464fc54a8681956f3b9ce23ca9c075f0420e`. It was re-pinned on 2026-11-20 to `f916dfaea78d9ed979c1ccf162cffcf9bfcbd8a1` (owner decision 56, inflect-compliance #5778), which changed only `filter/filter-select.tsx` and `filter/filter-context.tsx`: an unchanged search no longer writes the URL. `compare` against that commit found no other difference.
+
 | Command | Checks |
 |---|---|
 | `verify [--population git\|fs]` | every `files` entry matches its hash; every `owned` entry exists; no `excluded` entry exists; nothing under a root is unlisted. Population as `ui-drift` (it reuses `listPopulation`) |

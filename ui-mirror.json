@@ -1,6 +1,6 @@
 {
   "source": "inflect-compliance",
-  "commit": "5528464fc54a8681956f3b9ce23ca9c075f0420e",
+  "commit": "f916dfaea78d9ed979c1ccf162cffcf9bfcbd8a1",
   "roots": [
     "src/components/ui",
     "src/lib/hooks"
@@ -50,14 +50,14 @@
     "src/components/ui/file-icon-resolver.ts": "322b11e7e8a82f4171ae8be0895ccb64aa9801fef44ab4bebe2ae80b67404215",
     "src/components/ui/file-type-icon.tsx": "65673c60491fc76569ef7ef09cefda004f29de486b31e4cefa9a8b73fabfb25b",
     "src/components/ui/filter/edit-filters-button.tsx": "3fe4d7b3bcfa49a9e51c4fe1bf1ad1e2283fdef2fe14d551f29afb0258e7563e",
-    "src/components/ui/filter/filter-context.tsx": "3e0f94c4e713b995e6cdd28bc03ad306535f176c24874e5bd560e8af0ad4b290",
+    "src/components/ui/filter/filter-context.tsx": "6eeb8df17d379292171b0fb745e8b5323de9ea61887fe428133e2e43618306cf",
     "src/components/ui/filter/filter-definitions.ts": "1d6265488f54d5a8135c835812f81a0cbacd04cc411823fea548c1e09fb100b8",
     "src/components/ui/filter/filter-list.tsx": "964e622a21f794411f4ed443db5d0cb9696c0c87790eb6113aa678aae96645d9",
     "src/components/ui/filter/filter-range-panel.tsx": "86d016234013cf660bb56f82d9639b87580959a850e29181efcdcba189316817",
     "src/components/ui/filter/filter-range-utils.ts": "ac7e3eb1241bfebd300f80b181a390c9409d3f4bd0603f6b8db64a4917b92837",
     "src/components/ui/filter/filter-scroll.tsx": "d73e686426d7f91a9703b5ee2acc10d471fd9389e10ccb6cd2345731e40810ed",
     "src/components/ui/filter/filter-select-utils.ts": "95d93da4e317a6128a43e4440e95f4b5f2c7632e04640bca322e465f886b2e91",
-    "src/components/ui/filter/filter-select.tsx": "e5fd69b9304f3f21c2034d8cf5743bac16c929eb7bd49b1efc35153c9a61e230",
+    "src/components/ui/filter/filter-select.tsx": "6cd13f14f380a88cb8ed68b60d4799dc9365ef3efdf4451949bac274efc7530c",
     "src/components/ui/filter/filter-state.ts": "cb4d39b82c0658a0ac84e694c47d12049406f7bad512d68d7bcf36a664653882",
     "src/components/ui/filter/index.ts": "0f554ea43952263d1d2609e09047e0040674447de98ca09473df1f8cc139a5ab",
     "src/components/ui/filter/types.ts": "55cef08a7f16009a83ea7159d15e79df716b5ccad104fd4e409bc135678d7212",
