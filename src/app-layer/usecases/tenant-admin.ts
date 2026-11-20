@@ -28,6 +28,7 @@ import {
 } from '../policies/admin.policies';
 import { logEvent } from '../events/audit';
 import { WorkItemRepository } from '../repositories/WorkItemRepository';
+import { ReviewRepository } from '../repositories/ReviewRepository';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { notFound, badRequest, forbidden, ConflictError } from '@/lib/errors/types';
 import type { Role } from '@prisma/client';
@@ -568,7 +569,12 @@ export async function removeTenantMember(
         // the RESTRICT foreign key from `WorkItem.assigneeId` does not refuse
         // the delete. (Step 1, ending delegated agent sessions, and step 3,
         // suspending the agents they own, arrive with agents in 6.3.)
-        const unassigned = await WorkItemRepository.unassignAll(db, ctx, membership.userId);
+        // Every item the removal writes (assigned, waiting on, a person
+        // value, a pending reviewer row), locked in id order in ONE statement
+        // before any of the steps below writes (decision 173).
+        const reviewerItemIds = (await ReviewRepository.pendingRowsOf(db, ctx, membership.userId)).map((r) => r.workItemId);
+        const locked = await WorkItemRepository.lockItemsOfPerson(db, ctx, membership.userId, reviewerItemIds);
+        const unassigned = await WorkItemRepository.unassignAll(db, ctx, membership.userId, locked);
         if (unassigned > 0) {
             await logEvent(db, ctx, {
                 action: 'WORK_ITEMS_UNASSIGNED_ON_MEMBER_REMOVAL',
@@ -582,7 +588,7 @@ export async function removeTenantMember(
 
         // Sub-phase 2.4b: waiting on naming them is cleared (its member FK is
         // RESTRICT, as the assignee's), each item's version increased.
-        const clearedWaitingOn = await WorkItemRepository.clearWaitingOnAll(db, ctx, membership.userId);
+        const clearedWaitingOn = await WorkItemRepository.clearWaitingOnAll(db, ctx, membership.userId, locked);
         if (clearedWaitingOn > 0) {
             await logEvent(db, ctx, {
                 action: 'WORK_ITEMS_WAITING_ON_CLEARED_ON_MEMBER_REMOVAL',

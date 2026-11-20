@@ -18,6 +18,7 @@ import type { WorkflowStateCategory } from '@prisma/client';
 
 import { logEvent } from '../events/audit';
 import { TeamRepository } from '../repositories/TeamRepository';
+import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import { assertCanManageWorkConfig, assertCanReadWorkConfig } from '../policies/work-config.policies';
 import { keyBetween } from '../domain/fractional-index';
 import { isClosedCategory, stateTransitionEffects } from '../domain/workflow-state';
@@ -209,10 +210,12 @@ async function moveItemsBetweenStates(
     // Their types may require their review to finish before Done (2.8c, decision 149).
     await assertReviewAllowsDoneInState(db, ctx, from, to);
     const now = new Date();
+    // Every row in the state, locked in id order before anything is written (decision 173).
+    const locked = await WorkItemRepository.lockInState(db, ctx, from.id);
     // A close withdraws the moved items' open review rounds (decision 149).
     if (isClosedCategory(to.category) && !isClosedCategory(from.category)) await endOpenRoundsInState(db, ctx, from.id, now);
     // `startedAt` is set only where none is (the first move into STARTED).
     const { startedAt: _first, ...effects } = stateTransitionEffects(from.category, to.category, { startedAt: now }, now);
     void _first;
-    return TeamRepository.moveItemsToState(db, ctx, from.id, { id: to.id, category: to.category }, effects, to.category === 'STARTED' ? now : null);
+    return TeamRepository.moveItemsToState(db, ctx, from.id, { id: to.id, category: to.category }, effects, to.category === 'STARTED' ? now : null, locked);
 }

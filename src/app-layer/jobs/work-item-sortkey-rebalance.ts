@@ -58,10 +58,14 @@ export async function processSortKeyRebalance(options: { tenantId?: string } = {
                             if (page.length < PAGE || !last) break;
                             after = { k: last.sortKey, id: last.id };
                         }
+                        // Every row locked in id order before the first rewrite, so
+                        // the rewrites (in sort order) never wait on a row while
+                        // holding another a bulk writer wants (decision 173).
+                        const locked = await WorkItemRepository.lockForWrite(db, ctx, ordered);
                         const keys = keysBetween(null, null, ordered.length);
                         let i = 0;
                         for (const id of ordered) {
-                            await WorkItemRepository.rewriteSortKey(db, ctx, id, keys[i]!);
+                            await WorkItemRepository.rewriteSortKey(db, ctx, locked, id, keys[i]!);
                             i += 1;
                         }
                         return i;

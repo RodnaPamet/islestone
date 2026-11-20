@@ -13,6 +13,7 @@
 import { WorkItemRepository, CommentRepository, listSortSpec } from '@/app-layer/repositories/WorkItemRepository';
 import type { ProjectVisibility } from '@/app-layer/policies/project-visibility';
 import type { PrismaTx } from '@/lib/db-context';
+import { mintLockedWorkItemIds as locked } from '@/app-layer/repositories/work-item-locks';
 
 import { makeRequestContext } from '../../helpers/make-context';
 
@@ -77,7 +78,7 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
         ['findVisible', (db) => WorkItemRepository.findVisible(db, ctx, GUEST, 'w1')],
         ['listByIds', (db) => WorkItemRepository.listByIds(db, ctx, GUEST, ['w1'])],
         ['updateVersioned', (db) => WorkItemRepository.updateVersioned(db, ctx, GUEST, 'w1', 3, { title: 't' })],
-        ['bulkUpdate', (db) => WorkItemRepository.bulkUpdate(db, ctx, GUEST, ['w1'], { priority: 'LOW' })],
+        ['bulkUpdate', (db) => WorkItemRepository.bulkUpdate(db, ctx, GUEST, locked(['w1']), { priority: 'LOW' })],
         ['setSortKey', (db) => WorkItemRepository.setSortKey(db, ctx, GUEST, 'w1', 'V')],
         ['listSubItems', (db) => WorkItemRepository.listSubItems(db, ctx, GUEST, 'p1', { limit: 10 })],
         ['findByNumber', (db) => WorkItemRepository.findByNumber(db, ctx, GUEST, 'p1', 3)],
@@ -135,7 +136,7 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
     it('the rollover reads and moves live, open items in live, unarchived projects only (2.5a)', async () => {
         const { db, calls } = recorder();
         await WorkItemRepository.rolloverCandidates(db, ctx, 'c1', 10);
-        await WorkItemRepository.moveCycle(db, ctx, ['w1'], 'c1', 'c2');
+        await WorkItemRepository.moveCycle(db, ctx, locked(['w1']), 'c1', 'c2');
         expect(calls.map((c) => c.op)).toEqual(['findMany', 'updateMany']);
         for (const call of calls) {
             expect(call.args.where).toMatchObject({ tenantId: 'tenant-1', cycleId: 'c1', deletedAt: null });
@@ -148,7 +149,7 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
     it('deleting a cycle clears it from every item, deleted ones included, and bumps the version (2.5a)', async () => {
         const { db, calls } = recorder();
         await WorkItemRepository.idsInCycleIncludingDeleted(db, ctx, 'c1', 10);
-        await WorkItemRepository.clearCycleIncludingDeleted(db, ctx, ['w1'], 'c1');
+        await WorkItemRepository.clearCycleIncludingDeleted(db, ctx, locked(['w1']), 'c1');
         for (const call of calls) {
             expect(call.args.where).toMatchObject({ tenantId: 'tenant-1', cycleId: 'c1' });
             expect(deletedPredicate(call.args.where as Record<string, unknown>)).toBe(false);
@@ -165,7 +166,7 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
     it('deleting a milestone clears it from every item, deleted ones included, and bumps the version (2.5b)', async () => {
         const { db, calls } = recorder();
         await WorkItemRepository.idsInMilestoneIncludingDeleted(db, ctx, 'm1', 10);
-        await WorkItemRepository.clearMilestoneIncludingDeleted(db, ctx, ['w1'], 'm1');
+        await WorkItemRepository.clearMilestoneIncludingDeleted(db, ctx, locked(['w1']), 'm1');
         expect(calls.map((c) => c.op)).toEqual(['findMany', 'updateMany']);
         for (const call of calls) {
             expect(call.args.where).toMatchObject({ tenantId: 'tenant-1', milestoneId: 'm1' });
@@ -182,7 +183,7 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
 
     it('the soft delete is an updateMany over live rows, never a delete', async () => {
         const { db, calls } = recorder();
-        await WorkItemRepository.softDelete(db, ctx, ['w1'], 'del-1', new Date());
+        await WorkItemRepository.softDelete(db, ctx, locked(['w1']), 'del-1', new Date());
         expect(calls).toHaveLength(1);
         expect(calls[0]!.op).toBe('updateMany');
         expect(calls[0]!.args.where).toMatchObject({ deletedAt: null });

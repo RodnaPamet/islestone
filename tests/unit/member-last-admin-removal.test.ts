@@ -48,6 +48,8 @@ function adminDb(status: 'ACTIVE' | 'DEACTIVATED', admins: number) {
     const db = {
         $executeRawUnsafe: jest.fn().mockResolvedValue(0),
         // ADR 0003 §1 step 2: removal unassigns the member's work items first (2.2).
+        // H2 (decision 173): the removal locks the member's items first, in id order.
+        $queryRaw: jest.fn().mockResolvedValue([]),
         workItem: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
         customFieldValue: { findMany: jest.fn().mockResolvedValue([]) },
         workItemTemplate: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },

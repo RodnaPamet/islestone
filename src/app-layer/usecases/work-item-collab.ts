@@ -370,7 +370,7 @@ export async function addWorkItemLabels(ctx: RequestContext, workItemId: string,
         await assertFieldWrite(db, ctx, item, { labelIds: ids });
         const result = await LabelRepository.attach(db, ctx, workItemId, ids);
         if (result.count > 0) {
-            await WorkItemRepository.bumpVersion(db, ctx, v, [workItemId]);
+            await WorkItemRepository.bumpVersionOf(db, ctx, v, workItemId);
             await logEvent(db, ctx, {
                 action: 'WORK_ITEM_LABELS_CHANGED',
                 entityType: 'WorkItem',
@@ -394,7 +394,7 @@ export async function removeWorkItemLabel(ctx: RequestContext, workItemId: strin
         // Required labels (2.4b-b): the last one of an open item stays (the throw undoes the detach).
         const left = await LabelRepository.listForItem(db, ctx, workItemId);
         if (left.length === 0) await assertFieldWrite(db, ctx, item, { labelIds: [] });
-        await WorkItemRepository.bumpVersion(db, ctx, v, [workItemId]);
+        await WorkItemRepository.bumpVersionOf(db, ctx, v, workItemId);
         await logEvent(db, ctx, {
             action: 'WORK_ITEM_LABELS_CHANGED',
             entityType: 'WorkItem',

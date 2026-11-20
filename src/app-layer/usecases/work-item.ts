@@ -69,6 +69,8 @@ import {
 } from '../domain/workflow-state';
 import { todayInTz } from '../notifications/work-item-due';
 import { lockWorkItemGraph } from './work-item-graph-lock';
+import { lockedSubset } from '../repositories/work-item-locks';
+import { inProjectCreateQueue } from './project-create-queue';
 import { recordMentionsInTx } from './mention';
 import { endOpenRoundsOnClose, withdrawNewAssigneeRows, type ReviewNoticeOut } from './review-engine';
 import { assertReviewAllowsDone, copiedReviewDefaultsMetadata, copyTypeReviewDefaultsInTx } from './review-defaults';
@@ -803,7 +805,11 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
     assertCanCreateWorkItem(ctx);
     // A template's sub-items (up to 50) are made in the same transaction.
     const mentions = { notify: [] as string[] };
-    const result = await runInTenantContext(ctx, (db) => createWorkItemInTx(db, ctx, input, { mentions }), input.templateId ? { timeout: 20_000 } : undefined);
+    // Creates in one project take turns before opening a transaction, so a
+    // waiting create holds no pooled connection (decision 174).
+    const result = await inProjectCreateQueue(ctx.tenantId, input.projectId, () =>
+        runInTenantContext(ctx, (db) => createWorkItemInTx(db, ctx, input, { mentions }), input.templateId ? { timeout: 20_000 } : undefined),
+    );
     // After the commit: the due reminder, the assignment bell and the waiting-on bell (2.4b),
     // then the people the description mentions (2.7d).
     await emitDueBell(ctx, { ...result, dueDate: parseDateOnly(result.dueDate) });
@@ -1273,10 +1279,13 @@ export async function setWorkItemWaitingOn(ctx: RequestContext, id: string, inpu
  */
 async function softDeleteSubtrees(db: PrismaTx, ctx: RequestContext, rootIds: readonly string[]) {
     const subtree = await WorkItemRepository.liveSubtree(db, ctx, rootIds);
+    // Every row of the subtrees, locked in id order before anything is
+    // written (decision 173); a row deleted meanwhile is skipped by the write.
+    const locked = await WorkItemRepository.lockForWrite(db, ctx, subtree.map((r) => r.id));
     // A delete withdraws an open review round (ADR 0009 §14); a restore does not reopen it.
-    await endOpenRoundsOnClose(db, ctx, subtree.map((r) => r.id), 'ITEM_DELETED');
+    await endOpenRoundsOnClose(db, ctx, [...locked], 'ITEM_DELETED');
     const deletionId = randomUUID();
-    const count = await WorkItemRepository.softDelete(db, ctx, subtree.map((r) => r.id), deletionId, new Date());
+    const count = await WorkItemRepository.softDelete(db, ctx, locked, deletionId, new Date());
     return { deletionId, count };
 }
 
@@ -1303,6 +1312,12 @@ export async function bulkDeleteWorkItems(ctx: RequestContext, workItemIds: read
     const ids = uniqueIds(workItemIds);
     return runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
+        // The requested items AND their sub-items, locked in id order in one
+        // statement, then read (decision 173): a sub-item can have a lower id
+        // than its parent, so locking the roots first and the rest later would
+        // break the order. `softDeleteSubtrees` re-takes them (already held).
+        const subtree = await WorkItemRepository.liveSubtree(db, ctx, ids);
+        await WorkItemRepository.lockForWrite(db, ctx, [...ids, ...subtree.map((r) => r.id)]);
         const items = await WorkItemRepository.listByIds(db, ctx, v, ids);
         for (const item of items) assertProjectWritable(item.project);
         const { deletionId, count } = await softDeleteSubtrees(db, ctx, items.map((i) => i.id));
@@ -1336,6 +1351,9 @@ export async function restoreWorkItem(ctx: RequestContext, id: string) {
             throw new ConflictError('The project is deleted; restore the project first.', { reason: 'PROJECT_DELETED' });
         }
         assertProjectWritable(item.project);
+        // The whole deletion group locked in id order before it is checked
+        // and restored (decision 173), then read again under the lock.
+        const locked = await WorkItemRepository.lockForWrite(db, ctx, (await WorkItemRepository.idsOfDeletion(db, ctx, item.deletionId)).map((r) => r.id));
         const group = await WorkItemRepository.idsOfDeletion(db, ctx, item.deletionId);
         const inGroup = new Set(group.map((r) => r.id));
         const outsideParents = [...new Set(group.map((r) => r.parentId).filter((p): p is string => !!p && !inGroup.has(p)))];
@@ -1343,7 +1361,7 @@ export async function restoreWorkItem(ctx: RequestContext, id: string) {
         if (blocked.length > 0) {
             throw new ConflictError('A parent of this work item is deleted; restore the parent first.', { reason: 'PARENT_DELETED' });
         }
-        const count = await WorkItemRepository.restoreDeletion(db, ctx, item.deletionId);
+        const count = await WorkItemRepository.restoreDeletion(db, ctx, item.deletionId, lockedSubset(locked, [...inGroup]));
         await logEvent(db, ctx, {
             action: 'WORK_ITEM_RESTORED',
             entityType: 'WorkItem',
@@ -1364,12 +1382,15 @@ export async function bulkAssignWorkItems(ctx: RequestContext, input: { workItem
     const ids = uniqueIds(input.workItemIds);
     const outcome = await runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
-        const items = await WorkItemRepository.listByIds(db, ctx, v, ids);
+        // Locked in id order, then read: the plan and the audit "from" are
+        // the rows as they are now (decision 173).
+        const locked = await WorkItemRepository.lockForWrite(db, ctx, ids);
+        const items = await WorkItemRepository.listByIds(db, ctx, v, locked);
         for (const item of items) assertProjectWritable(item.project);
         if (input.assigneeId) await assertActiveMember(db, ctx, input.assigneeId);
         const changed = items.filter((i) => i.assigneeId !== input.assigneeId);
         await assertBulkFieldWrite(db, ctx, changed, { assigneeId: input.assigneeId });
-        await WorkItemRepository.bulkUpdate(db, ctx, v, changed.map((i) => i.id), { assigneeId: input.assigneeId });
+        await WorkItemRepository.bulkUpdate(db, ctx, v, lockedSubset(locked, changed.map((i) => i.id)), { assigneeId: input.assigneeId });
         for (const item of changed) {
             await logEvent(db, ctx, {
                 action: 'WORK_ITEM_ASSIGNED',
@@ -1418,7 +1439,10 @@ export async function bulkSetWorkItemState(
     const ids = uniqueIds(input.workItemIds);
     const changes = await runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
-        const items = await WorkItemRepository.listByIds(db, ctx, v, ids);
+        // Locked in id order, then read (decision 173): each audit entry's
+        // "from" state is the state the item leaves.
+        const locked = await WorkItemRepository.lockForWrite(db, ctx, ids);
+        const items = await WorkItemRepository.listByIds(db, ctx, v, locked);
         for (const item of items) assertProjectWritable(item.project);
         const teamIds = [...new Set(items.map((i) => i.teamId))];
         const states = await TeamRepository.liveStatesOfTeams(db, ctx, teamIds);
@@ -1448,7 +1472,7 @@ export async function bulkSetWorkItemState(
         const now = new Date();
         for (const p of planned) {
             const effects = stateTransitionEffects(p.from.category, p.to.category, p.item, now);
-            await WorkItemRepository.bulkUpdate(db, ctx, v, [p.item.id], { stateId: p.to.id, stateCategory: p.to.category, ...effects });
+            await WorkItemRepository.bulkUpdate(db, ctx, v, lockedSubset(locked, [p.item.id]), { stateId: p.to.id, stateCategory: p.to.category, ...effects });
             await applyStateAudit(db, ctx, p.item, p.from, p.to);
         }
         // A close withdraws an open review round (decision 149).
@@ -1466,10 +1490,11 @@ export async function bulkSetWorkItemDueDate(ctx: RequestContext, input: { workI
     const dueDate = parseDateOnly(input.dueDate);
     const outcome = await runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
-        const items = await WorkItemRepository.listByIds(db, ctx, v, ids);
+        const locked = await WorkItemRepository.lockForWrite(db, ctx, ids);
+        const items = await WorkItemRepository.listByIds(db, ctx, v, locked);
         for (const item of items) assertProjectWritable(item.project);
         await assertBulkFieldWrite(db, ctx, items, { dueDate: input.dueDate });
-        await WorkItemRepository.bulkUpdate(db, ctx, v, items.map((i) => i.id), { dueDate });
+        await WorkItemRepository.bulkUpdate(db, ctx, v, lockedSubset(locked, items.map((i) => i.id)), { dueDate });
         for (const item of items) {
             await logEvent(db, ctx, {
                 action: 'WORK_ITEM_UPDATED',

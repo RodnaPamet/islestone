@@ -472,6 +472,9 @@ async function withdrawRowsAndSettle(
     excludeUserIds: readonly string[],
 ): Promise<ReviewNoticeOut[]> {
     if (rows.length === 0) return [];
+    // Every item a settle may write (waiting on), locked in id order before
+    // the first write (decision 173); a no-op where the caller locked them.
+    await WorkItemRepository.lockForWrite(db, ctx, rows.map((r) => r.workItemId));
     await ReviewRepository.withdrawReviewers(db, ctx, rows.map((r) => r.id), reason, now);
     const openSteps = [...new Map(rows.filter((r) => r.step.status === 'OPEN').map((r) => [r.stepId, r.workItemId])).entries()];
     if (openSteps.length === 0) return [];

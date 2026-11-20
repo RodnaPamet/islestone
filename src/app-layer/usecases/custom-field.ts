@@ -472,8 +472,11 @@ export async function clearPersonValuesInTx(db: PrismaTx, ctx: RequestContext, u
         // guardrail-allow: n+1 — a batched drain: each pass reads one bounded batch and deletes it.
         const batch = await CustomFieldRepository.itemsWithPerson(db, ctx, userId);
         if (batch.length === 0) break;
+        // The batch's items locked (member removal locks them all first, so
+        // this is a no-op there; decision 173), then the values go.
+        const locked = await WorkItemRepository.lockForWrite(db, ctx, batch.map((b) => b.workItemId));
         await CustomFieldRepository.deleteValues(db, ctx, batch.map((b) => b.id));
-        await WorkItemRepository.bumpVersion(db, ctx, { kind: 'ALL' }, [...new Set(batch.map((b) => b.workItemId))]);
+        await WorkItemRepository.bumpVersion(db, ctx, { kind: 'ALL' }, locked);
         cleared += batch.length;
     }
     return cleared;

@@ -35,7 +35,9 @@ export async function purgeWorkspaceWorkItems(ctx: RequestContext, before: Date,
         // guardrail-allow: n+1 — a batched drain: each pass is one bounded read and one delete, in its own transaction.
         const deleted = await runInTenantContext(ctx, async (db) => {
             const ids = await WorkItemRepository.purgeableIds(db, ctx, before, PURGE_BATCH);
-            return WorkItemRepository.hardDelete(db, ctx, ids);
+            // The batch and the rows pointing at it, locked in id order (decision 173).
+            const locked = await WorkItemRepository.lockPurgeBatch(db, ctx, ids);
+            return WorkItemRepository.hardDelete(db, ctx, locked, ids);
         });
         items += deleted;
         if (deleted < PURGE_BATCH) break;
@@ -48,7 +50,8 @@ export async function purgeWorkspaceWorkItems(ctx: RequestContext, before: Date,
             // guardrail-allow: n+1 — the project's items, a bounded batch per transaction.
             const deleted = await runInTenantContext(ctx, async (db) => {
                 const ids = await WorkItemRepository.projectItemIds(db, ctx, projectId, PURGE_BATCH);
-                return WorkItemRepository.hardDelete(db, ctx, ids);
+                const locked = await WorkItemRepository.lockPurgeBatch(db, ctx, ids);
+                return WorkItemRepository.hardDelete(db, ctx, locked, ids);
             });
             items += deleted;
             if (deleted < PURGE_BATCH) break;

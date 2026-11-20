@@ -55,6 +55,7 @@ import {
     type ProjectVisibility,
 } from '../policies/project-visibility';
 import type { RequestContext } from '../types';
+import { isLocked, mintLockedWorkItemIds, type LockedWorkItemIds } from './work-item-locks';
 
 const PRIORITIES: readonly WorkItemPriority[] = ['NONE', 'URGENT', 'HIGH', 'MEDIUM', 'LOW'];
 
@@ -638,6 +639,73 @@ export class WorkItemRepository {
         });
     }
 
+    // ── Row locks for multi-item writes (decision 173; `work-item-locks.ts`) ──
+
+    /**
+     * Lock the rows of `ids` that exist in the workspace, deleted or not,
+     * `FOR UPDATE` in id order, in ONE statement, so every multi-item writer
+     * takes overlapping rows in the same order. Call it before reading the
+     * rows a write plans from; the read after it sees the latest committed
+     * values. Visibility and `deletedAt` are the read's and the write's to
+     * apply: locking a row the caller then leaves alone costs nothing.
+     */
+    static async lockForWrite(db: PrismaTx, ctx: RequestContext, ids: readonly string[]): Promise<LockedWorkItemIds> {
+        const unique = [...new Set(ids)];
+        if (unique.length === 0) return mintLockedWorkItemIds([]);
+        const rows = await db.$queryRaw<Array<{ id: string }>>`
+            SELECT "id" FROM "WorkItem"
+             WHERE "tenantId" = ${ctx.tenantId} AND "id" = ANY(${unique}::text[])
+             ORDER BY "id"
+               FOR UPDATE`;
+        return mintLockedWorkItemIds(rows.map((r) => r.id));
+    }
+
+    /**
+     * Lock every row a member's removal writes (ADR 0003 §1, 2.4, 2.4b, 2.8a),
+     * deleted rows included, in id order and one statement: items assigned
+     * to them, waiting on them or holding a person value naming them, and
+     * `alsoIds`: the items their pending reviewer rows are on, which the caller
+     * reads through `ReviewRepository` (the reviewer table's one seam).
+     */
+    static async lockItemsOfPerson(db: PrismaTx, ctx: RequestContext, userId: string, alsoIds: readonly string[]): Promise<LockedWorkItemIds> {
+        const rows = await db.$queryRaw<Array<{ id: string }>>`
+            SELECT w."id" FROM "WorkItem" w
+             WHERE w."tenantId" = ${ctx.tenantId}
+               AND (w."assigneeId" = ${userId}
+                 OR w."waitingOnUserId" = ${userId}
+                 OR w."id" IN (SELECT v."workItemId" FROM "CustomFieldValue" v WHERE v."tenantId" = ${ctx.tenantId} AND v."userId" = ${userId})
+                 OR w."id" = ANY(${[...new Set(alsoIds)]}::text[]))
+             ORDER BY w."id"
+               FOR UPDATE OF w`;
+        return mintLockedWorkItemIds(rows.map((r) => r.id));
+    }
+
+    /** Lock every row in a workflow state, deleted rows included (a state's delete moves them all). */
+    static async lockInState(db: PrismaTx, ctx: RequestContext, stateId: string): Promise<LockedWorkItemIds> {
+        const rows = await db.$queryRaw<Array<{ id: string }>>`
+            SELECT "id" FROM "WorkItem"
+             WHERE "tenantId" = ${ctx.tenantId} AND "stateId" = ${stateId}
+             ORDER BY "id"
+               FOR UPDATE`;
+        return mintLockedWorkItemIds(rows.map((r) => r.id));
+    }
+
+    /**
+     * Lock a purge batch and every row still pointing at one of its items as
+     * a parent (the purge detaches those first), in id order and one statement.
+     */
+    static async lockPurgeBatch(db: PrismaTx, ctx: RequestContext, ids: readonly string[]): Promise<LockedWorkItemIds> {
+        const unique = [...new Set(ids)];
+        if (unique.length === 0) return mintLockedWorkItemIds([]);
+        const rows = await db.$queryRaw<Array<{ id: string }>>`
+            SELECT "id" FROM "WorkItem"
+             WHERE "tenantId" = ${ctx.tenantId}
+               AND ("id" = ANY(${unique}::text[]) OR "parentId" = ANY(${unique}::text[]))
+             ORDER BY "id"
+               FOR UPDATE`;
+        return mintLockedWorkItemIds(rows.map((r) => r.id));
+    }
+
     /** The visible live items among `ids` (the bulk verbs act only on these). */
     static async listByIds(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, ids: readonly string[]) {
         return db.workItem.findMany({
@@ -769,8 +837,17 @@ export class WorkItemRepository {
         return result.count;
     }
 
-    /** Bump the version alone (labels attached or detached, ADR 0002 §9). */
-    static async bumpVersion(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, ids: readonly string[]) {
+    /** Bump the version alone of one item (a label attached or detached, ADR 0002 §9). */
+    static async bumpVersionOf(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, id: string) {
+        const result = await db.workItem.updateMany({
+            where: { id, tenantId: ctx.tenantId, AND: [projectVisibilityWhere(v, { includeArchived: true })] },
+            data: { version: { increment: 1 } },
+        });
+        return result.count;
+    }
+
+    /** Bump the version alone of many locked items (a label deleted, a person value cleared). */
+    static async bumpVersion(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, ids: LockedWorkItemIds) {
         if (ids.length === 0) return 0;
         const result = await db.workItem.updateMany({
             where: { id: { in: [...ids] }, tenantId: ctx.tenantId, AND: [projectVisibilityWhere(v, { includeArchived: true })] },
@@ -789,25 +866,15 @@ export class WorkItemRepository {
     }
 
     /**
-     * A bulk single-field write. `deletedAt: null` and visibility are in the
-     * write as well as in `listByIds`, so an item deleted between the read and
-     * the write is not touched.
+     * A bulk single-field write over rows the caller locked first
+     * ({@link lockForWrite}, decision 173). `deletedAt: null` and visibility
+     * are in the write as well as in `listByIds`.
      */
-    static async bulkUpdate(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, ids: readonly string[], patch: WorkItemPatch) {
+    static async bulkUpdate(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, ids: LockedWorkItemIds, patch: WorkItemPatch) {
         if (ids.length === 0) return 0;
         const result = await db.workItem.updateMany({
             where: { id: { in: [...ids] }, tenantId: ctx.tenantId, deletedAt: null, AND: [projectVisibilityWhere(v)] },
             data: { ...patch, version: { increment: 1 } },
-        });
-        return result.count;
-    }
-
-    /** Set `startedAt` on those of `ids` that have none (the first move into STARTED). */
-    static async stampStartedAt(db: PrismaTx, ctx: RequestContext, ids: readonly string[], now: Date) {
-        if (ids.length === 0) return 0;
-        const result = await db.workItem.updateMany({
-            where: { id: { in: [...ids] }, tenantId: ctx.tenantId, startedAt: null },
-            data: { startedAt: now },
         });
         return result.count;
     }
@@ -868,7 +935,7 @@ export class WorkItemRepository {
     }
 
     /** Soft-delete the given rows together under one `deletionId` (ADR 0002 §8). */
-    static async softDelete(db: PrismaTx, ctx: RequestContext, ids: readonly string[], deletionId: string, now: Date) {
+    static async softDelete(db: PrismaTx, ctx: RequestContext, ids: LockedWorkItemIds, deletionId: string, now: Date) {
         if (ids.length === 0) return 0;
         const result = await db.workItem.updateMany({
             where: { id: { in: [...ids] }, tenantId: ctx.tenantId, deletedAt: null },
@@ -897,9 +964,11 @@ export class WorkItemRepository {
         });
     }
 
-    static async restoreDeletion(db: PrismaTx, ctx: RequestContext, deletionId: string) {
+    /** Restore a deletion's rows, which the caller locked ({@link lockForWrite} over {@link idsOfDeletion}). */
+    static async restoreDeletion(db: PrismaTx, ctx: RequestContext, deletionId: string, ids: LockedWorkItemIds) {
+        if (ids.length === 0) return 0;
         const result = await db.workItem.updateMany({
-            where: { tenantId: ctx.tenantId, deletionId, deletedAt: { not: null } },
+            where: { id: { in: [...ids] }, tenantId: ctx.tenantId, deletionId, deletedAt: { not: null } },
             data: { deletedAt: null, deletedByUserId: null, deletionId: null, version: { increment: 1 } },
         });
         return result.count;
@@ -910,7 +979,10 @@ export class WorkItemRepository {
      * ADR 0002 §14): the FK is RESTRICT, as the assignee's is. Deleted items
      * too, or the FK refuses the delete; each item's version increases.
      */
-    static async clearWaitingOnAll(db: PrismaTx, ctx: RequestContext, userId: string) {
+    static async clearWaitingOnAll(db: PrismaTx, ctx: RequestContext, userId: string, _locked: LockedWorkItemIds) {
+        // The predicate, not the locked ids: the lock ({@link lockItemsOfPerson})
+        // came first, and this statement's fresh snapshot also catches a row a
+        // writer we waited on committed meanwhile, which the FK would refuse.
         const result = await db.workItem.updateMany({
             where: { tenantId: ctx.tenantId, waitingOnUserId: userId },
             data: { waitingOnUserId: null, version: { increment: 1 } },
@@ -918,8 +990,9 @@ export class WorkItemRepository {
         return result.count;
     }
 
-    /** Unassign every item of a member who is being removed (ADR 0003 §1, step 2). */
-    static async unassignAll(db: PrismaTx, ctx: RequestContext, userId: string) {
+    /** Unassign every item of a member who is being removed (ADR 0003 §1, step 2); the rows locked by {@link lockItemsOfPerson}. */
+    static async unassignAll(db: PrismaTx, ctx: RequestContext, userId: string, _locked: LockedWorkItemIds) {
+        // The predicate, not the locked ids (see {@link clearWaitingOnAll}).
         const result = await db.workItem.updateMany({
             where: { tenantId: ctx.tenantId, assigneeId: userId },
             data: { assigneeId: null, version: { increment: 1 } },
@@ -1031,7 +1104,7 @@ export class WorkItemRepository {
      * `cycleId: from` predicate makes a repeat a no-op; the version increases
      * (a cycle is part of what the item shows, ADR 0002 §9).
      */
-    static async moveCycle(db: PrismaTx, ctx: RequestContext, ids: readonly string[], from: string, to: string | null) {
+    static async moveCycle(db: PrismaTx, ctx: RequestContext, ids: LockedWorkItemIds, from: string, to: string | null) {
         if (ids.length === 0) return 0;
         const result = await db.workItem.updateMany({
             where: { id: { in: [...ids] }, tenantId: ctx.tenantId, cycleId: from, deletedAt: null, AND: [JOB_PROJECT_VISIBILITY_WHERE] },
@@ -1064,7 +1137,7 @@ export class WorkItemRepository {
     }
 
     /** Clear the cycle from the given items (see {@link idsInCycleIncludingDeleted}). */
-    static async clearCycleIncludingDeleted(db: PrismaTx, ctx: RequestContext, ids: readonly string[], cycleId: string) {
+    static async clearCycleIncludingDeleted(db: PrismaTx, ctx: RequestContext, ids: LockedWorkItemIds, cycleId: string) {
         if (ids.length === 0) return 0;
         const result = await db.workItem.updateMany({
             where: { id: { in: [...ids] }, tenantId: ctx.tenantId, cycleId },
@@ -1177,7 +1250,7 @@ export class WorkItemRepository {
     }
 
     /** Clear the milestone from the given items (see {@link idsInMilestoneIncludingDeleted}). */
-    static async clearMilestoneIncludingDeleted(db: PrismaTx, ctx: RequestContext, ids: readonly string[], milestoneId: string) {
+    static async clearMilestoneIncludingDeleted(db: PrismaTx, ctx: RequestContext, ids: LockedWorkItemIds, milestoneId: string) {
         if (ids.length === 0) return 0;
         const result = await db.workItem.updateMany({
             where: { id: { in: [...ids] }, tenantId: ctx.tenantId, milestoneId },
@@ -1357,6 +1430,7 @@ export class WorkItemRepository {
     static async moveRow(
         db: PrismaTx,
         ctx: RequestContext,
+        locked: LockedWorkItemIds,
         id: string,
         fromProjectId: string,
         data: {
@@ -1377,6 +1451,8 @@ export class WorkItemRepository {
             startedAt?: Date | null;
         },
     ) {
+        // One row of a subtree the caller locked whole (decision 173).
+        if (!isLocked(locked, id)) throw new Error('moveRow: the row is not in the locked subtree');
         const result = await db.workItem.updateMany({
             where: { id, tenantId: ctx.tenantId, projectId: fromProjectId, deletedAt: null },
             data: { ...data, version: { increment: 1 } },
@@ -1402,12 +1478,14 @@ export class WorkItemRepository {
      * check never sees a live child of a removed parent. Relations, labels,
      * comments, watchers and links cascade from `WorkItem`.
      */
-    static async hardDelete(db: PrismaTx, ctx: RequestContext, ids: readonly string[]) {
+    static async hardDelete(db: PrismaTx, ctx: RequestContext, locked: LockedWorkItemIds, ids: readonly string[]) {
         if (ids.length === 0) return 0;
+        // The batch and the rows pointing at it, locked by {@link lockPurgeBatch}.
+        if (!ids.every((id) => isLocked(locked, id))) throw new Error('hardDelete: the batch is not locked');
         // Detach any surviving row still pointing at a purged parent: a
         // child deleted under another deletion with a later timestamp.
         await db.workItem.updateMany({
-            where: { tenantId: ctx.tenantId, parentId: { in: [...ids] }, id: { notIn: [...ids] } },
+            where: { tenantId: ctx.tenantId, id: { in: [...locked] }, parentId: { in: [...ids] }, NOT: { id: { in: [...ids] } } },
             data: { parentId: null },
         });
         const result = await db.workItem.deleteMany({ where: { tenantId: ctx.tenantId, id: { in: [...ids] } } });
@@ -1431,8 +1509,9 @@ export class WorkItemRepository {
         return result.count;
     }
 
-    /** Rewrite one item's `sortKey` (rebalance; no version bump). */
-    static async rewriteSortKey(db: PrismaTx, ctx: RequestContext, id: string, sortKey: string) {
+    /** Rewrite one item's `sortKey` (rebalance; no version bump), one row of a page the job locked. */
+    static async rewriteSortKey(db: PrismaTx, ctx: RequestContext, locked: LockedWorkItemIds, id: string, sortKey: string) {
+        if (!isLocked(locked, id)) throw new Error('rewriteSortKey: the row is not in the locked page');
         return db.workItem.updateMany({ where: { id, tenantId: ctx.tenantId }, data: { sortKey } });
     }
 

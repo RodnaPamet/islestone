@@ -244,7 +244,9 @@ export async function deleteMilestone(ctx: RequestContext, projectId: string, mi
                 reason: 'MILESTONE_TOO_LARGE',
             });
         }
-        const cleared = await WorkItemRepository.clearMilestoneIncludingDeleted(db, ctx, rows.map((r) => r.id), m.id);
+        // Locked in id order before the write (decision 173).
+        const locked = await WorkItemRepository.lockForWrite(db, ctx, rows.map((r) => r.id));
+        const cleared = await WorkItemRepository.clearMilestoneIncludingDeleted(db, ctx, locked, m.id);
         for (const r of rows) {
             await logEvent(db, ctx, {
                 action: 'WORK_ITEM_MILESTONE_CHANGED',

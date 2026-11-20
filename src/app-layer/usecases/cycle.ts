@@ -333,7 +333,9 @@ async function clearCycleItemsInTx(db: PrismaTx, ctx: RequestContext, cycle: Cyc
             reason: 'CYCLE_TOO_LARGE',
         });
     }
-    const count = await WorkItemRepository.clearCycleIncludingDeleted(db, ctx, rows.map((r) => r.id), cycle.id);
+    // Locked in id order before the write (decision 173).
+    const locked = await WorkItemRepository.lockForWrite(db, ctx, rows.map((r) => r.id));
+    const count = await WorkItemRepository.clearCycleIncludingDeleted(db, ctx, locked, cycle.id);
     for (const r of rows) {
         await logEvent(db, ctx, {
             action: 'WORK_ITEM_CYCLE_CHANGED',

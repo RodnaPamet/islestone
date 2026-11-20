@@ -94,6 +94,11 @@ export async function moveWorkItemOnBoard(
     const outcome = await runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const item = await loadWritableItem(db, ctx, v, id);
+        const placing = !!(input.position && (input.position.afterId || input.position.beforeId));
+        // The sequence row BEFORE the item's row (decision 173's order: graph,
+        // sequences, items), or a drop that changes the state would hold the
+        // item and wait on the sequence a reorder of it holds.
+        if (placing) await ProjectRepository.lockSequences(db, ctx, [item.projectId]);
         let change: Parameters<typeof afterStateCommit>[1][number] | null = null;
         if (item.stateId !== input.stateId) {
             const [from, to] = await Promise.all([TeamRepository.getState(db, ctx, item.stateId), TeamRepository.getState(db, ctx, input.stateId)]);
@@ -113,8 +118,7 @@ export async function moveWorkItemOnBoard(
             await applyStateAudit(db, ctx, item, from!, to);
             change = { item, from: from!, to };
         }
-        if (input.position && (input.position.afterId || input.position.beforeId)) {
-            await ProjectRepository.lockSequences(db, ctx, [item.projectId]);
+        if (placing && input.position) {
             await WorkItemRepository.setSortKey(db, ctx, v, id, await sortKeyForPosition(db, ctx, item.projectId, input.position, id));
             await logEvent(db, ctx, {
                 action: 'WORK_ITEM_REORDERED',
@@ -144,14 +148,16 @@ export async function reparentWorkItem(
         const v = await visibleProjects(ctx, db);
         const item = await loadWritableItem(db, ctx, v, id);
         if (item.parentId === input.parentId) return { item, changed: false };
+        const placing = !!(input.position && (input.position.afterId || input.position.beforeId));
+        // The sequence row before the item's row (decision 173's order).
+        if (placing) await ProjectRepository.lockSequences(db, ctx, [item.projectId]);
         if (input.parentId) {
             const height = await WorkItemRepository.subtreeHeight(db, ctx, id);
             await assertParentAllowed(db, ctx, v, input.parentId, { id, projectId: item.projectId, subtreeHeight: height });
         }
         const count = await WorkItemRepository.updateVersioned(db, ctx, v, id, expectedVersion, { parentId: input.parentId });
         if (count === 0) await throwWriteConflict(db, ctx, v, id);
-        if (input.position && (input.position.afterId || input.position.beforeId)) {
-            await ProjectRepository.lockSequences(db, ctx, [item.projectId]);
+        if (placing && input.position) {
             await WorkItemRepository.setSortKey(db, ctx, v, id, await sortKeyForPosition(db, ctx, item.projectId, input.position, id));
         }
         await logEvent(db, ctx, {
@@ -196,7 +202,10 @@ export async function moveWorkItemToProject(ctx: RequestContext, id: string, inp
 
         const subtree = await WorkItemRepository.liveSubtree(db, ctx, [id]);
         const depthOf = new Map(subtree.map((r) => [r.id, r.depth]));
-        const rows = (await WorkItemRepository.listByIds(db, ctx, v, subtree.map((r) => r.id))).sort(
+        // The whole subtree locked in id order, after the graph lock and the
+        // sequence rows, before its rows are read and moved (decision 173).
+        const locked = await WorkItemRepository.lockForWrite(db, ctx, subtree.map((r) => r.id));
+        const rows = (await WorkItemRepository.listByIds(db, ctx, v, locked)).sort(
             (a, b) => (depthOf.get(a.id) ?? 0) - (depthOf.get(b.id) ?? 0) || (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0),
         );
 
@@ -229,7 +238,7 @@ export async function moveWorkItemToProject(ctx: RequestContext, id: string, inp
         for (const row of rows) {
             const target = crossTeam ? stateFor.get(row.stateCategory)! : { id: row.stateId, category: row.stateCategory };
             if (crossTeam) stateRemapped.push({ id: row.id, fromStateId: row.stateId, toStateId: target.id });
-            const count = await WorkItemRepository.moveRow(db, ctx, row.id, item.projectId, {
+            const count = await WorkItemRepository.moveRow(db, ctx, locked, row.id, item.projectId, {
                 projectId: dest.id,
                 teamId: dest.teamId,
                 number: n,

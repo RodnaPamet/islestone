@@ -159,6 +159,8 @@ jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
         create: jest.fn(async (_db: unknown, _ctx: unknown, data: { waitingOnUserId?: string | null }) => ({ ...ROW, assigneeId: 'u-assignee', dueDate: new Date(), waitingOnUserId: data.waitingOnUserId ?? null })),
         getById: jest.fn(async () => ({ ...ROW, description: null, createdByUserId: 'u1', state: {}, type: {}, parent: null, labels: [], _count: { subItems: 0, comments: 0, watchers: 0 } })),
         updateVersioned: jest.fn(async () => 1),
+        // H2 (decision 173): multi-item writes lock their rows first.
+        lockForWrite: jest.fn(async (_db: unknown, _ctx: unknown, ids: string[]) => ids),
         listByIds: jest.fn(async () => [{ ...ITEM, type: { name: 'Bug' } }]),
         bulkUpdate: jest.fn(async () => 1),
     },
