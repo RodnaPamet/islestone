@@ -58,8 +58,14 @@ context carries the MFA gate, which must not wrap the MFA pages.
 The words are ADR 0006's. Settings shows only to a member who holds
 `admin.view` on a membership whose own built-in role opens the admin console
 (`mayOpenSettings`); the page asks the same on the server. Until their
-features arrive each route is a placeholder (`PlaceholderPage`): Inbox and My
-Work in 2.7, Views in 2.4, Projects in 2.1 and 2.3.
+features arrive each route is a placeholder (`PlaceholderPage`): Inbox in 2.7
+and Views in 2.4. My Work and Projects became real pages in 2.3, and Settings
+with owner decision 55: a landing page and its sections, Teams (with each
+team's workflow), Work item types, Labels and Projects, as subpages under
+`/settings` (each in `SUBPAGES`, falling back to Settings; a team's workflow
+to Teams). Every Settings page asks `mayOpenSettings` on the server
+(`src/lib/server/settings-pages.server.ts`) and offers the writes
+`workConfigAffordances` returns (`docs/work-items.md`, "Settings").
 
 A new route is added in four places: `NAV_PATHS`, `MAIN_PAGES` in
 `src/lib/nav/page-segregation.ts` (or `SUBPAGES` with a `canonical-parents.ts`

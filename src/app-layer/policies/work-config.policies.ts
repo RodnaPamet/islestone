@@ -15,45 +15,88 @@
  * Same semantics as `work-item.policies.ts`: the coarse tier always applies,
  * and a present granular layer must also grant the key.
  *
+ * Each gate is a predicate (`may…`) and an assertion built on it, so the
+ * Settings pages offer exactly the writes these assertions admit
+ * (`workConfigAffordances`, read on the server): a page never restates the
+ * rule.
+ *
  * Written fresh for Islestone.
  */
 import type { RequestContext } from '../types';
 import { forbidden } from '@/lib/errors/types';
+import type { WorkConfigAffordances } from '@/lib/work-items/types';
 
-function granted(ctx: RequestContext, read: (p: NonNullable<RequestContext['appPermissions']>) => boolean | undefined): boolean {
+/** What the gates read of a caller: a request context, or a page's server context. */
+export type WorkConfigViewer = Pick<RequestContext, 'permissions' | 'appPermissions'>;
+
+function granted(ctx: WorkConfigViewer, read: (p: NonNullable<RequestContext['appPermissions']>) => boolean | undefined): boolean {
     if (!ctx.appPermissions) return true;
     return read(ctx.appPermissions) === true;
 }
 
+export function mayReadWorkConfig(ctx: WorkConfigViewer): boolean {
+    return ctx.permissions.canRead && granted(ctx, (p) => p.projects?.view);
+}
+
+export function mayManageWorkConfig(ctx: WorkConfigViewer): boolean {
+    return ctx.permissions.canAdmin && granted(ctx, (p) => p.admin?.manage);
+}
+
+export function mayCreateProject(ctx: WorkConfigViewer): boolean {
+    return ctx.permissions.canWrite && granted(ctx, (p) => p.projects?.create);
+}
+
+export function mayEditProject(ctx: WorkConfigViewer): boolean {
+    return ctx.permissions.canWrite && granted(ctx, (p) => p.projects?.edit);
+}
+
+export function mayArchiveProject(ctx: WorkConfigViewer): boolean {
+    return ctx.permissions.canWrite && granted(ctx, (p) => p.projects?.archive);
+}
+
+/**
+ * The writes the Settings pages offer this viewer: each is the predicate its
+ * usecase asserts (the route's `requirePermission` key is the same key, read
+ * from the same permission set). Asked on the server and handed to the page.
+ */
+export function workConfigAffordances(ctx: WorkConfigViewer): WorkConfigAffordances {
+    return {
+        manageWorkConfig: mayManageWorkConfig(ctx),
+        createProject: mayCreateProject(ctx),
+        editProject: mayEditProject(ctx),
+        archiveProject: mayArchiveProject(ctx),
+    };
+}
+
 /** Read teams, workflow states, types, labels and projects. */
 export function assertCanReadWorkConfig(ctx: RequestContext) {
-    if (!ctx.permissions.canRead || !granted(ctx, (p) => p.projects?.view)) {
+    if (!mayReadWorkConfig(ctx)) {
         throw forbidden('You do not have permission to view projects.');
     }
 }
 
 /** Create, change and delete teams, workflow states, work item types and labels. */
 export function assertCanManageWorkConfig(ctx: RequestContext) {
-    if (!ctx.permissions.canAdmin || !granted(ctx, (p) => p.admin?.manage)) {
+    if (!mayManageWorkConfig(ctx)) {
         throw forbidden('You do not have permission to change the workspace settings.');
     }
 }
 
 export function assertCanCreateProject(ctx: RequestContext) {
-    if (!ctx.permissions.canWrite || !granted(ctx, (p) => p.projects?.create)) {
+    if (!mayCreateProject(ctx)) {
         throw forbidden('You do not have permission to create projects.');
     }
 }
 
 export function assertCanEditProject(ctx: RequestContext) {
-    if (!ctx.permissions.canWrite || !granted(ctx, (p) => p.projects?.edit)) {
+    if (!mayEditProject(ctx)) {
         throw forbidden('You do not have permission to change projects.');
     }
 }
 
 /** Archive, unarchive, delete and restore a project. */
 export function assertCanArchiveProject(ctx: RequestContext) {
-    if (!ctx.permissions.canWrite || !granted(ctx, (p) => p.projects?.archive)) {
+    if (!mayArchiveProject(ctx)) {
         throw forbidden('You do not have permission to archive or delete projects.');
     }
 }

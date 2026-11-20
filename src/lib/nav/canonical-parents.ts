@@ -42,6 +42,13 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // project is in the URL only by key, so the list is the stable parent).
     '/work-items/[workItemKey]': { href: '/work-items', label: 'Work items' },
     '/projects/[projectKey]': { href: '/projects', label: 'Projects' },
+    // Decision 55. Each Settings section falls back to Settings; a team's
+    // workflow to the teams list.
+    '/settings/teams': { href: '/settings', label: 'Settings' },
+    '/settings/teams/[teamId]': { href: '/settings/teams', label: 'Teams' },
+    '/settings/work-item-types': { href: '/settings', label: 'Settings' },
+    '/settings/labels': { href: '/settings', label: 'Settings' },
+    '/settings/projects': { href: '/settings', label: 'Settings' },
 };
 
 /**

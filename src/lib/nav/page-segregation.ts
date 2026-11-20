@@ -62,7 +62,16 @@ export const MAIN_PAGES: readonly string[] = ['/my-work', '/inbox', '/work-items
  * `classifyRoute` helper normalises a runtime pathname to the same form
  * before lookup.
  */
-export const SUBPAGES: readonly string[] = ['/work-items/[workItemKey]', '/projects/[projectKey]'] as const;
+export const SUBPAGES: readonly string[] = [
+    '/work-items/[workItemKey]',
+    '/projects/[projectKey]',
+    // Decision 55: the Settings sections.
+    '/settings/teams',
+    '/settings/teams/[teamId]',
+    '/settings/work-item-types',
+    '/settings/labels',
+    '/settings/projects',
+] as const;
 
 /**
  * Normalise a runtime pathname (with the tenant prefix and concrete dynamic

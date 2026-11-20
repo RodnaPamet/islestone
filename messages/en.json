@@ -582,8 +582,7 @@
     "placeholders": {
         "title": "Not here yet",
         "inbox": "Your notifications will be listed here. Until then, the bell in the top bar shows the latest.",
-        "views": "Saved views of work items, with their filters, grouping and layout, arrive in a later release.",
-        "settings": "The workspace's settings pages arrive in a later release."
+        "views": "Saved views of work items, with their filters, grouping and layout, arrive in a later release."
     },
     "workItems": {
         "list": {
@@ -708,7 +707,8 @@
             "discardTitle": "Discard this work item?",
             "discardBody": "What you typed will be lost.",
             "discardConfirm": "Discard work item",
-            "keepEditing": "Keep editing"
+            "keepEditing": "Keep editing",
+            "goSettings": "Set up a project in Settings"
         },
         "detail": {
             "tabs": {
@@ -858,6 +858,185 @@
             "labelRemoved": "Label removed",
             "relationRemoved": "Relation removed",
             "linkRemoved": "Link removed"
+        }
+    },
+    "settings": {
+        "description": "How this workspace organises its work: teams and their workflows, work item types, labels and projects.",
+        "readOnly": "You can read these settings. Changing them needs the permission to manage the workspace.",
+        "sections": {
+            "label": "Settings sections",
+            "teams": {
+                "title": "Teams",
+                "body": "Each team owns a workflow of states and the projects it works on.",
+                "open": "Manage teams"
+            },
+            "workItemTypes": {
+                "title": "Work item types",
+                "body": "The kinds of work items, such as Feature, Bug and Chore.",
+                "open": "Manage work item types"
+            },
+            "labels": {
+                "title": "Labels",
+                "body": "Labels for the whole workspace or for one team.",
+                "open": "Manage labels"
+            },
+            "projects": {
+                "title": "Projects",
+                "body": "Each project belongs to a team and gives its work items their keys.",
+                "open": "Manage projects"
+            },
+            "count": "{count} in this workspace",
+            "countNone": "None yet"
+        },
+        "firstProject": {
+            "title": "Your first project",
+            "body": "Work items live in projects, and every project belongs to a team.",
+            "team": "Create a team. It comes with a workflow: Backlog, Todo, In progress, In review, Done and Cancelled.",
+            "project": "Create a project for that team, with the key prefix its work items are numbered by.",
+            "workItems": "Add work items from the Work items page.",
+            "done": "Done",
+            "todo": "To do",
+            "goTeams": "Go to Teams",
+            "goProjects": "Go to Projects",
+            "goWorkItems": "Go to Work items"
+        },
+        "common": {
+            "name": "Name",
+            "actions": "Actions",
+            "rename": "Rename",
+            "renameNamed": "Rename {name}",
+            "delete": "Delete",
+            "deleteNamed": "Delete {name}",
+            "archive": "Archive",
+            "archiveNamed": "Archive {name}",
+            "unarchive": "Unarchive",
+            "unarchiveNamed": "Unarchive {name}",
+            "archived": "Archived",
+            "active": "Active",
+            "status": "Status",
+            "cancel": "Cancel",
+            "save": "Save",
+            "nameRequired": "Give it a name.",
+            "loadFailed": "This list could not be loaded.",
+            "failed": "That did not work. Try again.",
+            "undo": "Undo",
+            "saved": "Saved"
+        },
+        "teams": {
+            "title": "Teams",
+            "description": "A new team comes with a workflow you can change: Backlog, Todo, In progress, In review, Done and Cancelled.",
+            "create": "Team",
+            "createTitle": "New team",
+            "createSubmit": "Create team",
+            "renameTitle": "Rename team",
+            "empty": "No teams yet. Create one to start a project.",
+            "col": {
+                "name": "Name",
+                "states": "Workflow"
+            },
+            "editWorkflow": "Workflow",
+            "editWorkflowNamed": "Edit the workflow of {name}",
+            "created": "Team {name} created",
+            "deleted": "Team {name} deleted",
+            "resource": "team",
+            "resourcePlural": "teams"
+        },
+        "states": {
+            "title": "{team}: workflow",
+            "description": "A state's category is fixed once it is created. Move a state up or down within its category; the default state is where new work items start.",
+            "notFound": "This team does not exist.",
+            "create": "State",
+            "createTitle": "New workflow state",
+            "createSubmit": "Create state",
+            "renameTitle": "Rename state",
+            "category": "Category",
+            "categoryFixed": "The category cannot be changed later.",
+            "categoryOf": "Category: {category}. It cannot be changed.",
+            "default": "Default",
+            "makeDefault": "Make default",
+            "makeDefaultNamed": "Make {name} the default state",
+            "moveUp": "Move up",
+            "moveUpNamed": "Move {name} up",
+            "moveDown": "Move down",
+            "moveDownNamed": "Move {name} down",
+            "col": {
+                "name": "State",
+                "category": "Category",
+                "status": "Status"
+            },
+            "empty": "This team has no workflow states.",
+            "deleteTitle": "Delete {name}?",
+            "deleteBody": "Any work items in {name} move to the state you choose.",
+            "moveItemsTo": "Move its work items to",
+            "deleteConfirm": "Delete state",
+            "deleted": "State {name} deleted",
+            "resource": "state",
+            "resourcePlural": "states"
+        },
+        "types": {
+            "title": "Work item types",
+            "description": "An archived type is kept on existing work items and cannot be chosen for new ones.",
+            "create": "Type",
+            "createTitle": "New work item type",
+            "createSubmit": "Create type",
+            "renameTitle": "Rename type",
+            "empty": "No work item types yet. Feature, Bug and Chore are added with the first team.",
+            "col": {
+                "name": "Name",
+                "status": "Status"
+            },
+            "created": "Type {name} created",
+            "resource": "type",
+            "resourcePlural": "types"
+        },
+        "labels": {
+            "title": "Labels",
+            "description": "A workspace label can go on any work item; a team label only on that team's.",
+            "create": "Label",
+            "createTitle": "New label",
+            "createSubmit": "Create label",
+            "renameTitle": "Rename label",
+            "scope": "Available to",
+            "scopeWorkspace": "The whole workspace",
+            "empty": "No labels yet.",
+            "col": {
+                "name": "Name",
+                "scope": "Available to"
+            },
+            "created": "Label {name} created",
+            "deleted": "Label {name} deleted",
+            "resource": "label",
+            "resourcePlural": "labels"
+        },
+        "projects": {
+            "title": "Projects",
+            "description": "A project's key prefix numbers its work items (ENG-1, ENG-2). A prefix is never reused.",
+            "create": "Project",
+            "createTitle": "New project",
+            "createSubmit": "Create project",
+            "renameTitle": "Rename project",
+            "team": "Team",
+            "keyPrefix": "Key prefix",
+            "keyPrefixHint": "2 to 10 letters or digits, starting with a letter.",
+            "noTeams": "A project belongs to a team, and this workspace has none yet.",
+            "goTeams": "Create a team first",
+            "noTeamsAskAdmin": "Ask a workspace admin to create one.",
+            "empty": "No projects yet.",
+            "col": {
+                "name": "Name",
+                "key": "Key",
+                "team": "Team",
+                "status": "Status"
+            },
+            "created": "Project {name} created",
+            "archiveTitle": "Archive {name}?",
+            "archiveBody": "Its work items stay readable but leave the default lists and the board, and nobody can change them until the project is unarchived.",
+            "archiveTypeToConfirm": "Type {prefix} to confirm",
+            "archiveConfirm": "Archive project",
+            "archivedToast": "Project {name} archived",
+            "unarchivedToast": "Project {name} unarchived",
+            "resource": "project",
+            "resourcePlural": "projects"
         }
     }
 }
