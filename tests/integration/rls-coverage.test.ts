@@ -63,6 +63,10 @@ const NO_DELETE_TABLES: readonly string[] = [
     'ProjectKeyPrefix',
     'ProjectKeySequence',
     'WorkItemKeyAlias',
+    // Sub-phase 2.6a: a project's intake and its forms are turned off or
+    // archived, never deleted.
+    'ProjectIntake',
+    'IntakeForm',
 ];
 
 describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
@@ -280,11 +284,15 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             'CustomFieldValue',
             'Cycle',
             'CycleSchedule',
+            'IntakeForm',
+            'IntakeNotifyMember',
+            'IntakeRequest',
             'Label',
             'Milestone',
             'Notification',
             'NotificationOutbox',
             'Project',
+            'ProjectIntake',
             'ProjectKeyPrefix',
             'ProjectKeySequence',
             'ProjectTemplate',

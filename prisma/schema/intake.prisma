@@ -1,0 +1,145 @@
+// Intake (sub-phase 2.6; docs/porting/maps/2.6.md; owner decisions 85 to 99;
+// ADR 0006 "Intake", "Intake request", "Intake form", "Notify list"). An
+// intake request is not a work item (ADR 0002 "Consequences"): accepting one
+// creates the work item through the ordinary create path.
+//
+// What Prisma cannot declare (the status CHECKs, the caps) lives in migration
+// `20261122120100_intake_core`, with a catalogue test
+// (tests/integration/intake-sql-constructs.test.ts).
+
+/// A project's intake: whether it takes requests (sub-phase 2.6a). The email
+/// address arrives with 2.6c. Turned off, never deleted.
+model ProjectIntake {
+  id        String   @id @default(cuid())
+  tenantId  String
+  projectId String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// One per project; also the target the one-to-one relation needs.
+  @@unique([projectId, tenantId])
+  @@index([tenantId, projectId])
+}
+
+/// One member on a project's notify list (ADR 0006 "Notify list"): rung for
+/// each new request. Leaves with the membership.
+model IntakeNotifyMember {
+  tenantId  String
+  projectId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  tenant  Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project Project          @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  member  TenantMembership @relation("IntakeNotifyMembership", fields: [tenantId, userId], references: [tenantId, userId], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@index([tenantId, userId])
+  @@index([tenantId, projectId])
+}
+
+/// A form that creates intake requests in one project (ADR 0006 "Intake
+/// form"). Archived, never deleted (`app_user` holds no DELETE).
+model IntakeForm {
+  id                String           @id @default(cuid())
+  tenantId          String
+  projectId         String
+  /// Plaintext, sanitised; unique among the project's forms.
+  name              String
+  access            IntakeFormAccess @default(MEMBERS)
+  /// Random, about 128 bits, base64url: the only thing a public link (2.6b)
+  /// carries. Global, because 2.6b resolves it before any workspace is known.
+  publicId          String           @unique
+  /// A form takes requests only while published and not archived.
+  publishedAt       DateTime?
+  archivedAt        DateTime?
+  /// The intro, the form fields and the confirmation text, validated by
+  /// `IntakeFormDefinitionSchema` (`src/lib/intake/form-definition.ts`). The
+  /// workspace's own published text, not encrypted; sanitised on save.
+  definitionJson    Json
+  /// Increases on every save of the definition; a request records the
+  /// version it answered.
+  definitionVersion Int              @default(1)
+  /// Optimistic concurrency for edits (`If-Match`).
+  version           Int              @default(1)
+  /// The most requests the form takes in a day (1 to 5,000, CHECK), counted
+  /// in the database (decision 88; read from 2.6b).
+  dailyCap          Int              @default(200)
+  /// An actor stamp: a plain column, no FK.
+  createdByUserId   String
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project  Project         @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  requests IntakeRequest[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, projectId, name])
+  @@index([tenantId, projectId, archivedAt])
+}
+
+/// One entry in intake (ADR 0006 "Intake request"). Purged 90 days after its
+/// decision, spam after 7 (decision 90, `intake-purge`).
+model IntakeRequest {
+  id                    String               @id @default(cuid())
+  tenantId              String
+  projectId             String
+  channel               IntakeChannel
+  /// The form it answered. `NO ACTION`: forms are archived, never deleted,
+  /// and a project's purge removes its forms and requests in one statement.
+  formId                String?
+  formDefinitionVersion Int?
+  status                IntakeRequestStatus  @default(PENDING)
+  /// Plaintext like a work item's title (decision 96), sanitised, at most 200.
+  title                 String
+  /// ENCRYPTED (manifest), sanitised plain text, at most 10,000.
+  body                  String?
+  /// ENCRYPTED (manifest): the answers as JSON text, `IntakeAnswers`.
+  answersJson           String?
+  /// The member who sent it (an internal form). An actor stamp: no FK, so
+  /// the request outlives the membership.
+  requesterUserId       String?
+  /// Date-only; back to PENDING on this day at 08:00 in `NOTIFICATIONS_TZ`.
+  snoozedUntil          DateTime?            @db.Date
+  snoozedByUserId       String?
+  decidedAt             DateTime?
+  decidedByUserId       String?
+  declineReason         IntakeDeclineReason?
+  /// ENCRYPTED (manifest), sanitised: sent to an outside requester who
+  /// confirmed their address (2.6b).
+  declineExplanation    String?
+  /// ENCRYPTED (manifest), sanitised: never sent.
+  internalRemark        String?
+  /// The work item an accepted request became. A plain column: the item may
+  /// be purged while the request is kept; readers go through visibility.
+  workItemId            String?
+  mergedIntoWorkItemId  String?
+  mergedIntoRequestId   String?
+  version               Int                  @default(1)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  tenant  Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project Project     @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  form    IntakeForm? @relation(fields: [formId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([id, tenantId])
+  /// The Intake list, per project and across the workspace.
+  @@index([tenantId, projectId, status, createdAt])
+  @@index([tenantId, status, createdAt])
+  /// The wake job.
+  @@index([tenantId, status, snoozedUntil])
+  /// The purge job.
+  @@index([tenantId, status, decidedAt])
+  /// The per-form daily cap (2.6b) and the form's own list.
+  @@index([tenantId, formId, createdAt])
+  @@index([tenantId, requesterUserId, createdAt])
+  @@index([tenantId, workItemId])
+  @@index([tenantId, mergedIntoWorkItemId])
+  @@index([tenantId, mergedIntoRequestId])
+}

@@ -24,6 +24,13 @@ export type PermissionSet = {
     work_items: { view: boolean; create: boolean; edit: boolean; assign: boolean; comment: boolean; delete: boolean };
     views: { view: boolean; create: boolean; edit: boolean; share: boolean };
     cycles: { view: boolean; manage: boolean };
+    /**
+     * Intake (sub-phase 2.6, owner decision 92): read requests (they hold
+     * outsiders' personal data), triage them (accept, decline, merge, snooze,
+     * move, reopen), and manage a project's intake (on or off, forms, the
+     * notify list). Accepting also needs `work_items.create`.
+     */
+    intake: { view: boolean; triage: boolean; manage: boolean };
     docs: { view: boolean; create: boolean; edit: boolean };
     canvas: { view: boolean; edit: boolean };
     automations: { view: boolean; manage: boolean };
@@ -60,6 +67,7 @@ export const PERMISSION_SCHEMA = {
     work_items: ['view', 'create', 'edit', 'assign', 'comment', 'delete'],
     views: ['view', 'create', 'edit', 'share'],
     cycles: ['view', 'manage'],
+    intake: ['view', 'triage', 'manage'],
     docs: ['view', 'create', 'edit'],
     canvas: ['view', 'edit'],
     automations: ['view', 'manage'],
@@ -103,7 +111,8 @@ const ALL_DOMAINS: Grants = Object.fromEntries(
  *           `admin.owner_management`, which are stated false explicitly.
  *   MEMBER  does the work: projects view/create/edit, work items
  *           view/create/edit/assign/comment, views view/create/edit/share,
- *           cycles, docs view/create/edit, canvas view/edit, automations and
+ *           cycles, intake view/triage (decision 92), docs view/create/edit,
+ *           canvas view/edit, automations and
  *           integrations view, agents view/delegate, workspace view.
  *   VIEWER  reads every project (`view` on the work domains and agents) and
  *           saves personal views: `views.create` and `views.edit`, never
@@ -137,6 +146,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 work_items: ['view', 'create', 'edit', 'assign', 'comment'],
                 views: ['view', 'create', 'edit', 'share'],
                 cycles: ['view', 'manage'],
+                intake: ['view', 'triage'],
                 docs: ['view', 'create', 'edit'],
                 canvas: ['view', 'edit'],
                 automations: ['view'],

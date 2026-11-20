@@ -106,6 +106,10 @@ model Tenant {
   workItemTemplateLabels WorkItemTemplateLabel[]
   projectTemplates       ProjectTemplate[]
   workItemTransitions    WorkItemTransition[]
+  projectIntakes         ProjectIntake[]
+  intakeNotifyMembers    IntakeNotifyMember[]
+  intakeForms            IntakeForm[]
+  intakeRequests         IntakeRequest[]
 
   @@index([organizationId])
 }
@@ -138,9 +142,10 @@ model TenantMembership {
   customRole       TenantCustomRole? @relation(fields: [customRoleId], references: [id])
 
   /// Work items this member is the assignee of (ADR 0003, RESTRICT).
-  assignedWorkItems WorkItem[]         @relation("WorkItemAssignee")
-  watching          WorkItemWatcher[]  @relation("WorkItemWatcherMember")
-  personFieldValues CustomFieldValue[] @relation("CustomFieldValuePerson")
+  assignedWorkItems WorkItem[]           @relation("WorkItemAssignee")
+  watching          WorkItemWatcher[]    @relation("WorkItemWatcherMember")
+  personFieldValues CustomFieldValue[]   @relation("CustomFieldValuePerson")
+  intakeNotify      IntakeNotifyMember[] @relation("IntakeNotifyMembership")
 
   @@unique([tenantId, userId])
   /// The composite an FK from a tenant-scoped child references. `id` alone is

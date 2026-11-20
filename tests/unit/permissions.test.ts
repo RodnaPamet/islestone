@@ -39,6 +39,7 @@ describe('the PermissionSet schema', () => {
             'work_items',
             'views',
             'cycles',
+            'intake',
             'docs',
             'canvas',
             'automations',
@@ -96,6 +97,8 @@ describe('the role matrix', () => {
                 'views.share',
                 'cycles.view',
                 'cycles.manage',
+                'intake.view',
+                'intake.triage',
                 'docs.view',
                 'docs.create',
                 'docs.edit',
@@ -142,6 +145,15 @@ describe('the role matrix', () => {
         );
     });
 
+    it('intake (decision 92): Owners and Admins hold all three keys, Members read and triage, Viewers and Guests none', () => {
+        const intakeKeys = (role: Role) => granted(getPermissionsForRole(role)).filter((k) => k.startsWith('intake.'));
+        expect(intakeKeys('OWNER')).toEqual(['intake.manage', 'intake.triage', 'intake.view']);
+        expect(intakeKeys('ADMIN')).toEqual(['intake.manage', 'intake.triage', 'intake.view']);
+        expect(intakeKeys('MEMBER')).toEqual(['intake.triage', 'intake.view']);
+        expect(intakeKeys('VIEWER')).toEqual([]);
+        expect(intakeKeys('GUEST')).toEqual([]);
+    });
+
     it('no role but OWNER and ADMIN holds an admin or billing key', () => {
         for (const role of ['MEMBER', 'VIEWER', 'GUEST'] as const) {
             const keys = granted(getPermissionsForRole(role));
@@ -175,6 +187,11 @@ describe('hasPermission over the matrix', () => {
         ['GUEST', 'views.create', false],
         ['GUEST', 'work_items.comment', true],
         ['GUEST', 'agents.view', false],
+        ['ADMIN', 'intake.manage', true],
+        ['MEMBER', 'intake.manage', false],
+        ['MEMBER', 'intake.triage', true],
+        ['VIEWER', 'intake.view', false],
+        ['GUEST', 'intake.view', false],
     ] as const)('%s → %s is %s', (role, key, expected) => {
         expect(hasPermission(getPermissionsForRole(role), key)).toBe(expected);
     });

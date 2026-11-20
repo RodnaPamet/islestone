@@ -64,6 +64,8 @@ const RICH_TEXT_COVERAGE: Readonly<
     // template's content, sanitised field by field before it is serialised.
     WorkItemTemplate: { usecases: ['src/app-layer/usecases/work-item-template.ts'], sanitizer: 'sanitizePlainText' },
     ProjectTemplate: { usecases: ['src/app-layer/usecases/project-template.ts'], sanitizer: 'sanitizePlainText' },
+    // Sub-phase 2.6a: a request's text, its answers and both notes.
+    IntakeRequest: { usecases: ['src/app-layer/usecases/intake-request.ts'], sanitizer: 'sanitizePlainText' },
 };
 
 /**
@@ -170,9 +172,9 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
 
     it('has a population to check, or says why it has none', () => {
         // The population is the two bodies sub-phase 2.2 encrypts and the
-        // two template columns of 2.5c; another
+        // two template columns of 2.5c and the intake request of 2.6a; another
         // encrypted free-text model must be classified before it lands.
-        expect(coverageEntries.map(([model]) => model).sort()).toEqual(['Comment', 'ProjectTemplate', 'WorkItem', 'WorkItemTemplate']);
+        expect(coverageEntries.map(([model]) => model).sort()).toEqual(['Comment', 'IntakeRequest', 'ProjectTemplate', 'WorkItem', 'WorkItemTemplate']);
         expect(Object.keys(NON_RICH_TEXT_MODELS)).toEqual(['TenantSecuritySettings']);
     });
 
