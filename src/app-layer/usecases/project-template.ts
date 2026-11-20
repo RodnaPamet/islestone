@@ -26,6 +26,8 @@ import { Prisma, type WorkItemPriority } from '@prisma/client';
 
 import { logEvent } from '../events/audit';
 import { CustomFieldRepository } from '../repositories/CustomFieldRepository';
+import { FieldSetRepository } from '../repositories/FieldSetRepository';
+import { loadFieldSets } from './field-set';
 import { LabelRepository } from '../repositories/LabelRepository';
 import { MilestoneRepository } from '../repositories/MilestoneRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
@@ -86,6 +88,9 @@ export function sanitizedContent(content: ProjectTemplateContent): ProjectTempla
         milestones: content.milestones.map((m) => ({ ...m, name: clean(m.name) })),
         itemTemplates: content.itemTemplates.map((t) => ({ ...item(t), name: clean(t.name) })),
         items: content.items.map(item),
+        ...(content.fieldSetEntries
+            ? { fieldSetEntries: content.fieldSetEntries.map((r) => ({ typeName: clean(r.typeName), fieldName: clean(r.fieldName), requirement: r.requirement })).filter((r) => r.typeName && r.fieldName) }
+            : {}),
     };
 }
 
@@ -139,12 +144,13 @@ export async function listProjectTemplates(ctx: RequestContext, opts: { includeA
 async function captureProject(db: PrismaTx, ctx: RequestContext, projectId: string, includeItems: boolean): Promise<ProjectTemplateContent> {
     const v = await visibleProjects(ctx, db);
     const on = today();
-    const [fields, milestones, itemTemplates, types, labels] = await Promise.all([
+    const [fields, milestones, itemTemplates, types, labels, rules] = await Promise.all([
         CustomFieldRepository.listFields(db, ctx, projectId),
         MilestoneRepository.listForProject(db, ctx, projectId),
         WorkItemTemplateRepository.list(db, ctx, projectId),
         WorkItemTypeRepository.list(db, ctx, { includeArchived: true }),
         LabelRepository.list(db, ctx),
+        FieldSetRepository.listForProject(db, ctx, projectId),
     ]);
     const typeName = new Map(types.map((t) => [t.id, t.name]));
     const labelName = new Map(labels.map((l) => [l.id, l.name]));
@@ -192,6 +198,12 @@ async function captureProject(db: PrismaTx, ctx: RequestContext, projectId: stri
             };
         }),
         items,
+        // The project's custom-field rules (2.4b-b), for the live fields the template carries.
+        fieldSetEntries: rules.flatMap((r) => {
+            const fieldName = fields.find((f) => f.id === r.customFieldId)?.name;
+            const typeNameOf = typeName.get(r.typeId);
+            return fieldName && typeNameOf && r.requirement !== 'OPTIONAL' ? [{ typeName: typeNameOf, fieldName, requirement: r.requirement }] : [];
+        }),
     });
 }
 
@@ -339,6 +351,7 @@ export async function applyProjectTemplateInTx(
     const counts = { customFields: 0, milestones: 0, itemTemplates: 0, items: 0 };
 
     // Custom fields and their options.
+    const fieldIdByName = new Map<string, string>();
     let fieldKey: string | null = null;
     const fieldNames = new Set<string>();
     for (const f of content.customFields) {
@@ -359,7 +372,28 @@ export async function applyProjectTemplateInTx(
         // guardrail-allow: n+1 — a template's fields, at most TEMPLATE_LIMITS.fields (50).
         const field = await CustomFieldRepository.createField(db, ctx, { projectId: project.id, name: f.name, type: f.type, sortKey: fieldKey, options });
         await audit('CUSTOM_FIELD_CREATED', 'CustomField', field.id, `Created field ${f.name} in ${project.keyPrefix} from a template`);
+        fieldIdByName.set(f.name, field.id);
         counts.customFields++;
+    }
+
+    // The fields' rules per type (2.4b-b, decision 108), by name; a type or
+    // field the workspace no longer has is skipped and named.
+    const entryRows: Array<{ typeId: string; projectId: string; customFieldId: string; requirement: 'REQUIRED' | 'HIDDEN' }> = [];
+    const entrySeen = new Set<string>();
+    for (const r of content.fieldSetEntries ?? []) {
+        const typeId = typeByName.get(r.typeName);
+        const customFieldId = fieldIdByName.get(r.fieldName);
+        if (!typeId || !customFieldId) {
+            skipped.push(`fieldRule:${r.typeName}/${r.fieldName}`);
+            continue;
+        }
+        if (entrySeen.has(`${typeId}:${customFieldId}`)) continue;
+        entrySeen.add(`${typeId}:${customFieldId}`);
+        entryRows.push({ typeId, projectId: project.id, customFieldId, requirement: r.requirement });
+    }
+    if (entryRows.length > 0) {
+        await FieldSetRepository.createMany(db, ctx, entryRows);
+        await audit('WORK_ITEM_TYPE_FIELD_SET', 'Project', project.id, `Set ${entryRows.length} field rule(s) in ${project.keyPrefix} from a template`);
     }
 
     // Milestones, dated from today.
@@ -412,7 +446,9 @@ export async function applyProjectTemplateInTx(
         counts.itemTemplates++;
     }
 
-    // Starter items and their sub-items, through the one projection.
+    // Starter items and their sub-items, through the one projection, each
+    // checked against its type's field set like any create (decision 111).
+    const starterSets = await loadFieldSets(db, ctx, content.items.map((i) => typeOf(i.typeName)), project.id);
     const use = { today: on, usableLabelIds: new Set(labelByName.values()), activeMemberIds: new Set<string>(), liveFields: new Map() };
     for (const item of content.items) {
         const typeId = typeOf(item.typeName);
@@ -434,7 +470,7 @@ export async function applyProjectTemplateInTx(
             use,
         );
         // guardrail-allow: n+1 — a template's starter items, at most TEMPLATE_LIMITS.items (200), each numbered in order.
-        const { row } = await insertTemplateItemInTx(db, ctx, project, {
+        const { row, skipped: starterSkipped } = await insertTemplateItemInTx(db, ctx, project, {
             parentId: null,
             typeId,
             title: projected.title,
@@ -445,7 +481,8 @@ export async function applyProjectTemplateInTx(
             milestoneId: projected.milestoneId,
             templateId: null,
             projectTemplateId: template.id,
-        });
+        }, starterSets.get(typeId));
+        skipped.push(...starterSkipped);
         counts.items++;
         for (const sub of projected.subItems) {
             // guardrail-allow: n+1 — a starter item's sub-items, at most TEMPLATE_LIMITS.subItems (50).
@@ -456,7 +493,7 @@ export async function applyProjectTemplateInTx(
                 milestoneId: projected.milestoneId,
                 templateId: null,
                 projectTemplateId: template.id,
-            });
+            }, starterSets.get(typeId));
             counts.items++;
         }
     }

@@ -57,6 +57,8 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/settings/teams': { href: '/settings', label: 'Settings' },
     '/settings/teams/[teamId]': { href: '/settings/teams', label: 'Teams' },
     '/settings/work-item-types': { href: '/settings', label: 'Settings' },
+    // Sub-phase 2.4b-b: a type's fields fall back to the types list.
+    '/settings/work-item-types/[typeId]': { href: '/settings/work-item-types', label: 'Work item types' },
     '/settings/labels': { href: '/settings', label: 'Settings' },
     '/settings/projects': { href: '/settings', label: 'Settings' },
     '/settings/project-templates': { href: '/settings', label: 'Settings' },

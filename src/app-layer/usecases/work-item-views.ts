@@ -17,6 +17,7 @@ import { TeamRepository } from '../repositories/TeamRepository';
 import { WorkItemTypeRepository } from '../repositories/WorkItemTypeRepository';
 import { viewCyclesInTx } from './cycle';
 import { viewMilestonesInTx } from './milestone';
+import { fieldSetEntriesForViewsInTx } from './field-set';
 import { assertCanReadWorkItems } from '../policies/work-item.policies';
 import { assertCanReadWorkConfig } from '../policies/work-config.policies';
 import { visibleProjects } from '../policies/project-visibility';
@@ -46,6 +47,7 @@ export async function getWorkItemViewConfig(
         const fields = fieldsOf ? await CustomFieldRepository.listFields(db, ctx, fieldsOf.id) : [];
         const states = await TeamRepository.liveStatesOfTeams(db, ctx, teams.map((t) => t.id));
         const cycles = await viewCyclesInTx(db, ctx);
+        const fieldSetEntries = await fieldSetEntriesForViewsInTx(db, ctx, fieldsOf?.id);
         const milestones = await viewMilestonesInTx(db, ctx, projects.map((p) => p.id));
         return {
             projects: projects.map((p) => ({
@@ -69,6 +71,7 @@ export async function getWorkItemViewConfig(
             })),
             cycles,
             milestones,
+            fieldSetEntries,
         };
     });
 }

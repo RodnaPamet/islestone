@@ -288,6 +288,46 @@ From 6.3 it may name the delegate's agent session instead of a member (decision 
 - **The list** has a Waiting on column (from the column gear) and a Waiting on filter (`waitingOnId`: member ids and `none`, `docs/pagination.md`); **the board** groups lanes by waiting on, and a drop into another person's lane names them (not into a closed column, which clears it). Saved views store both (`WORK_ITEM_FILTER_KEYS`, the saved-view `FilterKey`, `BUILT_IN_LANES`).
 - My Work's "waiting on me" section is 2.7's (decision 76), on this filter.
 
+## Field sets (2.4b-b)
+
+Built by [`docs/porting/maps/2.4b.md`](porting/maps/2.4b.md) under owner decisions 101 and 108 to 112 (`docs/HANDOFF.md`), ADR 0002 §1 and §7 and ADR 0006 ("Field set"). Nothing was copied (`PROVENANCE.md`).
+
+### The rules
+
+A work item type's field set says, for each configurable field, whether it is **Required**, **Optional** or **Hidden**. The configurable built-in fields are description, assignee, waiting on, priority (required means not None), labels (at least one), start date, due date, cycle, milestone and the answer (decision 110); title, type, project and state are always required. The answer (2.4b-c) is Hidden without a rule and is only ever Shown (Optional) or Hidden.
+
+- **Where a rule lives** (decision 108): a built-in field's rule belongs to the type across the workspace; a custom field's belongs to the type within the field's project. A rule for an archived custom field is ignored.
+- **No row means Optional** (the answer: Hidden), so nothing was backfilled and every workspace behaves as before until someone sets a rule.
+- **One evaluation.** `src/lib/work-items/field-sets.ts` (client-safe, property-tested) resolves a type's set for a project (`resolveFieldSet`), says when a field is empty (`isFieldEmpty`), finds the required fields left empty (`fieldSetGaps`) and the hidden fields a write gives a value (`hiddenFieldsSet`). The usecases (`src/app-layer/usecases/field-set.ts`), the server pages and every form call these functions with the server's rows; a component never restates a rule.
+
+### The table
+
+`WorkItemTypeField` (`prisma/schema/work.prisma`): `typeId`, `projectId` (NULL for a built-in rule), exactly one of `builtInField` (text, CHECKed against the configurable list, so 2.8 and 3.4 add a field without an enum migration) and `customFieldId`, and `requirement` (`FieldRequirement`). Foreign keys cascade from the type, the project and the custom field (the last through `CustomField(id, projectId, tenantId)`, so a rule can never name another project's field); two partial uniques keep one rule per type and field; a CHECK refuses a required answer. Row-level security, its own grant and a two-tenant test as every tenant table. Migrations `20261130120000_recurrence_hold_field_set` (the new hold reason, alone) and `20261130120100_field_sets`; the catalogue and behaviour tests are `tests/integration/field-sets.test.ts`.
+
+### Who sets them
+
+- `GET/PUT /work-item-types/:typeId/fields { field, requirement }`: built-in rules, read under `projects.view`, set under `admin.manage` (decision 112, as types). Setting a field to its default removes the row.
+- `GET/PUT /projects/:projectId/type-fields { typeId, customFieldId, requirement }`: a project's custom-field rules for every type, read under `projects.view`, set under `projects.edit` (as field definitions). The field must be the project's and live.
+- Each change is audited `WORK_ITEM_TYPE_FIELD_SET` (the type, the field and the new requirement; not shown in an item's Activity). A refused write is validation, not authority: a 400, never an `AUTHZ_DENIED`.
+- A project template carries the project's Required and Hidden custom-field rules by type and field name; a project made from it creates the rules whose type and field it finds and names the misses (`fieldRule:<type>/<field>`) in `fromTemplate.skipped`. Built-in rules belong to the workspace and are not carried.
+
+### What is enforced, for every caller
+
+Decision 111: one rule for the forms, the API and the jobs.
+
+- **A create** (the dialog, the API, a template's sub-items, a project template's starter items, an intake accept, a repeat copy) is checked over the whole item after the template's projection: a required field left empty is a 400 `FIELD_SET_UNMET` naming the fields (`details.fields`), and a hidden field the request names with a value is a 400 `FIELD_HIDDEN`. A hidden value that a template or a projection brought is skipped and named (`hidden:<field>` in `templateSkipped`, and `fieldSetSkipped` on `WORK_ITEM_CREATED`). A create into a closed state is never refused for a gap.
+- **A change** to an open item (the versioned update, assign, waiting on, cycle, milestone, a custom-field value, adding or removing a label, bulk assign and bulk due date) is refused when it empties a required field or gives a hidden one a value; a bulk write refuses the whole batch and names the item. **A type change** is checked against the new type's whole set (decision 109).
+- **Existing items are not rewritten** (decision 109): any other write to an item that breaks its type's rules passes, and the detail lists the missing fields. A closed item (Done or Cancelled) is never refused for a gap, so closing a question, which clears its waiting on, always works. System clears (deleting a cycle, milestone or label, removing a member, the rollover to no cycle) are not refused either: they leave a gap the detail shows.
+- **A repeat copy** that a field set refuses puts its repeat on hold with the reason `FIELD_SET_UNMET`, shown on the detail's Repeat row; it is not retried each night.
+- **Intake accept** takes due date, start date, milestone and waiting on as well, so a type that requires them can still be accepted; its dialog offers them when the type requires them.
+
+### The views
+
+- **Settings → Work item types → a type** (`settings/work-item-types/[typeId]`, `WorkItemTypeFieldsSettings`): each built-in field with Required, Optional or Hidden (the answer: Shown or Hidden), changeable only with `manageWorkConfig`.
+- **A project's field manager** (project page and Settings → Projects): "Per type" on each live field, a requirement per type, offered with `manageCustomFields`.
+- **The create dialog** does not offer hidden fields, marks required ones, offers a start date and the required custom fields, and names the gaps before sending; **the detail** leaves hidden fields out (unless they hold a value), marks required ones and lists what an open item is missing; **the intake accept dialog** and **the item-templates manager** leave out what the type hides. The rules come from the view configuration (`fieldSetEntries`, built-in rules) and `GET /projects/:id/type-fields` (`useFieldSet`). The sub-item quick add opens the full create dialog.
+- List columns, filters and lanes are unchanged: they span types.
+
 ## Settings (decision 55)
 
 A workspace admin configures work without the API on the Settings pages (`src/app/t/[tenantSlug]/(app)/settings/`, components in `src/components/settings/`), built on 2.2's routes with no new route or usecase:

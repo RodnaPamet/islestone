@@ -23,6 +23,7 @@
 import type { WorkflowStateCategory } from '@prisma/client';
 
 import { logEvent } from '../events/audit';
+import { assertFieldWrite } from './field-set';
 import { MilestoneRepository, type MilestoneRow } from '../repositories/MilestoneRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
 import { WorkItemRepository } from '../repositories/WorkItemRepository';
@@ -287,6 +288,7 @@ export async function setWorkItemMilestone(ctx: RequestContext, id: string, inpu
         const v = await visibleProjects(ctx, db);
         const item = await loadWritableItem(db, ctx, v, id);
         if (item.milestoneId === input.milestoneId) return { changed: false as const };
+        await assertFieldWrite(db, ctx, item, { milestoneId: input.milestoneId });
         const to = input.milestoneId ? await assertMilestoneOfProject(db, ctx, input.milestoneId, item.projectId) : null;
         const count = await WorkItemRepository.updateVersioned(db, ctx, v, id, expectedVersion, { milestoneId: to?.id ?? null });
         if (count === 0) await throwWriteConflict(db, ctx, v, id);

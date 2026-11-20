@@ -107,6 +107,7 @@ model Tenant {
   projectTemplates       ProjectTemplate[]
   workItemRecurrences    WorkItemRecurrence[]
   workItemTransitions    WorkItemTransition[]
+  workItemTypeFields     WorkItemTypeField[]
   projectIntakes         ProjectIntake[]
   intakeNotifyMembers    IntakeNotifyMember[]
   intakeForms            IntakeForm[]

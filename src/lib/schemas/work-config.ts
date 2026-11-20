@@ -7,6 +7,8 @@ import { z } from 'zod';
 import { WORKFLOW_STATE_CATEGORIES } from '@/app-layer/domain/workflow-state';
 import { COLOR_PATTERN, WORK_ITEM_TYPE_ICONS } from '@/app-layer/domain/work-item-type-icons';
 
+import { CONFIGURABLE_BUILT_IN_FIELDS, FIELD_REQUIREMENTS } from '@/lib/work-items/field-sets';
+
 import { PositionSchema } from './work-item';
 
 const Id = z.string().min(1).max(64);
@@ -63,3 +65,22 @@ export const UpdateWorkItemTypeSchema = z
 
 export const CreateLabelSchema = z.object({ name: Name, teamId: Id.nullish(), color: Color.nullish() }).strict();
 export const UpdateLabelSchema = z.object({ name: Name.optional(), color: Color.nullable().optional() }).strict();
+
+// ─── Field sets (sub-phase 2.4b-b) ──────────────────────────────────────────
+
+/** One built-in field's rule for a type (`admin.manage`). */
+export const SetTypeFieldSchema = z
+    .object({
+        field: z.enum(CONFIGURABLE_BUILT_IN_FIELDS),
+        requirement: z.enum(FIELD_REQUIREMENTS),
+    })
+    .strict();
+
+/** One custom field's rule for a type in its project (`projects.edit`). */
+export const SetProjectTypeFieldSchema = z
+    .object({
+        typeId: Id,
+        customFieldId: Id,
+        requirement: z.enum(FIELD_REQUIREMENTS),
+    })
+    .strict();

@@ -47,6 +47,7 @@ export const CONFIG: WorkItemViewConfig = {
     customFields: [],
     cycles: [],
     milestones: [],
+    fieldSetEntries: [],
 };
 
 export const MEMBERS: Member[] = [

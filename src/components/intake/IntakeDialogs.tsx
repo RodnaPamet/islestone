@@ -22,7 +22,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { SettingsFormModal } from '@/components/settings/SettingsFormModal';
 import { useWorkConfig } from '@/components/work-items/data/use-work-config';
-import { AssigneePicker, PriorityPicker, StatePicker, TypePicker } from '@/components/work-items/pickers';
+import { AssigneePicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker, WaitingOnPicker } from '@/components/work-items/pickers';
+import { useProjectCustomFields } from '@/components/work-items/data/use-custom-fields';
+import { useFieldSet } from '@/components/work-items/data/use-field-sets';
+import { requirementOf, type FieldKey } from '@/lib/work-items/field-sets';
 import { apiGet } from '@/lib/data/api-client';
 import { INTAKE_DECLINE_REASONS, type IntakeDeclineReason, type IntakeRequestDetail, type IntakeRequestRow } from '@/lib/intake/types';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
@@ -51,6 +54,18 @@ function AcceptDialog({ request, open, onOpenChange, onDone }: DialogProps) {
     const [stateId, setStateId] = useState('');
     const [priority, setPriority] = useState<WorkItemPriority>('NONE');
     const [assigneeId, setAssigneeId] = useState<string | null>(null);
+    // The type's field set (2.4b-b), read from the server: hidden fields are
+    // not offered, required ones are marked, and the fields a type may
+    // require beyond these (who it waits on, dates, milestone) are offered
+    // when it requires them. The server checks the same rules.
+    const [waitingOnUserId, setWaitingOnUserId] = useState<string | null>(null);
+    const [dueDate, setDueDate] = useState<string | null>(null);
+    const [startDate, setStartDate] = useState<string | null>(null);
+    const [milestoneId, setMilestoneId] = useState<string | null>(null);
+    const projectFields = useProjectCustomFields(projectId);
+    const fieldSet = useFieldSet(typeId || undefined, projectId, projectFields.filter((f) => !f.archived).map((f) => f.id));
+    const offered = (key: FieldKey) => requirementOf(fieldSet, key) !== 'HIDDEN';
+    const isRequired = (key: FieldKey) => requirementOf(fieldSet, key) === 'REQUIRED';
     const projectOptions = liveProjects.map((p) => ({ value: p.id, label: `${p.name} (${p.keyPrefix})` }));
     const stateValue = openStates.some((s) => s.id === stateId) ? stateId : (openStates.find((s) => s.isDefault) ?? openStates[0])?.id ?? '';
 
@@ -72,7 +87,11 @@ function AcceptDialog({ request, open, onOpenChange, onDone }: DialogProps) {
                             priority,
                             ...(projectId !== request.projectId ? { projectId } : {}),
                             ...(stateValue ? { stateId: stateValue } : {}),
-                            ...(assigneeId ? { assigneeId } : {}),
+                            ...(assigneeId && offered('assignee') ? { assigneeId } : {}),
+                            ...(waitingOnUserId && isRequired('waitingOn') ? { waitingOnUserId } : {}),
+                            ...(dueDate && isRequired('dueDate') ? { dueDate } : {}),
+                            ...(startDate && isRequired('startDate') ? { startDate } : {}),
+                            ...(milestoneId && isRequired('milestone') ? { milestoneId } : {}),
                         },
                         request.version,
                     );
@@ -98,12 +117,36 @@ function AcceptDialog({ request, open, onOpenChange, onDone }: DialogProps) {
             <FormField label={tAccept('state')} description={tAccept('stateHint')}>
                 <StatePicker id="intake-accept-state" teamId={teamId} value={stateValue} onChange={setStateId} />
             </FormField>
-            <FormField label={tAccept('priority')}>
-                <PriorityPicker id="intake-accept-priority" value={priority} onChange={setPriority} />
-            </FormField>
-            <FormField label={tAccept('assignee')}>
-                <AssigneePicker id="intake-accept-assignee" value={assigneeId} onChange={setAssigneeId} />
-            </FormField>
+            {offered('priority') && (
+                <FormField label={tAccept('priority')} required={isRequired('priority')}>
+                    <PriorityPicker id="intake-accept-priority" value={priority} onChange={setPriority} />
+                </FormField>
+            )}
+            {offered('assignee') && (
+                <FormField label={tAccept('assignee')} required={isRequired('assignee')}>
+                    <AssigneePicker id="intake-accept-assignee" value={assigneeId} onChange={setAssigneeId} />
+                </FormField>
+            )}
+            {isRequired('waitingOn') && (
+                <FormField label={tAccept('waitingOn')} required>
+                    <WaitingOnPicker id="intake-accept-waiting-on" value={waitingOnUserId} onChange={setWaitingOnUserId} />
+                </FormField>
+            )}
+            {isRequired('dueDate') && (
+                <FormField label={tAccept('dueDate')} required>
+                    <DatePicker id="intake-accept-due" value={parseYMD(dueDate)} onChange={(d) => setDueDate(toYMD(d))} clearable />
+                </FormField>
+            )}
+            {isRequired('startDate') && (
+                <FormField label={tAccept('startDate')} required>
+                    <DatePicker id="intake-accept-start" value={parseYMD(startDate)} onChange={(d) => setStartDate(toYMD(d))} clearable />
+                </FormField>
+            )}
+            {isRequired('milestone') && (
+                <FormField label={tAccept('milestone')} required>
+                    <MilestonePicker id="intake-accept-milestone" projectId={projectId} value={milestoneId} onChange={setMilestoneId} />
+                </FormField>
+            )}
         </SettingsFormModal>
     );
 }

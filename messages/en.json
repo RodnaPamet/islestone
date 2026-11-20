@@ -689,7 +689,40 @@
             "milestone": "Milestone",
             "template": "Template",
             "repeat": "Repeat",
-            "waitingOn": "Waiting on"
+            "waitingOn": "Waiting on",
+            "startDate": "Start date"
+        },
+        "fieldSet": {
+            "required": "required",
+            "missing": "Required fields not filled yet: {fields}.",
+            "missingBeforeCreate": "Fill the required fields first: {fields}.",
+            "field": {
+                "description": "Description",
+                "assignee": "Assignee",
+                "waitingOn": "Waiting on",
+                "priority": "Priority",
+                "labels": "Labels",
+                "startDate": "Start date",
+                "dueDate": "Due date",
+                "cycle": "Cycle",
+                "milestone": "Milestone",
+                "answer": "Answer"
+            },
+            "requirement": {
+                "REQUIRED": "Required",
+                "OPTIONAL": "Optional",
+                "HIDDEN": "Hidden"
+            },
+            "answerRequirement": {
+                "OPTIONAL": "Shown",
+                "HIDDEN": "Hidden"
+            },
+            "rules": "Per type",
+            "rulesFor": "{field} per type",
+            "rulesHint": "Whether each type requires this field, shows it or hides it. A hidden field is not offered and takes no value.",
+            "ruleFor": "{field} for {type}",
+            "saved": "Saved.",
+            "failed": "This could not be saved."
         },
         "filters": {
             "category": "Category",
@@ -1052,7 +1085,8 @@
                 "SOURCE_DELETED": "On hold: this work item was deleted.",
                 "PROJECT_ARCHIVED": "On hold: the project is archived.",
                 "ENDED": "Ended: the last copy has been made.",
-                "HELD_BY_MEMBER": "On hold. Resume it to make copies again."
+                "HELD_BY_MEMBER": "On hold. Resume it to make copies again.",
+                "FIELD_SET_UNMET": "On hold: a copy would break its type's field set (a required field it cannot fill). Change the item or the type's fields, then resume it."
             },
             "dialogTitle": "Repeat",
             "dialogDescription": "Copies of this work item are made on a schedule, counted from its due date, as you.",
@@ -1208,6 +1242,17 @@
             "deleted": "State {name} deleted",
             "resource": "state",
             "resourcePlural": "states"
+        },
+        "typeFields": {
+            "title": "{type} fields",
+            "description": "Which fields this type requires, shows or hides, everywhere in the workspace. A required field must be filled on an open item; a hidden one is not offered and takes no value. A project's own fields are ruled in its field manager.",
+            "col": {
+                "field": "Field",
+                "requirement": "Requirement"
+            },
+            "empty": "No fields.",
+            "resource": "field",
+            "resourcePlural": "fields"
         },
         "types": {
             "title": "Work item types",
@@ -1663,7 +1708,11 @@
             "state": "Status",
             "stateHint": "A backlog or unstarted status.",
             "priority": "Priority",
-            "assignee": "Assignee"
+            "assignee": "Assignee",
+            "waitingOn": "Waiting on",
+            "dueDate": "Due date",
+            "startDate": "Start date",
+            "milestone": "Milestone"
         },
         "decline": {
             "title": "Decline the request",

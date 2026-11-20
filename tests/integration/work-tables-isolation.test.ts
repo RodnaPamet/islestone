@@ -250,6 +250,13 @@ const TABLES: ReadonlyArray<{
         insert: (s) => ({ tenantId: s.tenantId, sourceWorkItemId: s.otherItemId, frequency: 'DAILY', firstOn: new Date('2026-11-02T00:00:00Z'), ownerUserId: s.userId }),
     },
     {
+        model: 'WorkItemTypeField',
+        delegate: 'workItemTypeField',
+        update: { requirement: 'OPTIONAL' },
+        deletable: true,
+        insert: (s) => ({ tenantId: s.tenantId, typeId: s.world.typeId, builtInField: 'assignee', requirement: 'REQUIRED' }),
+    },
+    {
         model: 'ProjectTemplate',
         delegate: 'projectTemplate',
         update: { name: 'renamed' },
@@ -323,6 +330,11 @@ describeFn('work tables — two-tenant isolation as app_user', () => {
             data: { tenantId: tenant.id, sourceWorkItemId: item.id, frequency: 'WEEKLY', firstOn: new Date('2026-11-02T00:00:00Z'), ownerUserId: user.id },
         });
         await prisma.projectTemplate.create({ data: { tenantId: tenant.id, name: `${tag} starter`, contentJson: '{}', sortKey: 'V', createdByUserId: user.id } });
+        // Sub-phase 2.4b-b: a built-in rule and a custom-field rule.
+        await prisma.workItemTypeField.create({ data: { tenantId: tenant.id, typeId: world.typeId, builtInField: 'dueDate', requirement: 'REQUIRED' } });
+        await prisma.workItemTypeField.create({
+            data: { tenantId: tenant.id, typeId: world.typeId, projectId: world.projectId, customFieldId: field.id, requirement: 'HIDDEN' },
+        });
         return {
             templateId: template.id,
             cycleId: cycle.id,

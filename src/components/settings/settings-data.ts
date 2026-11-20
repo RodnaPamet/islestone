@@ -15,6 +15,7 @@ import { useSWRConfig } from 'swr';
 import { ApiClientError, apiSend } from '@/lib/data/api-client';
 import { useTenantSWR } from '@/lib/data/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import type { BuiltInField, FieldRequirementValue } from '@/lib/work-items/field-sets';
 import type { ProjectTemplateSummary, WorkflowStateCategory } from '@/lib/work-items/types';
 
 export interface SettingsTeam {
@@ -73,6 +74,10 @@ export const useTeams = () => useTenantSWR<SettingsTeam[]>(SETTINGS_PATHS.teams)
 export const useTeam = (teamId: string) => useTenantSWR<SettingsTeamDetail>(SETTINGS_PATHS.team(teamId));
 export const useWorkItemTypes = () => useTenantSWR<SettingsType[]>(SETTINGS_PATHS.types);
 export const useLabels = () => useTenantSWR<SettingsLabel[]>(SETTINGS_PATHS.labels);
+/** A type's built-in field rules (2.4b-b): every configurable field with its requirement and the ones it may take. */
+export const typeFieldsPath = (typeId: string) => `/work-item-types/${encodeURIComponent(typeId)}/fields`;
+export const useTypeFields = (typeId: string) =>
+    useTenantSWR<{ typeId: string; fields: Array<{ field: BuiltInField; requirement: FieldRequirementValue; allowed: FieldRequirementValue[] }> }>(typeFieldsPath(typeId));
 export const useProjects = () => useTenantSWR<SettingsProject[]>(SETTINGS_PATHS.projects);
 export const useProjectTemplates = (enabled = true) => useTenantSWR<ProjectTemplateSummary[]>(enabled ? SETTINGS_PATHS.projectTemplates : null);
 export const useAllProjectTemplates = () => useTenantSWR<ProjectTemplateSummary[]>(SETTINGS_PATHS.projectTemplatesAll);
@@ -90,7 +95,7 @@ export function useSettingsApi() {
     const apiUrl = useTenantApiUrl();
     const { mutate } = useSWRConfig();
     const send = useCallback(
-        <T = unknown>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown) => apiSend<T>(method, apiUrl(path), body),
+        <T = unknown>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown) => apiSend<T>(method, apiUrl(path), body),
         [apiUrl],
     );
     const revalidate = useCallback((...paths: string[]) => Promise.all(paths.map((p) => mutate(apiUrl(p)))), [apiUrl, mutate]);

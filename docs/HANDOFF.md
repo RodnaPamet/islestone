@@ -793,4 +793,18 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      repeat copy takes its source's.
    - UI: the detail's and the create dialog's Waiting on picker, the column, the filter, the
      board's lanes; the in-app bell to the person named.
-   - Next: 2.4b-b (field sets), then 2.4b-c (questions), per the map.
+   2.4b-a merged as #51. **2.4b-b (field sets) is built** on branch `wt/p24b`, per
+   `docs/work-items.md`, "Field sets (2.4b-b)" and `PROVENANCE.md`, "Field sets":
+   - Schema: `WorkItemTypeField` (built-in rules per type, custom-field rules per type and
+     project; CHECKs, partial uniques, cascades), `FieldRequirement`,
+     `CustomField @@unique([id, projectId, tenantId])`, `RecurrenceHold.FIELD_SET_UNMET`.
+     Migrations `20261130120000_recurrence_hold_field_set` and `20261130120100_field_sets`.
+   - Domain: `src/lib/work-items/field-sets.ts`, the one evaluation (client-safe).
+   - API: `GET/PUT /work-item-types/:typeId/fields` (`admin.manage`),
+     `GET/PUT /projects/:projectId/type-fields` (`projects.edit`); every create and field
+     write checked (400 `FIELD_SET_UNMET` / `FIELD_HIDDEN`); intake accept takes due date,
+     start date, milestone and waiting on; a refused repeat copy holds; project templates
+     carry custom-field rules.
+   - UI: Settings → a type's fields, the field manager's "Per type", the create dialog,
+     detail, accept dialog and item-templates manager reading the rules from the server.
+   - Next: 2.4b-c (questions), per the map.

@@ -72,6 +72,9 @@ const SPEC: Readonly<Record<string, Spec>> = {
     // Sub-phase 2.5d (owner decisions 70 and 72).
     [`${W}/[workItemId]/recurrence/route.ts`]: { GET: 'work_items.view', PUT: 'work_items.create', DELETE: 'work_items.edit' },
     [`${T}/projects/[projectId]/custom-fields/route.ts`]: { GET: 'projects.view', POST: 'projects.edit' },
+    // Sub-phase 2.4b-b (decision 112): built-in rules under admin.manage, custom-field rules under projects.edit.
+    [`${T}/work-item-types/[typeId]/fields/route.ts`]: { GET: 'projects.view', PUT: 'admin.manage' },
+    [`${T}/projects/[projectId]/type-fields/route.ts`]: { GET: 'projects.view', PUT: 'projects.edit' },
     [`${T}/projects/[projectId]/custom-fields/[fieldId]/route.ts`]: { PATCH: 'projects.edit' },
     [`${T}/projects/[projectId]/custom-fields/[fieldId]/options/route.ts`]: { POST: 'projects.edit' },
     [`${T}/projects/[projectId]/custom-fields/[fieldId]/options/[optionId]/route.ts`]: { PATCH: 'projects.edit', DELETE: 'projects.edit' },

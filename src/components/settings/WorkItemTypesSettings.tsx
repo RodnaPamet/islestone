@@ -8,6 +8,7 @@
  *
  * Written fresh for Islestone.
  */
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
@@ -18,6 +19,7 @@ import { FormField } from '@/components/ui/form-field';
 import { useToast } from '@/components/ui/hooks';
 import { Input } from '@/components/ui/input';
 import { createColumns } from '@/components/ui/table';
+import { useTenantHref } from '@/lib/tenant-context-provider';
 import type { WorkConfigAffordances } from '@/lib/work-items/types';
 
 import { refusalText, SETTINGS_PATHS, type SettingsType, useSettingsApi, useWorkItemTypes } from './settings-data';
@@ -35,6 +37,7 @@ export function WorkItemTypesSettings({ affordances }: { affordances: WorkConfig
     const [editing, setEditing] = useState<Editing>(null);
     const [name, setName] = useState('');
     const canManage = affordances.manageWorkConfig;
+    const tenantHref = useTenantHref();
 
     const columns = useMemo(() => {
         const setArchived = async (type: SettingsType, archived: boolean) => {
@@ -46,7 +49,16 @@ export function WorkItemTypesSettings({ affordances }: { affordances: WorkConfig
             }
         };
         return createColumns<SettingsType>([
-            { id: 'name', header: t('types.col.name'), cell: ({ row }) => <span className="text-content-emphasis">{row.original.name}</span> },
+            {
+                id: 'name',
+                header: t('types.col.name'),
+                // A type's page holds its field set (2.4b-b).
+                cell: ({ row }) => (
+                    <Link href={tenantHref(`/settings/work-item-types/${row.original.id}`)} className="text-content-emphasis hover:underline">
+                        {row.original.name}
+                    </Link>
+                ),
+            },
             { id: 'status', header: t('types.col.status'), cell: ({ row }) => (row.original.archivedAt ? t('common.archived') : t('common.active')) },
             ...(canManage
                 ? [
@@ -81,7 +93,7 @@ export function WorkItemTypesSettings({ affordances }: { affordances: WorkConfig
                   ]
                 : []),
         ]);
-    }, [t, canManage, send, revalidate, toast]);
+    }, [t, canManage, send, revalidate, toast, tenantHref]);
 
     const submit = async (): Promise<string | null> => {
         if (!editing) return null;

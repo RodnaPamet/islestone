@@ -465,6 +465,31 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'projects.edit',
         note: 'Change, archive or delete an unused option.',
     },
+    // ── Field sets (sub-phase 2.4b-b; owner decisions 108 and 112) ─────
+    {
+        path: new RegExp(`^${T}\\/work-item-types\\/[^\\/]+\\/fields$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: "A type's built-in field rules.",
+    },
+    {
+        path: new RegExp(`^${T}\\/work-item-types\\/[^\\/]+\\/fields$`),
+        methods: ['PUT'],
+        permission: 'admin.manage',
+        note: "Set a built-in field's rule for a type: types are workspace settings (decision 112).",
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/type-fields$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: "A visible project's custom-field rules per type.",
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/type-fields$`),
+        methods: ['PUT'],
+        permission: 'projects.edit',
+        note: "Set a custom field's rule for a type in its project, as the field's definition (decision 112).",
+    },
     {
         path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/custom-fields\\/[^\\/]+$`),
         methods: ['PUT'],

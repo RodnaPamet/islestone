@@ -96,6 +96,7 @@ model Project {
   savedViews        SavedView[]
   milestones        Milestone[]
   workItemTemplates WorkItemTemplate[]
+  fieldSetEntries   WorkItemTypeField[]
   intake            ProjectIntake?
   intakeNotify      IntakeNotifyMember[]
   intakeForms       IntakeForm[]
@@ -160,9 +161,10 @@ model WorkItemType {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  workItems WorkItem[]
-  templates WorkItemTemplate[]
+  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workItems       WorkItem[]
+  templates       WorkItemTemplate[]
+  fieldSetEntries WorkItemTypeField[]
 
   @@unique([tenantId, name])
   @@unique([id, tenantId])
@@ -464,15 +466,19 @@ model CustomField {
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
 
-  tenant  Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project Project             @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  options CustomFieldOption[]
-  values  CustomFieldValue[]
+  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project         Project             @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  options         CustomFieldOption[]
+  values          CustomFieldValue[]
+  fieldSetEntries WorkItemTypeField[]
 
   @@unique([id, tenantId])
   /// Target of the value's composite FK: a value carries its field's type and
   /// project, so neither can disagree with the field.
   @@unique([id, type, projectId, tenantId])
+  /// Target of a field-set rule's composite FK (2.4b-b): a rule names a field
+  /// of its own project.
+  @@unique([id, projectId, tenantId])
   @@unique([tenantId, projectId, name])
   @@index([tenantId, projectId, sortKey])
 }
@@ -843,4 +849,42 @@ model WorkItemRecurrence {
   @@unique([sourceWorkItemId, tenantId])
   /// The job's scan.
   @@index([tenantId, nextOccurrenceOn])
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Field sets (sub-phase 2.4b-b)
+//
+//  docs/porting/maps/2.4b.md; ADR 0002 §1 and §7; owner decisions 101 and
+//  108 to 112. Migration `20261130120100_field_sets` holds the CHECKs, the
+//  two partial uniques, RLS and the grant, with a catalogue test
+//  (tests/integration/field-sets.test.ts).
+// ─────────────────────────────────────────────────────────────────
+
+/// One field's rule in a work item type's field set (ADR 0006 "Field set"):
+/// a built-in field's rule belongs to the type across the workspace
+/// (`projectId` NULL, managed under `admin.manage`); a custom field's belongs
+/// to the type within the field's project (managed under `projects.edit`).
+/// Exactly one of `builtInField` and `customFieldId` (a CHECK); a field with
+/// no row is OPTIONAL, the answer HIDDEN (`src/lib/work-items/field-sets.ts`).
+model WorkItemTypeField {
+  id            String           @id @default(cuid())
+  tenantId      String
+  typeId        String
+  /// NULL for a built-in field's rule; the custom field's project otherwise.
+  projectId     String?
+  /// One of `CONFIGURABLE_BUILT_IN_FIELDS` (a CHECK lists them).
+  builtInField  String?
+  customFieldId String?
+  requirement   FieldRequirement
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type        WorkItemType @relation(fields: [typeId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  project     Project?     @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  customField CustomField? @relation(fields: [customFieldId, projectId, tenantId], references: [id, projectId, tenantId], onDelete: Cascade)
+
+  @@index([tenantId, typeId])
+  @@index([tenantId, projectId, typeId])
+  @@index([tenantId, customFieldId])
 }
