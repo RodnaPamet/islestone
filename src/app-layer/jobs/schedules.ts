@@ -199,6 +199,19 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         description: 'Make each due occurrence of a repeating work item, as the person who set the repeat (re-resolved), or put the repeat on hold with the reason. Idempotent: an occurrence is claimed on its stamped date.',
         defaultPayload: {},
     },
+    {
+        name: 'notification-digest',
+        pattern: '10 8 * * *',    // 08:10 in NOTIFICATIONS_TZ, after the due bells at 08:00
+        tz: env.NOTIFICATIONS_TZ,
+        description: 'One daily digest email per active member of each live workspace: their open work items due soon and the day\'s unread notifications of the types they receive daily (owner decision 133). Project visibility and the workspace\'s liveness are re-checked when it is built; idempotent through the outbox dedupe (per address and day).',
+        defaultPayload: {},
+    },
+    {
+        name: 'notification-purge',
+        pattern: '10 3 * * *',    // 03:10 UTC
+        description: 'Delete notifications marked Done more than 90 days ago and read ones more than 180 days ago; unread ones are kept (owner decision 135). Counts-only audit entry per workspace.',
+        defaultPayload: {},
+    },
 ];
 
 /**

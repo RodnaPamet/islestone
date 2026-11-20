@@ -21,7 +21,7 @@
  *
  * Rewritten from inflect-compliance `src/app-layer/jobs/types.ts` at
  * 5528464fc54a8681956f3b9ce23ca9c075f0420e (the source as template): the
- * `JobRunResult` contract, the due-item shapes, `NamesEveryField`, and two of
+ * `JobRunResult` contract, `NamesEveryField`, and two of
  * its 78 jobs, `health-check` and `notification-outbox-flush`. Sub-phase 1.5b
  * added three more from the same file: `audit-outbox-flush`, `key-rotation`
  * (without the source's `apiKeyId`, which returns with API keys in 5.2) and
@@ -81,54 +81,6 @@ export interface JobRunResult {
     noRetry?: boolean;
     /** Optional structured details (job-specific payload) */
     details?: Record<string, unknown>;
-}
-
-// ─── Normalized Due Item Output ───
-
-/**
- * Entity types that can have due/expiring items.
- * Used for downstream notification grouping.
- */
-export type MonitoredEntityType =
-    // A work item's due date (sub-phase 2.x). Sub-phase 2.7 widens this list
-    // when its monitors add entity types.
-    | 'WORK_ITEM';
-
-/**
- * Urgency classification for due items.
- *   OVERDUE  — already past its deadline
- *   URGENT   — within 7 days
- *   UPCOMING — within 30 days
- */
-export type DueItemUrgency = 'OVERDUE' | 'URGENT' | 'UPCOMING';
-
-/**
- * Normalized due/expiring item — the universal output of all monitors.
- *
- * Designed for downstream consumption:
- *   - Group by tenantId + ownerUserId → per-user digest
- *   - Group by entityType → summary dashboards
- *   - All fields are JSON-serializable
- */
-export interface DueItem {
-    /** Entity type being monitored */
-    entityType: MonitoredEntityType;
-    /** Database ID of the entity */
-    entityId: string;
-    /** Tenant that owns this entity */
-    tenantId: string;
-    /** Human-readable name/title */
-    name: string;
-    /** Specific reason this item is flagged */
-    reason: string;
-    /** Urgency classification */
-    urgency: DueItemUrgency;
-    /** The date that drives this due item (ISO string) */
-    dueDate: string;
-    /** Days remaining (negative = overdue) */
-    daysRemaining: number;
-    /** Owner user ID (for notification routing), if known */
-    ownerUserId?: string;
 }
 
 // ─── Job Payload Definitions ───
@@ -297,6 +249,25 @@ export interface WorkItemRecurrencePayload {
     tenantId?: string;
 }
 
+/**
+ * The daily digest (sub-phase 2.7c, owner decision 133): 08:10 in
+ * `NOTIFICATIONS_TZ`, one email per ACTIVE member of each live workspace with
+ * their due items and the day's unread notifications of their DAILY types. A
+ * `tenantId` re-runs one workspace.
+ */
+export interface NotificationDigestPayload {
+    tenantId?: string;
+}
+
+/**
+ * Notification retention (sub-phase 2.7c, owner decision 135): Done rows 90
+ * days after they were marked Done, read rows 180 days after they were read;
+ * unread rows are kept. A `tenantId` narrows it to one workspace.
+ */
+export interface NotificationPurgePayload {
+    tenantId?: string;
+}
+
 /** Daily rebalance of projects whose sort keys passed the length bound (ADR 0002 §5). */
 export interface WorkItemSortKeyRebalancePayload {
     tenantId?: string;
@@ -339,6 +310,8 @@ export interface JobPayloadMap {
     'intake-purge': IntakePurgePayload;
     'intake-email-fetch': IntakeEmailFetchPayload;
     'work-item-recurrence': WorkItemRecurrencePayload;
+    'notification-digest': NotificationDigestPayload;
+    'notification-purge': NotificationPurgePayload;
 }
 
 /** Union of all valid job names */
@@ -441,6 +414,22 @@ export const JOB_DEFAULTS: Record<JobName, {
     'work-item-sortkey-rebalance': {
         attempts: 1,
         backoff: { type: 'fixed', delay: 60_000 },
+        removeOnComplete: 30,
+        removeOnFail: 100,
+    },
+    'notification-digest': {
+        // Two attempts, ten minutes apart: a retry mails nobody twice (the
+        // outbox dedupes per address, workspace and day), and a digest that
+        // failed at 08:10 is still worth sending at 08:20.
+        attempts: 2,
+        backoff: { type: 'fixed', delay: 600_000 },
+        removeOnComplete: 30,
+        removeOnFail: 100,
+    },
+    'notification-purge': {
+        // Two attempts: a retry deletes only what is still past its window.
+        attempts: 2,
+        backoff: { type: 'fixed', delay: 300_000 },
         removeOnComplete: 30,
         removeOnFail: 100,
     },

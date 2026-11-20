@@ -9,9 +9,12 @@
  *   - dedupeKey shape `{tenantId}:{TYPE}:{entityId}:{userId}:{date}`, so the
  *     same user being assigned the same item twice in one day collapses to a
  *     single bell notification;
- *   - the workspace's in-app mute list is asked FIRST
- *     (`isInAppTypeEnabled`): a muted type writes no row, so it reaches
- *     neither the bell list, nor the badge, nor the SSE stream.
+ *   - the recipient's preference under the workspace's mute list is asked
+ *     FIRST (`isInAppTypeEnabled`, 2.7c): a type they or the workspace
+ *     switched off writes no row, so it reaches neither the bell list, nor
+ *     the badge, nor the SSE stream;
+ *   - the row names its work item (`workItemId`, 2.7c) for the Inbox and the
+ *     digest's visibility re-check.
  *
  * Fire-and-forget — callers isolate the write in its own transaction so a
  * notification failure never rolls back the parent operation. Callers: the
@@ -100,14 +103,15 @@ export interface AssignmentNotificationOutcome {
 }
 
 export async function createAssignmentNotification(
-    db: Pick<PrismaClient, 'notification' | 'tenantNotificationSettings'>,
+    db: Pick<PrismaClient, 'notification' | 'tenantNotificationSettings' | 'notificationPreference'>,
     kind: AssignmentNotificationKind,
     target: AssignmentTarget,
     now: Date = new Date(),
 ): Promise<AssignmentNotificationOutcome> {
     // Above the write, not filtered after it: a muted row would still reach
     // the bell list, the badge and the SSE stream.
-    if (!(await isInAppTypeEnabled(db, target.tenantId, kind))) {
+    const enabled = await isInAppTypeEnabled(db, target.tenantId, kind, [target.assigneeUserId]);
+    if (!enabled.has(target.assigneeUserId)) {
         return { status: 'muted' };
     }
 
@@ -123,6 +127,7 @@ export async function createAssignmentNotification(
         title: copy.title,
         body: copy.body(label),
         linkUrl: target.linkUrl,
+        workItemId: target.entityId,
         dedupeKey: buildAssignmentDedupeKey(
             target.tenantId,
             kind,

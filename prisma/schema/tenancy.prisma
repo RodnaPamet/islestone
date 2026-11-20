@@ -80,6 +80,7 @@ model Tenant {
   notifications        Notification[]
   notificationOutbox   NotificationOutbox[]
   notificationSettings TenantNotificationSettings?
+  notificationPrefs    NotificationPreference[]
 
   teams                  Team[]
   workflowStates         WorkflowState[]
@@ -147,11 +148,12 @@ model TenantMembership {
   customRole       TenantCustomRole? @relation(fields: [customRoleId], references: [id])
 
   /// Work items this member is the assignee of (ADR 0003, RESTRICT).
-  assignedWorkItems WorkItem[]           @relation("WorkItemAssignee")
-  waitedOnWorkItems WorkItem[]           @relation("WorkItemWaitingOn")
-  watching          WorkItemWatcher[]    @relation("WorkItemWatcherMember")
-  personFieldValues CustomFieldValue[]   @relation("CustomFieldValuePerson")
-  intakeNotify      IntakeNotifyMember[] @relation("IntakeNotifyMembership")
+  assignedWorkItems WorkItem[]               @relation("WorkItemAssignee")
+  waitedOnWorkItems WorkItem[]               @relation("WorkItemWaitingOn")
+  watching          WorkItemWatcher[]        @relation("WorkItemWatcherMember")
+  personFieldValues CustomFieldValue[]       @relation("CustomFieldValuePerson")
+  intakeNotify      IntakeNotifyMember[]     @relation("IntakeNotifyMembership")
+  notificationPrefs NotificationPreference[]
 
   @@unique([tenantId, userId])
   /// The composite an FK from a tenant-scoped child references. `id` alone is

@@ -294,6 +294,7 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             'Milestone',
             'Notification',
             'NotificationOutbox',
+            'NotificationPreference',
             'Project',
             'ProjectIntake',
             'ProjectKeyPrefix',

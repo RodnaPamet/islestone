@@ -589,8 +589,7 @@
         "returnToWorkspaces": "Back to your workspaces"
     },
     "placeholders": {
-        "title": "Not here yet",
-        "inbox": "Your notifications will be listed here. Until then, the bell in the top bar shows the latest."
+        "title": "Not here yet"
     },
     "workItems": {
         "list": {
@@ -1178,6 +1177,11 @@
                 "title": "Intake",
                 "body": "Turn on intake per project, choose who is told about new requests, and build the forms people send them through.",
                 "open": "Open Intake settings"
+            },
+            "notifications": {
+                "title": "Notifications",
+                "body": "The workspace's email switch, its sender and BCC mailbox, and the notifications muted for everyone.",
+                "open": "Open notification settings"
             }
         },
         "firstProject": {
@@ -1509,6 +1513,39 @@
                 "listLabel": "Every block",
                 "none": "No sender is blocked."
             }
+        },
+        "notifications": {
+            "title": "Notifications",
+            "description": "What the workspace sends. Members choose their own notifications within these settings.",
+            "noAccess": "Only workspace admins can see and change the notification settings.",
+            "loadFailed": "The notification settings could not be loaded. Try again.",
+            "emailHeading": "Email",
+            "emailEnabled": "Send email notifications",
+            "emailEnabledHelp": "Off, nobody in this workspace is emailed: not at once, and no daily digest. Invitations and password resets still send.",
+            "fromName": "Sender name",
+            "fromEmail": "Sender address",
+            "bcc": "BCC mailbox",
+            "bccHelp": "Every email the workspace sends is copied here. Leave empty for none.",
+            "save": "Save",
+            "saved": "Notification settings saved",
+            "failed": "The settings could not be saved. Try again.",
+            "mutedHeading": "In the Inbox and bell",
+            "mutedHelp": "A kind turned off here rings nobody in the workspace, whatever their own preferences say.",
+            "mutedFor": "{type}: in the Inbox and bell for everyone",
+            "outboxHeading": "Queued email",
+            "outboxCol": {
+                "window": "Period",
+                "pending": "Waiting",
+                "sent": "Sent",
+                "failed": "Failed"
+            },
+            "window": {
+                "last24h": "Last 24 hours",
+                "last7d": "Last 7 days",
+                "last30d": "Last 30 days"
+            },
+            "sendNow": "Send queued email now",
+            "sendNowDone": "{sent} sent, {failed} failed, {skipped} skipped"
         }
     },
     "views": {
@@ -1869,5 +1906,90 @@
             "FAILED": "Failed: the sender’s domain refused it",
             "NONE": "Not checked: the sender could not be verified"
         }
+    },
+    "inbox": {
+        "description": "Your notifications in this workspace. Mark them read, or Done to clear them away.",
+        "views": {
+            "label": "Inbox views",
+            "unread": "Unread",
+            "all": "All",
+            "done": "Done"
+        },
+        "unreadCount": "{count} unread",
+        "typeFilter": {
+            "label": "Kind of notification",
+            "all": "Every kind"
+        },
+        "types": {
+            "GENERAL": "General",
+            "WORK_ITEM_ASSIGNED": "Assigned to you",
+            "WORK_ITEM_WAITING_ON": "Waiting on you",
+            "WORK_ITEM_WATCH_UPDATE": "Watched work items",
+            "WORK_ITEM_DUE": "Due dates",
+            "INTAKE_REQUEST_RECEIVED": "New intake requests",
+            "INTAKE_REQUEST_WOKEN": "Snoozed intake requests back"
+        },
+        "listLabel": "Notifications",
+        "unreadMark": "Unread",
+        "markRead": "Mark read",
+        "markReadNamed": "Mark read: {title}",
+        "markUnread": "Mark unread",
+        "markUnreadNamed": "Mark unread: {title}",
+        "done": "Done",
+        "doneNamed": "Mark as done: {title}",
+        "restore": "Move to Inbox",
+        "restoreNamed": "Move to Inbox: {title}",
+        "open": "Open",
+        "markAllRead": "Mark all read",
+        "preferences": "Notification preferences",
+        "empty": {
+            "unread": "Nothing unread. You are all caught up.",
+            "all": "No notifications in your Inbox.",
+            "done": "Nothing marked Done yet."
+        },
+        "loadFailed": "Your notifications could not be loaded. Try again.",
+        "loadMore": "Load more",
+        "failed": "That did not work. Try again.",
+        "doneToast": "Marked as done",
+        "restoredToast": "Moved back to the Inbox",
+        "undo": "Undo",
+        "shortcuts": {
+            "next": "Inbox: next notification",
+            "previous": "Inbox: previous notification",
+            "done": "Inbox: mark the selected notification as done",
+            "toggleRead": "Inbox: mark the selected notification read or unread"
+        },
+        "keyboardHint": "In the list: J and K move, E marks Done, U marks read or unread, Enter opens."
+    },
+    "notificationPreferences": {
+        "title": "Notification preferences",
+        "description": "Choose, for each kind of notification, whether it rings the bell and whether you get an email at once or in the daily digest.",
+        "tableLabel": "Your notification preferences",
+        "col": {
+            "type": "Notification",
+            "inApp": "In the Inbox and bell",
+            "email": "Email"
+        },
+        "email": {
+            "OFF": "Off",
+            "IMMEDIATE": "At once",
+            "DAILY": "Daily digest"
+        },
+        "inAppFor": "{type}: in the Inbox and bell",
+        "emailFor": "{type}: email",
+        "defaultMark": "Default",
+        "reset": "Use the default",
+        "resetFor": "{type}: use the default",
+        "cap": {
+            "WORKSPACE_MUTED": "Turned off for the whole workspace by an admin.",
+            "WORKSPACE_EMAIL_OFF": "Email is turned off for the whole workspace by an admin.",
+            "BELL_OFF": "The daily digest lists this kind from your Inbox, so it needs the Inbox and bell on."
+        },
+        "digestHelp": "The daily digest arrives at 08:10 with your work items due soon and the day's unread notifications you chose to receive daily. It never quotes descriptions or comments.",
+        "immediateHelp": "Email at once is offered for work assigned to you and work waiting on you.",
+        "saved": "Preferences saved",
+        "failed": "Your preferences could not be saved. Try again.",
+        "loadFailed": "Your preferences could not be loaded. Try again.",
+        "inboxLink": "Back to the Inbox"
     }
 }

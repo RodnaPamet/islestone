@@ -272,6 +272,7 @@ describe('the schema speaks ADR 0006', () => {
             'Milestone',
             'Notification',
             'NotificationOutbox',
+            'NotificationPreference',
             'OrgAuditLog',
             'OrgInvite',
             'OrgMembership',
@@ -308,7 +309,7 @@ describe('the schema speaks ADR 0006', () => {
             'WorkItemWatcher',
             'WorkflowState',
         ]);
-        expect(ids.filter((i) => i.kind === 'enum').length).toBe(26);
+        expect(ids.filter((i) => i.kind === 'enum').length).toBe(27);
         expect(ids).toEqual(expect.arrayContaining([{ kind: 'value', name: 'MEMBER', where: 'Role.MEMBER' }]));
     });
 });

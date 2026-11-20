@@ -18,21 +18,28 @@
 import { render } from '@react-email/components';
 import { createElement } from 'react';
 
-import type { DueItem } from '../jobs/types';
-
 import { appLink } from './app-link';
-import { DueDigestEmail, digestLede, summaryLine, URGENCY_LABEL, URGENCY_ORDER } from './email/due-digest';
+import {
+    DIGEST_DUE_LABEL,
+    DIGEST_DUE_ORDER,
+    digestSubject,
+    dueLineText,
+    NotificationDigestEmail,
+    type DigestDueLine,
+    type DigestNotificationLine,
+    type NotificationDigestEmailProps,
+} from './email/notification-digest';
 import {
     INTAKE_REQUESTER_HEADING,
     IntakeRequesterEmail,
     intakeRequesterLines,
     type IntakeRequesterEmailKind,
 } from './email/intake-requester';
-import type { DigestAudience } from './email/due-digest';
 import { PRODUCT_NAME } from './email/layout';
 import { WorkItemAssignedEmail, workItemLabel } from './email/work-item-assigned';
+import { WorkItemWaitingOnEmail, waitingOnLede } from './email/work-item-waiting-on';
 
-export type { DigestAudience } from './email/due-digest';
+export type { DigestDueGroup } from './email/notification-digest';
 
 export interface EmailTemplateResult {
     subject: string;
@@ -123,45 +130,105 @@ export async function buildWorkItemAssignedEmail(payload: WorkItemAssignedPayloa
     };
 }
 
-// ─── Due digest ───
+// ─── Waiting on you (2.7c) ───
 
-export interface DueDigestPayload {
+export interface WorkItemWaitingOnPayload {
     recipientName: string;
-    tenantSlug: string;
-    items: DueItem[];
-    /** Why this reader was chosen — decides whether the copy claims the items are theirs. */
-    audience: DigestAudience;
+    setterName?: string;
+    workItemTitle: string;
+    workItemKey?: string | null;
+    /** The item's path in the app (`/t/<slug>/…`, `tenantWorkItemPath`). */
+    linkPath: string;
 }
 
-export async function buildDueDigestEmail(payload: DueDigestPayload): Promise<EmailTemplateResult> {
-    // The workspace home until sub-phase 2.3 gives work items a route.
-    const link = appLink(`/t/${payload.tenantSlug}`);
-    const lede = digestLede(payload.audience, payload.items);
-    const element = createElement(DueDigestEmail, {
-        recipientName: payload.recipientName,
-        items: payload.items,
-        audience: payload.audience,
-        link,
-    });
-    const groups = URGENCY_ORDER.flatMap((urgency) => {
-        const group = payload.items.filter((i) => i.urgency === urgency);
-        if (group.length === 0) return [];
-        return [`${URGENCY_LABEL[urgency]} (${group.length})`, ...group.map((i) => `  ${i.name} — ${i.reason}`), ''];
-    });
+export async function buildWorkItemWaitingOnEmail(payload: WorkItemWaitingOnPayload): Promise<EmailTemplateResult> {
+    const link = appLink(payload.linkPath);
+    const label = workItemLabel(payload);
     return {
-        subject: lede.subject,
+        subject: `Waiting on you: ${label}`,
         bodyText: [
             `Hi ${payload.recipientName},`,
             '',
-            lede.intro,
-            summaryLine(payload.items),
+            waitingOnLede(payload.setterName),
             '',
-            ...groups,
-            `Open the workspace: ${link}`,
+            `  ${label}`,
+            '',
+            `Open the work item: ${link}`,
             '',
             `— ${PRODUCT_NAME}`,
         ].join('\n'),
-        bodyHtml: await render(element),
+        bodyHtml: await render(createElement(WorkItemWaitingOnEmail, { ...payload, link })),
+    };
+}
+
+// ─── The daily digest (2.7c) ───
+
+/** A due item as the digest job hands it over; paths are made absolute here. */
+export interface NotificationDigestDueItem extends Omit<DigestDueLine, 'link'> {
+    linkPath: string;
+}
+
+/** A notification as the digest job hands it over (the bell row's stored copy). */
+export interface NotificationDigestEntry extends Omit<DigestNotificationLine, 'link'> {
+    linkPath: string | null;
+}
+
+export interface NotificationDigestPayload {
+    recipientName: string;
+    tenantSlug: string;
+    due: NotificationDigestDueItem[];
+    moreDue: number;
+    notifications: NotificationDigestEntry[];
+    moreNotifications: number;
+}
+
+export async function buildNotificationDigestEmail(payload: NotificationDigestPayload): Promise<EmailTemplateResult> {
+    const slug = encodeURIComponent(payload.tenantSlug);
+    const props: NotificationDigestEmailProps = {
+        recipientName: payload.recipientName,
+        due: payload.due.map(({ linkPath, ...l }) => ({ ...l, link: appLink(linkPath) })),
+        moreDue: payload.moreDue,
+        notifications: payload.notifications.map(({ linkPath, ...n }) => ({ ...n, link: linkPath ? appLink(linkPath) : null })),
+        moreNotifications: payload.moreNotifications,
+        inboxLink: appLink(`/t/${slug}/inbox`),
+        preferencesLink: appLink(`/t/${slug}/inbox/preferences`),
+    };
+    const dueTotal = props.due.length + props.moreDue;
+    const notificationTotal = props.notifications.length + props.moreNotifications;
+    const dueText = dueTotal === 0
+        ? []
+        : [
+              'Work items due',
+              '',
+              ...DIGEST_DUE_ORDER.flatMap((group) => {
+                  const lines = props.due.filter((l) => l.group === group);
+                  if (lines.length === 0) return [];
+                  return [`${DIGEST_DUE_LABEL[group]} (${lines.length})`, ...lines.map((l) => `  ${dueLineText(l)}: ${l.link}`), ''];
+              }),
+              ...(props.moreDue > 0 ? [`And ${props.moreDue} more.`, ''] : []),
+          ];
+    const notificationText = notificationTotal === 0
+        ? []
+        : [
+              'Notifications',
+              '',
+              ...props.notifications.map((n) => `  ${n.title} — ${n.body}${n.link ? `: ${n.link}` : ''}`),
+              ...(props.moreNotifications > 0 ? [`And ${props.moreNotifications} more in your Inbox.`] : []),
+              '',
+          ];
+    return {
+        subject: digestSubject(dueTotal, notificationTotal),
+        bodyText: [
+            `Hi ${payload.recipientName},`,
+            '',
+            ...dueText,
+            ...notificationText,
+            `Open your Inbox: ${props.inboxLink}`,
+            `Change your preferences: ${props.preferencesLink}`,
+            '',
+            `— ${PRODUCT_NAME}`,
+        ].join('\n'),
+        bodyHtml: await render(createElement(NotificationDigestEmail, props)),
     };
 }
 

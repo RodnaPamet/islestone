@@ -41,6 +41,7 @@ const SITE_CONTRACTS: Record<string, string> = {
     'src/components/work-items/data/use-recurrence.ts': 'stopping a repeat (the detail\'s Repeat control, 2.5d)',
     'src/components/work-items/data/use-item-templates.ts': 'item template delete (the project page\'s templates manager, 2.5c)',
     'src/components/milestones/use-milestones.ts': 'milestone delete (a project\'s milestones and a milestone\'s page, 2.5b)',
+    'src/components/inbox/use-inbox.ts': 'marking a notification Done, and moving one back to the Inbox (the Inbox, 2.7c)',
 };
 
 const HOOK_FILE = 'src/components/ui/hooks/use-toast-with-undo.ts';

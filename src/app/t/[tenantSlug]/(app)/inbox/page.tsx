@@ -1,13 +1,13 @@
 import { getTranslations } from 'next-intl/server';
 
-import { PlaceholderPage } from '@/components/layout/PlaceholderPage';
+import { InboxView } from '@/components/inbox/InboxView';
 
 /**
- * Inbox: a placeholder until its feature arrives (see `PlaceholderPage`).
- * The layout has already admitted the member.
+ * Inbox (sub-phase 2.7c; owner decision 134): the member's own notifications
+ * in this workspace. The layout has already admitted the member; every role
+ * reads its own notifications, so the page asks nothing more.
  */
 export default async function InboxPage() {
     const tNav = await getTranslations('nav');
-    const t = await getTranslations('placeholders');
-    return <PlaceholderPage title={tNav('inbox')} emptyTitle={t('title')} body={t('inbox')} testId="placeholder-inbox" />;
+    return <InboxView title={tNav('inbox')} />;
 }

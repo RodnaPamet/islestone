@@ -19,6 +19,7 @@ import { createAssignmentNotification } from '../notifications/assignment';
 import { createWatcherNotifications, type WatcherActivityKind } from '../notifications/watcher';
 import { createWorkItemDueNotification } from '../notifications/work-item-due';
 import { enqueueEmail } from '../notifications/enqueue';
+import { emailDeliveryFor } from '../notifications/settings';
 import { MembershipRepository } from '../repositories/MembershipRepository';
 import {
     WorkItemRepository,
@@ -185,6 +186,10 @@ export async function enqueueAssignedEmail(
     items: readonly AssignedItemForMail[],
 ): Promise<void> {
     if (items.length === 0 || !ctx.tenantSlug) return;
+    // The assignee's preference under the workspace's ceiling (2.7c, owner
+    // decision 132): only IMMEDIATE mails now; DAILY waits for the digest,
+    // which lists the bell row.
+    if ((await emailDeliveryFor(db, ctx.tenantId, 'WORK_ITEM_ASSIGNED', assigneeUserId)) !== 'IMMEDIATE') return;
     const contacts = await MembershipRepository.contactsOf(db, [assigneeUserId, ctx.userId]);
     const assignee = contacts.find((c) => c.id === assigneeUserId);
     if (!assignee?.email) return;
@@ -257,8 +262,10 @@ export async function emitAssignedBells(
 
 /**
  * The waiting-on bell (2.4b, owner decision 105), after the commit: one
- * in-app notification to the person named, unless they named themselves. No
- * email and no reminder (2.7 decides those). Never makes them accountable.
+ * in-app notification to the person named, unless they named themselves, and
+ * in the same short transaction the waiting-on email when their preference
+ * for the type is IMMEDIATE (2.7c, owner decision 132; the default). Never
+ * makes them accountable.
  */
 export async function emitWaitingOnBell(
     ctx: RequestContext,
@@ -277,6 +284,7 @@ export async function emitWaitingOnBell(
                 entityKey: item.key,
                 linkUrl: tenantWorkItemPath(tenantSlug, item.id),
             });
+            await enqueueWaitingOnEmail(db, ctx, userId, item);
         });
     } catch (err) {
         logger.warn('failed to create work-item-waiting-on notification', {
@@ -285,6 +293,40 @@ export async function emitWaitingOnBell(
             error: err instanceof Error ? err.message : String(err),
         });
     }
+}
+
+/**
+ * The waiting-on email (2.7c): only when the person's preference for
+ * `WORK_ITEM_WAITING_ON` is IMMEDIATE after the workspace's ceiling, and only
+ * to an address on file. It names the item and who set it, never the
+ * description.
+ */
+async function enqueueWaitingOnEmail(
+    db: PrismaTx,
+    ctx: RequestContext,
+    userId: string,
+    item: { id: string; title: string; key: string },
+): Promise<void> {
+    if (!ctx.tenantSlug) return;
+    if ((await emailDeliveryFor(db, ctx.tenantId, 'WORK_ITEM_WAITING_ON', userId)) !== 'IMMEDIATE') return;
+    const contacts = await MembershipRepository.contactsOf(db, [userId, ctx.userId]);
+    const recipient = contacts.find((c) => c.id === userId);
+    if (!recipient?.email) return;
+    const setter = contacts.find((c) => c.id === ctx.userId)?.name ?? undefined;
+    await enqueueEmail(db, {
+        tenantId: ctx.tenantId,
+        type: 'WORK_ITEM_WAITING_ON',
+        toEmail: recipient.email,
+        entityId: item.id,
+        requestId: ctx.requestId,
+        payload: {
+            recipientName: recipient.name || recipient.email,
+            setterName: setter,
+            workItemTitle: item.title,
+            workItemKey: item.key,
+            linkPath: tenantWorkItemPath(ctx.tenantSlug, item.id),
+        },
+    });
 }
 
 /**

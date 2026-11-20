@@ -30,14 +30,23 @@ function target(id: string, due: string): WorkItemDueTarget {
     return { id, tenantId: 't1', tenantSlug: 'acme', title: `Item ${id}`, key: `ISL-${id}`, dueDate: dateOnly(due), assigneeUserId: 'u1' };
 }
 
-function fakeDb(opts: { muted?: boolean } = {}) {
+function fakeDb(opts: { muted?: boolean; off?: string[] } = {}) {
     const createMany = jest.fn(async ({ data }: { data: unknown[] }) => ({ count: data.length }));
     const findMany = jest.fn(async ({ where }: { where: { dedupeKey: { in: string[] } } }) =>
         where.dedupeKey.in.map((k, i) => ({ id: `n${i}`, dedupeKey: k, createdAt: new Date() })),
     );
     const settings = jest.fn(async () => (opts.muted ? { mutedInAppTypes: ['WORK_ITEM_DUE'] } : null));
     return {
-        db: { notification: { createMany, findMany }, tenantNotificationSettings: { findUnique: settings, findFirst: settings } } as never,
+        db: {
+            notification: { createMany, findMany },
+            tenantNotificationSettings: { findUnique: settings, findFirst: settings },
+            // Sub-phase 2.7c: members who switched the due bell off.
+            notificationPreference: {
+                findMany: jest.fn(async ({ where }: { where: { userId: { in: string[] } } }) =>
+                    (opts.off ?? []).filter((u) => where.userId.in.includes(u)).map((userId) => ({ userId, inApp: false, emailDelivery: 'DAILY' })),
+                ),
+            },
+        } as never,
         createMany,
         findMany,
     };
@@ -120,6 +129,15 @@ describe('writes', () => {
         const r = await createWorkItemDueNotification(db, target('1', '2030-03-10'), NOW, 'UTC');
         expect(r.status).toBe('muted');
         expect(createMany).not.toHaveBeenCalled();
+    });
+
+    it('a member who switched the due bell off gets no row; the other recipient still does (2.7c)', async () => {
+        const { db, createMany } = fakeDb({ off: ['u1'] });
+        const t = { ...target('1', '2030-03-10'), waitingOnUserId: 'u2' };
+        await createWorkItemDueNotification(db, t, NOW, 'UTC');
+        const rows = (createMany.mock.calls[0] as unknown as [{ data: Array<{ userId: string; workItemId: string }> }])[0].data;
+        expect(rows.map((r) => r.userId)).toEqual(['u2']);
+        expect(rows[0]!.workItemId).toBe('1');
     });
 
     it('an item off every window writes nothing and asks nothing', async () => {

@@ -641,6 +641,27 @@ executorRegistry.register('intake-email-fetch', async (payload) => {
     return makeResult('intake-email-fetch', startedAt, startMs, 1, outcome === 'FAILED' ? 0 : 1, outcome === 'FAILED' ? 1 : 0, { outcome });
 });
 
+executorRegistry.register('notification-digest', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processNotificationDigest } = await import('./notification-digest');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId };
+    const r = await processNotificationDigest(forwarded);
+    return makeResult('notification-digest', startedAt, startMs, r.membersScanned, r.digestsEnqueued, r.membersScanned - r.digestsEnqueued, {
+        tenantsScanned: r.tenantsScanned,
+        failedTenants: r.failedTenants,
+    });
+});
+
+executorRegistry.register('notification-purge', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processNotificationPurge } = await import('./notification-purge');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId };
+    const r = await processNotificationPurge(forwarded);
+    return makeResult('notification-purge', startedAt, startMs, r.tenants, r.tenants - r.failedTenants, r.failedTenants, { purged: r.purged });
+});
+
 executorRegistry.register('intake-purge', async (payload) => {
     const startedAt = new Date().toISOString();
     const startMs = performance.now();

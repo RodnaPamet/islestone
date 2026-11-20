@@ -40,6 +40,7 @@ jest.mock('@/lib/server/tenant-context.server', () => ({ getTenantServerContext:
 
 import SettingsPage from '@/app/t/[tenantSlug]/(app)/settings/page';
 import LabelsSettingsPage from '@/app/t/[tenantSlug]/(app)/settings/labels/page';
+import NotificationSettingsPage from '@/app/t/[tenantSlug]/(app)/settings/notifications/page';
 import ProjectsSettingsPage from '@/app/t/[tenantSlug]/(app)/settings/projects/page';
 import TeamWorkflowSettingsPage from '@/app/t/[tenantSlug]/(app)/settings/teams/[teamId]/page';
 import TeamsSettingsPage from '@/app/t/[tenantSlug]/(app)/settings/teams/page';
@@ -611,6 +612,7 @@ describe('the server pages', () => {
         ['Work item types', () => WorkItemTypesSettingsPage({ params })],
         ['Labels', () => LabelsSettingsPage({ params })],
         ['Projects', () => ProjectsSettingsPage({ params })],
+        ['Notifications', () => NotificationSettingsPage({ params })],
     ] as const;
 
     beforeEach(() => mockContext.mockReset());
@@ -636,6 +638,31 @@ describe('the server pages', () => {
         installFetch({ 'GET /teams': { body: [] }, 'GET /work-item-types': { body: [] }, 'GET /labels': { body: [] }, 'GET /projects': { body: [] } });
         renderWorkspace(await SettingsPage({ params }));
         expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
+    });
+
+    it('Settings → Notifications reads the settings for an Admin, and tells an Admin without admin.manage it is not theirs (2.7c)', async () => {
+        mockContext.mockResolvedValue(contextFor('ADMIN'));
+        const { calls } = installFetch({
+            'GET /notification-settings': {
+                body: {
+                    settings: { enabled: true, defaultFromName: 'Acme', defaultFromEmail: 'noreply@acme.test', bccMailbox: null, mutedInAppTypes: [] },
+                    stats: { last24h: { pending: 1, sent: 2, failed: 0 }, last7d: { pending: 1, sent: 9, failed: 0 }, last30d: { pending: 1, sent: 30, failed: 1 } },
+                    inAppTypes: [{ type: 'WORK_ITEM_ASSIGNED', title: 'You were assigned a work item', muted: false }],
+                },
+            },
+        });
+        const { unmount } = renderWorkspace(await NotificationSettingsPage({ params }));
+        expect(screen.getByRole('heading', { level: 1, name: 'Notifications' })).toBeInTheDocument();
+        expect(await screen.findByRole('switch', { name: 'Send email notifications' })).toBeChecked();
+        expect(calls.some((c) => c.path === '/notification-settings')).toBe(true);
+        unmount();
+
+        const admin = getPermissionsForRole('ADMIN');
+        mockContext.mockResolvedValue(contextFor('ADMIN', { ...admin, admin: { ...admin.admin, manage: false } }));
+        const second = installFetch({});
+        renderWorkspace(await NotificationSettingsPage({ params }));
+        expect(screen.getByText('Only workspace admins can see and change the notification settings.')).toBeInTheDocument();
+        expect(second.calls.some((c) => c.path === '/notification-settings')).toBe(false);
     });
 
     it('hands an Admin whose custom role withholds admin.manage a read-only Teams page', async () => {

@@ -62,6 +62,9 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/settings/labels': { href: '/settings', label: 'Settings' },
     '/settings/projects': { href: '/settings', label: 'Settings' },
     '/settings/project-templates': { href: '/settings', label: 'Settings' },
+    // Sub-phase 2.7c.
+    '/inbox/preferences': { href: '/inbox', label: 'Inbox' },
+    '/settings/notifications': { href: '/settings', label: 'Settings' },
 };
 
 /**

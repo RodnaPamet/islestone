@@ -9,9 +9,15 @@
 //  sibling); the BCC column is `bccMailbox` (was `complianceMailbox`) and the
 //  bell's text is `body` (was `message`, a word ADR 0006 bans here);
 //  `defaultFromName` defaults to "Islestone". `ReminderHistory` is not
-//  ported (compliance evidence), and `UserNotificationPreference` waits for
-//  sub-phase 2.7. Row-level security, grants and the system-user CHECKs are
-//  in migration `20261119150000_notifications_and_system_user`.
+//  ported (compliance evidence). Row-level security, grants and the
+//  system-user CHECKs are in migration
+//  `20261119150000_notifications_and_system_user`.
+//
+//  Sub-phase 2.7c (owner decisions 132 to 136) adds the Inbox's columns on
+//  `Notification` (`readAt`, `archivedAt` for Done, `workItemId`) and
+//  `NotificationPreference`, one row per member and type; inflect's unused
+//  `UserNotificationPreference` was read as a pattern only. Migration
+//  `20261204120200_inbox_and_preferences`.
 // ─────────────────────────────────────────────────────────────────
 
 /// An in-app notification: one row per recipient, shown by the bell and
@@ -19,32 +25,77 @@
 /// scopes it to the workspace, and `NotificationRepository` adds the user
 /// predicate (tests/integration/notification-per-user-scope.test.ts).
 model Notification {
-  id        String           @id @default(cuid())
-  tenantId  String
-  userId    String
-  type      NotificationType @default(GENERAL)
+  id         String           @id @default(cuid())
+  tenantId   String
+  userId     String
+  type       NotificationType @default(GENERAL)
   /// Stored English at emit time (the bell cannot translate a stored row;
   /// sub-phase 2.7 decides whether to store keys instead).
-  title     String
+  title      String
   /// The notification's text (inflect-compliance's `message`; ADR 0006 bans
   /// "Message" as a name for a Notification).
-  body      String
-  read      Boolean          @default(false)
-  linkUrl   String?
+  body       String
+  read       Boolean          @default(false)
+  /// When the member last marked it read (2.7c); NULL for an unread row and
+  /// for rows read before the column existed. The purge counts 180 days from
+  /// it (from `createdAt` when NULL; owner decision 135).
+  readAt     DateTime?
+  /// When the member marked it Done (2.7c, ADR 0006: the Inbox's archive
+  /// verb). NULL is in the Inbox; the purge deletes a Done row 90 days after
+  /// this (owner decision 135).
+  archivedAt DateTime?
+  /// The work item it is about (2.7c), for the digest's visibility re-check.
+  /// `(workItemId, tenantId)` → `WorkItem(id, tenantId)`, `ON DELETE SET NULL
+  /// ("workItemId")` in SQL: a purged item leaves the row and its link. NULL
+  /// for intake bells and rows written before the column existed.
+  workItemId String?
+  linkUrl    String?
   /// Optional idempotency key for job-generated notifications. Mirrors
   /// `NotificationOutbox.dedupeKey` — a unique key shaped
   /// `{tenantId}:{type}:{entityId}:{userId}:{YYYY-MM-DD}` so a job that
   /// re-runs (retry, redeploy) within the same UTC day trips the unique index
   /// instead of creating a duplicate. NULL for interactive writers.
-  dedupeKey String?          @unique
-  createdAt DateTime         @default(now())
+  dedupeKey  String?          @unique
+  createdAt  DateTime         @default(now())
   /// Cascades: a workspace purge (8.3) and a person's erasure take the bell
   /// rows with them.
-  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workItem   WorkItem?        @relation(fields: [workItemId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
 
   /// `listMine` orders by `createdAt desc` within one user's rows.
   @@index([tenantId, userId, createdAt])
+  /// The Inbox's tabs: Unread and All are `archivedAt IS NULL`, Done is not.
+  @@index([tenantId, userId, archivedAt, createdAt])
+  /// The FK, and the digest's join to the item.
+  @@index([tenantId, workItemId])
+  /// The purge's two passes (owner decision 135).
+  @@index([tenantId, archivedAt])
+  @@index([tenantId, read, readAt])
+}
+
+/// A member's choice for one notification type (sub-phase 2.7c, owner
+/// decision 132): the bell on or off, and email off, at once or in the daily
+/// digest. No row means the type's default (`PREFERENCE_DEFAULTS` in
+/// `src/lib/notifications/preferences.ts`). The workspace's
+/// `TenantNotificationSettings` is the ceiling: a member's choice only
+/// narrows it. `(tenantId, userId)` → `TenantMembership`, cascade: a removed
+/// member's preferences go with the membership.
+model NotificationPreference {
+  tenantId      String
+  userId        String
+  type          NotificationType
+  inApp         Boolean          @default(true)
+  /// IMMEDIATE only for the types in `IMMEDIATE_EMAIL_TYPES`; the usecase
+  /// refuses it elsewhere.
+  emailDelivery EmailDelivery    @default(OFF)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  membership TenantMembership @relation(fields: [tenantId, userId], references: [tenantId, userId], onDelete: Cascade)
+
+  @@id([tenantId, userId, type])
 }
 
 /// One outbound email, written in the transaction of the event that caused

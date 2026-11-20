@@ -4,9 +4,10 @@
  *
  *   - `buildWorkItemAssignedEmail`: subject and copy, with and without the item
  *     key and the assigner.
- *   - `buildDueDigestEmail`: the two audiences' copy (an assignee's digest
- *     claims the items are theirs; an admin's says they are unassigned and why
- *     the admin is reading it), singular and plural, urgency groups in order.
+ *   - `buildWorkItemWaitingOnEmail` (2.7c): who set it, the item, the link.
+ *   - `buildNotificationDigestEmail` (2.7c): the subject counts both sections,
+ *     due groups in order (overdue, today, soon), the bell copy listed, the
+ *     "and N more" lines, the Inbox and preferences links.
  *   - Links (inflect #4130): a relative href resolves against nothing in a mail
  *     client, so every href in the HTML and every app path in the text is
  *     asserted absolute against `NEXT_PUBLIC_APP_URL` — one relative link left
@@ -19,11 +20,12 @@
  * react-email templates (the compliance templates are not ported); the
  * escaping case is new.
  */
-import type { DueItem } from '@/app-layer/jobs/types';
 import {
-    buildDueDigestEmail,
+    buildNotificationDigestEmail,
     buildWorkItemAssignedEmail,
+    buildWorkItemWaitingOnEmail,
     type EmailTemplateResult,
+    type NotificationDigestPayload,
 } from '@/app-layer/notifications/templates';
 
 const ORIGIN = 'https://app.example.test';
@@ -63,15 +65,17 @@ const assigned = {
     linkPath: '/t/acme/work-items/wi-1',
 };
 
-const item = (over: Partial<DueItem> = {}): DueItem => ({
-    entityType: 'WORK_ITEM',
-    entityId: 'wi-1',
-    tenantId: 'tenant-1',
-    name: 'Rotate the certificates',
-    reason: 'Due in 2 day(s)',
-    urgency: 'URGENT',
-    dueDate: '2026-10-01T00:00:00.000Z',
-    daysRemaining: 2,
+const digest = (over: Partial<NotificationDigestPayload> = {}): NotificationDigestPayload => ({
+    recipientName: 'Dana',
+    tenantSlug: 'acme',
+    due: [
+        { key: 'ISL-3', title: 'Soon one', dueDate: '2026-10-05', group: 'SOON', waitingOnYou: false, linkPath: '/t/acme/work-items/w3' },
+        { key: 'ISL-1', title: 'Overdue one', dueDate: '2026-09-28', group: 'OVERDUE', waitingOnYou: true, linkPath: '/t/acme/work-items/w1' },
+        { key: 'ISL-2', title: 'Today one', dueDate: '2026-10-01', group: 'TODAY', waitingOnYou: false, linkPath: '/t/acme/work-items/w2' },
+    ],
+    moreDue: 0,
+    notifications: [{ title: 'Watched work item updated', body: 'ISL-9 "Ship it": commented', linkPath: '/t/acme/work-items/w9' }],
+    moreNotifications: 0,
     ...over,
 });
 
@@ -104,63 +108,61 @@ describe('buildWorkItemAssignedEmail', () => {
     });
 });
 
-describe('buildDueDigestEmail', () => {
-    it("an assignee's digest says the items are theirs", async () => {
-        const email = await buildDueDigestEmail({
-            recipientName: 'Dana',
-            tenantSlug: 'acme',
-            items: [item(), item({ entityId: 'wi-2', name: 'Renew the domain' })],
-            audience: 'OWNER',
-        });
-        expect(email.subject).toBe('2 work items due');
-        expect(email.bodyText).toContain('You have 2 work items that need your attention:');
-        expect(email.bodyText).not.toContain('no assignee');
+describe('buildWorkItemWaitingOnEmail', () => {
+    const waiting = { recipientName: 'Ana', setterName: 'Bob Lee', workItemTitle: 'Approve the plan', workItemKey: 'ISL-7', linkPath: '/t/acme/work-items/w7' };
+
+    it('names the item in the subject and who set it in the body', async () => {
+        const email = await buildWorkItemWaitingOnEmail(waiting);
+        expect(email.subject).toBe('Waiting on you: [ISL-7] Approve the plan');
+        expect(email.bodyText).toContain('Bob Lee marked a work item as waiting on you:');
+        expect(email.bodyHtml).toContain('A work item is waiting on you');
     });
 
-    it("an admin's digest says the items are unassigned and why the admin reads it", async () => {
-        const email = await buildDueDigestEmail({
-            recipientName: 'Owner',
-            tenantSlug: 'acme',
-            items: [item()],
-            audience: 'TENANT_ADMIN',
-        });
-        expect(email.subject).toBe('1 unassigned work item needs an assignee');
-        expect(email.bodyText).toContain('1 work item in this workspace has no assignee.');
-        expect(email.bodyText).toContain('not because these items are assigned to you');
-        expect(email.bodyText).not.toContain('You have');
+    it('reads without a setter', async () => {
+        const email = await buildWorkItemWaitingOnEmail({ ...waiting, setterName: undefined });
+        expect(email.bodyText).toContain('A work item is now waiting on you:');
     });
 
-    it('marks an overdue digest in the subject, and groups overdue before urgent before upcoming', async () => {
-        const email = await buildDueDigestEmail({
-            recipientName: 'Dana',
-            tenantSlug: 'acme',
-            items: [
-                item({ entityId: 'u', name: 'Upcoming one', urgency: 'UPCOMING' }),
-                item({ entityId: 'o', name: 'Overdue one', urgency: 'OVERDUE', daysRemaining: -1 }),
-                item({ entityId: 'r', name: 'Urgent one', urgency: 'URGENT' }),
-            ],
-            audience: 'OWNER',
-        });
-        expect(email.subject.startsWith('Overdue: ')).toBe(true);
+    it('every link is absolute and points at the item', async () => {
+        expectAllAbsolute(await buildWorkItemWaitingOnEmail(waiting), `${ORIGIN}/t/acme/work-items/w7`);
+    });
+});
+
+describe('buildNotificationDigestEmail', () => {
+    it('counts both sections in the subject', async () => {
+        expect((await buildNotificationDigestEmail(digest())).subject).toBe('Your daily digest: 3 work items due, 1 notification');
+        expect((await buildNotificationDigestEmail(digest({ due: [] }))).subject).toBe('Your daily digest: 1 notification');
+        expect((await buildNotificationDigestEmail(digest({ notifications: [], moreDue: 2 }))).subject).toBe('Your daily digest: 5 work items due');
+    });
+
+    it('groups due items overdue, then today, then soon, and marks the ones waiting on the reader', async () => {
+        const email = await buildNotificationDigestEmail(digest());
         const at = (s: string) => email.bodyText.indexOf(s);
         expect(at('Overdue one')).toBeGreaterThan(-1);
-        expect(at('Overdue one')).toBeLessThan(at('Urgent one'));
-        expect(at('Urgent one')).toBeLessThan(at('Upcoming one'));
-        expect(email.bodyText).toContain('1 overdue, 1 due soon, 1 upcoming');
+        expect(at('Overdue one')).toBeLessThan(at('Today one'));
+        expect(at('Today one')).toBeLessThan(at('Soon one'));
+        expect(email.bodyText).toContain('[ISL-1] Overdue one — due 2026-09-28 (waiting on you)');
+        expect(email.bodyText).not.toContain('Today one — due 2026-10-01 (waiting on you)');
     });
 
-    it('every link is absolute and points at the workspace', async () => {
-        const email = await buildDueDigestEmail({ recipientName: 'Dana', tenantSlug: 'acme', items: [item()], audience: 'OWNER' });
-        expectAllAbsolute(email, `${ORIGIN}/t/acme`);
+    it('lists the bell copy and counts what is past the cap', async () => {
+        const email = await buildNotificationDigestEmail(digest({ moreDue: 4, moreNotifications: 7 }));
+        expect(email.bodyText).toContain('Watched work item updated — ISL-9 "Ship it": commented');
+        expect(email.bodyText).toContain('And 4 more.');
+        expect(email.bodyText).toContain('And 7 more in your Inbox.');
     });
 
-    it('escapes an item name that carries markup', async () => {
-        const email = await buildDueDigestEmail({
-            recipientName: 'Dana',
-            tenantSlug: 'acme',
-            items: [item({ name: '<script>alert(1)</script>' })],
-            audience: 'OWNER',
-        });
+    it('every link is absolute: the items, the notifications, the Inbox and the preferences', async () => {
+        const email = await buildNotificationDigestEmail(digest());
+        expectAllAbsolute(email, `${ORIGIN}/t/acme/`);
+        expect(email.bodyText).toContain(`${ORIGIN}/t/acme/inbox`);
+        expect(email.bodyText).toContain(`${ORIGIN}/t/acme/inbox/preferences`);
+    });
+
+    it('escapes a title that carries markup', async () => {
+        const email = await buildNotificationDigestEmail(
+            digest({ due: [{ key: 'ISL-1', title: '<script>alert(1)</script>', dueDate: '2026-10-01', group: 'TODAY', waitingOnYou: false, linkPath: '/t/acme/work-items/w1' }] }),
+        );
         expect(email.bodyHtml).not.toContain('<script>alert(1)');
     });
 });

@@ -18,9 +18,10 @@
  * tenant-liveness check is owed.
  *
  * (That history is inflect-compliance's.) In Islestone the class has one member
- * today, `digest-dispatcher.ts`; the jobs that chose their own tenants there
- * (the compliance digest, retention notices, review escalation) are not ported,
- * and 2.2's due reminders join the census when they land.
+ * today, the daily digest (`jobs/notification-digest.ts`, 2.7c), which replaced
+ * 1.6's unwired `digest-dispatcher.ts`; the jobs that chose their own tenants
+ * there (the compliance digest, retention notices, review escalation) are not
+ * ported, and 2.2's due reminders resolve no address.
  *
  * WHAT IT CANNOT DO, said plainly: it cannot decide whether a NEW file belongs in
  * the class. "Chooses its own tenants" is a judgement about intent, and 11 more
@@ -146,7 +147,7 @@ describe('cross-tenant recipient resolution requires a live tenant', () => {
      */
     it('the class has exactly the members we have classified', () => {
         expect(files.sort()).toEqual([
-            'src/app-layer/notifications/digest-dispatcher.ts',
+            'src/app-layer/jobs/notification-digest.ts',
         ]);
     });
 

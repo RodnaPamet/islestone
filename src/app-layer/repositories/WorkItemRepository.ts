@@ -1373,6 +1373,53 @@ export class WorkItemRepository {
         });
     }
 
+    /**
+     * The daily digest's due items (2.7c, owner decision 133): open, live
+     * items in live, unarchived projects (the job form; the job then narrows
+     * each member to their own project visibility) assigned to, or waiting
+     * on, one of `userIds`, due on or before `dueOnOrBefore` (overdue
+     * included), earliest first.
+     */
+    static async digestDueItems(db: PrismaTx, tenantId: string, userIds: readonly string[], dueOnOrBefore: Date, take: number) {
+        if (userIds.length === 0) return [];
+        return db.workItem.findMany({
+            where: {
+                tenantId,
+                deletedAt: null,
+                stateCategory: OPEN_CATEGORY_FILTER,
+                dueDate: { lte: dueOnOrBefore },
+                ...JOB_PROJECT_VISIBILITY_WHERE,
+                OR: [{ assigneeId: { in: [...userIds] } }, { waitingOnUserId: { in: [...userIds] } }],
+            },
+            orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+            take,
+            select: {
+                id: true,
+                title: true,
+                number: true,
+                dueDate: true,
+                projectId: true,
+                assigneeId: true,
+                waitingOnUserId: true,
+                project: { select: { keyPrefix: true } },
+            },
+        });
+    }
+
+    /**
+     * Of `ids`, the live items in live, unarchived projects, with their
+     * project (the digest's re-check of a bell row's item, 2.7c; the job form,
+     * narrowed per member by the caller).
+     */
+    static async liveForDigest(db: PrismaTx, tenantId: string, ids: readonly string[]) {
+        if (ids.length === 0) return [];
+        return db.workItem.findMany({
+            where: { tenantId, id: { in: [...ids] }, deletedAt: null, ...JOB_PROJECT_VISIBILITY_WHERE },
+            take: ids.length,
+            select: { id: true, projectId: true },
+        });
+    }
+
     // ── Rebalance ────────────────────────────────────────────────────
 
     /** Projects whose items carry a key past the bound. */

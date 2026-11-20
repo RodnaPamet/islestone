@@ -63,6 +63,7 @@ describe('createWatcherNotifications', () => {
     let db: {
         notification: { createMany: jest.Mock };
         tenantNotificationSettings: { findUnique: jest.Mock };
+        notificationPreference: { findMany: jest.Mock };
     };
 
     beforeEach(() => {
@@ -70,6 +71,7 @@ describe('createWatcherNotifications', () => {
         db = {
             notification: { createMany: createManyMock },
             tenantNotificationSettings: { findUnique: jest.fn().mockResolvedValue(null) },
+            notificationPreference: { findMany: jest.fn().mockResolvedValue([]) },
         };
     });
 
@@ -101,6 +103,16 @@ describe('createWatcherNotifications', () => {
         expect(createManyMock).not.toHaveBeenCalled();
     });
 
+    it('leaves out a watcher who switched watch updates off (2.7c), in one batch read', async () => {
+        db.notificationPreference.findMany.mockResolvedValue([{ userId: 'w2', inApp: false, emailDelivery: 'OFF' }]);
+        createManyMock.mockResolvedValue({ count: 1 });
+        await createWatcherNotifications(db as never, ['w1', 'w2'], activity());
+        expect(db.notificationPreference.findMany).toHaveBeenCalledTimes(1);
+        const data = createManyMock.mock.calls[0][0].data as Array<{ userId: string; workItemId: string }>;
+        expect(data.map((r) => r.userId)).toEqual(['w1']);
+        expect(data[0]!.workItemId).toBe(activity().workItemId);
+    });
+
     it('is a no-op for an empty watcher set (no createMany, created 0)', async () => {
         const result = await createWatcherNotifications(db as never, [], activity());
         expect(createManyMock).not.toHaveBeenCalled();
@@ -127,6 +139,7 @@ describe('createWatcherNotifications — SSE publish', () => {
     let db: {
         notification: { createMany: jest.Mock; findMany: jest.Mock };
         tenantNotificationSettings: { findUnique: jest.Mock };
+        notificationPreference: { findMany: jest.Mock };
     };
 
     beforeEach(() => {
@@ -135,6 +148,7 @@ describe('createWatcherNotifications — SSE publish', () => {
         db = {
             notification: { createMany: createManyMock, findMany: insertedRows() },
             tenantNotificationSettings: { findUnique: jest.fn().mockResolvedValue(null) },
+            notificationPreference: { findMany: jest.fn().mockResolvedValue([]) },
         };
     });
 

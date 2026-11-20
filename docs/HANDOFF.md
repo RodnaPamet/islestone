@@ -868,4 +868,37 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      (Prisma's `contains` passed them through as wildcards).
    - UI: the command palette's entity search is on; its placeholder names work items and
      projects.
-   2.7c (the Inbox, preferences and digests) is next; 2.7f replaces the two `simple` indexes.
+   2.7b merged as #57; 2.7f replaces the two `simple` indexes. **2.7c (the Inbox, preferences and
+   the digest, decisions 132 to 136) is built** on branch `wt/p27c`, on top of 2.7b, per
+   `docs/notifications.md` ("The Inbox", "Preferences", "The daily digest", "Retention") and
+   `PROVENANCE.md`, "Inbox, preferences and the digest":
+   - Schema: `Notification.readAt`, `archivedAt` (Done), `workItemId` (`ON DELETE SET NULL
+     ("workItemId")`); `NotificationPreference` (per member and type, `inApp`, `emailDelivery`
+     `OFF`/`IMMEDIATE`/`DAILY`, a CHECK keeping IMMEDIATE to assigned and waiting on, cascading with
+     the membership; RLS, grants, two-tenant test); `EmailNotificationType` gains
+     `WORK_ITEM_WAITING_ON` and `NOTIFICATION_DIGEST`, each in a migration of its own. Migrations
+     `20261204120000_email_type_waiting_on`, `20261204120100_email_type_notification_digest`,
+     `20261204120200_inbox_and_preferences`. The drift check passes, residue unchanged.
+   - Rules: one pure resolution (`src/lib/notifications/preferences.ts`): the member's choice or
+     the type's default, under the workspace's settings, which only narrow. Every bell writer asks
+     `isInAppTypeEnabled`, now per recipient in one batch; the immediate emails (assigned, and the
+     new waiting-on email) ask `emailDeliveryFor`. DAILY needs the bell on, except for due dates.
+   - API: `GET /notifications?view=unread|all|done` (cursor pages, `unreadCount`; the bell's call
+     without `view` unchanged but leaving Done out), `PATCH /notifications/:id { read?, done? }`,
+     `POST /notifications/bulk`, `GET`/`PUT /notification-preferences` (audited). No permission key:
+     each member's own rows.
+   - Jobs: `notification-digest` (08:10 in `NOTIFICATIONS_TZ`; re-checks liveness, visibility and
+     `intake.view`; never a description or comment; deduplicated per address and day) and
+     `notification-purge` (03:10 UTC; Done after 90 days, read after 180, unread kept). 1.6's due
+     digest had no caller and no schedule: `digest-dispatcher.ts`, its template and tests are
+     removed, `DUE_DIGEST` stays in the enum with a `never` payload, nothing to retire from the
+     scheduler.
+   - UI: the Inbox page (Unread, All, Done tabs, a kind filter, read/unread, Done through the undo
+     toast, "Mark all read", J/K/E/U within the list), Inbox → Notification preferences (the grid,
+     caps shown with their reason), Settings → Notifications over 1.6's API (admins only, asked on
+     the server).
+   - Not built, as the map planned but the brief did not ask: `Notification.actorUserId` and an
+     actor avatar per row, opening a row in the detail sheet (a row follows its link).
+   The brief cited decisions 135 (Inbox), 136 (retention) and 139 (Settings → Notifications); in
+   this file they are 134, 135 and 136 (139 is the recipient-list copy rule). The build follows the
+   decisions' text.

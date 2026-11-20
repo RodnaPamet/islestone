@@ -11,22 +11,19 @@ export {
     getTenantNotificationSettings,
     updateTenantNotificationSettings,
     isNotificationsEnabled,
+    isInAppTypeEnabled,
+    memberDeliveries,
+    emailDeliveryFor,
     getOutboxStats,
     type TenantNotificationSettingsData,
     type OutboxStats,
 } from './settings';
 export {
     buildWorkItemAssignedEmail,
-    buildDueDigestEmail,
+    buildWorkItemWaitingOnEmail,
+    buildNotificationDigestEmail,
     type EmailTemplateResult,
     type WorkItemAssignedPayload,
-    type DueDigestPayload,
-    type DigestAudience,
+    type WorkItemWaitingOnPayload,
+    type NotificationDigestPayload,
 } from './templates';
-export {
-    dispatchDigest,
-    buildDigestDedupeKey,
-    type DigestCategory,
-    type DispatchDigestOptions,
-    type DispatchDigestResult,
-} from './digest-dispatcher';

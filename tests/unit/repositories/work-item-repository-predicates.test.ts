@@ -120,6 +120,10 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
         const { db, calls } = recorder();
         await WorkItemRepository.listForFanOut(db, ctx, ['w1']);
         await WorkItemRepository.dueCandidates(db, 'tenant-1', [new Date()], null, 10);
+        // The daily digest's two reads (2.7c).
+        await WorkItemRepository.digestDueItems(db, 'tenant-1', ['u-1'], new Date(), 10);
+        await WorkItemRepository.liveForDigest(db, 'tenant-1', ['w1']);
+        expect(calls).toHaveLength(4);
         for (const call of calls) {
             expect(call.args.where).toMatchObject({ tenantId: 'tenant-1', deletedAt: null, project: { deletedAt: null, archivedAt: null } });
         }

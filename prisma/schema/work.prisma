@@ -275,6 +275,7 @@ model WorkItem {
   watchers          WorkItemWatcher[]
   links             WorkItemLink[]
   customFieldValues CustomFieldValue[]
+  notifications     Notification[]
 
   @@unique([tenantId, projectId, number])
   @@unique([id, tenantId])
