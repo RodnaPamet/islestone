@@ -92,7 +92,7 @@ export function SettingsOverview({ title, affordances }: { title: string; afford
                                 <p className="text-sm text-content-muted">{t(`sections.${key}.body`)}</p>
                                 {counts[key] !== undefined && (
                                     <p className="text-sm" data-testid={`settings-count-${key}`}>
-                                        {t('sections.count', { count: counts[key] })}
+                                        {counts[key] === 0 ? t('sections.countNone') : t('sections.count', { count: counts[key] ?? 0 })}
                                     </p>
                                 )}
                                 <Link href={tenantHref(SECTION_PATH[key])} className="text-sm text-content-emphasis underline">

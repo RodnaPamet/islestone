@@ -582,8 +582,7 @@
     "placeholders": {
         "title": "Not here yet",
         "inbox": "Your notifications will be listed here. Until then, the bell in the top bar shows the latest.",
-        "views": "Saved views of work items, with their filters, grouping and layout, arrive in a later release.",
-        "settings": "The workspace's settings pages arrive in a later release."
+        "views": "Saved views of work items, with their filters, grouping and layout, arrive in a later release."
     },
     "workItems": {
         "list": {
@@ -886,7 +885,8 @@
                 "body": "Each project belongs to a team and gives its work items their keys.",
                 "open": "Manage projects"
             },
-            "count": "{count, plural, =0 {None yet} one {# in this workspace} other {# in this workspace}}"
+            "count": "{count} in this workspace",
+            "countNone": "None yet"
         },
         "firstProject": {
             "title": "Your first project",
