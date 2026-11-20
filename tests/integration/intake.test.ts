@@ -128,8 +128,8 @@ describeFn('intake', () => {
             const form = await createIntakeForm(owner, { projectId, name: 'Bug <i>report</i>', definition: definition() });
             formId = form.id;
             expect(form).toMatchObject({ name: 'Bug report', published: true, access: 'MEMBERS', version: 1, definitionVersion: 1 });
-            expect(form.definition.intro).not.toMatch(/<b>/);
-            expect(form.definition.fields[1]!.label).not.toMatch(/<script>/);
+            expect(form.definition.intro).not.toMatch(/<b>/i);
+            expect(form.definition.fields[1]!.label.toLowerCase()).not.toContain('<script');
             await expect(
                 createIntakeForm(owner, { projectId, name: 'Wrong', definition: { fields: [{ id: 'f1', kind: 'DATE', label: 'When', required: false, customFieldId: stageFieldId }] } }),
             ).rejects.toMatchObject({ status: 400 });
