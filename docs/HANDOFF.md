@@ -605,3 +605,30 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    creating teams, states, types, labels and projects follows as its own pull request;
    the mirrored filter select's no-op URL write is fixed upstream in inflect-compliance
    and re-pinned here.
+
+   **2.4 (saved views and custom fields) has landed** on branch `wt/p24` (not pushed), by
+   `docs/porting/maps/2.4.md` (`PROVENANCE.md`, "Custom fields and saved views";
+   `docs/work-items.md`, "Custom fields and saved views (2.4)"):
+   - Schema: `CustomField`, `CustomFieldOption`, `CustomFieldValue` (one typed column per
+     type, CHECKed; TEXT and URL plaintext by ADR 0002 §7; `projectId` under both composite
+     FKs so a move must drop values), `SavedView`, enums `CustomFieldType`, `ViewLayout`,
+     `SavedViewVisibility`; `WorkItem.priorityRank` (trigger-written) and three sort indexes.
+     Migration `20261120120000_saved_views_and_custom_fields`, RLS and grants on all four
+     tables, two-tenant tests in `work-tables-isolation.test.ts`.
+   - API: field definitions under `/projects/:id/custom-fields` (`projects.edit`), a value at
+     `PUT /work-items/:id/custom-fields/:fieldId` (`work_items.edit`, the version increases,
+     `If-Match` optional), `customFields` on create and on every row, `cf.<fieldId>` list
+     filters, the sorts `created|due|priority|key|cf:<id>` with `dir` (multi-column cursor,
+     nulls last), saved views at `/views` (`views.*`).
+   - UI: the field manager (project page, Settings → Projects), field editors on the detail,
+     field columns in the column gear, field filters, field swimlanes, the Sort picker, the
+     views menu (apply, save, share, update, rename, delete with undo) and the Views page
+     (`?view=<id>` links), which replaced 1.7's placeholder.
+   - Teable `packages/` moved to Adopted (pattern only, pinned at `bd8cfc0`, licence re-read);
+     Kaneo got a 2.4 row. Nothing was copied.
+   Open for the owner (the map's "Open questions", each with the default applied): who
+   defines fields (`projects.edit`, or `admin.manage`); who changes a shared view (its
+   creator, an admin deletes for moderation); checkbox stores only `true`; field types never
+   change; one person per person field; relative date filters (need a workspace time zone
+   and week start); hard delete of a field; workspace-wide fields; VIEWER saving personal
+   views (needs `views.create` for VIEWER).

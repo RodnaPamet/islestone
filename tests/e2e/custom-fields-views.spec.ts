@@ -1,7 +1,7 @@
 /**
  * Custom fields and saved views end to end (sub-phase 2.4), on an isolated
  * workspace: define a select field in the project's field manager, set its
- * value on an item in the detail sheet, filter the list by it (the list
+ * value on an item's page, filter the list by it (the list
  * keeps only that item), save the state as a view, and reload it from the
  * Views page with the filter applied again.
  *
@@ -46,10 +46,10 @@ test.describe('custom fields and saved views', () => {
         await manager.getByRole('button', { name: 'Done' }).click();
         await expect(manager).toBeHidden();
 
-        // Set the value on one item, in the sheet.
-        await table.getByText('Tagged item').click();
-        const sheet = page.getByTestId('work-item-sheet-body');
-        await sheet.getByRole('combobox', { name: 'Stage' }).click();
+        // Set the value on one item, on its page (the title links there).
+        await table.getByRole('link', { name: 'Tagged item' }).click();
+        await page.waitForURL(new RegExp(`/t/${slug}/work-items/CFV-1$`));
+        await page.getByRole('group', { name: 'Properties' }).getByRole('combobox', { name: 'Stage' }).click();
         await page.getByRole('option', { name: 'Alpha', exact: true }).click();
         await expect
             .poll(async () => {
@@ -57,11 +57,10 @@ test.describe('custom fields and saved views', () => {
                 return Object.keys(((await res.json()) as { item: { customFields: Record<string, unknown> } }).item.customFields).length;
             })
             .toBe(1);
-        await page.keyboard.press('Escape');
-        await expect(sheet).toBeHidden();
 
         // Filter by the field: only the tagged item stays.
-        await page.reload();
+        await page.goto(`/t/${slug}/projects/CFV`);
+        await expect(table.getByText('Plain item')).toBeVisible();
         await page.getByRole('button', { name: /^Filter/ }).first().click();
         await page.getByRole('option', { name: 'Stage' }).click();
         await page.getByRole('option', { name: 'Alpha' }).click();
