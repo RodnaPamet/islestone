@@ -38,11 +38,13 @@ import type { WorkItemRow } from '@/lib/work-items/types';
 
 import { PriorityBadge, StateBadge } from './badges';
 import { useListOrder } from './data/list-order';
+import { useProjectCustomFields } from './data/use-custom-fields';
 import { useWorkConfig } from './data/use-work-config';
 import { useWorkItem, useWorkItemCollab } from './data/use-work-item-collab';
 import { toRow, useWorkItemMutations } from './data/use-work-item-mutations';
 import { ActivityPanel, CommentsPanel, LinksPanel, RelationsPanel, WatchersPanel } from './detail/collab-panels';
 import { SubItemsPanel } from './detail/SubItemsPanel';
+import { CustomFieldInput } from './fields/CustomFieldInput';
 import { AssigneePicker, LabelsPicker, PriorityPicker, StatePicker, TypePicker } from './pickers';
 
 export type DetailTab = 'overview' | 'sub-items' | 'links' | 'comments' | 'activity';
@@ -82,6 +84,7 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
     const mutations = useWorkItemMutations();
     const collab = useWorkItemCollab(workItemId);
     const { data: item, error, isLoading } = useWorkItem(workItemId);
+    const projectFields = useProjectCustomFields(item?.projectId);
     const [tab, setTab] = useState<DetailTab>('overview');
     const now = useHydratedNow();
     const order = useListOrder(tenantSlug);
@@ -189,6 +192,20 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                 />
             </PropertyRow>
             {overdue && <p className="text-xs text-content-error">{t('detail.overdue')}</p>}
+            {/* Sub-phase 2.4: the item's project's live custom fields. */}
+            {projectFields
+                .filter((f) => !f.archived && f.projectId === item.projectId)
+                .map((field) => (
+                    <PropertyRow key={field.id} label={field.name} htmlFor={`cf-${field.id}-${item.id}`}>
+                        <CustomFieldInput
+                            id={`cf-${field.id}-${item.id}`}
+                            field={field}
+                            value={item.customFields?.[field.id]}
+                            disabled={!perms.edit}
+                            onChange={(value) => void mutations.setCustomField(row, field.id, value)}
+                        />
+                    </PropertyRow>
+                ))}
         </div>
     );
 

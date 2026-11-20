@@ -581,8 +581,7 @@
     },
     "placeholders": {
         "title": "Not here yet",
-        "inbox": "Your notifications will be listed here. Until then, the bell in the top bar shows the latest.",
-        "views": "Saved views of work items, with their filters, grouping and layout, arrive in a later release."
+        "inbox": "Your notifications will be listed here. Until then, the bell in the top bar shows the latest."
     },
     "workItems": {
         "list": {
@@ -656,7 +655,10 @@
             "state": "State",
             "priority": "Priority",
             "assignee": "Assignee",
-            "dueDate": "Due"
+            "dueDate": "Due",
+            "created": "Created",
+            "updated": "Updated",
+            "type": "Type"
         },
         "fields": {
             "title": "Title",
@@ -859,6 +861,66 @@
             "labelRemoved": "Label removed",
             "relationRemoved": "Relation removed",
             "linkRemoved": "Link removed"
+        },
+        "sort": {
+            "choose": "Sort by",
+            "manual": "Manual order",
+            "updated": "Recently updated",
+            "created": "Newest",
+            "due": "Due date",
+            "priority": "Priority",
+            "key": "Key"
+        },
+        "customFields": {
+            "manage": "Fields",
+            "title": "Fields of {project}",
+            "description": "Fields this project tracks on its work items. Archive a field to hide it; its values are kept.",
+            "listHeading": "Fields",
+            "loading": "Loading fields…",
+            "empty": "This project has no fields yet.",
+            "createHeading": "New field",
+            "name": "Name",
+            "typeLabel": "Type",
+            "optionsLabel": "Options",
+            "optionsHint": "One option per line.",
+            "notEncrypted": "Text and URL values are not encrypted, so they can be filtered and sorted. Keep sensitive text in the description.",
+            "create": "Add field",
+            "done": "Done",
+            "fieldName": "Name of {name}",
+            "archived": "Archived",
+            "archive": "Archive",
+            "unarchive": "Unarchive",
+            "archiveField": "Archive {name}",
+            "unarchiveField": "Unarchive {name}",
+            "moveUp": "Up",
+            "moveDown": "Down",
+            "moveUpField": "Move {name} up",
+            "moveDownField": "Move {name} down",
+            "optionsOf": "Options of {name}",
+            "archiveOption": "Archive {name}",
+            "unarchiveOption": "Unarchive {name}",
+            "remove": "Remove",
+            "removeOption": "Remove {name}",
+            "newOptionFor": "New option for {name}",
+            "addOption": "Add option",
+            "optionDeleted": "Option {name} removed",
+            "undo": "Undo",
+            "failed": "The change was not saved.",
+            "noValue": "No value",
+            "hasValue": "Has a value",
+            "checked": "Checked",
+            "unchecked": "Unchecked",
+            "urlPlaceholder": "https://",
+            "type": {
+                "TEXT": "Text",
+                "NUMBER": "Number",
+                "SELECT": "Select",
+                "MULTI_SELECT": "Multi-select",
+                "DATE": "Date",
+                "PERSON": "Person",
+                "URL": "URL",
+                "CHECKBOX": "Checkbox"
+            }
         }
     },
     "settings": {
@@ -1038,6 +1100,48 @@
             "unarchivedToast": "Project {name} unarchived",
             "resource": "project",
             "resourcePlural": "projects"
+        }
+    },
+    "views": {
+        "menu": "Views",
+        "none": "No saved views yet",
+        "sharedName": "{name} (shared)",
+        "save": "Save view",
+        "update": "Update view",
+        "rename": "Rename view",
+        "delete": "Delete view",
+        "deleteView": "Delete view {name}",
+        "saveTitle": "Save view",
+        "renameTitle": "Rename view",
+        "name": "Name",
+        "nameRequired": "A view needs a name.",
+        "shareWithEveryone": "Share with everyone who can see this page",
+        "cancel": "Cancel",
+        "saveSubmit": "Save",
+        "saveChanges": "Save changes",
+        "deleted": "View {name} deleted",
+        "undo": "Undo",
+        "failed": "The view was not saved.",
+        "description": "Your views and the views shared with you. Open one to apply it.",
+        "truncated": "Showing the first 200 views.",
+        "loadFailed": "The views could not be loaded.",
+        "empty": "No saved views yet. Save one from the Work items page or a project.",
+        "resource": "view",
+        "resourcePlural": "views",
+        "scopeWorkspace": "All work items",
+        "shared": "Shared",
+        "personal": "Personal",
+        "col": {
+            "name": "Name",
+            "scope": "Page",
+            "layout": "Layout",
+            "visibility": "Shared with"
+        },
+        "layout": {
+            "LIST": "List",
+            "BOARD": "Board",
+            "TIMELINE": "Timeline",
+            "CALENDAR": "Calendar"
         }
     }
 }

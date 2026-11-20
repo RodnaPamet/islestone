@@ -92,7 +92,7 @@ export interface ApiSendOptions {
  * `ApiClientError`.
  */
 export async function apiSend<T = unknown>(
-    method: 'POST' | 'PATCH' | 'DELETE',
+    method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     url: string,
     body?: unknown,
     options: ApiSendOptions = {},

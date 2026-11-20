@@ -30,7 +30,11 @@ export interface WorkItemListFilters {
     parentId?: string;
     due?: string;
     q?: string;
-    order?: 'manual' | 'updated';
+    /** A named sort or `cf:<fieldId>` (2.4; `docs/pagination.md`). */
+    order?: string;
+    dir?: 'asc' | 'desc';
+    /** Custom-field conditions (2.4): field id → `<op>[:<operand>]`, sent as `cf.<id>`. */
+    customFields?: Record<string, string>;
 }
 
 export const LIST_FILTER_KEYS = [
@@ -48,6 +52,7 @@ export const LIST_FILTER_KEYS = [
     'due',
     'q',
     'order',
+    'dir',
 ] as const satisfies ReadonlyArray<keyof WorkItemListFilters>;
 
 /** Drop empty values, so `{ q: '' }` and `{}` are one cache key. */
@@ -57,6 +62,8 @@ export function normaliseFilters(filters: WorkItemListFilters): WorkItemListFilt
         const value = filters[key];
         if (typeof value === 'string' && value.trim() !== '') (out as Record<string, string>)[key] = value.trim();
     }
+    const cf = Object.entries(filters.customFields ?? {}).filter(([, v]) => typeof v === 'string' && v !== '');
+    if (cf.length) out.customFields = Object.fromEntries(cf.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
     return out;
 }
 
@@ -68,6 +75,7 @@ export function listQueryString(filters: WorkItemListFilters, extra: Record<stri
         const value = f[key];
         if (value) params.set(key, value);
     }
+    for (const [fieldId, value] of Object.entries(f.customFields ?? {})) params.set(`cf.${fieldId}`, value);
     for (const [key, value] of Object.entries(extra)) {
         if (value) params.set(key, value);
     }
@@ -101,7 +109,7 @@ export function rowBelongs(filters: WorkItemListFilters, row: WorkItemRow): 'yes
     ];
     if (checks.some((c) => c === false)) return 'no';
     // The watcher set is not on the row: a watch or unwatch revalidates the lists.
-    if (f.q || f.due || f.watching) return 'unknown';
+    if (f.q || f.due || f.watching || f.customFields) return 'unknown';
     return 'yes';
 }
 
@@ -111,7 +119,8 @@ export function compareSortKeys(a: string, b: string): number {
 }
 
 /** Where a row sits in a list of the given order. */
-export function compareRows(order: 'manual' | 'updated' | undefined, a: WorkItemRow, b: WorkItemRow): number {
+export function compareRows(order: string | undefined, a: WorkItemRow, b: WorkItemRow): number {
+    if (order && order !== 'manual' && order !== 'updated') return 0;
     if (order === 'updated') {
         return a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : compareSortKeys(b.id, a.id);
     }

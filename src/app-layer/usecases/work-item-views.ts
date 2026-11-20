@@ -23,10 +23,13 @@ import { runInTenantContext } from '@/lib/db-context';
 import type { WorkItemViewConfig } from '@/lib/work-items/types';
 
 /**
- * `projectId` (a project's page, 2.4) adds that project's live custom fields;
+ * `projectId` or `projectKeyPrefix` (a project's page, 2.4) adds that project's live custom fields;
  * a project the caller cannot see adds none (the page itself answers 404).
  */
-export async function getWorkItemViewConfig(ctx: RequestContext, opts: { projectId?: string } = {}): Promise<WorkItemViewConfig> {
+export async function getWorkItemViewConfig(
+    ctx: RequestContext,
+    opts: { projectId?: string; projectKeyPrefix?: string } = {},
+): Promise<WorkItemViewConfig> {
     assertCanReadWorkItems(ctx);
     assertCanReadWorkConfig(ctx);
     return runInTenantContext(ctx, async (db) => {
@@ -37,10 +40,8 @@ export async function getWorkItemViewConfig(ctx: RequestContext, opts: { project
             WorkItemTypeRepository.list(db, ctx),
             LabelRepository.list(db, ctx),
         ]);
-        const fields =
-            opts.projectId && projects.some((p) => p.id === opts.projectId)
-                ? await CustomFieldRepository.listFields(db, ctx, opts.projectId)
-                : [];
+        const fieldsOf = projects.find((p) => (opts.projectId && p.id === opts.projectId) || (opts.projectKeyPrefix && p.keyPrefix === opts.projectKeyPrefix));
+        const fields = fieldsOf ? await CustomFieldRepository.listFields(db, ctx, fieldsOf.id) : [];
         const states = await TeamRepository.liveStatesOfTeams(db, ctx, teams.map((t) => t.id));
         return {
             projects: projects.map((p) => ({

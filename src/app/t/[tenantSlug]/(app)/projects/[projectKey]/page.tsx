@@ -11,8 +11,8 @@ import { workItemPageContext } from '@/lib/server/work-item-pages.server';
  */
 export default async function ProjectPage({ params }: { params: Promise<{ tenantSlug: string; projectKey: string }> }) {
     const { tenantSlug, projectKey } = await params;
-    const { config } = await workItemPageContext(tenantSlug);
     const prefix = decodeURIComponent(projectKey).toUpperCase();
+    const { config, savedViews, workConfig } = await workItemPageContext(tenantSlug, { projectKeyPrefix: prefix });
     const project = config.projects.find((p) => p.keyPrefix === prefix);
     if (!project) notFound();
     return (
@@ -22,6 +22,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ tenant
                 title={project.name}
                 description={project.keyPrefix}
                 viewKey={`project:${project.id}`}
+                savedViews={savedViews}
+                manageCustomFields={workConfig.manageCustomFields && !project.archived}
             />
         </WorkConfigProvider>
     );

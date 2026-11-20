@@ -30,14 +30,38 @@
  */
 import { keyBetween } from '@/app-layer/domain/fractional-index';
 import { WORKFLOW_STATE_CATEGORIES } from '@/app-layer/domain/workflow-state';
-import type { ViewState, WorkflowStateCategory, WorkItemRow } from '@/lib/work-items/types';
+import type { ViewCustomField, ViewState, WorkflowStateCategory, WorkItemRow } from '@/lib/work-items/types';
 
-export type LaneBy = 'none' | 'assignee' | 'priority' | 'type' | 'label' | 'project';
+import { customFieldLaneKey } from '../fields/custom-field-format';
 
-export const LANE_BY_VALUES: readonly LaneBy[] = ['none', 'assignee', 'priority', 'type', 'label', 'project'];
+export type BuiltInLaneBy = 'none' | 'assignee' | 'priority' | 'type' | 'label' | 'project';
+
+/** A built-in grouping, or a custom field's (`cf:<fieldId>`, sub-phase 2.4). */
+export type LaneBy = BuiltInLaneBy | `cf:${string}`;
+
+export const LANE_BY_VALUES: readonly BuiltInLaneBy[] = ['none', 'assignee', 'priority', 'type', 'label', 'project'];
 
 /** Lanes whose value a drop may change. */
 export const MOVABLE_LANES: ReadonlySet<LaneBy> = new Set<LaneBy>(['none', 'assignee', 'priority', 'type']);
+
+/**
+ * Field types a board groups by (2.4): a select, a multi-select (by its
+ * first option in option order, as labels), a person, a checkbox. A drop
+ * between lanes sets the value for every one but the multi-select, whose
+ * lanes are fixed as label lanes are.
+ */
+export function isLaneableField(type: string): boolean {
+    return type === 'SELECT' || type === 'MULTI_SELECT' || type === 'PERSON' || type === 'CHECKBOX';
+}
+
+export function isMovableFieldLane(type: string): boolean {
+    return type === 'SELECT' || type === 'PERSON' || type === 'CHECKBOX';
+}
+
+/** `cf:<id>` → `<id>`, or null for a built-in grouping. */
+export function laneFieldId(laneBy: LaneBy): string | null {
+    return laneBy.startsWith('cf:') ? laneBy.slice(3) : null;
+}
 
 export interface BoardColumnDef {
     /** A state id, or a category for a cross-team board. */
@@ -86,11 +110,18 @@ export function targetStateId(
 
 export interface LaneContext {
     labelOrder: readonly string[];
+    /** The page's custom fields (2.4), for `cf:<id>` lanes. */
+    fields?: ReadonlyMap<string, Pick<ViewCustomField, 'type' | 'options'>>;
 }
 
 /** The lane a row sits in (`''` is "no value"). */
 export function laneKeyOf(row: WorkItemRow, laneBy: LaneBy, ctx: LaneContext): string {
-    switch (laneBy) {
+    const fieldId = laneFieldId(laneBy);
+    if (fieldId) {
+        const field = ctx.fields?.get(fieldId);
+        return field ? customFieldLaneKey(field, row.customFields?.[fieldId]) : '';
+    }
+    switch (laneBy as BuiltInLaneBy) {
         case 'none':
             return '';
         case 'assignee':

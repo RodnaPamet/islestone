@@ -22,7 +22,7 @@
  * severity, type, source and control columns, "Awaiting my review", the KPI
  * sparklines and the client-side sort cut.
  */
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -36,24 +36,31 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FilterProvider, useFilters } from '@/components/ui/filter';
 import { useLocalStorage } from '@/components/ui/hooks';
 import { BatchActionButton, createColumns, type TableInstance } from '@/components/ui/table';
+import { useColumnsDropdown } from '@/components/ui/table/use-columns-dropdown';
+import type { ColumnVisibilityState } from '@/components/ui/table/types';
 import { useTenantSWR } from '@/lib/data/use-tenant-swr';
 import { usePermissions, useTenantContext } from '@/lib/tenant-context-provider';
 import { uiStorageKey } from '@/lib/ui-storage';
-import type { WorkItemRow, WorkflowStateCategory } from '@/lib/work-items/types';
+import { CUSTOM_FIELD_TYPE_SPECS, fieldIdOfOrder } from '@/lib/work-items/custom-fields';
+import { LIST_SORTS } from '@/lib/work-items/list-sorts';
+import type { SavedViewAffordances, SavedViewData, WorkItemRow, WorkflowStateCategory } from '@/lib/work-items/types';
 import { WORKFLOW_STATE_CATEGORIES } from '@/app-layer/domain/workflow-state';
 
-import { LANE_BY_VALUES, categoryColumns, stateColumns, type LaneBy } from './board/board-model';
+import { LANE_BY_VALUES, categoryColumns, isLaneableField, laneFieldId, stateColumns, type LaneBy } from './board/board-model';
 import { WorkItemBoard } from './board/WorkItemBoard';
 import { publishListOrder } from './data/list-order';
 import type { WorkItemListFilters } from './data/list-filters';
 import { useWorkConfig } from './data/use-work-config';
 import { useWorkItemList } from './data/use-work-item-list';
 import { useWorkItemMutations } from './data/use-work-item-mutations';
+import { useSavedView } from './data/use-saved-views';
+import { CustomFieldsManager } from './fields/CustomFieldsManager';
+import { SavedViewsMenu } from './SavedViewsMenu';
 import type { buildWorkItemFilterDefs } from './filter-defs';
 import { LayoutToggle, type WorkItemLayout } from './LayoutToggle';
 import { NewWorkItemModal } from './NewWorkItemModal';
 import { AssigneePicker } from './pickers';
-import { useWorkItemColumns } from './use-work-item-columns';
+import { useWorkItemColumnChoices, useWorkItemColumns } from './use-work-item-columns';
 import { useListFiltersFromContext, useWorkItemFilterContext } from './use-work-item-filter-context';
 import { WorkItemSheet } from './WorkItemSheet';
 
@@ -64,7 +71,13 @@ export interface WorkItemsViewProps {
     description?: string;
     /** Per-view key for the remembered layout and lanes. */
     viewKey: string;
+    /** What the views menu offers (2.4), asked on the server. */
+    savedViews?: SavedViewAffordances;
+    /** The project's fields may be defined here (2.4, `manageCustomFields`, asked on the server). */
+    manageCustomFields?: boolean;
 }
+
+const NO_SAVED_VIEWS: SavedViewAffordances = { savePersonal: false, saveShared: false, moderate: false };
 
 interface DeletedRow extends WorkItemRow {
     deletedAt: string;
@@ -197,17 +210,87 @@ function WorkItemsViewBody({
     description,
     viewKey,
     filterDefs,
+    savedViews = NO_SAVED_VIEWS,
+    manageCustomFields = false,
 }: WorkItemsViewProps & { filterDefs: ReturnType<typeof buildWorkItemFilterDefs>['filters'] }) {
     const tBody = useTranslations('workItems');
     const searchParams = useSearchParams();
+    const router = useRouter();
     const { tenantSlug } = useTenantContext();
     const perms = usePermissions().work_items;
     const config = useWorkConfig();
+    const filterApi = useFilters();
     const [layout, setLayout] = useLocalStorage<WorkItemLayout>(uiStorageKey('work-items', 'layout', viewKey), 'list');
-    const [laneBy, setLaneBy] = useLocalStorage<LaneBy>(uiStorageKey('work-items', 'lanes', viewKey), 'none');
+    const [storedLaneBy, setLaneBy] = useLocalStorage<LaneBy>(uiStorageKey('work-items', 'lanes', viewKey), 'none');
+    const [storedSort, setSort] = useLocalStorage<string>(uiStorageKey('work-items', 'sort', viewKey), 'manual');
     const [sheetId, setSheetId] = useState<string | null>(null);
     const [creating, setCreating] = useState<{ stateId?: string } | null>(null);
     const [showDeleted, setShowDeleted] = useState(false);
+    const [activeViewId, setActiveViewId] = useState<string | null>(searchParams?.get('view') ?? null);
+    const [fieldsOpen, setFieldsOpen] = useState(false);
+
+    // Sub-phase 2.4: the page's live fields decide which field sorts and
+    // lanes exist; a remembered one whose field is gone falls back.
+    const liveFields = useMemo(() => (config.customFields ?? []).filter((f) => !f.archived), [config]);
+    const sortableFields = useMemo(() => liveFields.filter((f) => CUSTOM_FIELD_TYPE_SPECS[f.type].sortable), [liveFields]);
+    const laneFields = useMemo(() => liveFields.filter((f) => isLaneableField(f.type)), [liveFields]);
+    const sortFieldId = fieldIdOfOrder(storedSort);
+    const sort = sortFieldId
+        ? sortableFields.some((f) => f.id === sortFieldId)
+            ? storedSort
+            : 'manual'
+        : (LIST_SORTS as readonly string[]).includes(storedSort)
+          ? storedSort
+          : 'manual';
+    const laneId = laneFieldId(storedLaneBy);
+    const laneBy: LaneBy = laneId && !laneFields.some((f) => f.id === laneId) ? 'none' : storedLaneBy;
+
+    const columnChoices = useWorkItemColumnChoices();
+    const columnsGear = useColumnsDropdown({ storageKey: uiStorageKey('col-vis', `work-items:${viewKey}`), columns: columnChoices });
+
+    const snapshot = useCallback(
+        () => ({
+            layout: layout === 'board' ? ('BOARD' as const) : ('LIST' as const),
+            config: {
+                filters: Object.fromEntries(Object.entries(filterApi.state).filter(([, v]) => v.length > 0)),
+                ...(filterApi.search ? { q: filterApi.search } : {}),
+                sort,
+                laneBy,
+                columns: columnChoices.filter((c) => columnsGear.columnVisibility[c.id] !== false).map((c) => c.id),
+            },
+        }),
+        [layout, filterApi.state, filterApi.search, sort, laneBy, columnChoices, columnsGear.columnVisibility],
+    );
+
+    const applyView = useCallback(
+        (view: SavedViewData) => {
+            filterApi.clearAll();
+            for (const [key, values] of Object.entries(view.config.filters ?? {})) if (values.length) filterApi.add(key, values);
+            filterApi.setSearch(view.config.q ?? '');
+            setLayout(view.layout === 'BOARD' ? 'board' : 'list');
+            setLaneBy((view.config.laneBy as LaneBy) || 'none');
+            setSort(view.config.sort || 'manual');
+            if (view.config.columns) {
+                const visible = new Set(view.config.columns);
+                const map: ColumnVisibilityState = {};
+                for (const c of columnChoices) map[c.id] = c.alwaysVisible === true || visible.has(c.id);
+                columnsGear.setColumnVisibility(map);
+            }
+        },
+        [filterApi, setLayout, setLaneBy, setSort, columnChoices, columnsGear],
+    );
+
+    // `?view=<id>` (the Views page's links) applies that view once.
+    const deepLinkId = searchParams?.get('view') ?? null;
+    const { data: deepLinked } = useSavedView(deepLinkId);
+    const [appliedDeepLink, setAppliedDeepLink] = useState<string | null>(null);
+    useEffect(() => {
+        if (!deepLinked || appliedDeepLink === deepLinked.id) return;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- apply the linked view once it has loaded
+        setAppliedDeepLink(deepLinked.id);
+        setActiveViewId(deepLinked.id);
+        applyView(deepLinked);
+    }, [deepLinked, appliedDeepLink, applyView]);
 
     // `?create=1` opens the create dialog (the "new" deep link).
     useEffect(() => {
@@ -220,15 +303,45 @@ function WorkItemsViewBody({
     return (
         <FiltersBound
             scope={scope}
+            sort={sort}
             render={(filters, toolbar) => {
                 const header = { title, description };
                 const createButton = perms.create ? (
                     <Button id="new-work-item-btn" variant="primary" icon={<Plus />} text={tBody('list.create')} onClick={() => setCreating({})} />
                 ) : null;
-                const laneOptions: ComboboxOption[] = LANE_BY_VALUES.map((v) => ({ value: v, label: tBody(`lanes.${v}`) }));
+                const laneOptions: ComboboxOption[] = [
+                    ...LANE_BY_VALUES.map((v) => ({ value: v, label: tBody(`lanes.${v}`) })),
+                    ...laneFields.map((f) => ({ value: `cf:${f.id}`, label: f.name })),
+                ];
+                const sortOptions: ComboboxOption[] = [
+                    ...LIST_SORTS.map((v) => ({ value: v, label: tBody(`sort.${v}`) })),
+                    ...sortableFields.map((f) => ({ value: `cf:${f.id}`, label: f.name })),
+                ];
                 const actions = (
                     <div className="flex flex-wrap items-center gap-tight">
+                        <SavedViewsMenu
+                            projectId={scope.projectId ?? null}
+                            affordances={savedViews}
+                            snapshot={snapshot}
+                            onApply={applyView}
+                            activeViewId={activeViewId}
+                            onActiveChange={setActiveViewId}
+                        />
                         <LayoutToggle value={layout} onChange={setLayout} />
+                        {layout === 'list' && (
+                            <Combobox
+                                selected={sortOptions.find((o) => o.value === sort) ?? null}
+                                setSelected={(o) => o && setSort(o.value)}
+                                options={sortOptions}
+                                hideSearch
+                                caret
+                                buttonProps={{ 'aria-label': tBody('sort.choose') }}
+                            />
+                        )}
+                        {layout === 'list' && columnsGear.dropdown}
+                        {manageCustomFields && scope.projectId && (
+                            <Button id="custom-fields-btn" variant="secondary" text={tBody('customFields.manage')} onClick={() => setFieldsOpen(true)} />
+                        )}
                         {layout === 'board' && (
                             <Combobox
                                 selected={laneOptions.find((o) => o.value === laneBy) ?? null}
@@ -256,6 +369,18 @@ function WorkItemsViewBody({
                             initial={{ projectId: scope.projectId, stateId: creating?.stateId }}
                             onCreated={(item) => setSheetId(item.id)}
                         />
+                        {manageCustomFields && scope.projectId && (
+                            <CustomFieldsManager
+                                projectId={scope.projectId}
+                                projectName={title}
+                                open={fieldsOpen}
+                                onOpenChange={(open) => {
+                                    setFieldsOpen(open);
+                                    // The views render with the server page's fields: read them again.
+                                    if (!open) router.refresh();
+                                }}
+                            />
+                        )}
                     </>
                 );
                 if (showDeleted) return <DeletedView onBack={() => setShowDeleted(false)} />;
@@ -269,7 +394,7 @@ function WorkItemsViewBody({
                             <ListPageShell.Filters>{toolbar(createButton)}</ListPageShell.Filters>
                             <ListPageShell.Body>
                                 <WorkItemBoard
-                                    scope={filters}
+                                    scope={{ ...filters, order: 'manual', dir: undefined }}
                                     columns={columns}
                                     laneBy={laneBy}
                                     onOpen={openRow}
@@ -285,6 +410,8 @@ function WorkItemsViewBody({
                 return (
                     <ListLayout
                         filters={filters}
+                        columnVisibility={columnsGear.columnVisibility}
+                        orderColumns={columnsGear.orderColumns}
                         header={{ ...header, actions }}
                         createButton={createButton}
                         filterDefs={filterDefs}
@@ -303,9 +430,12 @@ function WorkItemsViewBody({
 /** Turns the filter context into the list query and hands the toolbar to the layout. */
 function FiltersBound({
     scope,
+    sort,
     render,
 }: {
     scope: WorkItemsViewProps['scope'];
+    /** The list's order (2.4): a named sort or `cf:<fieldId>`. */
+    sort: string;
     render: (filters: WorkItemListFilters, toolbar: (leading: React.ReactNode) => React.ReactNode) => React.ReactNode;
 }) {
     const tFilters = useTranslations('workItems');
@@ -315,9 +445,9 @@ function FiltersBound({
         () => ({
             ...fromContext,
             ...(scope.projectId ? { projectId: scope.projectId } : {}),
-            order: 'manual',
+            order: sort,
         }),
-        [fromContext, scope.projectId],
+        [fromContext, scope.projectId, sort],
     );
     const toolbar = useCallback(
         (leading: React.ReactNode) => (
@@ -330,6 +460,8 @@ function FiltersBound({
 
 function ListLayout({
     filters,
+    columnVisibility,
+    orderColumns,
     header,
     createButton,
     filterDefs,
@@ -339,6 +471,8 @@ function ListLayout({
     children,
 }: {
     filters: WorkItemListFilters;
+    columnVisibility: ColumnVisibilityState;
+    orderColumns: <T extends object>(columns: ReadonlyArray<T>) => T[];
     header: { title: string; description?: string; actions: React.ReactNode };
     createButton: React.ReactNode;
     filterDefs: ReturnType<typeof buildWorkItemFilterDefs>['filters'];
@@ -356,7 +490,8 @@ function ListLayout({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [list.items]);
 
-    const columns = useWorkItemColumns();
+    const baseColumns = useWorkItemColumns(true);
+    const columns = useMemo(() => orderColumns(baseColumns), [orderColumns, baseColumns]);
 
     return (
         <EntityListPage<WorkItemRow>
@@ -365,6 +500,7 @@ function ListLayout({
             table={{
                 data: list.items,
                 columns,
+                columnVisibility,
                 loading: list.isLoading,
                 error: list.error ? tList('list.loadFailed') : undefined,
                 getRowId: (r) => r.id,

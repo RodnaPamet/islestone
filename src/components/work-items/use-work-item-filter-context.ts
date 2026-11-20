@@ -16,6 +16,8 @@ import { useMemo } from 'react';
 import { useFilterContext, useFilters, type FilterContextValue } from '@/components/ui/filter';
 
 import type { WorkItemListFilters } from './data/list-filters';
+import { customFieldFilterParam, fieldIdOfFilterKey } from '@/lib/work-items/custom-fields';
+
 import { useMembers, useWorkConfig } from './data/use-work-config';
 import { buildWorkItemFilterDefs, type FilterScope } from './filter-defs';
 
@@ -40,9 +42,23 @@ export function useWorkItemFilterContext(scope: FilterScope): {
 /** The filter system's state as list filters (comma-joined values and the search), inside a `FilterProvider`. */
 export function useListFiltersFromContext(): WorkItemListFilters {
     const { state, search } = useFilters();
+    const config = useWorkConfig();
     return useMemo<WorkItemListFilters>(() => {
         const joined: Record<string, string> = {};
-        for (const [key, values] of Object.entries(state)) if (values.length) joined[key] = values.join(',');
-        return { ...joined, q: search };
-    }, [state, search]);
+        const customFields: Record<string, string> = {};
+        const typeOf = new Map((config.customFields ?? []).map((f) => [f.id, f.type]));
+        for (const [key, values] of Object.entries(state)) {
+            if (!values.length) continue;
+            const fieldId = fieldIdOfFilterKey(key);
+            if (fieldId) {
+                // A field filter (2.4): only a field this page knows the type of.
+                const type = typeOf.get(fieldId);
+                const param = type ? customFieldFilterParam(type, values) : undefined;
+                if (param) customFields[fieldId] = param;
+                continue;
+            }
+            joined[key] = values.join(',');
+        }
+        return { ...joined, q: search, ...(Object.keys(customFields).length ? { customFields } : {}) };
+    }, [state, search, config]);
 }

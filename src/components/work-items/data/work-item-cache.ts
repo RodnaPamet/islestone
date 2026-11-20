@@ -77,7 +77,10 @@ export function placeRow(pages: WorkItemPage[], filters: WorkItemListFilters, ro
     const { pages: removed, at } = withoutRow(pages, row.id);
     const belongs = rowBelongs(filters, row);
     if (belongs === 'no') return removed;
-    if (belongs === 'unknown') {
+    // A sort the client cannot evaluate (2.4: due, priority, key, a field…)
+    // keeps the row where it was; the next revalidation settles it.
+    const clientOrdered = !filters.order || filters.order === 'manual' || filters.order === 'updated';
+    if (belongs === 'unknown' || !clientOrdered) {
         if (!at) return removed;
         const { page, index } = at;
         return removed.map((p, i) => (i === page ? { ...p, items: [...p.items.slice(0, index), row, ...p.items.slice(index)] } : p));
