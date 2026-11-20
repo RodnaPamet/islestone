@@ -3,7 +3,7 @@
  * 2.6a), each checked in the catalogue AND by its bite: the CHECKs that keep
  * an intake request's status and its columns in step, the form's caps, and
  * the archive-only privilege on forms and project intake. And what
- * `20261126120100_intake_public` adds (sub-phase 2.6b): the CHECKs that keep a
+ * `20261127120100_intake_public` adds (sub-phase 2.6b): the CHECKs that keep a
  * public request's requester columns in step with its channel, and the
  * per-workspace uniqueness of a form token's nonce.
  */

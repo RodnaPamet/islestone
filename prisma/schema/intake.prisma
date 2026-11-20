@@ -4,7 +4,7 @@
 // creates the work item through the ordinary create path.
 //
 // What Prisma cannot declare (the status CHECKs, the caps) lives in migration
-// `20261125120100_intake_core` (2.6a) and `20261126120100_intake_public`
+// `20261125120100_intake_core` (2.6a) and `20261127120100_intake_public`
 // (2.6b), each with a catalogue test
 // (tests/integration/intake-sql-constructs.test.ts).
 
