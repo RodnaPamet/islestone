@@ -62,6 +62,8 @@ export const CreateWorkItemSchema = z
         cycleId: Id.nullish(),
         /** A milestone of the project (2.5b). */
         milestoneId: Id.nullish(),
+        /** The active member the item waits on (2.4b); refused into a closed state. */
+        waitingOnUserId: Id.nullish(),
         /** An item template of the project (2.5c). */
         templateId: Id.optional(),
     })
@@ -82,6 +84,9 @@ export const UpdateWorkItemSchema = z
 export const SetWorkItemStateSchema = z.object({ stateId: Id }).strict();
 
 export const AssignWorkItemSchema = z.object({ assigneeId: Id.nullable() }).strict();
+
+/** Name the active member an open item waits on, or nobody (`null`; 2.4b). */
+export const SetWorkItemWaitingOnSchema = z.object({ userId: Id.nullable() }).strict();
 
 /** Put an item in a cycle of its team, or take it out (`null`; 2.5a). */
 export const SetWorkItemCycleSchema = z.object({ cycleId: Id.nullable() }).strict();
@@ -154,6 +159,8 @@ export const WorkItemQuerySchema = z.object({
     cycleId: z.string().max(2000).optional(),
     /** Milestone ids (comma-joinable), or `none` (2.5b). */
     milestoneId: z.string().max(2000).optional(),
+    /** Member user ids an item waits on (comma-joinable), or `none` (2.4b). */
+    waitingOnId: z.string().max(2000).optional(),
     /** Only `me`: the caller's watched items, resolved from the request context. */
     watching: z.enum(['me']).optional(),
     due: z.enum(DUE_FILTERS).optional(),

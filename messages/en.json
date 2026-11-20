@@ -644,7 +644,8 @@
             "project": "By project",
             "choose": "Swimlanes",
             "cycle": "By cycle",
-            "milestone": "By milestone"
+            "milestone": "By milestone",
+            "waitingOn": "By waiting on"
         },
         "category": {
             "BACKLOG": "Backlog",
@@ -671,7 +672,8 @@
             "updated": "Updated",
             "type": "Type",
             "cycle": "Cycle",
-            "milestone": "Milestone"
+            "milestone": "Milestone",
+            "waitingOn": "Waiting on"
         },
         "fields": {
             "title": "Title",
@@ -686,7 +688,8 @@
             "cycle": "Cycle",
             "milestone": "Milestone",
             "template": "Template",
-            "repeat": "Repeat"
+            "repeat": "Repeat",
+            "waitingOn": "Waiting on"
         },
         "filters": {
             "category": "Category",
@@ -704,7 +707,9 @@
             "currentCycle": "Current cycle",
             "noCycle": "No cycle",
             "milestone": "Milestone",
-            "noMilestone": "No milestone"
+            "noMilestone": "No milestone",
+            "waitingOn": "Waiting on",
+            "waitingOnNobody": "Waiting on nobody"
         },
         "bulk": {
             "setState": "Set state",
@@ -757,6 +762,8 @@
             "saveDescription": "Save description",
             "noDescription": "No description.",
             "unassigned": "Unassigned",
+            "waitingOnNobody": "Nobody",
+            "waitingOnClosed": "A closed item waits on nobody.",
             "unknownMember": "Unknown member",
             "formerMember": "A former member",
             "system": "Islestone",
@@ -832,7 +839,8 @@
             "commented": "commented",
             "customFieldSet": "changed a field",
             "cycleChanged": "changed the cycle",
-            "milestoneChanged": "changed the milestone"
+            "milestoneChanged": "changed the milestone",
+            "waitingOnChanged": "changed who the item waits on"
         },
         "subItems": {
             "title": "Sub-items",
@@ -863,7 +871,8 @@
             "noStateInTeam": "The work item’s team has no state in {column}.",
             "announcements": "Board announcements",
             "noCycle": "No cycle",
-            "noMilestone": "No milestone"
+            "noMilestone": "No milestone",
+            "noWaitingOn": "Waiting on nobody"
         },
         "projects": {
             "col": {

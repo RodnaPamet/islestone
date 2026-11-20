@@ -144,6 +144,7 @@ model TenantMembership {
 
   /// Work items this member is the assignee of (ADR 0003, RESTRICT).
   assignedWorkItems WorkItem[]           @relation("WorkItemAssignee")
+  waitedOnWorkItems WorkItem[]           @relation("WorkItemWaitingOn")
   watching          WorkItemWatcher[]    @relation("WorkItemWatcherMember")
   personFieldValues CustomFieldValue[]   @relation("CustomFieldValuePerson")
   intakeNotify      IntakeNotifyMember[] @relation("IntakeNotifyMembership")

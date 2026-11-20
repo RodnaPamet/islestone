@@ -113,6 +113,13 @@ describe('rowBelongs — the My Work filters on the client', () => {
         expect(rowBelongs({ createdById: 'u-ada' }, row(1, { createdByUserId: 'u-bob' }))).toBe('no');
     });
 
+    it('decides waitingOnId from the row, none included (2.4b)', () => {
+        expect(rowBelongs({ waitingOnId: 'u-ada' }, row(1, { waitingOnUserId: 'u-ada' }))).toBe('yes');
+        expect(rowBelongs({ waitingOnId: 'u-ada' }, row(1, { waitingOnUserId: 'u-bob' }))).toBe('no');
+        expect(rowBelongs({ waitingOnId: 'none' }, row(1, { waitingOnUserId: null }))).toBe('yes');
+        expect(rowBelongs({ waitingOnId: 'none' }, row(1, { waitingOnUserId: 'u-bob' }))).toBe('no');
+    });
+
     it('cannot decide watching on the client', () => {
         expect(rowBelongs({ watching: 'me' }, row(1))).toBe('unknown');
         // …but another facet can still rule a row out.

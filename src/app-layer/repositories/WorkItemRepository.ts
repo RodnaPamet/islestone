@@ -78,6 +78,8 @@ export interface WorkItemFilters {
     assigneeId?: string;
     /** The creator's user id (comma-joinable), as `assigneeId` takes one. */
     createdById?: string;
+    /** Member user ids (comma-joinable) an item waits on, with `none` for items waiting on nobody (2.4b). */
+    waitingOnId?: string;
     /** Cycle ids (comma-joinable), with `none` for items in no cycle (2.5a; the usecase resolves `current`). */
     cycleId?: string;
     /** Milestone ids (comma-joinable), with `none` for items in no milestone (2.5b). */
@@ -177,6 +179,7 @@ export const workItemListSelect = {
     /** The priority sort's cursor reads it (2.4); `toWorkItemDto` drops it. */
     priorityRank: true,
     assigneeId: true,
+    waitingOnUserId: true,
     createdByUserId: true,
     parentId: true,
     cycleId: true,
@@ -211,6 +214,7 @@ export const workItemGateSelect = {
     stateId: true,
     stateCategory: true,
     assigneeId: true,
+    waitingOnUserId: true,
     parentId: true,
     cycleId: true,
     milestoneId: true,
@@ -234,6 +238,7 @@ export type WorkItemPatch = Partial<{
     dueDate: Date | null;
     typeId: string;
     assigneeId: string | null;
+    waitingOnUserId: string | null;
     stateId: string;
     stateCategory: WorkflowStateCategory;
     startedAt: Date | null;
@@ -319,6 +324,14 @@ export class WorkItemRepository {
         if (filters.assigneeId === 'none') and.push({ assigneeId: null });
         else if (filters.assigneeId) and.push({ assigneeId: parseIdListFilter(filters.assigneeId) });
         if (filters.createdById) and.push({ createdByUserId: parseIdListFilter(filters.createdById) });
+        if (filters.waitingOnId) {
+            const members = [...new Set(filters.waitingOnId.split(',').map((m) => m.trim()).filter(Boolean))];
+            const ids = members.filter((m) => m !== 'none');
+            const none = members.length !== ids.length;
+            if (none && ids.length > 0) and.push({ OR: [{ waitingOnUserId: null }, { waitingOnUserId: { in: ids } }] });
+            else if (none) and.push({ waitingOnUserId: null });
+            else and.push({ waitingOnUserId: { in: ids } });
+        }
         if (filters.cycleId !== undefined) {
             const members = [...new Set(filters.cycleId.split(',').map((m) => m.trim()).filter(Boolean))];
             const ids = members.filter((m) => m !== 'none');
@@ -629,6 +642,7 @@ export class WorkItemRepository {
             stateCategory: WorkflowStateCategory;
             priority: WorkItemPriority;
             assigneeId: string | null;
+            waitingOnUserId?: string | null;
             parentId: string | null;
             cycleId?: string | null;
             milestoneId?: string | null;
@@ -807,6 +821,19 @@ export class WorkItemRepository {
         const result = await db.workItem.updateMany({
             where: { tenantId: ctx.tenantId, deletionId, deletedAt: { not: null } },
             data: { deletedAt: null, deletedByUserId: null, deletionId: null, version: { increment: 1 } },
+        });
+        return result.count;
+    }
+
+    /**
+     * Clear waiting on wherever it names a member who is being removed (2.4b,
+     * ADR 0002 §14): the FK is RESTRICT, as the assignee's is. Deleted items
+     * too, or the FK refuses the delete; each item's version increases.
+     */
+    static async clearWaitingOnAll(db: PrismaTx, ctx: RequestContext, userId: string) {
+        const result = await db.workItem.updateMany({
+            where: { tenantId: ctx.tenantId, waitingOnUserId: userId },
+            data: { waitingOnUserId: null, version: { increment: 1 } },
         });
         return result.count;
     }

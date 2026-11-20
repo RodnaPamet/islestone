@@ -46,7 +46,7 @@ import { ActivityPanel, CommentsPanel, LinksPanel, RelationsPanel, WatchersPanel
 import { SubItemsPanel } from './detail/SubItemsPanel';
 import { CustomFieldInput } from './fields/CustomFieldInput';
 import { RepeatControl } from './detail/RepeatControl';
-import { AssigneePicker, CyclePicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker } from './pickers';
+import { AssigneePicker, CyclePicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker, WaitingOnPicker } from './pickers';
 
 export type DetailTab = 'overview' | 'sub-items' | 'links' | 'comments' | 'activity';
 const TABS: readonly DetailTab[] = ['overview', 'sub-items', 'links', 'comments', 'activity'];
@@ -168,6 +168,20 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                     disabled={!perms.assign}
                     onChange={(assigneeId) => void mutations.assign(row, assigneeId)}
                 />
+            </PropertyRow>
+            <PropertyRow label={t('fields.waitingOn')} htmlFor={item.stateCategory === 'DONE' || item.stateCategory === 'CANCELLED' ? undefined : `waiting-on-${item.id}`}>
+                {item.stateCategory === 'DONE' || item.stateCategory === 'CANCELLED' ? (
+                    <span className="text-content-muted">
+                        {t('detail.waitingOnClosed')}
+                    </span>
+                ) : (
+                    <WaitingOnPicker
+                        id={`waiting-on-${item.id}`}
+                        value={item.waitingOnUserId ?? null}
+                        disabled={!perms.edit}
+                        onChange={(userId) => void mutations.setWaitingOn(row, userId)}
+                    />
+                )}
             </PropertyRow>
             <PropertyRow label={t('fields.priority')} htmlFor={`priority-${item.id}`}>
                 <PriorityPicker

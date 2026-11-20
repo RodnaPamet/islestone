@@ -232,12 +232,21 @@ model WorkItem {
   /// The occurrence this item stands for (date-only); one item per
   /// `(recurrenceId, occurrenceOn)`, a partial unique in SQL.
   occurrenceOn    DateTime?             @db.Date
+  /// Who must act next (2.4b, ADR 0002 §14): a member, FK to
+  /// `TenantMembership(tenantId, userId)`, ON DELETE RESTRICT (member removal
+  /// clears it first). Never accountable: the assignee is (ADR 0003 §1).
+  /// Cleared by every move into DONE or CANCELLED (`stateTransitionEffects`);
+  /// the CHECK `WorkItem_waiting_on_open_only` (SQL) refuses a closed item
+  /// naming one. From 6.3 a nullable agent-session reference joins it, with a
+  /// CHECK that at most one of the two is set (owner decision 106).
+  waitingOnUserId String?
 
   tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project        Project             @relation(fields: [projectId, teamId, tenantId], references: [id, teamId, tenantId], onDelete: Cascade)
   state          WorkflowState       @relation(fields: [stateId, teamId, stateCategory, tenantId], references: [id, teamId, category, tenantId], onDelete: Restrict)
   type           WorkItemType        @relation(fields: [typeId, tenantId], references: [id, tenantId], onDelete: Restrict)
   assignee       TenantMembership?   @relation("WorkItemAssignee", fields: [tenantId, assigneeId], references: [tenantId, userId], onDelete: Restrict)
+  waitingOn      TenantMembership?   @relation("WorkItemWaitingOn", fields: [tenantId, waitingOnUserId], references: [tenantId, userId], onDelete: Restrict)
   createdBy      User                @relation("WorkItemCreator", fields: [createdByUserId], references: [id])
   parent         WorkItem?           @relation("WorkItemParent", fields: [parentId, projectId, tenantId], references: [id, projectId, tenantId], onDelete: NoAction, onUpdate: NoAction)
   cycle          Cycle?              @relation(fields: [cycleId, teamId, tenantId], references: [id, teamId, tenantId], onDelete: Restrict, onUpdate: NoAction)
@@ -263,6 +272,8 @@ model WorkItem {
   @@index([tenantId, projectId, stateId, sortKey])
   @@index([tenantId, teamId, stateCategory, sortKey])
   @@index([tenantId, assigneeId, stateCategory, dueDate])
+  /// The waiting-on filter, its lanes and My Work's "waiting on me" (2.4b, 2.7).
+  @@index([tenantId, waitingOnUserId, stateCategory, dueDate])
   @@index([tenantId, parentId, sortKey])
   @@index([tenantId, createdByUserId, createdAt])
   @@index([tenantId, projectId, updatedAt, id])
@@ -637,25 +648,28 @@ model Cycle {
   @@index([tenantId, completedAt, endsOn])
 }
 
-/// One recorded change to a work item's state, cycle, milestone, project or deletion
+/// One recorded change to a work item's state, cycle, milestone, project, waiting on or deletion
 /// (ADR 0006 "Transition"). Written ONLY by the trigger
 /// `work_item_transition_record` (SECURITY DEFINER; `app_user` holds SELECT
 /// alone), each row the item's picture after the change; read by the burn-up
 /// and, from 3.6, by analytics. No FK to `WorkItem`: the rows outlive an
 /// item's purge and go with the workspace (owner decision 66).
 model WorkItemTransition {
-  id            BigInt                @id @default(autoincrement())
-  tenantId      String
-  workItemId    String
-  projectId     String
-  teamId        String
-  stateId       String
-  stateCategory WorkflowStateCategory
-  cycleId       String?
+  id              BigInt                @id @default(autoincrement())
+  tenantId        String
+  workItemId      String
+  projectId       String
+  teamId          String
+  stateId         String
+  stateCategory   WorkflowStateCategory
+  cycleId         String?
   /// Since 2.5b; NULL in rows written before.
-  milestoneId   String?
-  deleted       Boolean
-  at            DateTime              @default(now())
+  milestoneId     String?
+  /// Since 2.4b (owner decision 107); NULL in rows written before. 3.6 counts
+  /// time waiting from these rows.
+  waitingOnUserId String?
+  deleted         Boolean
+  at              DateTime              @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 

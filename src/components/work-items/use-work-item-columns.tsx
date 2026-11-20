@@ -90,6 +90,8 @@ export function useWorkItemColumns(extended = false) {
                 header: tCols('col.milestone'),
                 cell: ({ row }) => (row.original.milestoneId ? config.milestoneById.get(row.original.milestoneId)?.name ?? '' : ''),
             },
+            // Sub-phase 2.4b: who the item waits on (hidden until the gear shows it).
+            { id: 'waitingOn', header: tCols('col.waitingOn'), cell: ({ row }) => memberName(row.original.waitingOnUserId ?? null) ?? '' },
             ...(config.customFields ?? [])
                 .filter((f) => !f.archived)
                 .map((field): ColumnDef<WorkItemRow> => ({

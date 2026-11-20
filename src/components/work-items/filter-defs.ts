@@ -24,7 +24,7 @@ import type { Member } from '@/lib/work-items/types';
 import type { WorkConfigIndex } from './data/use-work-config';
 
 /** Every key the list reads from the URL (3.6's next-best-action reads `due=overdue`). */
-export const WORK_ITEM_FILTER_KEYS = ['stateCategory', 'stateId', 'priority', 'typeId', 'labelId', 'assigneeId', 'projectId', 'cycleId', 'milestoneId', 'due'] as const;
+export const WORK_ITEM_FILTER_KEYS = ['stateCategory', 'stateId', 'priority', 'typeId', 'labelId', 'assigneeId', 'projectId', 'cycleId', 'milestoneId', 'waitingOnId', 'due'] as const;
 export type WorkItemFilterKey = (typeof WORK_ITEM_FILTER_KEYS)[number];
 
 type Translate = (key: string, values?: Record<string, string | number>) => string;
@@ -92,6 +92,16 @@ export function workItemFilterDefsInput(config: WorkConfigIndex, members: readon
             options: assigneeOptionsFromMembers(members, t),
         };
     }
+    // Sub-phase 2.4b: who an item waits on, or nobody, from the member roster.
+    defs.waitingOnId = {
+        label: t('filters.waitingOn'),
+        icon: UserCheck,
+        multiple: true,
+        options: [
+            { value: 'none', label: t('filters.waitingOnNobody') },
+            ...members.map((m) => ({ value: m.id, label: m.name?.trim() || m.email })),
+        ],
+    };
     if (!scope.projectId) {
         defs.projectId = {
             label: t('filters.project'),

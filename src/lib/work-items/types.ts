@@ -28,6 +28,8 @@ export interface WorkItemRow {
     stateCategory: WorkflowStateCategory;
     priority: WorkItemPriority;
     assigneeId: string | null;
+    /** Who must act next (2.4b): an active member; never accountable. Cleared when the item closes. */
+    waitingOnUserId?: string | null;
     /** Who created the item (My Work's "Created by me"). */
     createdByUserId: string;
     parentId: string | null;

@@ -18,7 +18,7 @@ const Id = z.string().min(1).max(64);
 const Name = z.string().trim().min(1).max(64);
 
 /** A filter key the list reads: a built-in facet or `cf.<fieldId>`. */
-const FilterKey = z.string().regex(/^(stateCategory|stateId|priority|typeId|labelId|assigneeId|projectId|cycleId|milestoneId|due|cf\.[A-Za-z0-9_-]{1,64})$/, 'Unknown filter.');
+const FilterKey = z.string().regex(/^(stateCategory|stateId|priority|typeId|labelId|assigneeId|projectId|cycleId|milestoneId|waitingOnId|due|cf\.[A-Za-z0-9_-]{1,64})$/, 'Unknown filter.');
 
 export const SavedViewConfigSchema = z
     .object({

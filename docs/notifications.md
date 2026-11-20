@@ -44,7 +44,7 @@ Four writers, all in `src/app-layer/notifications/`:
 
 | Writer | Type | Dedupe key |
 |---|---|---|
-| `createAssignmentNotification` (`assignment.ts`) | `WORK_ITEM_ASSIGNED` | `tenant:TYPE:item:user:YYYY-MM-DD` |
+| `createAssignmentNotification` (`assignment.ts`) | `WORK_ITEM_ASSIGNED`; `WORK_ITEM_WAITING_ON` (2.4b: the person an item now waits on, unless they named themselves) | `tenant:TYPE:item:user:YYYY-MM-DD` |
 | `createWatcherNotifications` (`watcher.ts`) | `WORK_ITEM_WATCH_UPDATE` | per watcher, item, kind, discriminator and day |
 | `createWorkItemDueNotification(s)` (`work-item-due.ts`, 2.2) | `WORK_ITEM_DUE` | `tenant:WORK_ITEM_DUE:window:item:user:YYYY-MM-DD` (the run day in `NOTIFICATIONS_TZ`) |
 | `createIntakeNotifications` (`intake.ts`, 2.6a) | `INTAKE_REQUEST_RECEIVED` (the project's notify list, never the sender), `INTAKE_REQUEST_WOKEN` (whoever snoozed it) | `tenant:TYPE:request:user` (WOKEN also per wake day); recipients re-checked for `intake.view` ([docs/intake.md](intake.md)) |

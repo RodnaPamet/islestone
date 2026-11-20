@@ -23,7 +23,7 @@
  *     is `createWorkItemInTx`, which the intake accept shares);
  *   - a state change (single and bulk): audit inside; then COMMIT, the
  *     automation event and the watcher fan-out;
- *   - update and assign: audit inside; bells and watchers after.
+ *   - update, assign and waiting on: audit inside; bells and watchers after.
  */
 import { randomUUID } from 'node:crypto';
 
@@ -69,6 +69,7 @@ import {
     assertProjectWritable,
     emitAssignedBells,
     emitDueBell,
+    emitWaitingOnBell,
     emitWatcherActivity,
     enqueueAssignedEmail,
     keyOf,
@@ -139,9 +140,18 @@ function uniqueIds(ids: readonly string[]): string[] {
     return [...new Set(ids)];
 }
 
-async function assertActiveMember(db: PrismaTx, ctx: RequestContext, userId: string) {
+async function assertActiveMember(db: PrismaTx, ctx: RequestContext, userId: string, who = 'The assignee') {
     const active = await MembershipRepository.listActiveUserIds(db, ctx, [userId]);
-    if (!active.has(userId)) throw badRequest('The assignee must be an active member of this workspace.');
+    if (!active.has(userId)) throw badRequest(`${who} must be an active member of this workspace.`);
+}
+
+/** A closed item waits on nobody (2.4b, ADR 0002 §14; the CHECK `WorkItem_waiting_on_open_only` backs it). */
+function isClosedCategory(category: WorkflowStateCategory): boolean {
+    return category === 'DONE' || category === 'CANCELLED';
+}
+
+function refuseWaitingOnClosed(): ConflictError {
+    return new ConflictError('A closed work item waits on nobody. Reopen it first.', { reason: 'ITEM_CLOSED' });
 }
 
 /**
@@ -385,6 +395,8 @@ export interface CreateWorkItemInput {
     cycleId?: string | null;
     /** A milestone of the project (2.5b). */
     milestoneId?: string | null;
+    /** The active member the item waits on (2.4b); refused into a closed state. */
+    waitingOnUserId?: string | null;
     /**
      * An item template of the project (2.5c): the item starts from it, every
      * field the request names winning, and its sub-items are made with it.
@@ -491,6 +503,10 @@ export async function createWorkItemInTx(
     if (state.archivedAt) throw badRequest(`${state.name} is archived and takes no work items.`);
 
     if (plan.assigneeId) await assertActiveMember(db, ctx, plan.assigneeId);
+    if (plan.waitingOnUserId) {
+        if (isClosedCategory(state.category)) throw refuseWaitingOnClosed();
+        await assertActiveMember(db, ctx, plan.waitingOnUserId, 'The person it waits on');
+    }
     if (plan.cycleId) await assertCycleTakesItems(db, ctx, plan.cycleId, project.teamId);
     if (plan.milestoneId) await assertMilestoneOfProject(db, ctx, plan.milestoneId, project.id);
     if (labelIds.length > 0) await assertLabelsUsable(db, ctx, labelIds, project.teamId);
@@ -517,6 +533,7 @@ export async function createWorkItemInTx(
         stateCategory: state.category,
         priority: plan.priority ?? 'NONE',
         assigneeId: plan.assigneeId ?? null,
+        waitingOnUserId: plan.waitingOnUserId ?? null,
         parentId: input.parentId ?? null,
         cycleId: plan.cycleId ?? null,
         milestoneId: plan.milestoneId ?? null,
@@ -546,6 +563,7 @@ export async function createWorkItemInTx(
             parentId: row.parentId,
             ...(row.cycleId ? { cycleId: row.cycleId } : {}),
             ...(row.milestoneId ? { milestoneId: row.milestoneId } : {}),
+            ...(row.waitingOnUserId ? { waitingOnUserId: row.waitingOnUserId } : {}),
             ...(customFieldIds.length ? { customFieldIds } : {}),
             ...(fromTemplate ? { templateId: input.templateId, ...(fromTemplate.skipped.length ? { templateSkipped: fromTemplate.skipped } : {}) } : {}),
         ...(opts.metadata ?? {}),
@@ -587,23 +605,25 @@ export async function createWorkItemInTx(
     return { ...toWorkItemDto({ ...withLabels, customFieldValues: reread?.customFieldValues ?? [] }), ...skipped };
 }
 
-/** After a create's commit: the due reminder and the assignment bell. */
+/** After a create's commit: the due reminder, the assignment bell and the waiting-on bell (2.4b). */
 export async function emitCreatedItemBells(ctx: RequestContext, result: WorkItemDto): Promise<void> {
     await emitDueBell(ctx, { ...result, dueDate: parseDateOnly(result.dueDate) });
     if (result.assigneeId) {
         await emitAssignedBells(ctx, result.assigneeId, [{ id: result.id, title: result.title, key: result.key }]);
     }
+    await emitWaitingOnBell(ctx, result.waitingOnUserId, { id: result.id, title: result.title, key: result.key });
 }
 
 export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemInput): Promise<WorkItemDto & { templateSkipped?: string[] }> {
     assertCanCreateWorkItem(ctx);
     // A template's sub-items (up to 50) are made in the same transaction.
     const result = await runInTenantContext(ctx, (db) => createWorkItemInTx(db, ctx, input), input.templateId ? { timeout: 20_000 } : undefined);
-    // After the commit: the due reminder and the assignment bell.
+    // After the commit: the due reminder, the assignment bell and the waiting-on bell (2.4b).
     await emitDueBell(ctx, { ...result, dueDate: parseDateOnly(result.dueDate) });
     if (result.assigneeId) {
         await emitAssignedBells(ctx, result.assigneeId, [{ id: result.id, title: result.title, key: result.key }]);
     }
+    await emitWaitingOnBell(ctx, result.waitingOnUserId, { id: result.id, title: result.title, key: result.key });
     return result;
 }
 
@@ -920,6 +940,53 @@ export async function assignWorkItem(ctx: RequestContext, id: string, input: { a
                 kind: 'assigned',
                 discriminator: input.assigneeId ?? 'unassigned',
                 detail: input.assigneeId ? 'assignee changed' : 'assignee cleared',
+            },
+        ]);
+    }
+    return after;
+}
+
+// ─── Waiting on ───────────────────────────────────────────────────────────
+
+/**
+ * Name the active member an open item waits on, or nobody (2.4b, ADR 0002
+ * §14; owner decisions 103 to 105). A single-field change: `If-Match` is
+ * optional and the version increases. It never makes the person accountable
+ * (ADR 0003 §1). Audit inside; after the commit, one bell to the person
+ * named (unless they named themselves) and the watcher fan-out.
+ */
+export async function setWorkItemWaitingOn(ctx: RequestContext, id: string, input: { userId: string | null }, expectedVersion?: number) {
+    assertCanEditWorkItems(ctx);
+    const outcome = await runInTenantContext(ctx, async (db) => {
+        const v = await visibleProjects(ctx, db);
+        const item = await loadWritableItem(db, ctx, v, id);
+        if (item.waitingOnUserId === input.userId) return { changed: false };
+        if (input.userId) {
+            if (isClosedCategory(item.stateCategory)) throw refuseWaitingOnClosed();
+            await assertActiveMember(db, ctx, input.userId, 'The person it waits on');
+        }
+        const count = await WorkItemRepository.updateVersioned(db, ctx, v, id, expectedVersion, { waitingOnUserId: input.userId });
+        if (count === 0) await throwWriteConflict(db, ctx, v, id);
+        await logEvent(db, ctx, {
+            action: 'WORK_ITEM_WAITING_ON_CHANGED',
+            entityType: 'WorkItem',
+            entityId: id,
+            details: `Changed who ${keyOf(item)} waits on`,
+            detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'updated', changedFields: ['waitingOnUserId'] },
+            metadata: { fromUserId: item.waitingOnUserId, toUserId: input.userId },
+        });
+        return { changed: true };
+    });
+
+    const after = await getWorkItem(ctx, id);
+    if (outcome.changed) {
+        await emitWaitingOnBell(ctx, input.userId, { id, title: after.title, key: after.key });
+        await emitWatcherActivity(ctx, [
+            {
+                workItemId: id,
+                kind: 'updated',
+                discriminator: `waiting:${input.userId ?? 'none'}:v${after.version}`,
+                detail: input.userId ? 'waiting on changed' : 'waiting on cleared',
             },
         ]);
     }

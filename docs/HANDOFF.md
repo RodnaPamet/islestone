@@ -131,7 +131,7 @@ porting maps now record them (next step 2); the last column says where.
 | 118 | The answer is a field-set field, hidden unless the type's field set shows it; no type flag (question 19). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; ADR 0002 §1, §15; 2.4b-c |
 | 119 | 2.4b ships as three pull requests, in order: 2.4b-a waiting on, 2.4b-b field sets, 2.4b-c questions (question 20). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md` |
 
-Rows 62 to 75 are sub-phase 2.5's decisions. Rows 85 to 99 are sub-phase 2.6's (`docs/porting/maps/2.6.md`, questions 1 to 13, then the public perimeter and the member-email rule). Rows 100 to 119 are sub-phase 2.4b's (`docs/porting/maps/2.4b.md`, questions 1 to 20 in order): every recommendation accepted except question 7, where the owner chose option C. Rows 76 to 84 are the ideas the owner adopted from the Procore audit, all of its top ten but #8 (event triggers for delegate agents and a search skill), which 6.3 and a search skill already plan. None changes an ADR yet: each sub-phase lists the amendments it needs and its proposed words as open questions, decided when it starts.
+Rows 62 to 75 are sub-phase 2.5's decisions. Rows 85 to 99 are sub-phase 2.6's (`docs/porting/maps/2.6.md`, questions 1 to 13, then the public perimeter and the member-email rule). Rows 100 to 119 are sub-phase 2.4b's (`docs/porting/maps/2.4b.md`, questions 1 to 20 in order): every recommendation accepted except question 7, where the owner chose option C. Rows 76 to 84 are the ideas the owner adopted from the Procore audit, all of its top ten but #8 (event triggers for delegate agents and a search skill), which 6.3 and a search skill already plan. Those of 76 to 78 changed ADRs 0002 and 0006 with 2.4b's decisions (rows 100 to 119); the others change none yet: each sub-phase lists the amendments it needs and its proposed words as open questions, decided when it starts.
 
 Sub-phase 2.6b (public intake forms) applies decisions 86, 88, 89 and 98 as follows. The deployment switch of decision 86 is `INTAKE_PUBLIC_FORMS` (`1` open, `0` closed, unset closed in production), set in `.env.prod` by the operator once the release runs on both images. Decision 98's bypass reason `public-intake-resolve` and two of its three machine-caller entries (`/api/intake/forms`, `/api/intake/confirm`) are live with their contracts; the third, `/api/intake/email`, arrives with 2.6c. The outsider email types (`INTAKE_CONFIRM_ADDRESS`, `INTAKE_ACCEPTED`, `INTAKE_DECLINED`, `INTAKE_MERGED`) are added in a migration of their own; their writers ship in the same release but cannot run until the switch is opened. Blocked senders move to 2.6c. As built: `docs/intake.md`, "Public forms (2.6b)".
 
@@ -777,3 +777,20 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      through `createWorkItemInTx` (the create core 2.6a extracted, with the repeat options) and `templateToCreateInput`;
      holds written as the system user.
    - UI: the detail's Repeat control, the list's series mark.
+8. **2.4b (waiting on, field sets, questions) is decided** (decisions 100 to 119: every
+   recommendation of `docs/porting/maps/2.4b.md` accepted except question 7, where the owner
+   chose C: from 6.3, waiting on may name the delegate's agent session). ADR 0002 §1, §7, §9,
+   §10, §13, §14 and §15 and ADR 0006's Waiting on, Field set and Answer rows are amended.
+   It ships as three pull requests. **2.4b-a (waiting on) is built** on branch `wt/p24b`,
+   per `docs/work-items.md`, "Waiting on (2.4b-a)" and `PROVENANCE.md`, "Waiting on":
+   - Schema: `WorkItem.waitingOnUserId` (member FK, RESTRICT; the closed-item CHECK),
+     `WorkItemTransition.waitingOnUserId` (the trigger fires on it),
+     `NotificationType.WORK_ITEM_WAITING_ON`. Migrations
+     `20261127120000_notification_type_waiting_on` and `20261127120100_waiting_on`.
+   - Domain: `stateTransitionEffects` clears it on every move into a closed category.
+   - API: `PUT /work-items/:id/waiting-on` (`work_items.edit`, versioned), `waitingOnUserId`
+     on create, the `waitingOnId` list filter (ids, `none`). Member removal clears it; a
+     repeat copy takes its source's.
+   - UI: the detail's and the create dialog's Waiting on picker, the column, the filter, the
+     board's lanes; the in-app bell to the person named.
+   - Next: 2.4b-b (field sets), then 2.4b-c (questions), per the map.

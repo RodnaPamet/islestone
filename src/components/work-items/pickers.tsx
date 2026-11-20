@@ -83,6 +83,36 @@ export function AssigneePicker({ value, onChange, ...common }: PickerCommon & { 
     );
 }
 
+/**
+ * Who an open item waits on (2.4b): an active member, or nobody. The same
+ * roster as the assignee's (owner decision 103); it never makes the person
+ * accountable.
+ */
+export function WaitingOnPicker({ value, onChange, ...common }: PickerCommon & { value: string | null; onChange: (userId: string | null) => void }) {
+    const tWaiting = useTranslations('workItems');
+    const { members, isLoading } = useMembers();
+    const options = useMemo<ComboboxOption[]>(
+        () => [
+            { value: '', label: tWaiting('detail.waitingOnNobody') },
+            ...members.map((m) => ({ value: m.id, label: memberLabel(m) ?? tWaiting('detail.unknownMember') })),
+        ],
+        [members, tWaiting],
+    );
+    const selected = options.find((o) => o.value === (value ?? '')) ?? null;
+    return (
+        <Combobox
+            id={common.id}
+            disabled={common.disabled}
+            selected={selected}
+            setSelected={(o) => o && (o.value || null) !== value && onChange(o.value || null)}
+            options={isLoading ? undefined : options}
+            caret
+            searchPlaceholder={tWaiting('detail.searchMembers')}
+            buttonProps={common.label ? { 'aria-label': common.label } : undefined}
+        />
+    );
+}
+
 export function PriorityPicker({ value, onChange, ...common }: PickerCommon & { value: WorkItemPriority; onChange: (p: WorkItemPriority) => void }) {
     const tPriority = useTranslations('workItems');
     const options = useMemo<ComboboxOption[]>(() => PRIORITY_ORDER.map((p) => ({ value: p, label: tPriority(`priority.${p}`) })), [tPriority]);

@@ -29,8 +29,9 @@ export function isListOrder(value: string): value is ListOrder {
 }
 
 /**
- * The board's swimlane groupings (2.3; cycle 2.5a, milestone 2.5b), plus a
+ * The board's swimlane groupings (2.3; cycle 2.5a, milestone 2.5b, waiting on
+ * 2.4b), plus a
  * custom field's (`cf:<fieldId>`, 2.4). The board's lane chooser and the
  * saved-view schema both read this one list.
  */
-export const BUILT_IN_LANES = ['none', 'assignee', 'priority', 'type', 'label', 'project', 'cycle', 'milestone'] as const;
+export const BUILT_IN_LANES = ['none', 'assignee', 'priority', 'type', 'label', 'project', 'cycle', 'milestone', 'waitingOn'] as const;

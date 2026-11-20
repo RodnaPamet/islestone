@@ -54,6 +54,7 @@ export function toRow(item: WorkItemRow): WorkItemRow {
         stateCategory: item.stateCategory,
         priority: item.priority,
         assigneeId: item.assigneeId,
+        waitingOnUserId: item.waitingOnUserId ?? null,
         createdByUserId: item.createdByUserId,
         parentId: item.parentId,
         cycleId: item.cycleId ?? null,
@@ -178,6 +179,16 @@ export interface BulkResult {
     results: Array<{ id: string; status: 'ok' | 'not_found' }>;
 }
 
+/**
+ * The row fields a move into `state` changes besides the state: its category
+ * and, into a closed one, waiting on (cleared by the server, 2.4b).
+ */
+function stateRowFields(state: { category: WorkItemRow['stateCategory'] } | undefined): Partial<WorkItemRow> {
+    if (!state) return {};
+    const closed = state.category === 'DONE' || state.category === 'CANCELLED';
+    return { stateCategory: state.category, ...(closed ? { waitingOnUserId: null } : {}) };
+}
+
 export function useWorkItemMutations() {
     const cache = useWorkItemCache();
     const config = useWorkConfig();
@@ -221,7 +232,7 @@ export function useWorkItemMutations() {
             /** Move to another state of the item's team (`If-Match`). */
             setState(item: WorkItemRow, stateId: string) {
                 const state = config.stateById.get(stateId);
-                const fields: Partial<WorkItemRow> = { stateId, ...(state ? { stateCategory: state.category } : {}) };
+                const fields: Partial<WorkItemRow> = { stateId, ...stateRowFields(state) };
                 return write(item, fields, (version) =>
                     apiSend<WorkItemDetailData>('POST', url(`/work-items/${item.id}/state`), { stateId }, { ifMatch: version }),
                 );
@@ -255,6 +266,13 @@ export function useWorkItemMutations() {
                 );
             },
 
+            /** Name who the open item waits on, or nobody (2.4b; `If-Match`). */
+            setWaitingOn(item: WorkItemRow, userId: string | null) {
+                return write(item, { waitingOnUserId: userId }, (version) =>
+                    apiSend<WorkItemDetailData>('PUT', url(`/work-items/${item.id}/waiting-on`), { userId }, { ifMatch: version }),
+                );
+            },
+
             /** Assign or clear (`If-Match`). */
             assign(item: WorkItemRow, assigneeId: string | null) {
                 return write(item, { assigneeId }, (version) =>
@@ -272,7 +290,7 @@ export function useWorkItemMutations() {
                 const state = config.stateById.get(move.stateId);
                 const fields: Partial<WorkItemRow> = {
                     stateId: move.stateId,
-                    ...(state ? { stateCategory: state.category } : {}),
+                    ...stateRowFields(state),
                     ...(move.sortKey ? { sortKey: move.sortKey } : {}),
                 };
                 const position = move.afterId ? { afterId: move.afterId } : move.beforeId ? { beforeId: move.beforeId } : undefined;
@@ -322,7 +340,7 @@ export function useWorkItemMutations() {
                 const planned = items.map((item) => {
                     const state =
                         'stateId' in target ? config.stateById.get(target.stateId) : config.defaultStateOf(item.teamId, target.stateCategory);
-                    return { item, next: state ? { ...item, stateId: state.id, stateCategory: state.category } : item };
+                    return { item, next: state ? { ...item, stateId: state.id, ...stateRowFields(state) } : item };
                 });
                 for (const p of planned) cache.applyRow(p.next, detailExtrasFor(config, p.next));
                 return bulkSend(planned.map((p) => p.item), 'state', { ...target });

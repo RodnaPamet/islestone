@@ -7,7 +7,9 @@
  *     transaction (the email is an outbox row that must commit with the
  *     item); the due bell and the assignment bell run after the COMMIT;
  *   - a state change, single or bulk: audit inside; then COMMIT, then the
- *     automation event, then the watcher fan-out.
+ *     automation event, then the watcher fan-out;
+ *   - waiting on (2.4b): audit inside; then COMMIT, then the bell to the
+ *     person named, then the watcher fan-out.
  *
  * Copied in shape from inflect-compliance's
  * `tests/unit/usecases/task-status-sequence-order.test.ts`, with the create
@@ -45,6 +47,7 @@ const ITEM = {
     stateId: 's-todo',
     stateCategory: 'UNSTARTED',
     assigneeId: null,
+    waitingOnUserId: null,
     parentId: null,
     sortKey: 'V',
     startedAt: null,
@@ -98,7 +101,7 @@ jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
     CommentRepository: {},
     WorkItemRepository: {
         lastSortKey: jest.fn(async () => null),
-        create: jest.fn(async () => ({ ...ROW, assigneeId: 'u-assignee', dueDate: new Date() })),
+        create: jest.fn(async (_db: unknown, _ctx: unknown, data: { waitingOnUserId?: string | null }) => ({ ...ROW, assigneeId: 'u-assignee', dueDate: new Date(), waitingOnUserId: data.waitingOnUserId ?? null })),
         getById: jest.fn(async () => ({ ...ROW, description: null, createdByUserId: 'u1', state: {}, type: {}, parent: null, labels: [], _count: { subItems: 0, comments: 0, watchers: 0 } })),
         updateVersioned: jest.fn(async () => 1),
         listByIds: jest.fn(async () => [{ ...ITEM, type: { name: 'Bug' } }]),
@@ -119,13 +122,16 @@ jest.mock('@/app-layer/usecases/work-item-shared', () => {
         emitAssignedBells: jest.fn(async () => {
             events.push('bell:assigned');
         }),
+        emitWaitingOnBell: jest.fn(async (_ctx: unknown, userId: string | null) => {
+            if (userId) events.push('bell:waiting-on');
+        }),
         emitWatcherActivity: jest.fn(async () => {
             events.push('watchers:fan-out');
         }),
     };
 });
 
-import { bulkSetWorkItemState, createWorkItem, setWorkItemState } from '@/app-layer/usecases/work-item';
+import { bulkSetWorkItemState, createWorkItem, setWorkItemState, setWorkItemWaitingOn } from '@/app-layer/usecases/work-item';
 
 import { makeRequestContext } from '../../helpers/make-context';
 
@@ -158,6 +164,19 @@ describe('work-item side-effect order', () => {
     it('a bulk state change keeps the same order', async () => {
         await bulkSetWorkItemState(ctx, { workItemIds: ['w1'], stateId: 's-doing' });
         expect(events).toEqual(['tx:begin', 'audit:WORK_ITEM_STATE_CHANGED', 'tx:commit', 'automation:WORK_ITEM_STATE_CHANGED', 'watchers:fan-out']);
+    });
+
+    it('waiting on: audit inside; then COMMIT, the bell to the person named, watchers', async () => {
+        await setWorkItemWaitingOn(ctx, 'w1', { userId: 'u-other' });
+        const firstCommit = events.indexOf('tx:commit');
+        expect(events.slice(0, firstCommit + 1)).toEqual(['tx:begin', 'audit:WORK_ITEM_WAITING_ON_CHANGED', 'tx:commit']);
+        expect(events.filter((e) => e.startsWith('bell:') || e.startsWith('watchers:'))).toEqual(['bell:waiting-on', 'watchers:fan-out']);
+        expect(events.indexOf('bell:waiting-on')).toBeGreaterThan(firstCommit);
+    });
+
+    it('a create naming who it waits on rings that bell after the commit, last', async () => {
+        await createWorkItem(ctx, { projectId: 'p1', typeId: 'ty1', title: 'New', waitingOnUserId: 'u-other' });
+        expect(events.slice(events.indexOf('tx:commit'))).toEqual(['tx:commit', 'bell:due', 'bell:assigned', 'bell:waiting-on']);
     });
 
     it('a refused transition writes nothing and emits nothing', async () => {
