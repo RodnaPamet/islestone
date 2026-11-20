@@ -20,7 +20,7 @@ import { gitFiles } from '../helpers/git-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const T = 'src/app/api/t/[tenantSlug]';
-const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views'].map((r) => `${T}/${r}/`);
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles'].map((r) => `${T}/${r}/`);
 
 type Spec = Partial<Record<'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', string>>;
 const W = `${T}/work-items`;
@@ -52,6 +52,12 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${W}/[workItemId]/labels/[labelId]/route.ts`]: { DELETE: 'work_items.edit' },
     // Sub-phase 2.4.
     [`${W}/[workItemId]/custom-fields/[fieldId]/route.ts`]: { PUT: 'work_items.edit' },
+    // Sub-phase 2.5a (owner decision 72).
+    [`${W}/[workItemId]/cycle/route.ts`]: { PUT: 'work_items.edit' },
+    [`${T}/cycles/route.ts`]: { GET: 'cycles.view', POST: 'cycles.manage' },
+    [`${T}/cycles/[cycleId]/route.ts`]: { GET: 'cycles.view', PATCH: 'cycles.manage', DELETE: 'cycles.manage' },
+    [`${T}/cycles/[cycleId]/burn-up/route.ts`]: { GET: 'cycles.view' },
+    [`${T}/teams/[teamId]/cycle-schedule/route.ts`]: { GET: 'cycles.view', PUT: 'cycles.manage' },
     [`${T}/projects/[projectId]/custom-fields/route.ts`]: { GET: 'projects.view', POST: 'projects.edit' },
     [`${T}/projects/[projectId]/custom-fields/[fieldId]/route.ts`]: { PATCH: 'projects.edit' },
     [`${T}/projects/[projectId]/custom-fields/[fieldId]/options/route.ts`]: { POST: 'projects.edit' },

@@ -27,6 +27,7 @@ A list is cursor-only: there is no unpaginated form (roadmap H2 seeds 100,000 it
 | `cf.<fieldId>` | `<op>[:<operand>]` | — | A custom-field condition (2.4; `docs/work-items.md`, "Custom fields and saved views"); at most ten |
 | `q` | string | — | The title (case-insensitive) or an exact key such as `ISL-12` |
 | `projectId`, `teamId`, `typeId`, `stateId`, `labelId`, `assigneeId`, `createdById`, `parentId` | id, or a comma-joined list | — | `assigneeId=none` is unassigned, `parentId=none` top-level only; `createdById` is the creator |
+| `cycleId` | ids, `none`, `current`, comma-joinable | — | Sub-phase 2.5a: items in the named cycles; `none` adds the items in no cycle; `current` is every team's cycle current today (in `NOTIFICATIONS_TZ`), resolved by the usecase, and matches nothing when no cycle is current |
 | `watching` | `me` | — | The items the caller watches; the caller is the request's user, and any other value is a 400 |
 | `stateCategory`, `priority` | enum, or a comma-joined list | — | Validated by `parseEnumListFilter`; an unknown member is a 400 |
 | `due` | `overdue` / `next7d` / `soon` | — | Open items due before today, in the next seven days, or (`soon`) overdue or due within `DUE_SOON_DAYS` (7, `src/app-layer/domain/work-item-due.ts`); today is the date in `NOTIFICATIONS_TZ` |

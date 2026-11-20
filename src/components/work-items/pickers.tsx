@@ -117,6 +117,40 @@ export function TypePicker({ value, onChange, ...common }: PickerCommon & { valu
     );
 }
 
+/**
+ * The item's cycle (2.5a): the team's cycles that take items, oldest first,
+ * and "No cycle". The current one stays offered when it has completed, so
+ * the picker can show it.
+ */
+export function CyclePicker({
+    teamId,
+    value,
+    onChange,
+    ...common
+}: PickerCommon & { teamId: string; value: string | null; onChange: (cycleId: string | null) => void }) {
+    const tCycle = useTranslations('workItems');
+    const config = useWorkConfig();
+    const options = useMemo<ComboboxOption[]>(() => {
+        const name = (c: { name: string | null; number: number }) => c.name?.trim() || tCycle('cycle.numbered', { number: c.number });
+        const open = config.openCyclesOfTeam(teamId).map((c) => ({ value: c.id, label: c.status === 'current' ? tCycle('cycle.currentLabel', { name: name(c) }) : name(c) }));
+        const held = value ? config.cycleById.get(value) : undefined;
+        if (held && !open.some((o) => o.value === held.id)) open.unshift({ value: held.id, label: name(held) });
+        return [{ value: '', label: tCycle('cycle.none') }, ...open];
+    }, [config, teamId, value, tCycle]);
+    return (
+        <Combobox
+            id={common.id}
+            disabled={common.disabled}
+            selected={options.find((o) => o.value === (value ?? '')) ?? null}
+            setSelected={(o) => o && (o.value || null) !== value && onChange(o.value || null)}
+            options={options}
+            caret
+            hideSearch
+            buttonProps={common.label ? { 'aria-label': common.label } : undefined}
+        />
+    );
+}
+
 /** Labels usable on an item of `teamId`: workspace labels and the team's. */
 export function LabelsPicker({
     teamId,

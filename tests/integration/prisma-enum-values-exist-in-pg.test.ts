@@ -162,6 +162,7 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
         expect(enums.map((e) => e.name).sort()).toEqual([
             'AuditOutboxStatus',
             'CustomFieldType',
+            'CycleRollover',
             'EmailNotificationType',
             'EmailOutboxStatus',
             'MembershipStatus',
@@ -189,8 +190,8 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
         // then NotificationType 3 + EmailNotificationType 2 + EmailOutboxStatus 3 (1.6),
         // then NotificationType +1, WorkflowStateCategory 5, WorkItemPriority 5,
         // WorkItemRelationType 3 (2.1–2.2), then CustomFieldType 8, ViewLayout 4,
-        // SavedViewVisibility 2 (2.4).
-        expect(values).toBe(64);
+        // SavedViewVisibility 2 (2.4), CycleRollover 2 (2.5a).
+        expect(values).toBe(66);
 
         // No `@@map`ed enum: ADR 0006 rule 3. The mapping half is proved with
         // planted inputs below instead.

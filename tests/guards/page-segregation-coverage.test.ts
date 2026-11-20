@@ -84,7 +84,7 @@ describe('the walk, against a planted repository', () => {
         const plant = [
             `${APP_DIR}my-work/page.tsx`,
             `${APP_DIR}projects/[projectId]/page.tsx`,
-            `${APP_DIR}(team)/cycles/page.tsx`,
+            `${APP_DIR}(team)/roadmaps/page.tsx`,
             `${APP_DIR}inbox/InboxClient.tsx`,
             'src/app/t/[tenantSlug]/(mfa)/auth/mfa/page.tsx',
             `${APP_DIR}ignored/page.tsx`,
@@ -101,10 +101,10 @@ describe('the walk, against a planted repository', () => {
     afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
     it('lists every page under the group, through nested route groups, and only those', () => {
-        expect(appRoutes(root)).toEqual(['/cycles', '/my-work', '/projects/[projectId]']);
+        expect(appRoutes(root)).toEqual(['/my-work', '/projects/[projectId]', '/roadmaps']);
     });
 
     it('reports the routes the lists do not classify', () => {
-        expect(unclassified(appRoutes(root))).toEqual(['/cycles', '/projects/[projectId]']);
+        expect(unclassified(appRoutes(root))).toEqual(['/projects/[projectId]', '/roadmaps']);
     });
 });

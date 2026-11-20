@@ -56,6 +56,7 @@ export function toRow(item: WorkItemRow): WorkItemRow {
         assigneeId: item.assigneeId,
         createdByUserId: item.createdByUserId,
         parentId: item.parentId,
+        cycleId: item.cycleId ?? null,
         sortKey: item.sortKey,
         startDate: item.startDate,
         dueDate: item.dueDate,
@@ -234,6 +235,13 @@ export function useWorkItemMutations() {
                 else next[fieldId] = value;
                 return write(item, { customFields: next }, (version) =>
                     apiSend<WorkItemDetailData>('PUT', url(`/work-items/${item.id}/custom-fields/${fieldId}`), { value: empty ? null : value }, { ifMatch: version }),
+                );
+            },
+
+            /** Put the item in a cycle of its team, or take it out (2.5a; `If-Match`). */
+            setCycle(item: WorkItemRow, cycleId: string | null) {
+                return write(item, { cycleId }, (version) =>
+                    apiSend<WorkItemDetailData>('PUT', url(`/work-items/${item.id}/cycle`), { cycleId }, { ifMatch: version }),
                 );
             },
 

@@ -23,6 +23,7 @@ function row(id: string, over: Partial<WorkItemRow> = {}): WorkItemRow {
         assigneeId: null,
         createdByUserId: 'u-ada',
         parentId: null,
+        cycleId: null,
         sortKey: 'm',
         startDate: null,
         dueDate: null,

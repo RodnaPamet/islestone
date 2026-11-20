@@ -8,7 +8,7 @@
  *
  *   - the landmarks: one banner, the main navigation, one main;
  *   - the sidebar lists the shell's destinations (ADR 0006: My Work, Inbox,
- *     Projects, Views) as workspace links, marks the current page, and shows
+ *     Projects, Cycles, Views) as workspace links, marks the current page, and shows
  *     Settings only to a member who may open it;
  *   - the command palette opens from the keyboard (Ctrl+K) and from the
  *     sidebar's search row, and lists the same destinations, Settings only
@@ -131,6 +131,7 @@ describe('the application shell', () => {
             ['Inbox', '/t/acme/inbox'],
             ['Work items', '/t/acme/work-items'],
             ['Projects', '/t/acme/projects'],
+            ['Cycles', '/t/acme/cycles'],
             ['Views', '/t/acme/views'],
         ]);
         expect(within(nav).getByRole('link', { name: 'My Work', current: 'page' })).toBeInTheDocument();
@@ -167,7 +168,7 @@ describe('the application shell', () => {
         const ids = Array.from(dialog.querySelectorAll('[data-testid^="command-palette-nav-nav:"]')).map((r) =>
             r.getAttribute('data-href'),
         );
-        expect(ids).toEqual(['/t/acme/my-work', '/t/acme/inbox', '/t/acme/work-items', '/t/acme/projects', '/t/acme/views', '/t/acme/settings']);
+        expect(ids).toEqual(['/t/acme/my-work', '/t/acme/inbox', '/t/acme/work-items', '/t/acme/projects', '/t/acme/cycles', '/t/acme/views', '/t/acme/settings']);
 
         fireEvent.click(within(dialog).getByText('Go to Projects'));
         expect(mockPush).toHaveBeenCalledWith('/t/acme/projects');

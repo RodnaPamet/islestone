@@ -35,12 +35,14 @@ import type { WorkItemDetailData, WorkItemPriority } from '@/lib/work-items/type
 
 import { useWorkConfig } from './data/use-work-config';
 import { useWorkItemMutations } from './data/use-work-item-mutations';
-import { AssigneePicker, LabelsPicker, PriorityPicker, StatePicker, TypePicker } from './pickers';
+import { AssigneePicker, CyclePicker, LabelsPicker, PriorityPicker, StatePicker, TypePicker } from './pickers';
 
 export interface NewWorkItemInitial {
     projectId?: string;
     stateId?: string;
     parentId?: string;
+    /** The cycle a new item joins (a cycle's page, 2.5a), when it is the project's team's. */
+    cycleId?: string;
     /** Shown above the form when a parent is preset. */
     parentKey?: string;
 }
@@ -55,6 +57,7 @@ interface FormState {
     assigneeId: string | null;
     labelIds: string[];
     dueDate: string | null;
+    cycleId: string | null;
 }
 
 export function NewWorkItemModal({
@@ -92,6 +95,7 @@ export function NewWorkItemModal({
             assigneeId: null,
             labelIds: [],
             dueDate: null,
+            cycleId: initial?.cycleId && config.cycleById.get(initial.cycleId)?.teamId === teamId ? initial.cycleId : null,
         };
     }, [config, initial, liveProjects]);
 
@@ -129,6 +133,8 @@ export function NewWorkItemModal({
             ...f,
             projectId,
             stateId: (states.find((s) => s.isDefault) ?? states[0])?.id ?? '',
+            // A cycle belongs to a team: another team's project clears it.
+            cycleId: f.cycleId && config.cycleById.get(f.cycleId)?.teamId === team ? f.cycleId : null,
             labelIds: f.labelIds.filter((id) => {
                 const label = config.labelById.get(id);
                 return !!label && (label.teamId === null || label.teamId === team);
@@ -154,6 +160,7 @@ export function NewWorkItemModal({
             ...(form.assigneeId ? { assigneeId: form.assigneeId } : {}),
             ...(form.labelIds.length ? { labelIds: form.labelIds } : {}),
             ...(form.dueDate ? { dueDate: form.dueDate } : {}),
+            ...(form.cycleId ? { cycleId: form.cycleId } : {}),
             ...(initial?.parentId ? { parentId: initial.parentId } : {}),
         });
         setSubmitting(false);
@@ -240,6 +247,11 @@ export function NewWorkItemModal({
                                         clearable
                                     />
                                 </FormField>
+                                {config.openCyclesOfTeam(teamId).length > 0 && (
+                                    <FormField label={t('fields.cycle')}>
+                                        <CyclePicker id="work-item-cycle-input" teamId={teamId} value={form.cycleId} onChange={(v) => set('cycleId', v)} />
+                                    </FormField>
+                                )}
                             </div>
                             {error && (
                                 <p role="alert" className="text-sm text-content-error">

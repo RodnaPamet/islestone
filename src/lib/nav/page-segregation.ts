@@ -52,7 +52,7 @@ export const BACK_AFFORDANCE_COHORT_TODO: readonly string[] = [] as const;
  * navigation (`NAV_PATHS` in `@/components/layout/nav-config`); they have no
  * parent within the workspace. The back affordance is forbidden here.
  */
-export const MAIN_PAGES: readonly string[] = ['/my-work', '/inbox', '/work-items', '/views', '/projects', '/settings'] as const;
+export const MAIN_PAGES: readonly string[] = ['/my-work', '/inbox', '/work-items', '/views', '/projects', '/cycles', '/settings'] as const;
 
 /**
  * Every other workspace route. The back affordance is required here (unless
@@ -65,6 +65,8 @@ export const MAIN_PAGES: readonly string[] = ['/my-work', '/inbox', '/work-items
 export const SUBPAGES: readonly string[] = [
     '/work-items/[workItemKey]',
     '/projects/[projectKey]',
+    // Sub-phase 2.5a: one cycle.
+    '/cycles/[cycleId]',
     // Decision 55: the Settings sections.
     '/settings/teams',
     '/settings/teams/[teamId]',

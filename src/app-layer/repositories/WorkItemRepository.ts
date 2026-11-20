@@ -46,7 +46,7 @@ import type { CustomFieldCondition } from '../domain/custom-field';
 import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
 import { DUE_FILTERS, DUE_SOON_DAYS, type DueFilter } from '../domain/work-item-due';
 import { OPEN_CATEGORY_FILTER, WORKFLOW_STATE_CATEGORIES } from '../domain/workflow-state';
-import { projectVisibilityWhere, type ProjectVisibility } from '../policies/project-visibility';
+import { JOB_PROJECT_VISIBILITY_WHERE, projectVisibilityWhere, type ProjectVisibility } from '../policies/project-visibility';
 import type { RequestContext } from '../types';
 
 const PRIORITIES: readonly WorkItemPriority[] = ['NONE', 'URGENT', 'HIGH', 'MEDIUM', 'LOW'];
@@ -78,6 +78,8 @@ export interface WorkItemFilters {
     assigneeId?: string;
     /** The creator's user id (comma-joinable), as `assigneeId` takes one. */
     createdById?: string;
+    /** Cycle ids (comma-joinable), with `none` for items in no cycle (2.5a; the usecase resolves `current`). */
+    cycleId?: string;
     /** `me`: the items the CALLER watches, read from the request context, never a user id from the client. */
     watching?: 'me';
     /** `overdue`, `next7d` (today to seven days on) or `soon` (overdue or due within `DUE_SOON_DAYS`); open items only. */
@@ -175,6 +177,7 @@ export const workItemListSelect = {
     assigneeId: true,
     createdByUserId: true,
     parentId: true,
+    cycleId: true,
     sortKey: true,
     startDate: true,
     dueDate: true,
@@ -203,6 +206,7 @@ export const workItemGateSelect = {
     stateCategory: true,
     assigneeId: true,
     parentId: true,
+    cycleId: true,
     sortKey: true,
     startedAt: true,
     dueDate: true,
@@ -229,6 +233,7 @@ export type WorkItemPatch = Partial<{
     completedAt: Date | null;
     cancelledAt: Date | null;
     parentId: string | null;
+    cycleId: string | null;
 }>;
 
 /**
@@ -306,6 +311,15 @@ export class WorkItemRepository {
         if (filters.assigneeId === 'none') and.push({ assigneeId: null });
         else if (filters.assigneeId) and.push({ assigneeId: parseIdListFilter(filters.assigneeId) });
         if (filters.createdById) and.push({ createdByUserId: parseIdListFilter(filters.createdById) });
+        if (filters.cycleId !== undefined) {
+            const members = [...new Set(filters.cycleId.split(',').map((m) => m.trim()).filter(Boolean))];
+            const ids = members.filter((m) => m !== 'none');
+            const none = members.length !== ids.length;
+            // An empty list (no current cycle) matches nothing rather than everything.
+            if (none && ids.length > 0) and.push({ OR: [{ cycleId: null }, { cycleId: { in: ids } }] });
+            else if (none) and.push({ cycleId: null });
+            else and.push({ cycleId: { in: ids } });
+        }
         if (filters.watching !== undefined) {
             if (filters.watching !== 'me') throw badRequest('Invalid watching filter. Must be: me.');
             and.push({ watchers: { some: { tenantId: ctx.tenantId, userId: ctx.userId } } });
@@ -600,6 +614,7 @@ export class WorkItemRepository {
             priority: WorkItemPriority;
             assigneeId: string | null;
             parentId: string | null;
+            cycleId?: string | null;
             sortKey: string;
             startDate: Date | null;
             dueDate: Date | null;
@@ -849,6 +864,89 @@ export class WorkItemRepository {
         return { total, byCategory: counts, overdue, unassignedOpen };
     }
 
+    // ── Cycles (sub-phase 2.5a) ──────────────────────────────────────
+
+    /**
+     * Live, visible items per cycle and category: the cycle list's and the
+     * cycle page's counts. Archived projects' items drop out, as they drop out
+     * of the metrics.
+     */
+    static async countsByCycle(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, cycleIds: readonly string[]) {
+        if (cycleIds.length === 0) return [];
+        return db.workItem.groupBy({
+            by: ['cycleId', 'stateCategory'],
+            where: { tenantId: ctx.tenantId, deletedAt: null, cycleId: { in: [...cycleIds] }, AND: [projectVisibilityWhere(v)] },
+            _count: { _all: true },
+        });
+    }
+
+    /**
+     * The rollover's page of a closed cycle's unfinished items: live, open,
+     * in a live and unarchived project (the job form of visibility; an
+     * archived project's items stay behind, as their writes are refused).
+     */
+    static async rolloverCandidates(db: PrismaTx, ctx: RequestContext, cycleId: string, take: number) {
+        return db.workItem.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                cycleId,
+                deletedAt: null,
+                stateCategory: OPEN_CATEGORY_FILTER,
+                AND: [JOB_PROJECT_VISIBILITY_WHERE],
+            },
+            orderBy: { id: 'asc' },
+            take,
+            select: { id: true, number: true, project: { select: { keyPrefix: true } } },
+        });
+    }
+
+    /**
+     * Move a page of items from one cycle to another (or out of cycles). The
+     * `cycleId: from` predicate makes a repeat a no-op; the version increases
+     * (a cycle is part of what the item shows, ADR 0002 §9).
+     */
+    static async moveCycle(db: PrismaTx, ctx: RequestContext, ids: readonly string[], from: string, to: string | null) {
+        if (ids.length === 0) return 0;
+        const result = await db.workItem.updateMany({
+            where: { id: { in: [...ids] }, tenantId: ctx.tenantId, cycleId: from, deletedAt: null, AND: [JOB_PROJECT_VISIBILITY_WHERE] },
+            data: { cycleId: to, version: { increment: 1 } },
+        });
+        return result.count;
+    }
+
+    /**
+     * Every item that names a cycle, deleted ones and those in hidden
+     * projects included: deleting an upcoming cycle must clear them all, or
+     * the RESTRICT foreign key refuses the delete. Deliberately not narrowed
+     * by `deletedAt` or visibility (the usecase is authorised to delete the
+     * cycle, and a hidden item only loses its cycle).
+     */
+    static async idsInCycleIncludingDeleted(db: PrismaTx, ctx: RequestContext, cycleId: string, take: number) {
+        return db.workItem.findMany({
+            where: { tenantId: ctx.tenantId, cycleId },
+            orderBy: { id: 'asc' },
+            take,
+            select: { id: true, number: true, deletedAt: true, project: { select: { keyPrefix: true } } },
+        });
+    }
+
+    /** Which of the cycles any item names, deleted items included (the schedule's replace check). */
+    static async cycleIdsInUse(db: PrismaTx, ctx: RequestContext, cycleIds: readonly string[]): Promise<string[]> {
+        if (cycleIds.length === 0) return [];
+        const rows = await db.workItem.groupBy({ by: ['cycleId'], where: { tenantId: ctx.tenantId, cycleId: { in: [...cycleIds] } } });
+        return rows.flatMap((r) => (r.cycleId ? [r.cycleId] : []));
+    }
+
+    /** Clear the cycle from the given items (see {@link idsInCycleIncludingDeleted}). */
+    static async clearCycleIncludingDeleted(db: PrismaTx, ctx: RequestContext, ids: readonly string[], cycleId: string) {
+        if (ids.length === 0) return 0;
+        const result = await db.workItem.updateMany({
+            where: { id: { in: [...ids] }, tenantId: ctx.tenantId, cycleId },
+            data: { cycleId: null, version: { increment: 1 } },
+        });
+        return result.count;
+    }
+
     // ── Fan-out ──────────────────────────────────────────────────────
 
     /**
@@ -912,6 +1010,8 @@ export class WorkItemRepository {
             sortKey?: string;
             parentId?: string | null;
             assigneeId?: string | null;
+            /** Cleared on a move to another team's project (a cycle is a team's). */
+            cycleId?: string | null;
             completedAt?: Date | null;
             cancelledAt?: Date | null;
             startedAt?: Date | null;

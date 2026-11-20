@@ -268,6 +268,9 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
                 return config.labels.map((x) => x.id);
             case 'project':
                 return config.projects.map((x) => x.id);
+            case 'cycle':
+                // Oldest first, as a team plans them (the config lists newest first).
+                return [...(config.cycles ?? [])].reverse().map((x) => x.id);
             default:
                 return [];
         }
@@ -295,6 +298,11 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
                 return key ? config.labelById.get(key)?.name ?? tBoard('board.noValue') : tBoard('board.noLabel');
             case 'project':
                 return config.projectById.get(key)?.name ?? tBoard('board.noValue');
+            case 'cycle': {
+                const cycle = (config.cycles ?? []).find((c) => c.id === key);
+                if (!key) return tBoard('board.noCycle');
+                return cycle ? cycle.name?.trim() || tBoard('cycle.numbered', { number: cycle.number }) : tBoard('board.noValue');
+            }
         }
     };
 
@@ -338,6 +346,7 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
             else if (laneBy === 'assignee') void mutations.assign(moved, laneKey || null);
             else if (laneBy === 'priority') void mutations.updateFields(moved, { priority: laneKey as WorkItemRow['priority'] });
             else if (laneBy === 'type' && laneKey) void mutations.updateFields(moved, { typeId: laneKey });
+            else if (laneBy === 'cycle') void mutations.setCycle(moved, laneKey || null);
         }
     };
 

@@ -101,6 +101,7 @@ import {
 import { CUSTOM_FIELD_TYPE_SPECS, fieldIdOfOrder } from '@/lib/work-items/custom-fields';
 import { DEFAULT_SORT_DIRECTION, LIST_SORTS, type ListSort, type SortDirection } from '@/lib/work-items/list-sorts';
 import { resolveListCustomFields, writeInitialCustomFieldValues } from './custom-field';
+import { assertCycleTakesItems, currentCycleIdsInTx } from './cycle';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────
@@ -220,6 +221,18 @@ async function keyHitFor(db: PrismaTx, ctx: RequestContext, q: string | undefine
 }
 
 /**
+ * The cycle filter (2.5a): ids and `none` as given; `current` becomes the ids of the
+ * cycles current today (each team's), alongside any ids given. An empty
+ * result is the empty string, which matches nothing.
+ */
+async function resolveCycleFilter(db: PrismaTx, ctx: RequestContext, raw: string): Promise<string> {
+    const members = raw.split(',').map((m) => m.trim()).filter(Boolean);
+    if (!members.includes('current')) return members.join(',');
+    const current = await currentCycleIdsInTx(db, ctx);
+    return [...members.filter((m) => m !== 'current'), ...current].join(',');
+}
+
+/**
  * The live list, one cursor page. Sorts (2.4, docs/pagination.md): a named
  * sort over the item's own columns, or `cf:<fieldId>`, a custom field's value
  * (empty values last). `cf.<fieldId>` conditions filter by a field.
@@ -240,6 +253,9 @@ export async function listWorkItems(ctx: RequestContext, query: ListWorkItemsQue
         const today = todayInTz(new Date(), notificationsTz());
         const { conditions, sortField } = await resolveListCustomFields(db, ctx, rawConditions ?? {}, sortFieldId);
         const listFilters: WorkItemFilters = { ...filters, customFields: conditions };
+        // An empty parameter is no filter; a resolved empty list matches nothing.
+        if (filters.cycleId) listFilters.cycleId = await resolveCycleFilter(db, ctx, filters.cycleId);
+        else delete listFilters.cycleId;
         if (sortField) {
             const direction = dir ?? 'asc';
             const valueKind = CUSTOM_FIELD_TYPE_SPECS[sortField.type].column === 'dateValue' ? 'date' : 'string';
@@ -359,6 +375,8 @@ export interface CreateWorkItemInput {
     position?: { afterId?: string; beforeId?: string };
     /** Field id → value, for the project's live custom fields (2.4). */
     customFields?: Readonly<Record<string, unknown>>;
+    /** A cycle of the project's team that is not completed (2.5a). */
+    cycleId?: string | null;
 }
 
 export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemInput): Promise<WorkItemDto> {
@@ -388,6 +406,7 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
         if (state.archivedAt) throw badRequest(`${state.name} is archived and takes no work items.`);
 
         if (input.assigneeId) await assertActiveMember(db, ctx, input.assigneeId);
+        if (input.cycleId) await assertCycleTakesItems(db, ctx, input.cycleId, project.teamId);
         if (labelIds.length > 0) await assertLabelsUsable(db, ctx, labelIds, project.teamId);
         if (input.parentId) await assertParentAllowed(db, ctx, v, input.parentId, { projectId: project.id, subtreeHeight: 0 });
 
@@ -412,6 +431,7 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
             priority: input.priority ?? 'NONE',
             assigneeId: input.assigneeId ?? null,
             parentId: input.parentId ?? null,
+            cycleId: input.cycleId ?? null,
             sortKey,
             startDate: parseDateOnly(input.startDate),
             dueDate: parseDateOnly(input.dueDate),
@@ -434,6 +454,7 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
                 priority: row.priority,
                 projectId: project.id,
                 parentId: row.parentId,
+                ...(row.cycleId ? { cycleId: row.cycleId } : {}),
                 ...(customFieldIds.length ? { customFieldIds } : {}),
             },
         });

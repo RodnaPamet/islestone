@@ -581,3 +581,19 @@ executorRegistry.register('work-item-sortkey-rebalance', async (payload) => {
     const r = await processSortKeyRebalance(forwarded);
     return makeResult('work-item-sortkey-rebalance', startedAt, startMs, r.items, r.items, 0, { projects: r.projects });
 });
+
+// ── Cycles (sub-phase 2.5a) ──────────────────────────────────────────
+
+executorRegistry.register('cycle-rollover', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processCycleRollover } = await import('./cycle-rollover');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId };
+    const r = await processCycleRollover(forwarded);
+    return makeResult('cycle-rollover', startedAt, startMs, r.tenants, r.tenants - r.failedTenants, r.failedTenants, {
+        teams: r.teams,
+        cyclesCreated: r.cyclesCreated,
+        cyclesClosed: r.cyclesClosed,
+        itemsMoved: r.itemsMoved,
+    });
+});

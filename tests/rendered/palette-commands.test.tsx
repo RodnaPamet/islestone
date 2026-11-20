@@ -158,7 +158,7 @@ afterEach(() => {
 // ─── Navigation ───────────────────────────────────────────────────────
 
 /** The rows every member gets; Settings follows `mayOpenSettings` (below). */
-const NAV_IDS = ['nav:my-work', 'nav:inbox', 'nav:work-items', 'nav:projects', 'nav:views'];
+const NAV_IDS = ['nav:my-work', 'nav:inbox', 'nav:work-items', 'nav:projects', 'nav:cycles', 'nav:views'];
 
 describe('Command Palette — navigation commands', () => {
     it('renders one row per shell destination, in sidebar order', () => {
@@ -179,6 +179,7 @@ describe('Command Palette — navigation commands', () => {
             '/t/acme-corp/inbox',
             '/t/acme-corp/work-items',
             '/t/acme-corp/projects',
+            '/t/acme-corp/cycles',
             '/t/acme-corp/views',
         ]);
     });

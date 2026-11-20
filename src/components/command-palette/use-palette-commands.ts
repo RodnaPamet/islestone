@@ -37,6 +37,7 @@
 
 import {
     Bell,
+    CalendarClock,
     Folder,
     LayoutList,
     LogOut,
@@ -153,6 +154,15 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 matchLabel: 'Projects',
                 icon: Folder,
                 href: href(NAV_PATHS.projects),
+            },
+            {
+                id: 'nav:cycles',
+                group: 'Navigation',
+                label: t('goToCycles'),
+                matchLabel: 'Cycles',
+                icon: CalendarClock,
+                href: href(NAV_PATHS.cycles),
+                keywords: ['burn-up', 'rollover'],
             },
             {
                 id: 'nav:views',

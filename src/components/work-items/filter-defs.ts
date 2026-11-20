@@ -24,7 +24,7 @@ import type { Member } from '@/lib/work-items/types';
 import type { WorkConfigIndex } from './data/use-work-config';
 
 /** Every key the list reads from the URL (3.6's next-best-action reads `due=overdue`). */
-export const WORK_ITEM_FILTER_KEYS = ['stateCategory', 'stateId', 'priority', 'typeId', 'labelId', 'assigneeId', 'projectId', 'due'] as const;
+export const WORK_ITEM_FILTER_KEYS = ['stateCategory', 'stateId', 'priority', 'typeId', 'labelId', 'assigneeId', 'projectId', 'cycleId', 'due'] as const;
 export type WorkItemFilterKey = (typeof WORK_ITEM_FILTER_KEYS)[number];
 
 type Translate = (key: string, values?: Record<string, string | number>) => string;
@@ -36,6 +36,8 @@ export interface FilterScope {
     teamId?: string;
     /** The view fixes the assignee (My Work): no assignee facet. */
     fixedAssignee?: boolean;
+    /** The view is one cycle's (2.5a): no cycle facet. */
+    fixedCycle?: boolean;
 }
 
 export function assigneeOptionsFromMembers(members: readonly Member[], t: Translate) {
@@ -94,6 +96,25 @@ export function workItemFilterDefsInput(config: WorkConfigIndex, members: readon
             icon: Folder,
             multiple: true,
             options: config.projects.map((p) => ({ value: p.id, label: p.name })),
+        };
+    }
+    // Sub-phase 2.5a: the current cycle, no cycle, or the scope's cycles that
+    // take items (every team's on a workspace-wide page), from the config.
+    if (!scope.fixedCycle && (config.cycles ?? []).length > 0) {
+        const teamName = new Map(config.teams.map((x) => [x.id, x.name]));
+        const cycles = (config.cycles ?? []).filter((c) => c.status !== 'completed' && (!scope.teamId || c.teamId === scope.teamId));
+        defs.cycleId = {
+            label: t('filters.cycle'),
+            icon: CalendarDays,
+            multiple: true,
+            options: [
+                { value: 'current', label: t('filters.currentCycle') },
+                { value: 'none', label: t('filters.noCycle') },
+                ...cycles.map((c) => {
+                    const name = c.name?.trim() || t('cycle.numbered', { number: c.number });
+                    return { value: c.id, label: scope.teamId ? name : `${name} · ${teamName.get(c.teamId) ?? ''}` };
+                }),
+            ],
         };
     }
     defs.due = {

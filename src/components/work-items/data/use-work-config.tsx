@@ -11,7 +11,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
 import { useTenantSWR } from '@/lib/data/use-tenant-swr';
-import type { Member, ViewState, WorkItemViewConfig, WorkflowStateCategory } from '@/lib/work-items/types';
+import type { Member, ViewCycle, ViewState, WorkItemViewConfig, WorkflowStateCategory } from '@/lib/work-items/types';
 import { WORKFLOW_STATE_CATEGORIES } from '@/app-layer/domain/workflow-state';
 
 export interface WorkConfigIndex extends WorkItemViewConfig {
@@ -19,12 +19,15 @@ export interface WorkConfigIndex extends WorkItemViewConfig {
     stateById: Map<string, ViewState>;
     typeById: Map<string, WorkItemViewConfig['types'][number]>;
     labelById: Map<string, WorkItemViewConfig['labels'][number]>;
+    cycleById: Map<string, ViewCycle>;
+    /** A team's cycles that take items (not completed), oldest first (2.5a). */
+    openCyclesOfTeam: (teamId: string) => ViewCycle[];
     statesOfTeam: (teamId: string) => ViewState[];
     /** A team's default state of a category (the first of it when none is marked). */
     defaultStateOf: (teamId: string, category: WorkflowStateCategory) => ViewState | undefined;
 }
 
-const EMPTY: WorkItemViewConfig = { projects: [], teams: [], states: [], types: [], labels: [], customFields: [] };
+const EMPTY: WorkItemViewConfig = { projects: [], teams: [], states: [], types: [], labels: [], customFields: [], cycles: [] };
 
 export function indexConfig(config: WorkItemViewConfig): WorkConfigIndex {
     const byTeam = new Map<string, ViewState[]>();
@@ -51,6 +54,11 @@ export function indexConfig(config: WorkItemViewConfig): WorkConfigIndex {
         stateById: new Map(config.states.map((s) => [s.id, s])),
         typeById: new Map(config.types.map((t) => [t.id, t])),
         labelById: new Map(config.labels.map((l) => [l.id, l])),
+        cycleById: new Map((config.cycles ?? []).map((c) => [c.id, c])),
+        openCyclesOfTeam: (teamId) =>
+            (config.cycles ?? [])
+                .filter((c) => c.teamId === teamId && c.status !== 'completed')
+                .sort((a, b) => (a.startsOn < b.startsOn ? -1 : a.startsOn > b.startsOn ? 1 : 0)),
         statesOfTeam: (teamId) => byTeam.get(teamId) ?? [],
         defaultStateOf: (teamId, category) => {
             const ofCategory = (byTeam.get(teamId) ?? []).filter((s) => s.category === category);

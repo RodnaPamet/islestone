@@ -156,3 +156,10 @@ enum SavedViewVisibility {
   PERSONAL
   SHARED
 }
+
+/// Where a team's unfinished items go when one of its cycles ends (sub-phase
+/// 2.5, owner decision 64): the next cycle, or no cycle.
+enum CycleRollover {
+  NEXT_CYCLE
+  NO_CYCLE
+}

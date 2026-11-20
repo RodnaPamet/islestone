@@ -43,6 +43,7 @@ describe('executorRegistry — default registrations', () => {
     it('auto-registers exactly the built-in executors at import time', () => {
         expect(reg.listRegistered().sort()).toEqual([
             'audit-outbox-flush',
+            'cycle-rollover',
             'health-check',
             'key-rotation',
             'notification-outbox-flush',

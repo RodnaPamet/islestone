@@ -9,6 +9,7 @@
  *   - health-check:              every 2 min (drives the worker heartbeat)
  *   - notification-outbox-flush: every 10 min (drain the email outbox)
  *   - audit-outbox-flush:        every 5 min (replay queued audit entries onto the chain)
+ *   - cycle-rollover:            00:10 in NOTIFICATIONS_TZ (close ended cycles; 2.5a)
  *
  * The two key rotations (`key-rotation`, `tenant-dek-rotation`) are started by
  * an operator through their admin routes and have no schedule.
@@ -156,6 +157,17 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         name: 'work-item-sortkey-rebalance',
         pattern: '45 3 * * *',    // 03:45 UTC
         description: 'Rewrite the sort keys of projects whose keys passed 64 characters, keeping their order.',
+        defaultPayload: {},
+    },
+    {
+        name: 'cycle-rollover',
+        pattern: '10 0 * * *',    // 00:10 in NOTIFICATIONS_TZ
+        // Just after midnight in the reminder zone, so a cycle's last day has
+        // ended there (owner decision 64) and the moved items are in their new
+        // cycle before anyone's working day; off the hour, before the 02:30
+        // purge and the 08:00 reminders.
+        tz: env.NOTIFICATIONS_TZ,
+        description: 'Close ended cycles, move their unfinished items to the next cycle (or out of cycles), and keep each enabled cycle schedule filled. Idempotent: a cycle closes once.',
         defaultPayload: {},
     },
 ];

@@ -72,6 +72,14 @@ export function useWorkItemColumns(extended = false) {
             { id: 'created', header: tCols('col.created'), cell: ({ row }) => row.original.createdAt.slice(0, 10) },
             { id: 'updated', header: tCols('col.updated'), cell: ({ row }) => row.original.updatedAt.slice(0, 10) },
             { id: 'type', header: tCols('col.type'), cell: ({ row }) => config.typeById.get(row.original.typeId)?.name ?? '' },
+            {
+                id: 'cycle',
+                header: tCols('col.cycle'),
+                cell: ({ row }) => {
+                    const cycle = row.original.cycleId ? config.cycleById.get(row.original.cycleId) : undefined;
+                    return cycle ? cycle.name?.trim() || tCols('cycle.numbered', { number: cycle.number }) : '';
+                },
+            },
             ...(config.customFields ?? [])
                 .filter((f) => !f.archived)
                 .map((field): ColumnDef<WorkItemRow> => ({
@@ -110,6 +118,7 @@ export function useWorkItemColumnChoices() {
             { id: 'created', label: tChoice('col.created'), defaultVisible: false },
             { id: 'updated', label: tChoice('col.updated'), defaultVisible: false },
             { id: 'type', label: tChoice('col.type'), defaultVisible: false },
+            { id: 'cycle', label: tChoice('col.cycle'), defaultVisible: false },
             ...(config.customFields ?? []).filter((f) => !f.archived).map((f) => ({ id: `cf:${f.id}`, label: f.name, defaultVisible: false })),
         ],
         [tChoice, config],

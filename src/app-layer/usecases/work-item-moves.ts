@@ -229,6 +229,10 @@ export async function moveWorkItemToProject(ctx: RequestContext, id: string, inp
                 number: n,
                 stateId: target.id,
                 stateCategory: target.category,
+                // A cycle belongs to a team (ADR 0002 §10): another team's
+                // project clears it, in this same UPDATE, or the composite FK
+                // refuses the move.
+                ...(crossTeam ? { cycleId: null } : {}),
                 ...(row.id === id ? { sortKey: rootKey } : {}),
             });
             if (count === 0) {
@@ -256,6 +260,7 @@ export async function moveWorkItemToProject(ctx: RequestContext, id: string, inp
                 movedCount: rows.length,
                 stateRemapped,
                 clearedCustomFieldValues,
+                ...(crossTeam && rows.some((r) => r.cycleId) ? { clearedCycle: true } : {}),
             },
         });
         return { fromKey, toKey, movedCount: rows.length };
