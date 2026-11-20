@@ -816,7 +816,8 @@
             "changed": "changed this work item",
             "commented": "commented",
             "customFieldSet": "changed a field",
-            "cycleChanged": "changed the cycle"
+            "cycleChanged": "changed the cycle",
+            "milestoneChanged": "changed the milestone"
         },
         "subItems": {
             "title": "Sub-items",

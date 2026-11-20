@@ -33,6 +33,8 @@ export interface WorkItemRow {
     parentId: string | null;
     /** The team's cycle the item is planned in (2.5a). */
     cycleId: string | null;
+    /** The project's milestone the item is aimed at (2.5b). */
+    milestoneId: string | null;
     sortKey: string;
     startDate: string | null;
     dueDate: string | null;
@@ -123,6 +125,15 @@ export interface ViewCycle {
     status: CycleStatusName;
 }
 
+/** A milestone as the views name it (2.5b): pickers, filters, lanes and the column. */
+export interface ViewMilestone {
+    id: string;
+    projectId: string;
+    name: string;
+    /** `YYYY-MM-DD`, or `null` for a milestone without a date. */
+    dueDate: string | null;
+}
+
 /** What every work-item view renders with: small sets, read once on the server. */
 export interface WorkItemViewConfig {
     projects: ViewProject[];
@@ -135,6 +146,8 @@ export interface WorkItemViewConfig {
     customFields: ViewCustomField[];
     /** Every team's cycles, newest first (2.5a); empty for a viewer without `cycles.view`. */
     cycles: ViewCycle[];
+    /** The visible projects' milestones, in each project's order (2.5b). */
+    milestones: ViewMilestone[];
 }
 
 /** What the views menu offers its viewer (2.4), asked on the server. */
@@ -286,4 +299,25 @@ export interface BurnUpData {
     points: BurnUpPointData[];
     /** More items than the burn-up reads: the chart counts the first ones only. */
     truncated: boolean;
+}
+
+/** Live, visible items of a milestone (2.5b): scope leaves out cancelled ones. */
+export interface MilestoneProgress {
+    scope: number;
+    done: number;
+}
+
+/** A milestone as `GET /projects/:id/milestones` returns it (2.5b). */
+export interface MilestoneData extends ViewMilestone {
+    progress: MilestoneProgress;
+    /** The due date has passed (today in `NOTIFICATIONS_TZ`) and open items remain. */
+    late: boolean;
+}
+
+/** What the milestone pages offer their viewer (2.5b), asked on the server. */
+export interface MilestoneAffordances {
+    /** Create, rename, re-date, reorder and delete milestones (`projects.edit`). */
+    manageMilestones: boolean;
+    /** Aim an item at a milestone or clear it (`work_items.edit`). */
+    planItems: boolean;
 }

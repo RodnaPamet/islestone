@@ -57,6 +57,7 @@ export function toRow(item: WorkItemRow): WorkItemRow {
         createdByUserId: item.createdByUserId,
         parentId: item.parentId,
         cycleId: item.cycleId ?? null,
+        milestoneId: item.milestoneId ?? null,
         sortKey: item.sortKey,
         startDate: item.startDate,
         dueDate: item.dueDate,

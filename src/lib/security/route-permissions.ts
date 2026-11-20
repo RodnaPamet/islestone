@@ -545,6 +545,32 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'work_items.edit',
         note: 'Put an item in a cycle of its team, or take it out (the version increases).',
     },
+
+    // ── Milestones (sub-phase 2.5b; owner decision 72: the project keys) ──
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/milestones$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: "A visible project's milestones with their progress over visible items.",
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/milestones$`),
+        methods: ['POST'],
+        permission: 'projects.edit',
+        note: 'Create a milestone: a milestone is part of its project (decision 72).',
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/milestones\\/[^\\/]+$`),
+        methods: ['PATCH', 'DELETE'],
+        permission: 'projects.edit',
+        note: 'Rename, re-date or reorder a milestone; delete one (its items leave it first).',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/milestone$`),
+        methods: ['PUT'],
+        permission: 'work_items.edit',
+        note: "Aim an item at a milestone of its project, or clear it (the version increases).",
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────

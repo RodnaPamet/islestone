@@ -46,6 +46,7 @@ export const CONFIG: WorkItemViewConfig = {
     ],
     customFields: [],
     cycles: [],
+    milestones: [],
 };
 
 export const MEMBERS: Member[] = [
@@ -69,6 +70,7 @@ export function row(n: number, over: Partial<WorkItemRow> = {}): WorkItemRow {
         createdByUserId: 'u-ada',
         parentId: null,
         cycleId: null,
+        milestoneId: null,
         sortKey: `a${n}`,
         startDate: null,
         dueDate: null,

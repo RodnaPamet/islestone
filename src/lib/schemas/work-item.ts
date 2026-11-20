@@ -59,6 +59,8 @@ export const CreateWorkItemSchema = z
         customFields: CustomFieldValuesInputSchema.optional(),
         /** A cycle of the project's team that is not completed (2.5a). */
         cycleId: Id.nullish(),
+        /** A milestone of the project (2.5b). */
+        milestoneId: Id.nullish(),
     })
     .strict();
 
@@ -146,6 +148,8 @@ export const WorkItemQuerySchema = z.object({
     createdById: z.string().max(2000).optional(),
     /** Cycle ids (comma-joinable), `none`, or `current` (each team's current cycle; 2.5a). */
     cycleId: z.string().max(2000).optional(),
+    /** Milestone ids (comma-joinable), or `none` (2.5b). */
+    milestoneId: z.string().max(2000).optional(),
     /** Only `me`: the caller's watched items, resolved from the request context. */
     watching: z.enum(['me']).optional(),
     due: z.enum(DUE_FILTERS).optional(),

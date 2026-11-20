@@ -80,6 +80,8 @@ export interface WorkItemFilters {
     createdById?: string;
     /** Cycle ids (comma-joinable), with `none` for items in no cycle (2.5a; the usecase resolves `current`). */
     cycleId?: string;
+    /** Milestone ids (comma-joinable), with `none` for items in no milestone (2.5b). */
+    milestoneId?: string;
     /** `me`: the items the CALLER watches, read from the request context, never a user id from the client. */
     watching?: 'me';
     /** `overdue`, `next7d` (today to seven days on) or `soon` (overdue or due within `DUE_SOON_DAYS`); open items only. */
@@ -178,6 +180,7 @@ export const workItemListSelect = {
     createdByUserId: true,
     parentId: true,
     cycleId: true,
+    milestoneId: true,
     sortKey: true,
     startDate: true,
     dueDate: true,
@@ -207,6 +210,7 @@ export const workItemGateSelect = {
     assigneeId: true,
     parentId: true,
     cycleId: true,
+    milestoneId: true,
     sortKey: true,
     startedAt: true,
     dueDate: true,
@@ -234,6 +238,7 @@ export type WorkItemPatch = Partial<{
     cancelledAt: Date | null;
     parentId: string | null;
     cycleId: string | null;
+    milestoneId: string | null;
 }>;
 
 /**
@@ -319,6 +324,14 @@ export class WorkItemRepository {
             if (none && ids.length > 0) and.push({ OR: [{ cycleId: null }, { cycleId: { in: ids } }] });
             else if (none) and.push({ cycleId: null });
             else and.push({ cycleId: { in: ids } });
+        }
+        if (filters.milestoneId) {
+            const members = [...new Set(filters.milestoneId.split(',').map((m) => m.trim()).filter(Boolean))];
+            const ids = members.filter((m) => m !== 'none');
+            const none = members.length !== ids.length;
+            if (none && ids.length > 0) and.push({ OR: [{ milestoneId: null }, { milestoneId: { in: ids } }] });
+            else if (none) and.push({ milestoneId: null });
+            else and.push({ milestoneId: { in: ids } });
         }
         if (filters.watching !== undefined) {
             if (filters.watching !== 'me') throw badRequest('Invalid watching filter. Must be: me.');
@@ -615,6 +628,7 @@ export class WorkItemRepository {
             assigneeId: string | null;
             parentId: string | null;
             cycleId?: string | null;
+            milestoneId?: string | null;
             sortKey: string;
             startDate: Date | null;
             dueDate: Date | null;
@@ -947,6 +961,53 @@ export class WorkItemRepository {
         return result.count;
     }
 
+    // ── Milestones (sub-phase 2.5b) ──────────────────────────────────
+
+    /**
+     * Live, visible items per milestone and category: the milestones page's
+     * progress. An archived project's milestones keep their progress (the
+     * project page still reads its items), so archived projects count here.
+     */
+    static async countsByMilestone(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, milestoneIds: readonly string[]) {
+        if (milestoneIds.length === 0) return [];
+        return db.workItem.groupBy({
+            by: ['milestoneId', 'stateCategory'],
+            where: {
+                tenantId: ctx.tenantId,
+                deletedAt: null,
+                milestoneId: { in: [...milestoneIds] },
+                AND: [projectVisibilityWhere(v, { includeArchived: true })],
+            },
+            _count: { _all: true },
+        });
+    }
+
+    /**
+     * Every item that names a milestone, deleted ones and those in hidden
+     * projects included: deleting a milestone must clear them all, or its
+     * foreign key refuses the delete. Deliberately not narrowed by
+     * `deletedAt` or visibility (the caller may change the project, and an
+     * item only loses its milestone).
+     */
+    static async idsInMilestoneIncludingDeleted(db: PrismaTx, ctx: RequestContext, milestoneId: string, take: number) {
+        return db.workItem.findMany({
+            where: { tenantId: ctx.tenantId, milestoneId },
+            orderBy: { id: 'asc' },
+            take,
+            select: { id: true, number: true, deletedAt: true, project: { select: { keyPrefix: true } } },
+        });
+    }
+
+    /** Clear the milestone from the given items (see {@link idsInMilestoneIncludingDeleted}). */
+    static async clearMilestoneIncludingDeleted(db: PrismaTx, ctx: RequestContext, ids: readonly string[], milestoneId: string) {
+        if (ids.length === 0) return 0;
+        const result = await db.workItem.updateMany({
+            where: { id: { in: [...ids] }, tenantId: ctx.tenantId, milestoneId },
+            data: { milestoneId: null, version: { increment: 1 } },
+        });
+        return result.count;
+    }
+
     // ── Fan-out ──────────────────────────────────────────────────────
 
     /**
@@ -1012,6 +1073,8 @@ export class WorkItemRepository {
             assigneeId?: string | null;
             /** Cleared on a move to another team's project (a cycle is a team's). */
             cycleId?: string | null;
+            /** Cleared on every move to another project (a milestone is a project's). */
+            milestoneId?: string | null;
             completedAt?: Date | null;
             cancelledAt?: Date | null;
             startedAt?: Date | null;

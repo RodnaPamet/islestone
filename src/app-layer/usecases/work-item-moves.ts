@@ -233,6 +233,9 @@ export async function moveWorkItemToProject(ctx: RequestContext, id: string, inp
                 // project clears it, in this same UPDATE, or the composite FK
                 // refuses the move.
                 ...(crossTeam ? { cycleId: null } : {}),
+                // A milestone belongs to a project: every move to another
+                // project clears it, or its composite FK refuses the move.
+                milestoneId: null,
                 ...(row.id === id ? { sortKey: rootKey } : {}),
             });
             if (count === 0) {
@@ -261,6 +264,7 @@ export async function moveWorkItemToProject(ctx: RequestContext, id: string, inp
                 stateRemapped,
                 clearedCustomFieldValues,
                 ...(crossTeam && rows.some((r) => r.cycleId) ? { clearedCycle: true } : {}),
+                ...(rows.some((r) => r.milestoneId) ? { clearedMilestone: true } : {}),
             },
         });
         return { fromKey, toKey, movedCount: rows.length };

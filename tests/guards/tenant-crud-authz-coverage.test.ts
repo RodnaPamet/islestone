@@ -58,6 +58,10 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${T}/cycles/[cycleId]/route.ts`]: { GET: 'cycles.view', PATCH: 'cycles.manage', DELETE: 'cycles.manage' },
     [`${T}/cycles/[cycleId]/burn-up/route.ts`]: { GET: 'cycles.view' },
     [`${T}/teams/[teamId]/cycle-schedule/route.ts`]: { GET: 'cycles.view', PUT: 'cycles.manage' },
+    // Sub-phase 2.5b (owner decision 72: milestones under the project keys).
+    [`${T}/projects/[projectId]/milestones/route.ts`]: { GET: 'projects.view', POST: 'projects.edit' },
+    [`${T}/projects/[projectId]/milestones/[milestoneId]/route.ts`]: { PATCH: 'projects.edit', DELETE: 'projects.edit' },
+    [`${W}/[workItemId]/milestone/route.ts`]: { PUT: 'work_items.edit' },
     [`${T}/projects/[projectId]/custom-fields/route.ts`]: { GET: 'projects.view', POST: 'projects.edit' },
     [`${T}/projects/[projectId]/custom-fields/[fieldId]/route.ts`]: { PATCH: 'projects.edit' },
     [`${T}/projects/[projectId]/custom-fields/[fieldId]/options/route.ts`]: { POST: 'projects.edit' },

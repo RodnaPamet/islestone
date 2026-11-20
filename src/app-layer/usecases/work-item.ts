@@ -102,6 +102,7 @@ import { CUSTOM_FIELD_TYPE_SPECS, fieldIdOfOrder } from '@/lib/work-items/custom
 import { DEFAULT_SORT_DIRECTION, LIST_SORTS, type ListSort, type SortDirection } from '@/lib/work-items/list-sorts';
 import { resolveListCustomFields, writeInitialCustomFieldValues } from './custom-field';
 import { assertCycleTakesItems, currentCycleIdsInTx } from './cycle';
+import { assertMilestoneOfProject } from './milestone';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────
@@ -377,6 +378,8 @@ export interface CreateWorkItemInput {
     customFields?: Readonly<Record<string, unknown>>;
     /** A cycle of the project's team that is not completed (2.5a). */
     cycleId?: string | null;
+    /** A milestone of the project (2.5b). */
+    milestoneId?: string | null;
 }
 
 export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemInput): Promise<WorkItemDto> {
@@ -407,6 +410,7 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
 
         if (input.assigneeId) await assertActiveMember(db, ctx, input.assigneeId);
         if (input.cycleId) await assertCycleTakesItems(db, ctx, input.cycleId, project.teamId);
+        if (input.milestoneId) await assertMilestoneOfProject(db, ctx, input.milestoneId, project.id);
         if (labelIds.length > 0) await assertLabelsUsable(db, ctx, labelIds, project.teamId);
         if (input.parentId) await assertParentAllowed(db, ctx, v, input.parentId, { projectId: project.id, subtreeHeight: 0 });
 
@@ -432,6 +436,7 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
             assigneeId: input.assigneeId ?? null,
             parentId: input.parentId ?? null,
             cycleId: input.cycleId ?? null,
+            milestoneId: input.milestoneId ?? null,
             sortKey,
             startDate: parseDateOnly(input.startDate),
             dueDate: parseDateOnly(input.dueDate),
@@ -455,6 +460,7 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
                 projectId: project.id,
                 parentId: row.parentId,
                 ...(row.cycleId ? { cycleId: row.cycleId } : {}),
+                ...(row.milestoneId ? { milestoneId: row.milestoneId } : {}),
                 ...(customFieldIds.length ? { customFieldIds } : {}),
             },
         });
