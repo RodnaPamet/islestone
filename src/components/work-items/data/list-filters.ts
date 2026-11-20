@@ -27,6 +27,8 @@ export interface WorkItemListFilters {
     createdById?: string;
     /** Cycle ids, `none`, or `current` (2.5a; the server resolves `current`). */
     cycleId?: string;
+    /** Milestone ids, or `none` (2.5b). */
+    milestoneId?: string;
     /** `me` only: the server reads the caller from the request context. */
     watching?: 'me';
     parentId?: string;
@@ -50,6 +52,7 @@ export const LIST_FILTER_KEYS = [
     'assigneeId',
     'createdById',
     'cycleId',
+    'milestoneId',
     'watching',
     'parentId',
     'due',
@@ -110,6 +113,7 @@ export function rowBelongs(filters: WorkItemListFilters, row: WorkItemRow): 'yes
         inList(f.parentId, row.parentId),
         // `current` names cycles only the server resolves: undecided here.
         f.cycleId && !f.cycleId.split(',').includes('current') ? inList(f.cycleId, row.cycleId ?? null) : undefined,
+        f.milestoneId ? inList(f.milestoneId, row.milestoneId ?? null) : undefined,
         f.labelId ? f.labelId.split(',').some((id) => row.labelIds.includes(id)) : undefined,
     ];
     if (checks.some((c) => c === false)) return 'no';

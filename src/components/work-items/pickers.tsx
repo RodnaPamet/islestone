@@ -151,6 +151,33 @@ export function CyclePicker({
     );
 }
 
+/** The item's milestone (2.5b): the project's milestones, in its order, and "No milestone". */
+export function MilestonePicker({
+    projectId,
+    value,
+    onChange,
+    ...common
+}: PickerCommon & { projectId: string; value: string | null; onChange: (milestoneId: string | null) => void }) {
+    const tMilestone = useTranslations('workItems');
+    const config = useWorkConfig();
+    const options = useMemo<ComboboxOption[]>(
+        () => [{ value: '', label: tMilestone('milestone.none') }, ...config.milestonesOfProject(projectId).map((m) => ({ value: m.id, label: m.name }))],
+        [config, projectId, tMilestone],
+    );
+    return (
+        <Combobox
+            id={common.id}
+            disabled={common.disabled}
+            selected={options.find((o) => o.value === (value ?? '')) ?? null}
+            setSelected={(o) => o && (o.value || null) !== value && onChange(o.value || null)}
+            options={options}
+            caret
+            hideSearch
+            buttonProps={common.label ? { 'aria-label': common.label } : undefined}
+        />
+    );
+}
+
 /** Labels usable on an item of `teamId`: workspace labels and the team's. */
 export function LabelsPicker({
     teamId,

@@ -14,7 +14,7 @@
  * loaded rows are a subset, and an option list built from them would shrink
  * as pages load (the map's risk 5).
  */
-import { CalendarDays, CircleDotted, Cube, Flag, Folder, BulletList, Tag, UserCheck } from '@inflect/ui/components/ui/icons/nucleo';
+import { CalendarDays, CircleDotted, Cube, Flag, FlagWavy, Folder, BulletList, Tag, UserCheck } from '@inflect/ui/components/ui/icons/nucleo';
 import { createFilterDefs, type FilterDefInput } from '@/components/ui/filter';
 import { WORKFLOW_STATE_CATEGORIES } from '@/app-layer/domain/workflow-state';
 import { PRIORITY_ORDER } from '@/lib/work-items/presentation';
@@ -24,7 +24,7 @@ import type { Member } from '@/lib/work-items/types';
 import type { WorkConfigIndex } from './data/use-work-config';
 
 /** Every key the list reads from the URL (3.6's next-best-action reads `due=overdue`). */
-export const WORK_ITEM_FILTER_KEYS = ['stateCategory', 'stateId', 'priority', 'typeId', 'labelId', 'assigneeId', 'projectId', 'cycleId', 'due'] as const;
+export const WORK_ITEM_FILTER_KEYS = ['stateCategory', 'stateId', 'priority', 'typeId', 'labelId', 'assigneeId', 'projectId', 'cycleId', 'milestoneId', 'due'] as const;
 export type WorkItemFilterKey = (typeof WORK_ITEM_FILTER_KEYS)[number];
 
 type Translate = (key: string, values?: Record<string, string | number>) => string;
@@ -38,6 +38,8 @@ export interface FilterScope {
     fixedAssignee?: boolean;
     /** The view is one cycle's (2.5a): no cycle facet. */
     fixedCycle?: boolean;
+    /** The view is one milestone's (2.5b): no milestone facet. */
+    fixedMilestone?: boolean;
 }
 
 export function assigneeOptionsFromMembers(members: readonly Member[], t: Translate) {
@@ -114,6 +116,23 @@ export function workItemFilterDefsInput(config: WorkConfigIndex, members: readon
                     const name = c.name?.trim() || t('cycle.numbered', { number: c.number });
                     return { value: c.id, label: scope.teamId ? name : `${name} · ${teamName.get(c.teamId) ?? ''}` };
                 }),
+            ],
+        };
+    }
+    // Sub-phase 2.5b: no milestone, or the milestones of the view's project
+    // (every visible project's on a workspace-wide page, named with its key).
+    const milestones = scope.fixedMilestone ? [] : (config.milestones ?? []).filter((m) => !scope.projectId || m.projectId === scope.projectId);
+    if (milestones.length > 0) {
+        defs.milestoneId = {
+            label: t('filters.milestone'),
+            icon: FlagWavy,
+            multiple: true,
+            options: [
+                { value: 'none', label: t('filters.noMilestone') },
+                ...milestones.map((m) => ({
+                    value: m.id,
+                    label: scope.projectId ? m.name : `${m.name} · ${config.projectById.get(m.projectId)?.keyPrefix ?? ''}`,
+                })),
             ],
         };
     }

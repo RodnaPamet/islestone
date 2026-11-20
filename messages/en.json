@@ -637,7 +637,8 @@
             "type": "By type",
             "project": "By project",
             "choose": "Swimlanes",
-            "cycle": "By cycle"
+            "cycle": "By cycle",
+            "milestone": "By milestone"
         },
         "category": {
             "BACKLOG": "Backlog",
@@ -663,7 +664,8 @@
             "created": "Created",
             "updated": "Updated",
             "type": "Type",
-            "cycle": "Cycle"
+            "cycle": "Cycle",
+            "milestone": "Milestone"
         },
         "fields": {
             "title": "Title",
@@ -675,7 +677,8 @@
             "assignee": "Assignee",
             "labels": "Labels",
             "dueDate": "Due date",
-            "cycle": "Cycle"
+            "cycle": "Cycle",
+            "milestone": "Milestone"
         },
         "filters": {
             "category": "Category",
@@ -691,7 +694,9 @@
             "next7d": "Due in the next 7 days",
             "cycle": "Cycle",
             "currentCycle": "Current cycle",
-            "noCycle": "No cycle"
+            "noCycle": "No cycle",
+            "milestone": "Milestone",
+            "noMilestone": "No milestone"
         },
         "bulk": {
             "setState": "Set state",
@@ -847,7 +852,8 @@
             "cannotMove": "You cannot move work items.",
             "noStateInTeam": "The work item’s team has no state in {column}.",
             "announcements": "Board announcements",
-            "noCycle": "No cycle"
+            "noCycle": "No cycle",
+            "noMilestone": "No milestone"
         },
         "projects": {
             "col": {
@@ -938,6 +944,9 @@
             "numbered": "Cycle {number}",
             "none": "No cycle",
             "currentLabel": "{name} (current)"
+        },
+        "milestone": {
+            "none": "No milestone"
         }
     },
     "settings": {

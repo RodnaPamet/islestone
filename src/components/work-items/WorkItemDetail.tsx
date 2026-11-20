@@ -45,7 +45,7 @@ import { toRow, useWorkItemMutations } from './data/use-work-item-mutations';
 import { ActivityPanel, CommentsPanel, LinksPanel, RelationsPanel, WatchersPanel } from './detail/collab-panels';
 import { SubItemsPanel } from './detail/SubItemsPanel';
 import { CustomFieldInput } from './fields/CustomFieldInput';
-import { AssigneePicker, CyclePicker, LabelsPicker, PriorityPicker, StatePicker, TypePicker } from './pickers';
+import { AssigneePicker, CyclePicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker } from './pickers';
 
 export type DetailTab = 'overview' | 'sub-items' | 'links' | 'comments' | 'activity';
 const TABS: readonly DetailTab[] = ['overview', 'sub-items', 'links', 'comments', 'activity'];
@@ -186,6 +186,15 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                     value={item.cycleId ?? null}
                     disabled={!perms.edit}
                     onChange={(cycleId) => void mutations.setCycle(row, cycleId)}
+                />
+            </PropertyRow>
+            <PropertyRow label={t('fields.milestone')} htmlFor={`milestone-${item.id}`}>
+                <MilestonePicker
+                    id={`milestone-${item.id}`}
+                    projectId={item.projectId}
+                    value={item.milestoneId ?? null}
+                    disabled={!perms.edit}
+                    onChange={(milestoneId) => void mutations.setMilestone(row, milestoneId)}
                 />
             </PropertyRow>
             <PropertyRow label={t('fields.labels')} htmlFor={`labels-${item.id}`}>

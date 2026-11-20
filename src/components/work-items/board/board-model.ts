@@ -30,19 +30,29 @@
  */
 import { keyBetween } from '@/app-layer/domain/fractional-index';
 import { WORKFLOW_STATE_CATEGORIES } from '@/app-layer/domain/workflow-state';
+import { BUILT_IN_LANES } from '@/lib/work-items/list-sorts';
 import type { ViewCustomField, ViewState, WorkflowStateCategory, WorkItemRow } from '@/lib/work-items/types';
 
 import { customFieldLaneKey } from '../fields/custom-field-format';
 
-export type BuiltInLaneBy = 'none' | 'assignee' | 'priority' | 'type' | 'label' | 'project' | 'cycle';
+export type BuiltInLaneBy = (typeof BUILT_IN_LANES)[number];
 
 /** A built-in grouping, or a custom field's (`cf:<fieldId>`, sub-phase 2.4). */
 export type LaneBy = BuiltInLaneBy | `cf:${string}`;
 
-export const LANE_BY_VALUES: readonly BuiltInLaneBy[] = ['none', 'assignee', 'priority', 'type', 'label', 'project', 'cycle'];
+export const LANE_BY_VALUES: readonly BuiltInLaneBy[] = BUILT_IN_LANES;
 
-/** Lanes whose value a drop may change. */
-export const MOVABLE_LANES: ReadonlySet<LaneBy> = new Set<LaneBy>(['none', 'assignee', 'priority', 'type', 'cycle']);
+/**
+ * Lanes whose value a drop may change. A milestone is a project's: its lanes
+ * are movable only on a one-project board (`laneMovableInScope`).
+ */
+export const MOVABLE_LANES: ReadonlySet<LaneBy> = new Set<LaneBy>(['none', 'assignee', 'priority', 'type', 'cycle', 'milestone']);
+
+/** Whether a drop may change `laneBy` on a board scoped to `projectId` (or every project). */
+export function laneMovableInScope(laneBy: LaneBy, projectId: string | undefined): boolean {
+    if (laneBy === 'milestone') return projectId !== undefined;
+    return MOVABLE_LANES.has(laneBy);
+}
 
 /**
  * Field types a board groups by (2.4): a select, a multi-select (by its
@@ -134,6 +144,8 @@ export function laneKeyOf(row: WorkItemRow, laneBy: LaneBy, ctx: LaneContext): s
             return row.projectId;
         case 'cycle':
             return row.cycleId ?? '';
+        case 'milestone':
+            return row.milestoneId ?? '';
         case 'label': {
             const first = ctx.labelOrder.find((id) => row.labelIds.includes(id));
             return first ?? '';

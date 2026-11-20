@@ -35,7 +35,7 @@ import type { WorkItemDetailData, WorkItemPriority } from '@/lib/work-items/type
 
 import { useWorkConfig } from './data/use-work-config';
 import { useWorkItemMutations } from './data/use-work-item-mutations';
-import { AssigneePicker, CyclePicker, LabelsPicker, PriorityPicker, StatePicker, TypePicker } from './pickers';
+import { AssigneePicker, CyclePicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker } from './pickers';
 
 export interface NewWorkItemInitial {
     projectId?: string;
@@ -43,6 +43,8 @@ export interface NewWorkItemInitial {
     parentId?: string;
     /** The cycle a new item joins (a cycle's page, 2.5a), when it is the project's team's. */
     cycleId?: string;
+    /** The milestone a new item is aimed at (a milestone's page, 2.5b), when it is the project's. */
+    milestoneId?: string;
     /** Shown above the form when a parent is preset. */
     parentKey?: string;
 }
@@ -58,6 +60,7 @@ interface FormState {
     labelIds: string[];
     dueDate: string | null;
     cycleId: string | null;
+    milestoneId: string | null;
 }
 
 export function NewWorkItemModal({
@@ -96,6 +99,7 @@ export function NewWorkItemModal({
             labelIds: [],
             dueDate: null,
             cycleId: initial?.cycleId && config.cycleById.get(initial.cycleId)?.teamId === teamId ? initial.cycleId : null,
+            milestoneId: initial?.milestoneId && config.milestoneById.get(initial.milestoneId)?.projectId === projectId ? initial.milestoneId : null,
         };
     }, [config, initial, liveProjects]);
 
@@ -135,6 +139,8 @@ export function NewWorkItemModal({
             stateId: (states.find((s) => s.isDefault) ?? states[0])?.id ?? '',
             // A cycle belongs to a team: another team's project clears it.
             cycleId: f.cycleId && config.cycleById.get(f.cycleId)?.teamId === team ? f.cycleId : null,
+            // A milestone belongs to a project: another project clears it.
+            milestoneId: f.milestoneId && config.milestoneById.get(f.milestoneId)?.projectId === projectId ? f.milestoneId : null,
             labelIds: f.labelIds.filter((id) => {
                 const label = config.labelById.get(id);
                 return !!label && (label.teamId === null || label.teamId === team);
@@ -161,6 +167,7 @@ export function NewWorkItemModal({
             ...(form.labelIds.length ? { labelIds: form.labelIds } : {}),
             ...(form.dueDate ? { dueDate: form.dueDate } : {}),
             ...(form.cycleId ? { cycleId: form.cycleId } : {}),
+            ...(form.milestoneId ? { milestoneId: form.milestoneId } : {}),
             ...(initial?.parentId ? { parentId: initial.parentId } : {}),
         });
         setSubmitting(false);
@@ -250,6 +257,16 @@ export function NewWorkItemModal({
                                 {config.openCyclesOfTeam(teamId).length > 0 && (
                                     <FormField label={t('fields.cycle')}>
                                         <CyclePicker id="work-item-cycle-input" teamId={teamId} value={form.cycleId} onChange={(v) => set('cycleId', v)} />
+                                    </FormField>
+                                )}
+                                {config.milestonesOfProject(form.projectId).length > 0 && (
+                                    <FormField label={t('fields.milestone')}>
+                                        <MilestonePicker
+                                            id="work-item-milestone-input"
+                                            projectId={form.projectId}
+                                            value={form.milestoneId}
+                                            onChange={(v) => set('milestoneId', v)}
+                                        />
                                     </FormField>
                                 )}
                             </div>

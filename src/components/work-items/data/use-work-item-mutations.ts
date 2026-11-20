@@ -239,6 +239,12 @@ export function useWorkItemMutations() {
                 );
             },
 
+            /** Aim the item at a milestone of its project, or clear it (2.5b; `If-Match`). */
+            setMilestone(item: WorkItemRow, milestoneId: string | null) {
+                return write(item, { milestoneId }, (version) =>
+                    apiSend<WorkItemDetailData>('PUT', url(`/work-items/${item.id}/milestone`), { milestoneId }, { ifMatch: version }),
+                );
+            },
             /** Put the item in a cycle of its team, or take it out (2.5a; `If-Match`). */
             setCycle(item: WorkItemRow, cycleId: string | null) {
                 return write(item, { cycleId }, (version) =>
