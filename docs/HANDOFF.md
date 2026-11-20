@@ -64,6 +64,9 @@ porting maps now record them (next step 2); the last column says where.
 | 51 | Pull request titles follow Conventional Commits from now on, so the squash-merge subject lets semantic-release cut versions; a CI check fails a title that does not. Decided 2026-11-19, relayed. Applied. | relayed | `.github/workflows/pr-title.yml`; `scripts/check-pr-title.mjs`; `CLAUDE.md` ("Delivery"); `docs/change-management-policy.md` ("Versioning") |
 | 52 | The work configuration's keys are kept as built: `admin.manage` changes teams, workflow states, work item types and labels; `projects.view` reads them; `projects.archive` covers project archive, delete and restore. Admins configure, and a custom role can grant `admin.manage`. Decided 2026-11-19, relayed. Applied. | relayed | `src/app-layer/policies/work-config.policies.ts`; `docs/work-items.md` ("Who may do what") |
 | 53 | Comments: only the author edits a comment (an admin never rewrites someone else's words); the author or a workspace admin deletes one, for moderation, and an admin's delete of someone else's comment is audited as a moderation action (`COMMENT_MODERATED`). Decided 2026-11-19, relayed. Applied. | relayed | `src/app-layer/policies/comment.policies.ts`; `src/app-layer/usecases/work-item-collab.ts`; `tests/integration/work-items-api.test.ts` |
+| 54 | My Work shows its full scope now, not at 2.7: the items assigned to me, the items I created, the items I watch, and my items due soon, each as a section of the shared list query. Decided 2026-11-20, relayed. Applying with 2.3. | relayed | `src/app/t/[tenantSlug]/(app)/my-work/`; `docs/work-items.md` ("Views (2.3)") |
+| 55 | A minimal Settings page for admins (`admin.manage`) to create and edit teams, workflow states, work item types, labels and projects is built now, as its own pull request after 2.3, so a new workspace can get its first project without the API. Decided 2026-11-20, relayed. Open: being built. | relayed | — |
+| 56 | The mirrored filter select's no-op URL write on mount (it cancelled navigation the person had started) is fixed upstream in inflect-compliance's `filter-select.tsx` / `filter-context.tsx`; Islestone re-pins the part B mirror once that merges and then drops the work-item views' guard. Decided 2026-11-20, relayed. Open: upstream pull request. | relayed | — |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
@@ -596,10 +599,8 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    `url-sync`, `swr-keys`, `bulk-action-bar`, `kpi-filter-card`, `user-combobox` and
    their tests, and the `no-router-push-in-row-click` lint rule. ln-dev7/circle was
    not read; its row stays UNPINNED.
-   Open for the owner:
-   - **My Work** shows only the assigned items until 2.7 adds created, watching and due
-     soon (the 1.7 map gave My Work to 2.7; the brief asked 2.3 to replace the
-     placeholder).
-   - **Creating teams, projects, states, types and labels** has no UI yet (decision 52
-     puts them under `admin.manage`; Settings is still a placeholder), so a workspace
-     needs the API to get its first project.
+   Decided by the owner after it landed (decisions 54 to 56): My Work shows its full
+   scope now (assigned, created, watching, due soon); a minimal Settings page for
+   creating teams, states, types, labels and projects follows as its own pull request;
+   the mirrored filter select's no-op URL write is fixed upstream in inflect-compliance
+   and re-pinned here.
