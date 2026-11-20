@@ -422,13 +422,21 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
             <p id="work-item-board-instructions" className="sr-only">
                 {canEdit ? tBoard('board.instructions') : tBoard('board.instructionsReadOnly')}
             </p>
-            <div role="status" aria-live="polite" className="sr-only">
+            <div role="status" aria-live="polite" aria-label={tBoard('board.announcements')} className="sr-only">
                 {announcement}
             </div>
-            <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto" role="region" aria-label={tBoard('board.label')}>
+            <div
+                ref={scrollRef}
+                // Inline, so the auto-scroller sees a scroll container even
+                // where no stylesheet is loaded (it checks computed style).
+                style={{ overflowX: 'auto', overflowY: 'auto' }}
+                className="min-h-0 flex-1"
+                role="region"
+                aria-label={tBoard('board.label')}
+            >
                 {lanes.map((laneKey, lane) => (
                     <div key={laneKey || 'none'} className="mb-section">
-                        {laneBy !== 'none' && <h3 className="mb-2 text-sm font-semibold text-content-emphasis">{laneLabel(laneKey)}</h3>}
+                        {laneBy !== 'none' && <h2 className="mb-2 text-sm font-semibold text-content-emphasis">{laneLabel(laneKey)}</h2>}
                         <div className="flex gap-default">
                             {columns.map((col, column) => {
                                 const state = columnData[col.id];
@@ -448,12 +456,12 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
                                                     <p className="text-[10px] uppercase tracking-wide text-content-muted">{tBoard(`category.${col.category}`)}</p>
                                                 )}
                                                 <div className="flex items-center justify-between gap-2">
-                                                    <h3 className="text-sm font-semibold text-content-emphasis">
+                                                    <h2 className="text-sm font-semibold text-content-emphasis">
                                                         {name}{' '}
                                                         <span className="font-normal text-content-muted">
                                                             {state?.hasMore ? tBoard('board.countMore', { count: state.items.length }) : (state?.items.length ?? 0)}
                                                         </span>
-                                                    </h3>
+                                                    </h2>
                                                     {onCreate && (
                                                         <Button
                                                             variant="ghost"

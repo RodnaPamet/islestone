@@ -72,9 +72,9 @@ export function CommentsPanel({ workItemId }: { workItemId: string }) {
 
     return (
         <section aria-labelledby={`comments-${workItemId}`} className="space-y-default">
-            <h3 id={`comments-${workItemId}`} className="text-sm font-semibold text-content-emphasis">
+            <h2 id={`comments-${workItemId}`} className="text-sm font-semibold text-content-emphasis">
                 {tComments('detail.comments')}
-            </h3>
+            </h2>
             {canComment && (
                 <div className="space-y-tight">
                     <Textarea aria-label={tComments('detail.newComment')} value={draft} onChange={(e) => setDraft(e.target.value)} rows={3} />
@@ -158,9 +158,9 @@ export function ActivityPanel({ workItemId }: { workItemId: string }) {
     const stateName = (id: unknown) => (typeof id === 'string' ? config.stateById.get(id)?.name : undefined);
     return (
         <section aria-labelledby={`activity-${workItemId}`} className="space-y-default">
-            <h3 id={`activity-${workItemId}`} className="text-sm font-semibold text-content-emphasis">
+            <h2 id={`activity-${workItemId}`} className="text-sm font-semibold text-content-emphasis">
                 {tActivity('detail.activity')}
-            </h3>
+            </h2>
             {error && <p role="alert">{tActivity('detail.loadFailed')}</p>}
             <ol className="space-y-tight" aria-label={tActivity('detail.activity')}>
                 {(data?.items ?? []).map((e) => {
@@ -219,9 +219,9 @@ export function RelationsPanel({ workItemId, canEdit }: { workItemId: string; ca
 
     return (
         <section aria-labelledby={`relations-${workItemId}`} className="space-y-default">
-            <h3 id={`relations-${workItemId}`} className="text-sm font-semibold text-content-emphasis">
+            <h2 id={`relations-${workItemId}`} className="text-sm font-semibold text-content-emphasis">
                 {tRelations('detail.relations')}
-            </h3>
+            </h2>
             <ul className="space-y-tight" aria-label={tRelations('detail.relations')}>
                 {rows.map(({ row, direction }) => (
                     <li key={row.id} className="flex items-center justify-between gap-2 text-sm">
@@ -279,9 +279,9 @@ export function LinksPanel({ workItemId, canEdit }: { workItemId: string; canEdi
     };
     return (
         <section aria-labelledby={`links-${workItemId}`} className="space-y-default">
-            <h3 id={`links-${workItemId}`} className="text-sm font-semibold text-content-emphasis">
+            <h2 id={`links-${workItemId}`} className="text-sm font-semibold text-content-emphasis">
                 {tLinks('detail.links')}
-            </h3>
+            </h2>
             <ul className="space-y-tight" aria-label={tLinks('detail.links')}>
                 {(data ?? []).map((l) => (
                     <li key={l.id} className="flex items-center justify-between gap-2 text-sm">
@@ -326,9 +326,9 @@ export function WatchersPanel({ workItemId }: { workItemId: string }) {
     const canManageOthers = perms.work_items.assign === true;
     return (
         <section aria-labelledby={`watchers-${workItemId}`} className="space-y-tight">
-            <h3 id={`watchers-${workItemId}`} className="text-sm font-semibold text-content-emphasis">
+            <h2 id={`watchers-${workItemId}`} className="text-sm font-semibold text-content-emphasis">
                 {tWatchers('detail.watchers')}
-            </h3>
+            </h2>
             <ul className="space-y-tight" aria-label={tWatchers('detail.watchers')}>
                 {(data ?? []).map((w) => (
                     <li key={w.userId} className="flex items-center justify-between gap-2 text-sm">

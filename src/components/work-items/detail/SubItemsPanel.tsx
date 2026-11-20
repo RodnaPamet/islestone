@@ -55,9 +55,9 @@ export function SubItemsPanel({
     return (
         <section aria-labelledby={`sub-items-${parent.id}`} className="space-y-default">
             <div className="flex items-center justify-between gap-2">
-                <h3 id={`sub-items-${parent.id}`} className="text-sm font-semibold text-content-emphasis">
+                <h2 id={`sub-items-${parent.id}`} className="text-sm font-semibold text-content-emphasis">
                     {t('subItems.title')}
-                </h3>
+                </h2>
                 {canCreate && <Button variant="secondary" size="sm" text={t('subItems.add')} onClick={() => setCreating(true)} />}
             </div>
             {items.length > 0 && (

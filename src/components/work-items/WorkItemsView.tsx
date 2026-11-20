@@ -248,7 +248,7 @@ function WorkItemsViewBody({
                                 options={laneOptions}
                                 hideSearch
                                 caret
-                                buttonProps={{ 'aria-label': tBody('lanes.label') }}
+                                buttonProps={{ 'aria-label': tBody('lanes.choose') }}
                             />
                         )}
                         {perms.delete && layout === 'list' && (

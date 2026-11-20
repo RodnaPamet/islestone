@@ -16,7 +16,7 @@
  * cache (`useWorkItemMutations().create`).
  */
 import { useTranslations } from 'next-intl';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
 import { Button } from '@inflect/ui/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -93,13 +93,16 @@ export function NewWorkItemModal({
     const [submitting, setSubmitting] = useState(false);
     const [confirmDiscard, setConfirmDiscard] = useState(false);
 
-    // A new opening starts from the view's preset (a board column's "+").
+    // A new opening starts from the view's preset (a board column's "+"):
+    // reset on the closed-to-open transition only, never while the person
+    // types.
+    const wasOpen = useRef(false);
     useEffect(() => {
-        if (open) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the form when the dialog opens with a new preset
+        if (open && !wasOpen.current) {
             setForm(blank);
             setError(null);
         }
+        wasOpen.current = open;
     }, [open, blank]);
 
     const dirty = form.title.trim() !== '' || form.description.trim() !== '';

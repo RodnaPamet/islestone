@@ -610,7 +610,8 @@
             "assignee": "By assignee",
             "priority": "By priority",
             "type": "By type",
-            "project": "By project"
+            "project": "By project",
+            "choose": "Swimlanes"
         },
         "category": {
             "BACKLOG": "Backlog",
@@ -806,7 +807,8 @@
             "dropped": "Dropped {key} in {column} at position {position}.",
             "cancelled": "Move cancelled. {key} is back where it was.",
             "cannotMove": "You cannot move work items.",
-            "noStateInTeam": "The work item’s team has no state in {column}."
+            "noStateInTeam": "The work item’s team has no state in {column}.",
+            "announcements": "Board announcements"
         },
         "projects": {
             "col": {

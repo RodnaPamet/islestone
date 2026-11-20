@@ -201,9 +201,9 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                         {variant === 'sheet' && properties}
                         {perms.edit && <div className="space-y-tight">{titleEditor}</div>}
                         <section aria-labelledby={`description-${item.id}`} className="space-y-tight">
-                            <h3 id={`description-${item.id}`} className="text-sm font-semibold text-content-emphasis">
+                            <h2 id={`description-${item.id}`} className="text-sm font-semibold text-content-emphasis">
                                 {t('fields.description')}
-                            </h3>
+                            </h2>
                             {perms.edit ? (
                                 <>
                                     <Textarea
