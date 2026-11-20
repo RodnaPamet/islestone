@@ -1254,5 +1254,54 @@
             "tooltip": "Scope {scope} · started {started} · completed {completed}",
             "caption": "Scope, started and completed work items at the end of each day"
         }
+    },
+    "milestones": {
+        "title": "Milestones",
+        "description": "{project}: each milestone's due date and how much of its work is done.",
+        "open": "Milestones",
+        "new": "Milestone",
+        "listHeading": "In order",
+        "archived": "This project is archived: its milestones are read-only.",
+        "empty": "This project has no milestones.",
+        "emptyEditable": "No milestones yet. Add one to group work towards a date.",
+        "due": "Due {date}",
+        "noDueDate": "No due date",
+        "late": "Late",
+        "complete": "Complete",
+        "progress": "{done} of {scope} done",
+        "progressAria": "{name}: {percent}% done",
+        "moveUp": "Move up",
+        "moveUpNamed": "Move {name} up",
+        "moveDown": "Move down",
+        "moveDownNamed": "Move {name} down",
+        "rowEdit": "Edit",
+        "editNamed": "Edit {name}",
+        "rowDelete": "Delete",
+        "deleteNamed": "Delete {name}",
+        "edit": "Edit milestone",
+        "delete": "Delete milestone",
+        "deleted": "Milestone deleted. Its work items left it.",
+        "undo": "Undo",
+        "failed": "This could not be saved. Try again.",
+        "subtitle": "Milestone of {project}",
+        "stats": {
+            "label": "Milestone progress",
+            "dueDate": "Due date",
+            "scope": "Scope",
+            "done": "Done",
+            "percent": "Done %"
+        },
+        "form": {
+            "createTitle": "New milestone",
+            "editTitle": "Edit milestone",
+            "create": "Create milestone",
+            "save": "Save milestone",
+            "name": "Name",
+            "nameRequired": "A milestone needs a name.",
+            "dueDate": "Due date",
+            "dueDateHint": "Optional. After it passes with work still open, the milestone shows as late.",
+            "saved": "Milestone saved.",
+            "created": "Milestone created."
+        }
     }
 }

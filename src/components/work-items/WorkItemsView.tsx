@@ -81,6 +81,8 @@ export interface WorkItemsViewProps {
     savedViews?: SavedViewAffordances;
     /** The project's fields may be defined here (2.4, `manageCustomFields`, asked on the server). */
     manageCustomFields?: boolean;
+    /** Links shown first among the header's actions (a project's Milestones, 2.5b). */
+    headerLinks?: React.ReactNode;
 }
 
 const NO_SAVED_VIEWS: SavedViewAffordances = { savePersonal: false, saveShared: false, moderate: false };
@@ -224,6 +226,7 @@ function WorkItemsViewBody({
     savedViews = NO_SAVED_VIEWS,
     manageCustomFields = false,
     summary,
+    headerLinks,
 }: WorkItemsViewProps & { filterDefs: ReturnType<typeof buildWorkItemFilterDefs>['filters'] }) {
     const tBody = useTranslations('workItems');
     const searchParams = useSearchParams();
@@ -331,6 +334,7 @@ function WorkItemsViewBody({
                 ];
                 const actions = (
                     <div className="flex flex-wrap items-center gap-tight">
+                        {headerLinks}
                         {/* A cycle's or a milestone's page has no saved views: a view's scope is the workspace or a project. */}
                         {!scope.cycleId && !scope.milestoneId && (
                             <SavedViewsMenu

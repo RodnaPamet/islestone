@@ -67,6 +67,9 @@ export const SUBPAGES: readonly string[] = [
     '/projects/[projectKey]',
     // Sub-phase 2.5a: one cycle.
     '/cycles/[cycleId]',
+    // Sub-phase 2.5b: a project's milestones, and one milestone.
+    '/projects/[projectKey]/milestones',
+    '/projects/[projectKey]/milestones/[milestoneId]',
     // Decision 55: the Settings sections.
     '/settings/teams',
     '/settings/teams/[teamId]',
