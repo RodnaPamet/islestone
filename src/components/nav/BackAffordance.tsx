@@ -45,6 +45,7 @@ const SECTION_LABELS: Record<string, string> = {
     '/work-items': 'workItems',
     '/views': 'views',
     '/projects': 'projects',
+    '/cycles': 'cycles',
     '/settings': 'settings',
 };
 

@@ -101,7 +101,7 @@ import {
 import { CUSTOM_FIELD_TYPE_SPECS, fieldIdOfOrder } from '@/lib/work-items/custom-fields';
 import { DEFAULT_SORT_DIRECTION, LIST_SORTS, type ListSort, type SortDirection } from '@/lib/work-items/list-sorts';
 import { resolveListCustomFields, writeInitialCustomFieldValues } from './custom-field';
-import { currentCycleIdsInTx } from './cycle';
+import { assertCycleTakesItems, currentCycleIdsInTx } from './cycle';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────
@@ -375,6 +375,8 @@ export interface CreateWorkItemInput {
     position?: { afterId?: string; beforeId?: string };
     /** Field id → value, for the project's live custom fields (2.4). */
     customFields?: Readonly<Record<string, unknown>>;
+    /** A cycle of the project's team that is not completed (2.5a). */
+    cycleId?: string | null;
 }
 
 export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemInput): Promise<WorkItemDto> {
@@ -404,6 +406,7 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
         if (state.archivedAt) throw badRequest(`${state.name} is archived and takes no work items.`);
 
         if (input.assigneeId) await assertActiveMember(db, ctx, input.assigneeId);
+        if (input.cycleId) await assertCycleTakesItems(db, ctx, input.cycleId, project.teamId);
         if (labelIds.length > 0) await assertLabelsUsable(db, ctx, labelIds, project.teamId);
         if (input.parentId) await assertParentAllowed(db, ctx, v, input.parentId, { projectId: project.id, subtreeHeight: 0 });
 
@@ -428,6 +431,7 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
             priority: input.priority ?? 'NONE',
             assigneeId: input.assigneeId ?? null,
             parentId: input.parentId ?? null,
+            cycleId: input.cycleId ?? null,
             sortKey,
             startDate: parseDateOnly(input.startDate),
             dueDate: parseDateOnly(input.dueDate),
@@ -450,6 +454,7 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
                 priority: row.priority,
                 projectId: project.id,
                 parentId: row.parentId,
+                ...(row.cycleId ? { cycleId: row.cycleId } : {}),
                 ...(customFieldIds.length ? { customFieldIds } : {}),
             },
         });

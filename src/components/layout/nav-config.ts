@@ -16,7 +16,7 @@
 import type { Role } from '@prisma/client';
 import { useTranslations } from 'next-intl';
 
-import { Bell, Folder, GridLayoutRows, UserCheck, Views } from '@inflect/ui/components/ui/icons/nucleo';
+import { Bell, CalendarRefresh, Folder, GridLayoutRows, UserCheck, Views } from '@inflect/ui/components/ui/icons/nucleo';
 import { membershipOpensAdminConsole } from '@/lib/auth/edge-admin-roles';
 import type { PermissionSet } from '@/lib/permissions';
 import { usePermissions, useTenantContext, useTenantHref } from '@/lib/tenant-context-provider';
@@ -29,6 +29,7 @@ export const NAV_PATHS = {
     inbox: '/inbox',
     workItems: '/work-items',
     projects: '/projects',
+    cycles: '/cycles',
     views: '/views',
     settings: '/settings',
 } as const;
@@ -68,7 +69,7 @@ export interface NavSectionDef {
  * The sidebar's sections.
  *
  *   (untitled)   My Work, Inbox — the member's own work and notifications
- *   Workspace    Work items, Projects, Views
+ *   Workspace    Work items, Projects, Cycles (2.5a), Views
  *
  * Settings is the footer gear, not a row. Work items (the workspace-wide
  * list and board) and Projects arrived with 2.3; the Inbox unread badge
@@ -90,6 +91,8 @@ export function useNavSections(): NavSectionDef[] {
             items: [
                 { key: 'workItems', href: tenantHref(NAV_PATHS.workItems), label: t('workItems'), icon: GridLayoutRows },
                 { key: 'projects', href: tenantHref(NAV_PATHS.projects), label: t('projects'), icon: Folder },
+                // Sub-phase 2.5a. Every role reads cycles (`cycles.view`); the page asks the key on the server.
+                { key: 'cycles', href: tenantHref(NAV_PATHS.cycles), label: t('cycles'), icon: CalendarRefresh },
                 { key: 'views', href: tenantHref(NAV_PATHS.views), label: t('views'), icon: Views },
             ],
         },

@@ -485,6 +485,18 @@ export async function fillScheduleInTx(
 // ─── An item's cycle ──────────────────────────────────────────────────────
 
 /**
+ * The cycle an item of `teamId` may join: the team's own (400 otherwise; the
+ * composite FK would refuse it too) and not completed (409 `CYCLE_COMPLETED`).
+ */
+export async function assertCycleTakesItems(db: PrismaTx, ctx: RequestContext, cycleId: string, teamId: string): Promise<CycleRow> {
+    const cycle = await CycleRepository.getById(db, ctx, cycleId);
+    if (!cycle) throw notFound('Cycle not found');
+    if (cycle.teamId !== teamId) throw badRequest(`${cycleLabel(cycle)} belongs to another team.`);
+    if (cycle.completedAt) throw new ConflictError(`${cycleLabel(cycle)} is completed and takes no work items.`, { reason: 'CYCLE_COMPLETED' });
+    return cycle;
+}
+
+/**
  * Put an item in a cycle of its own team, or take it out (`null`). A
  * single-field change: `If-Match` optional, the version increases. A
  * completed cycle takes no items (409 `CYCLE_COMPLETED`); another team's
@@ -496,13 +508,7 @@ export async function setWorkItemCycle(ctx: RequestContext, id: string, input: {
         const v = await visibleProjects(ctx, db);
         const item = await loadWritableItem(db, ctx, v, id);
         if (item.cycleId === input.cycleId) return { changed: false as const };
-        let to: CycleRow | null = null;
-        if (input.cycleId) {
-            to = await CycleRepository.getById(db, ctx, input.cycleId);
-            if (!to) throw notFound('Cycle not found');
-            if (to.teamId !== item.teamId) throw badRequest(`${cycleLabel(to)} belongs to another team.`);
-            if (to.completedAt) throw new ConflictError(`${cycleLabel(to)} is completed and takes no work items.`, { reason: 'CYCLE_COMPLETED' });
-        }
+        const to = input.cycleId ? await assertCycleTakesItems(db, ctx, input.cycleId, item.teamId) : null;
         const count = await WorkItemRepository.updateVersioned(db, ctx, v, id, expectedVersion, { cycleId: to?.id ?? null });
         if (count === 0) await throwWriteConflict(db, ctx, v, id);
         await logEvent(db, ctx, {

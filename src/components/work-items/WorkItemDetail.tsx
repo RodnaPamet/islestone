@@ -45,7 +45,7 @@ import { toRow, useWorkItemMutations } from './data/use-work-item-mutations';
 import { ActivityPanel, CommentsPanel, LinksPanel, RelationsPanel, WatchersPanel } from './detail/collab-panels';
 import { SubItemsPanel } from './detail/SubItemsPanel';
 import { CustomFieldInput } from './fields/CustomFieldInput';
-import { AssigneePicker, LabelsPicker, PriorityPicker, StatePicker, TypePicker } from './pickers';
+import { AssigneePicker, CyclePicker, LabelsPicker, PriorityPicker, StatePicker, TypePicker } from './pickers';
 
 export type DetailTab = 'overview' | 'sub-items' | 'links' | 'comments' | 'activity';
 const TABS: readonly DetailTab[] = ['overview', 'sub-items', 'links', 'comments', 'activity'];
@@ -178,6 +178,15 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
             </PropertyRow>
             <PropertyRow label={t('fields.type')} htmlFor={`type-${item.id}`}>
                 <TypePicker id={`type-${item.id}`} value={item.typeId} disabled={!perms.edit} onChange={(typeId) => void mutations.updateFields(row, { typeId })} />
+            </PropertyRow>
+            <PropertyRow label={t('fields.cycle')} htmlFor={`cycle-${item.id}`}>
+                <CyclePicker
+                    id={`cycle-${item.id}`}
+                    teamId={item.teamId}
+                    value={item.cycleId ?? null}
+                    disabled={!perms.edit}
+                    onChange={(cycleId) => void mutations.setCycle(row, cycleId)}
+                />
             </PropertyRow>
             <PropertyRow label={t('fields.labels')} htmlFor={`labels-${item.id}`}>
                 <LabelsPicker id={`labels-${item.id}`} teamId={item.teamId} value={item.labelIds} disabled={!perms.edit} onChange={changeLabels} />

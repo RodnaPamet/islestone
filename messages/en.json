@@ -168,7 +168,8 @@
             "views": "Views",
             "projects": "Projects",
             "settings": "Settings",
-            "workItems": "Work items"
+            "workItems": "Work items",
+            "cycles": "Cycles"
         }
     },
     "ui": {
@@ -505,7 +506,8 @@
         "projects": "Projects",
         "settings": "Settings",
         "workspace": "Workspace",
-        "workItems": "Work items"
+        "workItems": "Work items",
+        "cycles": "Cycles"
     },
     "commandPalette": {
         "title": "Command palette",
@@ -534,7 +536,8 @@
             "askAssistant": "Ask the assistant",
             "toggleTheme": "Toggle theme",
             "signOut": "Sign out",
-            "goToWorkItems": "Go to Work items"
+            "goToWorkItems": "Go to Work items",
+            "goToCycles": "Go to Cycles"
         }
     },
     "shortcuts": {
@@ -633,7 +636,8 @@
             "priority": "By priority",
             "type": "By type",
             "project": "By project",
-            "choose": "Swimlanes"
+            "choose": "Swimlanes",
+            "cycle": "By cycle"
         },
         "category": {
             "BACKLOG": "Backlog",
@@ -658,7 +662,8 @@
             "dueDate": "Due",
             "created": "Created",
             "updated": "Updated",
-            "type": "Type"
+            "type": "Type",
+            "cycle": "Cycle"
         },
         "fields": {
             "title": "Title",
@@ -669,7 +674,8 @@
             "priority": "Priority",
             "assignee": "Assignee",
             "labels": "Labels",
-            "dueDate": "Due date"
+            "dueDate": "Due date",
+            "cycle": "Cycle"
         },
         "filters": {
             "category": "Category",
@@ -682,7 +688,10 @@
             "project": "Project",
             "due": "Due",
             "overdue": "Overdue",
-            "next7d": "Due in the next 7 days"
+            "next7d": "Due in the next 7 days",
+            "cycle": "Cycle",
+            "currentCycle": "Current cycle",
+            "noCycle": "No cycle"
         },
         "bulk": {
             "setState": "Set state",
@@ -836,7 +845,8 @@
             "cancelled": "Move cancelled. {key} is back where it was.",
             "cannotMove": "You cannot move work items.",
             "noStateInTeam": "The work item’s team has no state in {column}.",
-            "announcements": "Board announcements"
+            "announcements": "Board announcements",
+            "noCycle": "No cycle"
         },
         "projects": {
             "col": {
@@ -922,6 +932,11 @@
                 "URL": "URL",
                 "CHECKBOX": "Checkbox"
             }
+        },
+        "cycle": {
+            "numbered": "Cycle {number}",
+            "none": "No cycle",
+            "currentLabel": "{name} (current)"
         }
     },
     "settings": {
@@ -1145,6 +1160,89 @@
             "BOARD": "Board",
             "TIMELINE": "Timeline",
             "CALENDAR": "Calendar"
+        }
+    },
+    "cycles": {
+        "description": "Each team's time-boxed cycles: what is in them, what is done, and what rolls over.",
+        "noTeams": "There are no teams yet. Cycles belong to a team.",
+        "noCurrent": "No current cycle.",
+        "upcoming": "Upcoming",
+        "completed": "Completed",
+        "new": "Cycle",
+        "newFor": "New cycle for {team}",
+        "edit": "Edit cycle",
+        "delete": "Delete cycle",
+        "deleteNamed": "Delete {name}",
+        "deleted": "Cycle deleted. Its work items left it.",
+        "undo": "Undo",
+        "failed": "This could not be saved. Try again.",
+        "numbered": "Cycle {number}",
+        "dates": "{start} to {end}",
+        "subtitle": "{team} · {start} to {end} · {status}",
+        "countsShort": "{completed} of {scope} done",
+        "daysLeft": "{count, plural, one {# day left} other {# days left}}",
+        "progressAria": "{percent}% of the scope is done",
+        "status": {
+            "upcoming": "Upcoming",
+            "current": "Current",
+            "ended": "Ended, closing tonight",
+            "completed": "Completed"
+        },
+        "stats": {
+            "label": "Cycle progress",
+            "scope": "Scope",
+            "started": "Started",
+            "completed": "Completed",
+            "percent": "Done",
+            "daysLeft": "Days left"
+        },
+        "form": {
+            "createTitle": "New cycle",
+            "editTitle": "Edit cycle",
+            "create": "Create cycle",
+            "save": "Save cycle",
+            "name": "Name",
+            "nameHint": "Optional. Without one the cycle is called by its number.",
+            "startsOn": "Starts on",
+            "endsOn": "Ends on",
+            "datesRequired": "A cycle needs a start and an end date.",
+            "saved": "Cycle saved.",
+            "created": "Cycle created."
+        },
+        "schedule": {
+            "open": "Cycle schedule",
+            "openFor": "Cycle schedule for {team}",
+            "title": "Cycle schedule for {team}",
+            "description": "Islestone keeps the next cycles ready. Unfinished work items move on the night after a cycle ends.",
+            "save": "Save schedule",
+            "saved": "Cycle schedule saved.",
+            "enabled": "Make cycles on a schedule",
+            "enabledHint": "Off: the team plans its cycles by hand. Existing cycles stay either way.",
+            "length": "Cycle length",
+            "weeks": "{count, plural, one {# week} other {# weeks}}",
+            "firstStartsOn": "First cycle starts on",
+            "firstStartsOnHint": "Every cycle starts a whole number of lengths after this day.",
+            "upcoming": "Upcoming cycles to keep ready",
+            "upcomingHint": "After the current one.",
+            "rollover": "When a cycle ends",
+            "rolloverHint": "Where its unfinished work items go. Done and cancelled items stay.",
+            "rolloverNext": "Move them to the next cycle",
+            "rolloverNone": "Take them out of cycles"
+        },
+        "burnUp": {
+            "title": "Burn-up",
+            "scope": "Scope",
+            "started": "Started",
+            "completed": "Completed",
+            "date": "Day",
+            "showTable": "Show as table",
+            "showChart": "Show as chart",
+            "truncated": "This cycle has more work items than the chart reads; it counts the first 5,000.",
+            "loading": "Loading the burn-up…",
+            "empty": "The burn-up starts on the cycle's first day.",
+            "aria": "Burn-up: scope {scope}, completed {completed} today",
+            "tooltip": "Scope {scope} · started {started} · completed {completed}",
+            "caption": "Scope, started and completed work items at the end of each day"
         }
     }
 }

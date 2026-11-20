@@ -614,6 +614,7 @@ export class WorkItemRepository {
             priority: WorkItemPriority;
             assigneeId: string | null;
             parentId: string | null;
+            cycleId?: string | null;
             sortKey: string;
             startDate: Date | null;
             dueDate: Date | null;

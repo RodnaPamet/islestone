@@ -2,8 +2,9 @@
  * Destructive work-item writes go through the undo toast (sub-phase 2.3;
  * roadmap 2.3: "Destructive actions use the undo toast"):
  *
- *   1. In the work-item views (`src/components/work-items/**`) and the
- *      Settings pages (`src/components/settings/**`, decision 55), every
+ *   1. In the work-item views (`src/components/work-items/**`), the
+ *      Settings pages (`src/components/settings/**`, decision 55) and the
+ *      cycle pages (`src/components/cycles/**`, 2.5a), every
  *      DELETE request and every bulk delete is sent from inside a
  *      `triggerUndo(…)` or `removeWithUndo(…)` call, so nothing leaves the
  *      server until the undo window closes.
@@ -35,6 +36,7 @@ const SITE_CONTRACTS: Record<string, string> = {
     'src/components/settings/use-undo-delete.ts': 'Settings: team, workflow state and label delete (decision 55)',
     'src/components/work-items/data/use-saved-views.ts': 'saved view delete (the views menu, 2.4)',
     'src/components/work-items/data/use-custom-fields.ts': 'custom-field option delete (the field manager, 2.4)',
+    'src/components/cycles/use-cycles.ts': 'upcoming cycle delete (the Cycles page and a cycle\'s page, 2.5a)',
 };
 
 const HOOK_FILE = 'src/components/ui/hooks/use-toast-with-undo.ts';
@@ -42,7 +44,7 @@ const UNDO_CALLEES = new Set(['triggerUndo', 'removeWithUndo']);
 /** A DELETE through `apiSend`, or through the Settings pages' `send` wrapper, or a bulk delete. */
 const DESTRUCTIVE = /(?:apiSend|(?<![\w.$])send)\s*(?:<[^>]*>)?\s*\(\s*'DELETE'|\/bulk\/delete/g;
 /** The folders whose deletes must leave through the undo toast. */
-const UNDO_ROOTS = ['src/components/work-items/', 'src/components/settings/'];
+const UNDO_ROOTS = ['src/components/work-items/', 'src/components/settings/', 'src/components/cycles/'];
 
 function ownSources(root: string): Array<{ rel: string; code: string }> {
     const mirrorFile = path.join(root, 'ui-mirror.json');

@@ -57,6 +57,8 @@ export const CreateWorkItemSchema = z
         dueDate: DateOnly.nullish(),
         position: PositionSchema.optional(),
         customFields: CustomFieldValuesInputSchema.optional(),
+        /** A cycle of the project's team that is not completed (2.5a). */
+        cycleId: Id.nullish(),
     })
     .strict();
 

@@ -65,8 +65,13 @@ import { useListFiltersFromContext, useWorkItemFilterContext } from './use-work-
 import { WorkItemSheet } from './WorkItemSheet';
 
 export interface WorkItemsViewProps {
-    /** The view's fixed scope: a project (and its team), or none (every visible item). */
-    scope: { projectId?: string; teamId?: string };
+    /**
+     * The view's fixed scope: a project (and its team), one cycle (and its
+     * team, 2.5a), or none (every visible item).
+     */
+    scope: { projectId?: string; teamId?: string; cycleId?: string };
+    /** Shown above the filters (a cycle's stats and burn-up, 2.5a). */
+    summary?: React.ReactNode;
     title: string;
     description?: string;
     /** Per-view key for the remembered layout and lanes. */
@@ -193,8 +198,8 @@ function DeletedView({ onBack }: { onBack: () => void }) {
 
 export function WorkItemsView(props: WorkItemsViewProps) {
     const filterScope = useMemo(
-        () => ({ projectId: props.scope.projectId, teamId: props.scope.teamId }),
-        [props.scope.projectId, props.scope.teamId],
+        () => ({ projectId: props.scope.projectId, teamId: props.scope.teamId, fixedCycle: props.scope.cycleId !== undefined }),
+        [props.scope.projectId, props.scope.teamId, props.scope.cycleId],
     );
     const { filterCtx, filterDefs } = useWorkItemFilterContext(filterScope);
     return (
@@ -212,6 +217,7 @@ function WorkItemsViewBody({
     filterDefs,
     savedViews = NO_SAVED_VIEWS,
     manageCustomFields = false,
+    summary,
 }: WorkItemsViewProps & { filterDefs: ReturnType<typeof buildWorkItemFilterDefs>['filters'] }) {
     const tBody = useTranslations('workItems');
     const searchParams = useSearchParams();
@@ -319,14 +325,17 @@ function WorkItemsViewBody({
                 ];
                 const actions = (
                     <div className="flex flex-wrap items-center gap-tight">
-                        <SavedViewsMenu
-                            projectId={scope.projectId ?? null}
-                            affordances={savedViews}
-                            snapshot={snapshot}
-                            onApply={applyView}
-                            activeViewId={activeViewId}
-                            onActiveChange={setActiveViewId}
-                        />
+                        {/* A cycle's page has no saved views: a view's scope is the workspace or a project. */}
+                        {!scope.cycleId && (
+                            <SavedViewsMenu
+                                projectId={scope.projectId ?? null}
+                                affordances={savedViews}
+                                snapshot={snapshot}
+                                onApply={applyView}
+                                activeViewId={activeViewId}
+                                onActiveChange={setActiveViewId}
+                            />
+                        )}
                         <LayoutToggle value={layout} onChange={setLayout} />
                         {layout === 'list' && (
                             <Combobox
@@ -366,7 +375,7 @@ function WorkItemsViewBody({
                             onOpenChange={(open) => {
                                 if (!open) setCreating(null);
                             }}
-                            initial={{ projectId: scope.projectId, stateId: creating?.stateId }}
+                            initial={{ projectId: scope.projectId, stateId: creating?.stateId, cycleId: scope.cycleId }}
                             onCreated={(item) => setSheetId(item.id)}
                         />
                         {manageCustomFields && scope.projectId && (
@@ -391,7 +400,10 @@ function WorkItemsViewBody({
                             <ListPageShell.Header>
                                 <PageHeader title={header.title} description={header.description} actions={actions} />
                             </ListPageShell.Header>
-                            <ListPageShell.Filters>{toolbar(createButton)}</ListPageShell.Filters>
+                            <ListPageShell.Filters className="space-y-section">
+                                {summary}
+                                {toolbar(createButton)}
+                            </ListPageShell.Filters>
                             <ListPageShell.Body>
                                 <WorkItemBoard
                                     scope={{ ...filters, order: 'manual', dir: undefined }}
@@ -417,6 +429,7 @@ function WorkItemsViewBody({
                         filterDefs={filterDefs}
                         onOpen={openRow}
                         teamId={scope.teamId}
+                        summary={summary}
                         onPublish={(keys) => publishListOrder(tenantSlug, keys)}
                     >
                         {sheet}
@@ -445,9 +458,10 @@ function FiltersBound({
         () => ({
             ...fromContext,
             ...(scope.projectId ? { projectId: scope.projectId } : {}),
+            ...(scope.cycleId ? { cycleId: scope.cycleId } : {}),
             order: sort,
         }),
-        [fromContext, scope.projectId, sort],
+        [fromContext, scope.projectId, scope.cycleId, sort],
     );
     const toolbar = useCallback(
         (leading: React.ReactNode) => (
@@ -467,9 +481,11 @@ function ListLayout({
     filterDefs,
     onOpen,
     teamId,
+    summary,
     onPublish,
     children,
 }: {
+    summary?: React.ReactNode;
     filters: WorkItemListFilters;
     columnVisibility: ColumnVisibilityState;
     orderColumns: <T extends object>(columns: ReadonlyArray<T>) => T[];
@@ -496,6 +512,7 @@ function ListLayout({
     return (
         <EntityListPage<WorkItemRow>
             header={header}
+            kpis={summary}
             filters={{ defs: filterDefs, searchId: 'work-items-search', searchPlaceholder: tList('list.searchPlaceholder'), toolbarLeading: createButton }}
             table={{
                 data: list.items,
