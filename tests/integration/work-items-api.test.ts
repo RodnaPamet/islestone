@@ -34,6 +34,8 @@ jest.mock('@/app-layer/context', () => ({
 import { createProject } from '@/app-layer/usecases/project';
 import { createCycle } from '@/app-layer/usecases/cycle';
 import { createMilestone } from '@/app-layer/usecases/milestone';
+import { saveProjectAsTemplate } from '@/app-layer/usecases/project-template';
+import { createWorkItemTemplate } from '@/app-layer/usecases/work-item-template';
 import { createTeam } from '@/app-layer/usecases/team';
 import { listWorkItemTypes } from '@/app-layer/usecases/work-item-type';
 import { createWorkItem } from '@/app-layer/usecases/work-item';
@@ -54,7 +56,7 @@ import { DB_AVAILABLE } from './db-helper';
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const TAG = `wapi${Date.now().toString(36)}`;
 const ROOT = path.resolve(__dirname, '../..');
-const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'users', 'views', 'cycles'];
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'users', 'views', 'cycles', 'project-templates'];
 
 type Handler = (req: NextRequest, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>;
 
@@ -76,6 +78,8 @@ interface Ids {
     view: string;
     cycle: string;
     milestone: string;
+    itemTemplate: string;
+    projectTemplate: string;
 }
 
 /** One request per route and method: the template, a body, and whether it reads an item. */
@@ -184,6 +188,15 @@ const CALLS: Call[] = [
     { file: 'src/app/api/t/[tenantSlug]/cycles/[cycleId]/route.ts', method: 'DELETE', path: () => '/cycles/none', params: (i) => P(i, { cycleId: 'none' }), write: true, key: 'cycles.manage' },
     { file: 'src/app/api/t/[tenantSlug]/cycles/[cycleId]/burn-up/route.ts', method: 'GET', path: (i) => `/cycles/${i.cycle}/burn-up`, params: (i) => P(i, { cycleId: i.cycle }), write: false, key: 'cycles.view' },
     { file: 'src/app/api/t/[tenantSlug]/teams/[teamId]/cycle-schedule/route.ts', method: 'GET', path: (i) => `/teams/${i.team}/cycle-schedule`, params: (i) => P(i, { teamId: i.team }), write: false, key: 'cycles.view' },
+    // Sub-phase 2.5c: templates.
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/work-item-templates/route.ts', method: 'GET', path: (i) => `/projects/${i.project}/work-item-templates`, params: (i) => P(i, { projectId: i.project }), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/work-item-templates/route.ts', method: 'POST', path: (i) => `/projects/${i.project}/work-item-templates`, params: (i) => P(i, { projectId: i.project }), body: () => ({ name: `Template ${Math.random()}`, title: 'From the API' }), write: true, key: 'projects.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/work-item-templates/[templateId]/route.ts', method: 'PATCH', path: (i) => `/projects/${i.project}/work-item-templates/${i.itemTemplate}`, params: (i) => P(i, { projectId: i.project, templateId: i.itemTemplate }), body: () => ({ dueInDays: 3 }), write: true, key: 'projects.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/work-item-templates/[templateId]/route.ts', method: 'DELETE', path: (i) => `/projects/${i.project}/work-item-templates/none`, params: (i) => P(i, { projectId: i.project, templateId: 'none' }), write: true, key: 'projects.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/project-templates/route.ts', method: 'GET', path: () => '/project-templates', params: (i) => P(i), write: false, key: 'projects.create' },
+    { file: 'src/app/api/t/[tenantSlug]/project-templates/route.ts', method: 'POST', path: () => '/project-templates', params: (i) => P(i), body: (i) => ({ fromProjectId: i.project, name: `Saved ${Math.random()}` }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/project-templates/[templateId]/route.ts', method: 'PATCH', path: (i) => `/project-templates/${i.projectTemplate}`, params: (i) => P(i, { templateId: i.projectTemplate }), body: () => ({ archived: false }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/project-templates/[templateId]/route.ts', method: 'DELETE', path: () => '/project-templates/none', params: (i) => P(i, { templateId: 'none' }), write: true, key: 'admin.manage' },
     // Sub-phase 2.5b: milestones.
     { file: `${W}/[workItemId]/milestone/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/milestone`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ milestoneId: i.milestone }), write: true, key: 'work_items.edit' },
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/milestones/route.ts', method: 'GET', path: (i) => `/projects/${i.project}/milestones`, params: (i) => P(i, { projectId: i.project }), write: false, key: 'projects.view' },
@@ -249,7 +262,11 @@ describeFn('the work-item API', () => {
         const view = await createSavedView(ctxFor('MEMBER'), { name: 'Shared by a member', visibility: 'SHARED', layout: 'LIST', config: { filters: {}, sort: 'manual', laneBy: 'none' } });
         const cycle = await createCycle(owner, { teamId: team.id, startsOn: '2039-01-03', endsOn: '2039-01-16' });
         const milestone = await createMilestone(owner, project.id, { name: 'API milestone' });
+        const itemTemplate = await createWorkItemTemplate(owner, project.id, { name: 'API template', title: 'From a template' });
+        const projectTemplate = await saveProjectAsTemplate(owner, { fromProjectId: project.id, name: 'API project template' });
         Object.assign(ids, {
+            itemTemplate: itemTemplate.id,
+            projectTemplate: projectTemplate.id,
             cycle: cycle.id,
             milestone: milestone.id,
             field: field.id,
