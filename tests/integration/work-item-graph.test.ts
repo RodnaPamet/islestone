@@ -274,7 +274,7 @@ describeFn('the work-item graph', () => {
                 SELECT table_name, collation_name FROM information_schema.columns
                  WHERE column_name = 'sortKey' AND table_schema = 'public' ORDER BY table_name`;
             expect(collations).toEqual(
-                ['CustomField', 'CustomFieldOption', 'Label', 'WorkItem', 'WorkItemType', 'WorkflowState'].map((t) => ({ table_name: t, collation_name: 'C' })),
+                ['CustomField', 'CustomFieldOption', 'Label', 'Milestone', 'WorkItem', 'WorkItemType', 'WorkflowState'].map((t) => ({ table_name: t, collation_name: 'C' })),
             );
         });
 
