@@ -18,7 +18,8 @@ Inbox, per-member preferences, the waiting-on email, the daily digest that
 replaced 1.6's unwired due digest, retention and Settings → Notifications
 (see "The Inbox", "Preferences", "The daily digest" and "Retention" below).
 Sub-phase 2.7d (owner decisions 127 to 130) added the mention bell and email
-(see "Mentions" below).
+(see "Mentions" below). Sub-phase 2.7e (owner decisions 138 to 142) added
+recipient lists and their send-time resolver (see "Recipient lists" below).
 
 ## Tables
 
@@ -353,6 +354,44 @@ comment's watcher fan-out skips the people it just mentioned, who were added
 as watchers in the same write (decision 128), so they get one notification,
 not two. Machine-made text (intake accept, templates, repeat copies) records
 and rings nobody (decision 129).
+
+## Recipient lists (2.7e)
+
+Owner decisions 79 and 138 to 142 (ADR 0006 "Recipient list"; the map
+`docs/porting/maps/2.7.md`, part 6). A recipient list is a named set of people
+to notify: the workspace's (`RecipientList.projectId` NULL) or one project's,
+its people in `RecipientListMember` (each an ACTIVE member when added; the
+membership FK cascades, so a removed member leaves every list). Lists are
+archived and restored, never deleted (decision 141; `app_user` holds no
+DELETE on them). Migration `20261206120000_recipient_lists`.
+
+**One resolver, at send time.** `resolveListRecipients(db, tenantId, { listIds,
+projectId?, alsoUserIds?, may })` (`src/app-layer/notifications/recipient-list.ts`)
+is the only reader of a list for sending; every later feature that names a list
+(reviews in 2.8, checklists, notify actions, reports, minutes) calls it. The
+stored membership is never "may receive": each call re-checks that the
+workspace is live (it is a member of the census in
+`tests/guards/cross-tenant-recipient-liveness.test.ts`), that the list is
+live and the workspace's or the named project's, and, for each person, that
+they are an ACTIVE member whose permissions hold what the caller asks (`may`)
+and whose role sees the project. Each person is counted once across the lists
+and `alsoUserIds`. The bell or email writer then asks the person's own
+preference (`isInAppTypeEnabled`, `emailDeliveryFor`), as for every
+notification.
+
+Two callers today:
+
+- **An item's watchers** (decision 139). `POST /work-items/:id/watchers/recipient-list
+  { listId }` (`work_items.edit`) copies the people the list resolves to (who
+  read work items and see the item's project) onto the watchers, as ordinary
+  watchers each free to stop watching; the rest are skipped and counted. One
+  audit entry, `WORK_ITEM_WATCHERS_ADDED_FROM_LIST`, names the list and the
+  people added. Nobody is notified, as adding a watcher notifies nobody.
+- **A project's intake** (decision 142). `ProjectIntake.recipientListId` names
+  one list beside the notify list's member rows; a new request's
+  `INTAKE_REQUEST_RECEIVED` bell rings the union, each person once, who hold
+  `intake.view`, never the sender (`notifyIntakeReceived`). An archived list
+  rings nobody until it is restored.
 
 ## Retention (2.7c)
 

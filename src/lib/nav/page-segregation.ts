@@ -88,6 +88,9 @@ export const SUBPAGES: readonly string[] = [
     // workspace's notification settings.
     '/inbox/preferences',
     '/settings/notifications',
+    // Sub-phase 2.7e: the workspace's recipient lists, and a project's.
+    '/settings/recipient-lists',
+    '/projects/[projectKey]/recipient-lists',
 ] as const;
 
 /**

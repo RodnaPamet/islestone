@@ -103,6 +103,7 @@ model Project {
   intakeRequests       IntakeRequest[]
   intakeBlockedSenders IntakeBlockedSender[]
   intakeInboundEmails  IntakeInboundEmail[]
+  recipientLists       RecipientList[]
 
   @@unique([id, tenantId])
   /// Target of WorkItem's composite FK: an item's team is its project's team.

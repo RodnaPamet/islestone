@@ -926,3 +926,35 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      and the create dialog's description; chips and key links (`MentionText`) on comments, the
      description and the pinned answer; the description is shown rendered and edited on request
      ("Edit description"). No new route or key.
+   2.7d merged as #59. **2.7e (recipient lists, decisions 79 and 138 to 142) is built** on branch
+   `wt/p27e`, on top of 2.7d, per `docs/work-items.md` ("Recipient lists (2.7e)"),
+   `docs/notifications.md` ("Recipient lists (2.7e)") and `docs/intake.md`; written fresh, no
+   `PROVENANCE.md` row (inflect-compliance has no distribution lists):
+   - Schema: `RecipientList` (a workspace list, `projectId` NULL, or one project's; the name
+     unique in its scope by two partial uniques, archived lists included; length CHECKs; no
+     DELETE for `app_user`, decision 141) and `RecipientListMember` (the membership FK cascades,
+     so a removed member leaves every list); `ProjectIntake.recipientListId` (`ON DELETE SET
+     NULL ("recipientListId")`). RLS, grants, a two-tenant test for both tables. Migration
+     `20261206120000_recipient_lists`. The drift check passes, residue unchanged.
+   - Rules: one send-time resolver, `resolveListRecipients`
+     (`src/app-layer/notifications/recipient-list.ts`): a live workspace (it joins the liveness
+     census), a live list of the workspace or the named project, an ACTIVE member whose
+     permissions hold what the caller asks and whose role sees the project, each person once.
+     Adding a list to an item's watchers copies the people it resolves to (decision 139);
+     a project's intake bell rings the union of its member rows and its list, `intake.view`
+     holders only, never the sender (decision 142). The intake's member rows are now held to
+     the project's visibility too; no built-in role that holds `intake.view` is affected.
+   - API: workspace lists under `/recipient-lists/…` (`admin.manage`), a project's under
+     `/projects/:id/recipient-lists/…` (`projects.edit`), both read under `projects.view`
+     (decision 140): list, create, read, rename, set (`PUT`) or change (`PATCH { add, remove }`)
+     the people, archive, restore; `POST /work-items/:id/watchers/recipient-list`
+     (`work_items.edit`); `PUT /projects/:id/intake` takes `recipientListId`. Every write
+     audited (`RECIPIENT_LIST_*`, `WORK_ITEM_WATCHERS_ADDED_FROM_LIST`).
+   - UI: Settings → Recipient lists; a project's lists, linked from the project page and from
+     Settings → Projects; removing a person goes through the undo toast; archiving is sent at
+     once (not a delete); the watchers panel's "Add recipient list"; Settings → Intake's list
+     picker.
+   - Deviations from the map, none of them a new decision: the routes are split by scope
+     (the map had one set whose usecase asserted the scope's key), the intake column is
+     `recipientListId` (the map's `notifyListId`), and archiving is not behind a typed
+     confirmation (the brief: archiving is not a delete).

@@ -232,6 +232,7 @@ describe('Settings → Intake: the email address and blocked senders (2.6c)', ()
         keyPrefix: 'SUP',
         enabled: true,
         notifyUserIds: [],
+        recipientListId: null,
         pendingCount: 0,
         emailEnabled: true,
         emailAddress: 'abcdefghjkmn@in.islestone.cloud',

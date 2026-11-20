@@ -42,6 +42,7 @@ import SettingsPage from '@/app/t/[tenantSlug]/(app)/settings/page';
 import LabelsSettingsPage from '@/app/t/[tenantSlug]/(app)/settings/labels/page';
 import NotificationSettingsPage from '@/app/t/[tenantSlug]/(app)/settings/notifications/page';
 import ProjectsSettingsPage from '@/app/t/[tenantSlug]/(app)/settings/projects/page';
+import RecipientListsSettingsPage from '@/app/t/[tenantSlug]/(app)/settings/recipient-lists/page';
 import TeamWorkflowSettingsPage from '@/app/t/[tenantSlug]/(app)/settings/teams/[teamId]/page';
 import TeamsSettingsPage from '@/app/t/[tenantSlug]/(app)/settings/teams/page';
 import WorkItemTypesSettingsPage from '@/app/t/[tenantSlug]/(app)/settings/work-item-types/page';
@@ -613,6 +614,7 @@ describe('the server pages', () => {
         ['Labels', () => LabelsSettingsPage({ params })],
         ['Projects', () => ProjectsSettingsPage({ params })],
         ['Notifications', () => NotificationSettingsPage({ params })],
+        ['Recipient lists', () => RecipientListsSettingsPage({ params })],
     ] as const;
 
     beforeEach(() => mockContext.mockReset());

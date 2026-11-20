@@ -158,3 +158,66 @@ model TenantNotificationSettings {
   updatedAt        DateTime           @updatedAt
   tenant           Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
+
+// ─────────────────────────────────────────────────────────────────
+//  Recipient lists (sub-phase 2.7e; docs/porting/maps/2.7.md, part 6;
+//  owner decisions 79 and 138 to 142; ADR 0006 "Recipient list"). A named
+//  set of people to notify: copied onto an item's watchers in one step
+//  (decision 139), named by a project's intake beside its notify list
+//  (decision 142), and resolved at send time by the later features that name
+//  one. The stored membership is never "may receive": every send re-checks
+//  the member, the project's visibility and the workspace
+//  (`src/app-layer/notifications/recipient-list.ts`). Migration
+//  `20261206120000_recipient_lists`.
+// ─────────────────────────────────────────────────────────────────
+
+/// A recipient list (ADR 0006): a workspace list (`projectId` NULL, managed
+/// under `admin.manage`) or one project's (managed under `projects.edit`);
+/// any member reads them (`projects.view`) (decision 140). The name is unique
+/// in its scope, archived lists included (two partial uniques in the
+/// migration). Archived and restored, never deleted (decision 141; `app_user`
+/// holds no DELETE): only a project's or the workspace's cascade removes one.
+model RecipientList {
+  id          String    @id @default(cuid())
+  tenantId    String
+  /// NULL: a workspace list; set: a list of this project.
+  projectId   String?
+  /// Plaintext, sanitised, at most 80 characters.
+  name        String
+  /// Plaintext, sanitised, at most 500 characters.
+  description String?
+  archivedAt  DateTime?
+  /// An actor stamp: a plain column, no FK.
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant  Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project Project?              @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  members RecipientListMember[]
+  /// The project intakes that name this list (2.7e, decision 142).
+  intakes ProjectIntake[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, projectId, archivedAt])
+}
+
+/// One member of a recipient list: an ACTIVE member when added. Leaves with
+/// the membership (the FK cascades: a removed member leaves every list) and
+/// with the list's own cascade.
+model RecipientListMember {
+  tenantId  String
+  listId    String
+  userId    String
+  /// An actor stamp: a plain column, no FK.
+  addedById String
+  createdAt DateTime @default(now())
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  list   RecipientList    @relation(fields: [listId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  member TenantMembership @relation("RecipientListMembership", fields: [tenantId, userId], references: [tenantId, userId], onDelete: Cascade)
+
+  @@id([listId, userId])
+  @@index([tenantId, listId])
+  @@index([tenantId, userId])
+}

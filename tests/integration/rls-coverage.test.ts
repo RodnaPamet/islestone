@@ -67,6 +67,9 @@ const NO_DELETE_TABLES: readonly string[] = [
     // archived, never deleted.
     'ProjectIntake',
     'IntakeForm',
+    // Sub-phase 2.7e: recipient lists are archived and restored, never
+    // deleted (owner decision 141).
+    'RecipientList',
 ];
 
 describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
@@ -301,6 +304,8 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             'ProjectKeyPrefix',
             'ProjectKeySequence',
             'ProjectTemplate',
+            'RecipientList',
+            'RecipientListMember',
             'SavedView',
             'Team',
             'TenantCustomRole',

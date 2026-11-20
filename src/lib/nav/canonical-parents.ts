@@ -65,6 +65,9 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // Sub-phase 2.7c.
     '/inbox/preferences': { href: '/inbox', label: 'Inbox' },
     '/settings/notifications': { href: '/settings', label: 'Settings' },
+    // Sub-phase 2.7e. A project's lists fall back to the project.
+    '/settings/recipient-lists': { href: '/settings', label: 'Settings' },
+    '/projects/[projectKey]/recipient-lists': { href: '/projects/[projectKey]', label: 'Project' },
 };
 
 /**

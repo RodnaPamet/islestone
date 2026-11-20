@@ -128,12 +128,17 @@ export class IntakeRepository {
         return db.projectIntake.findMany({
             where: { tenantId: ctx.tenantId, projectId: { in: [...projectIds] } },
             take: PROJECT_INTAKE_TAKE,
-            select: { projectId: true, enabled: true },
+            select: { projectId: true, enabled: true, recipientListId: true },
         });
     }
 
     static async getProjectIntake(db: PrismaTx, ctx: Ctx, projectId: string) {
-        return db.projectIntake.findFirst({ where: { tenantId: ctx.tenantId, projectId }, select: { projectId: true, enabled: true } });
+        return db.projectIntake.findFirst({ where: { tenantId: ctx.tenantId, projectId }, select: { projectId: true, enabled: true, recipientListId: true } });
+    }
+
+    /** Name the recipient list a project's intake rings beside its notify list, or none (2.7e, decision 142). */
+    static async setRecipientList(db: PrismaTx, ctx: Ctx, projectId: string, recipientListId: string | null) {
+        await db.projectIntake.updateMany({ where: { tenantId: ctx.tenantId, projectId }, data: { recipientListId } });
     }
 
     static async upsertProjectIntake(db: PrismaTx, ctx: Ctx, projectId: string, enabled: boolean) {
@@ -141,7 +146,7 @@ export class IntakeRepository {
             where: { projectId_tenantId: { projectId, tenantId: ctx.tenantId } },
             create: { tenantId: ctx.tenantId, projectId, enabled },
             update: { enabled },
-            select: { projectId: true, enabled: true },
+            select: { projectId: true, enabled: true, recipientListId: true },
         });
     }
 

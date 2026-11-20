@@ -839,7 +839,10 @@
             "watch": "Watch",
             "addWatcher": "Add a watcher",
             "removeWatcher": "Remove {name} from the watchers",
-            "remove": "Remove"
+            "remove": "Remove",
+            "addRecipientList": "Add recipient list",
+            "searchRecipientLists": "Search recipient lists…",
+            "workspaceList": "{name} (workspace)"
         },
         "relation": {
             "blocks": "Blocks",
@@ -881,7 +884,8 @@
             "answerMarked": "marked an answer",
             "answerCleared": "cleared the answer",
             "mentioned": "mentioned someone",
-            "mentionsRemoved": "removed a mention"
+            "mentionsRemoved": "removed a mention",
+            "watchersAddedFromList": "added watchers from a recipient list"
         },
         "mentions": {
             "hint": "Type @ to mention a member.",
@@ -944,7 +948,9 @@
             "labelRemoved": "Label removed",
             "relationRemoved": "Relation removed",
             "linkRemoved": "Link removed",
-            "answerCleared": "Answer of {key} cleared"
+            "answerCleared": "Answer of {key} cleared",
+            "listWatchersAdded": "{count, plural, one {Added # watcher} other {Added # watchers}} from {list}.",
+            "listWatchersNone": "Nobody new to add from {list}: everyone on it who can see this item already watches it."
         },
         "sort": {
             "choose": "Sort by",
@@ -1190,6 +1196,11 @@
                 "title": "Notifications",
                 "body": "The workspace's email switch, its sender and BCC mailbox, and the notifications muted for everyone.",
                 "open": "Open notification settings"
+            },
+            "recipientLists": {
+                "title": "Recipient lists",
+                "body": "Named sets of people to notify: add one to a work item's watchers, or have a project's intake ring it.",
+                "open": "Open recipient lists"
             }
         },
         "firstProject": {
@@ -1347,7 +1358,8 @@
                 "name": "Name",
                 "key": "Key",
                 "team": "Team",
-                "status": "Status"
+                "status": "Status",
+                "recipientLists": "Recipient lists"
             },
             "created": "Project {name} created",
             "archiveTitle": "Archive {name}?",
@@ -1371,7 +1383,9 @@
             "saveAsTemplateSubmit": "Save template",
             "includeItems": "Include open work items",
             "includeItemsHint": "Its open work items and their open sub-items become the new project's starter work items.",
-            "savedAsTemplate": "Saved {name} as a project template."
+            "savedAsTemplate": "Saved {name} as a project template.",
+            "recipientLists": "Lists",
+            "recipientListsOf": "Recipient lists of {name}"
         },
         "projectTemplates": {
             "title": "Project templates",
@@ -1520,7 +1534,13 @@
                 "foundLabel": "Blocks of the address you typed",
                 "listLabel": "Every block",
                 "none": "No sender is blocked."
-            }
+            },
+            "recipientList": "Recipient list",
+            "recipientListHint": "Also ring the people on one recipient list, the workspace's or this project's. Each person is notified once, and only while they can still see intake.",
+            "recipientListNone": "No recipient list",
+            "recipientListWorkspace": "{name} (workspace)",
+            "recipientListArchived": "An archived list (rings nobody)",
+            "recipientListFor": "Recipient list for {project}"
         },
         "notifications": {
             "title": "Notifications",
@@ -2000,5 +2020,46 @@
         "failed": "Your preferences could not be saved. Try again.",
         "loadFailed": "Your preferences could not be loaded. Try again.",
         "inboxLink": "Back to the Inbox"
+    },
+    "recipientLists": {
+        "workspaceTitle": "Recipient lists",
+        "workspaceDescription": "The workspace's named sets of people to notify. Add one to a work item's watchers, or have a project's intake ring it.",
+        "projectTitle": "{project}: recipient lists",
+        "projectDescription": "This project's named sets of people to notify. The workspace's lists can be used here too.",
+        "readOnly": "You can see these lists; changing them is for the people who manage them.",
+        "projectArchived": "The project is archived, so its lists cannot be changed.",
+        "open": "Recipient lists",
+        "create": "Recipient list",
+        "createTitle": "New recipient list",
+        "createSubmit": "Create list",
+        "editTitle": "Edit recipient list",
+        "hint": "Adding a list to a work item's watchers copies the people on it at that moment; each can stop watching on their own.",
+        "save": "Save",
+        "name": "Name",
+        "descriptionLabel": "Description",
+        "nameRequired": "Give the list a name.",
+        "empty": "No recipient lists yet.",
+        "loadFailed": "The recipient lists could not be loaded.",
+        "failed": "That did not work. Try again.",
+        "memberCount": "{count, plural, =0 {Nobody} one {# person} other {# people}}",
+        "noMembers": "Nobody is on this list yet.",
+        "membersOf": "People on {name}",
+        "formerMember": "Former member",
+        "addPerson": "Add a person",
+        "addPersonTo": "Add a person to {name}",
+        "searchMembers": "Search members…",
+        "remove": "Remove",
+        "removeNamed": "Remove {name} from {list}",
+        "memberRemoved": "Removed {name} from {list}.",
+        "undo": "Undo",
+        "edit": "Edit",
+        "editNamed": "Edit {name}",
+        "archive": "Archive",
+        "archiveNamed": "Archive {name}",
+        "restore": "Restore",
+        "restoreNamed": "Restore {name}",
+        "archived": "Archived {name}. It notifies nobody until it is restored.",
+        "restored": "Restored {name}.",
+        "archivedLists": "{count, plural, one {# archived list} other {# archived lists}}"
     }
 }

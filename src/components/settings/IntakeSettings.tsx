@@ -4,7 +4,8 @@
  * Settings → Intake (sub-phase 2.6a; owner decisions 93 and 95): per project,
  * whether it takes requests, its notify list (the members a new request
  * rings) and its forms (create, edit, publish, archive, through the
- * builder). The writes are offered only when the server's affordances say
+ * builder), and the recipient list it rings beside the notify list (2.7e,
+ * decision 142). The writes are offered only when the server's affordances say
  * so (`intakeAffordances().manage`); a component never checks a role.
  * A published public form (2.6b) offers its link to copy; whether public
  * forms are open on the deployment is asked on the server. The project's
@@ -32,6 +33,8 @@ import { useTenantHref } from '@/lib/tenant-context-provider';
 import { env as clientEnv } from '@/env-client';
 
 import { intakeRefusal, useIntakeApi, useIntakeForms, useProjectIntakes } from '@/components/intake/data/intake-data';
+import { useAllUsableRecipientLists } from '@/components/recipient-lists/use-recipient-lists';
+import type { RecipientListData } from '@/lib/recipient-lists/types';
 import { IntakeBlockedSenders } from './IntakeBlockedSenders';
 import { IntakeFormBuilder } from './IntakeFormBuilder';
 
@@ -41,9 +44,12 @@ function ProjectIntakeCard({
     canManage,
     publicForms,
     inboundEmail,
+    lists,
 }: {
     project: ProjectIntakeSettings;
     forms: IntakeFormData[];
+    /** The live recipient lists usable on this project (the workspace's and its own), 2.7e. */
+    lists: RecipientListData[];
     canManage: boolean;
     publicForms: boolean;
     inboundEmail: boolean;
@@ -67,7 +73,13 @@ function ProjectIntakeCard({
             toast.error(intakeRefusal(err, tCard('failed')));
         }
     };
-    const save = async (body: { enabled: boolean; notifyUserIds?: string[]; emailEnabled?: boolean }) => {
+    const listOptions = [
+        { value: '', label: tCard('recipientListNone') },
+        ...lists.map((l) => ({ value: l.id, label: l.projectId ? l.name : tCard('recipientListWorkspace', { name: l.name }) })),
+        // A named list that is now archived is not usable; it still shows as named.
+        ...(project.recipientListId && !lists.some((l) => l.id === project.recipientListId) ? [{ value: project.recipientListId, label: tCard('recipientListArchived') }] : []),
+    ];
+    const save = async (body: { enabled: boolean; notifyUserIds?: string[]; emailEnabled?: boolean; recipientListId?: string | null }) => {
         try {
             await send('PUT', `/projects/${encodeURIComponent(project.projectId)}/intake`, body);
             toast.success(tCard('saved', { project: project.projectName }));
@@ -122,6 +134,17 @@ function ProjectIntakeCard({
                             caret
                             placeholder={tCard('notifyNone')}
                             buttonProps={{ 'aria-label': tCard('notifyFor', { project: project.projectName }) }}
+                        />
+                        <h3 className="text-sm font-medium text-content-emphasis">{tCard('recipientList')}</h3>
+                        <p className="text-xs text-content-muted">{tCard('recipientListHint')}</p>
+                        <Combobox
+                            id={`intake-recipient-list-${project.projectId}`}
+                            selected={listOptions.find((o) => o.value === (project.recipientListId ?? '')) ?? null}
+                            setSelected={(o) => canManage && o && (o.value || null) !== project.recipientListId && void save({ enabled: true, recipientListId: o.value || null })}
+                            options={listOptions}
+                            disabled={!canManage}
+                            caret
+                            buttonProps={{ 'aria-label': tCard('recipientListFor', { project: project.projectName }) }}
                         />
                     </div>
                     <div className="space-y-tight">
@@ -235,13 +258,22 @@ export function IntakeSettings({ affordances, publicForms = false, inboundEmail 
     const t = useTranslations('settings.intake');
     const { data: projects, error, isLoading } = useProjectIntakes(affordances.manage);
     const { data: forms } = useIntakeForms(affordances.manage || affordances.view);
+    const { data: lists } = useAllUsableRecipientLists(affordances.manage);
     return (
         <DashboardLayout header={{ title: t('title'), description: t('description'), back: { smart: true } }} data-testid="intake-settings">
             {!affordances.manage && <p className="text-sm text-content-muted">{t('readOnly')}</p>}
             {error && <p role="alert">{intakeRefusal(error, t('failed'))}</p>}
             {!isLoading && (projects ?? []).length === 0 && affordances.manage && <p className="text-sm text-content-muted">{t('noProjects')}</p>}
             {(projects ?? []).map((p) => (
-                <ProjectIntakeCard key={p.projectId} project={p} forms={(forms ?? []).filter((f) => f.projectId === p.projectId)} canManage={affordances.manage} publicForms={publicForms} inboundEmail={inboundEmail} />
+                <ProjectIntakeCard
+                    key={p.projectId}
+                    project={p}
+                    forms={(forms ?? []).filter((f) => f.projectId === p.projectId)}
+                    canManage={affordances.manage}
+                    publicForms={publicForms}
+                    inboundEmail={inboundEmail}
+                    lists={(lists ?? []).filter((l) => l.projectId === null || l.projectId === p.projectId)}
+                />
             ))}
             {(projects ?? []).length > 0 && <IntakeBlockedSenders projects={projects ?? []} canManage={affordances.manage} />}
         </DashboardLayout>
