@@ -494,6 +494,7 @@ All five were answered on 2026-11-19 in the working session.
 - `If-Match` on text edits means clients must handle 409. The automatic retry keeps most conflicts invisible.
 - Description and comment encryption limits search (section 11). The search ADR decides before 2.7, and 2.7's search over comments depends on it.
 - Custom text values are filterable and therefore not encrypted.
+- **An intake request is not a work item** (owner decision 85, 2026-11-20; roadmap 2.6). Requests from forms and email wait in their own table, `IntakeRequest`, outside `WorkItem`: they take no key number, and no work-item read, list, board, search, transition, notification, automation or agent read has to exclude them. Accepting a request creates the work item through the ordinary create path, in the same transaction, so every rule in this ADR applies to it from its first row. Principle 3 concerns tracked work; a request becomes tracked work only when a person accepts it.
 - The inflect-compliance patterns named here were read, not copied. Code written fresh from them is recorded in `PROVENANCE.md` as pattern only; code copied under ADR 0001 D1 gets a row per copied file.
 
 ## What would change this decision
