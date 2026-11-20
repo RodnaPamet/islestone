@@ -675,3 +675,21 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    Nothing is built and no ADR is amended. When each sub-phase starts, settle its open
    questions first, its words above all, then amend ADR 0006 (and ADR 0002 §1 for field
    sets, §3 for reviews) before the first model or label.
+7. **2.5 (cycles, milestones, templates and repeats) is decided** (decisions 62 to 75: every
+   recommendation of `docs/porting/maps/2.5.md` accepted) and ships as four pull requests.
+   **2.5a has landed** (its own pull request), per
+   `docs/work-items.md`, "Cycles (2.5a)" and `PROVENANCE.md`, "Cycles, cycle schedules and the
+   burn-up":
+   - Schema: `CycleSchedule`, `Cycle` (no overlap: btree_gist exclusion constraint),
+     `WorkItemTransition` (written only by a SECURITY DEFINER trigger; `app_user` SELECT
+     only), `WorkItem.cycleId`, enum `CycleRollover`. Migration
+     `20261121120000_cycles_and_transitions`; ADR 0006 gained the planning words.
+   - API: `/cycles` (`cycles.view`/`cycles.manage`), `/cycles/:id/burn-up`,
+     `/teams/:id/cycle-schedule` (`cycles.manage` saves), `PUT /work-items/:id/cycle`
+     (`work_items.edit`, versioned), `cycleId` on create and as a list filter (ids, `none`,
+     `current`).
+   - Job: `cycle-rollover` at 00:10 in `NOTIFICATIONS_TZ`, as the system user.
+   - UI: the Cycles page (`/cycles`, in the sidebar and the palette), a cycle's page (stats,
+     the burn-up chart with its table, the cycle's list and board), the detail's Cycle
+     picker, the create dialog's cycle, the Cycle column, filter and lanes.
+   Next: 2.5b milestones, 2.5c templates, 2.5d repeats, each by the same map.

@@ -144,6 +144,42 @@ What migration `20261120120000_saved_views_and_custom_fields` adds beyond Prisma
 
 The views menu (`SavedViewsMenu`) on the Work items page and a project's page applies a view (filters, search, sort, layout, swimlanes, visible columns), saves the current state as a personal or shared view, updates or renames the applied one, and deletes it through the undo toast. The Views page (`/views`, which replaced 1.7's placeholder) lists every view the member can see, each opening its page with `?view=<id>`, which applies it. The field manager (`CustomFieldsManager`) opens from a project's page and from Settings → Projects for a viewer offered `manageCustomFields`.
 
+## Cycles (2.5a)
+
+Built by [`docs/porting/maps/2.5.md`](porting/maps/2.5.md) under owner decisions 62 to 75 (`docs/HANDOFF.md`) and ADR 0006 ("Cycle", "Cycle schedule", "Burn-up", "Transition"). Nothing was copied (`PROVENANCE.md`).
+
+### The tables
+
+| Table | Holds | Notes |
+|---|---|---|
+| `CycleSchedule` | A team's cycle settings: `enabled`, `lengthWeeks` (1–8), `firstStartsOn`, `upcomingCount` (1–6), `rollover` (`NEXT_CYCLE` or `NO_CYCLE`) | One row per team, made the first time someone saves them. `rollover` applies whether or not the schedule is enabled. |
+| `Cycle` | A team's time box: `number`, optional `name`, `startsOn` and `endsOn` (date-only, inclusive), `fromSchedule`, `completedAt` | Cycles of a team never overlap: the exclusion constraint `Cycle_no_overlap` (btree_gist), and the same check in the usecases under the team's cycle lock (`cycle-team:<teamId>`), which answer 409 `CYCLE_OVERLAP`. Status is derived, never stored (`cycleStatus`): upcoming, current, ended (its last day passed, not yet closed), completed. |
+| `WorkItemTransition` | One row per insert of a work item and per change of its state, cycle, project or deletion: the item's picture after the change | Written ONLY by the trigger `work_item_transition_record` (SECURITY DEFINER; `app_user` holds SELECT alone, so no request forges, changes or removes a row). No FK to `WorkItem`: rows outlive an item's purge and go with the workspace (decision 66). Read by the burn-up and, from 3.6, by analytics. |
+
+`WorkItem.cycleId` references `Cycle(id, teamId, tenantId)`: an item can only be in a cycle of its own team. A move to another team's project clears it in the same `UPDATE` (`moveWorkItemToProject`). Deleting a cycle an item names is refused by the foreign key (RESTRICT); the delete usecase clears the items first. Migration `20261121120000_cycles_and_transitions`, with its catalogue test (`tests/integration/cycles-sql-constructs.test.ts`).
+
+### Writes and who may make them
+
+- **Keys** (decision 72, no new key): `cycles.view` reads cycles, their counts and the burn-up; `cycles.manage` creates, changes and deletes cycles and saves a team's cycle schedule (Members hold both; the team itself stays under `admin.manage`). Putting an item in a cycle is `work_items.edit`. The pages offer what `cycleAffordances` returns (`cycle.policies.ts`, the predicates the usecases assert), asked on the server.
+- **One-off cycles** (decision 63): any dates that end today or later, at most 112 days, no overlap. A future cycle's dates may move; a started one keeps its start and its end may move, not before today; a completed one is read-only (409 `CYCLE_COMPLETED`). Only an upcoming cycle is deleted, and its items leave it first (each version increased, each audited). A schedule's cycle whose dates a person moved is no longer the schedule's.
+- **The schedule** fills, on save and nightly, the window containing today and `upcomingCount` more (`planScheduledCycles`), skipping any window an existing cycle overlaps. Saving it again replaces the schedule's own upcoming cycles that hold no items, then refills.
+- **An item's cycle:** `PUT /work-items/:id/cycle { cycleId }` (`null` takes it out), or `cycleId` on a create. A single-field change: `If-Match` optional, the version increases, a stale version is a 409 with the current row. Another team's cycle is a 400; a completed cycle a 409. Audited `WORK_ITEM_CYCLE_CHANGED` (from, to), shown in the item's Activity; watchers are told.
+- **The list** filters by `cycleId` (ids, `none`, `current`; `docs/pagination.md`), shows a Cycle column (from the column gear), and the board groups lanes by cycle; a drop into another cycle's lane sets it.
+
+### The rollover
+
+`cycle-rollover` (`docs/jobs.md`), at 00:10 in `NOTIFICATIONS_TZ`, as the workspace system user (decision 64): for each team, it keeps the schedule filled, then closes every open cycle whose last day has passed, oldest first, and moves its unfinished items (Backlog, Unstarted, Started) to the team's next cycle, or out of cycles when the team's `rollover` is `NO_CYCLE` or no next cycle exists. Items in archived projects and deleted items stay in the closed cycle. A close is a conditional update, so a second or concurrent run closes and moves nothing. No bell and no mail; each moved item's Activity shows it.
+
+### Counts and the burn-up
+
+Counts (`GET /cycles`, `GET /cycles/:id`) and the burn-up (`GET /cycles/:id/burn-up`) read only items in projects the caller can see, live and unarchived, so a GUEST sees none until 8.4. The burn-up (`src/app-layer/domain/burn-up.ts`, decision 65) is one point per day from the first day to today (or the last day): scope (in the cycle, not deleted, not cancelled), started (Started or Done) and completed (Done), each at the end of the day in `NOTIFICATIONS_TZ` and "now" for today, from each item's latest transition. Items are counted, not points (estimates arrive in 3.4). Past 5,000 items it counts the first ones and says so.
+
+### The pages
+
+- **Cycles** (`/cycles`, a main page): each team's current cycle (scope, started, completed, a progress bar, days left), then its upcoming and completed cycles; for a viewer offered `manageCycles`, the team's cycle schedule, "New cycle", and delete on an upcoming cycle through the undo toast.
+- **A cycle** (`/cycles/<id>`): the stats, the burn-up (`BurnUpChart`, the shared `@inflect/ui` time-series chart, with a table of the same points behind "Show as table"), and the cycle's items in the shared list and board (`WorkItemsView` scoped to the cycle; a new item there joins the cycle).
+- **The detail** has a Cycle picker (the team's cycles that take items, and "No cycle").
+
 ## Settings (decision 55)
 
 A workspace admin configures work without the API on the Settings pages (`src/app/t/[tenantSlug]/(app)/settings/`, components in `src/components/settings/`), built on 2.2's routes with no new route or usecase:
