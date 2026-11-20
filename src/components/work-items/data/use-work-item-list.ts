@@ -10,11 +10,20 @@
  * `keepPreviousData` is OFF here: a failed fetch for new filters shows the
  * error, never the previous filters' rows.
  *
+ * A change that reaches the list before its first read has answered is held
+ * and applied to that answer (issue #41). Writing it at once would lose the
+ * list: SWR discards the answer of a read that a mutation overlapped, and a
+ * change to pages that do not exist yet writes no pages, so the list stayed
+ * empty for good and a card dropped into a column still loading appeared in
+ * no column. Each held change places or removes one row by id, so applying
+ * it to an answer that already reflects it changes nothing.
+ *
  * Written fresh for Islestone on SWR's `useSWRInfinite` (ADR 0005 §3, one
  * client cache).
  */
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import useSWRInfinite from 'swr/infinite';
+import { useSWRConfig } from 'swr';
+import useSWRInfinite, { unstable_serialize } from 'swr/infinite';
 
 import { apiGet, type ApiClientError } from '@/lib/data/api-client';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
@@ -76,18 +85,38 @@ export function useWorkItemList(filters: WorkItemListFilters, options: UseWorkIt
     useEffect(() => {
         mutateRef.current = mutate;
     }, [mutate]);
+    const { cache } = useSWRConfig();
+    const infiniteKey = enabled ? unstable_serialize(getKey) : null;
+    /** Changes that arrived before the list's first answer, oldest first. */
+    const held = useRef<Array<(pages: WorkItemPage[]) => WorkItemPage[]>>([]);
+    const apply = useCallback(
+        (fn?: (pages: WorkItemPage[]) => WorkItemPage[]) => {
+            if (!infiniteKey || cache.get(infiniteKey)?.data === undefined) {
+                if (fn) held.current.push(fn);
+                return;
+            }
+            const fns = held.current.splice(0);
+            if (fn) fns.push(fn);
+            if (fns.length === 0) return;
+            void mutateRef.current((pages) => (pages ? fns.reduce((acc, f) => f(acc), pages) : pages), { revalidate: false });
+        },
+        [cache, infiniteKey],
+    );
     useEffect(() => {
+        held.current = [];
         if (!enabled) return undefined;
         return registerWorkItemList({
             filters: normalised,
-            update: (fn) => {
-                void mutateRef.current((pages) => (pages ? fn(pages) : pages), { revalidate: false });
-            },
+            update: (fn) => apply(fn),
             revalidate: () => {
                 void mutateRef.current();
             },
         });
-    }, [enabled, normalised]);
+    }, [enabled, normalised, apply]);
+    // The first answer is in: apply what was held for it.
+    useEffect(() => {
+        if (data !== undefined && held.current.length > 0) apply();
+    }, [data, apply]);
 
     const items = useMemo(() => {
         const seen = new Set<string>();
