@@ -220,7 +220,7 @@ type ChangeNotice =
 **6.4 Page content: the stored Yjs state is the source of truth.**
 
 - The encoded state is stored in a workspace table (working name `PageContent`), written by `onStoreDocument`.
-- On each store, the collaboration server also writes derived projections: plain text (for search, under ADR 0002 section 11's search decision: S1 for now, so the stored page text is not searched until the search ADR chooses between S2 and S3), sanitised HTML (for export and email), and the list of mentioned work items (for backlinks).
+- On each store, the collaboration server also writes derived projections: plain text (for search, under ADR 0002 section 11's search decision: S1 for now, so the stored page text is not searched; ADR 0008 (2026-11-20) indexes work-item descriptions and comments only, and pages need an amendment to it before their text is searched), sanitised HTML (for export and email), and the list of mentioned work items (for backlinks).
 - Projections are derived only from the Yjs state, through the editor's schema. Nothing else writes them.
 
 **6.5 Canvas content: C1.**
@@ -242,7 +242,7 @@ type ChangeNotice =
 **6.8 Encryption.**
 
 - Stored Yjs state and version snapshots are encrypted with the workspace key through the field-encryption manifest (roadmap 1.5), to match ADR 0002's treatment of descriptions and comments. **Decision:** Owner decision, 2026-11-19 (open question 6); the owner chose "Accept all". Whether the manifest handles binary columns is a question for 1.5.
-- The text projection follows the search decision in ADR 0002 section 11: S1 for now (owner decision, 2026-11-19), so page text is not searched until the search ADR, due before roadmap 2.7, chooses between S2 and S3.
+- The text projection follows the search decision in ADR 0002 section 11: S1 for now (owner decision, 2026-11-19), so page text is not searched. ADR 0008 (2026-11-20) chose a plaintext full-text index for work-item descriptions and comments only; searching page text is an amendment to ADR 0008, decided at roadmap 4.1.
 - Redis carries document updates between instances in flight. In production it is private, authenticated and on TLS, and the collaboration path uses pub/sub only, so it stores no updates.
 
 **6.9 Version history (roadmap 4.1).** Full encoded snapshots at intervals and on an explicit save, kept for the period the retention table sets (8.3). A restore is a server-side write through section 6.6.
@@ -311,7 +311,7 @@ Questions 1 to 7, 10 and 11 were answered on 2026-11-19 in the working session; 
 3. Answered: canvas transport is T1 (section 6.14). Whether tldraw sync runs under 3.x was not checked; under T1 it is not needed.
 4. Answered: the client cache is TanStack Query (section 3).
 5. Answered: item presence is R1 (section 5).
-6. Answered: stored Yjs state and snapshots are encrypted (section 6.8). Page text is searched under ADR 0002's S1 for now, so not until the search ADR chooses between S2 and S3.
+6. Answered: stored Yjs state and snapshots are encrypted (section 6.8). Page text is searched under ADR 0002's S1 for now, so not until the search ADR chooses between S2 and S3. ADR 0008 (2026-11-20) covers work-item descriptions and comments only; page text needs an amendment to it at 4.1.
 7. Answered: one audit entry per person per page per 10 minutes (section 6.11).
 8. Open, not blocking. Does the hosting target (roadmap open decision 5) keep long-lived SSE and WebSocket connections? A serverless-only host would change sections 4 and 6. It belongs to roadmap open decision 5.
 9. Open, not blocking. Does 8.5's PWA quick capture need to work offline? If yes, condition 1 fires. It belongs to sub-phase 8.5.

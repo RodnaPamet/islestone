@@ -122,7 +122,12 @@ Rows for Phase 2 concepts are fixed by this ADR once signed. Rows for later phas
 | Follow-up | A later email from the requester on a pending request (decided 2026-11-20; roadmap 2.6c). | `IntakeFollowUp` | Follow-up | Reply (as a model), Message |
 | Blocked sender | An email address, kept only as its lookup hash, whose requests a workspace or project drops (decided 2026-11-20; roadmap 2.6b and 2.6c). | `IntakeBlockedSender` | Blocked senders | Blacklist, Banned sender |
 | Notification | A record that something needs a member's attention. | `Notification` | Shown in the Inbox | Alert, Message |
-| Inbox | A member's list of notifications. | No model: a view over `Notification` | Inbox | Intake, Feed |
+| Inbox | A member's list of notifications. A notification the member has finished with is marked **Done** (`Notification.archivedAt`), shown under the Inbox's Done tab (decided 2026-11-20; roadmap 2.7c). | No model: a view over `Notification`; `Notification.archivedAt` | Inbox; Done, "Mark as done" | Intake, Feed, Dismiss, Clear (as an Inbox action) |
+| Notification preference | A member's choice, per notification type, of in-app on or off and email off, immediate or daily; the workspace's mute is the ceiling (decided 2026-11-20; roadmap 2.7c). | `NotificationPreference`; enum `EmailDelivery`: `OFF`, `IMMEDIATE`, `DAILY` | Notification preferences | Subscription (as a model), Setting (alone: `TenantNotificationSettings` is the workspace's), Alert rule |
+| Digest | One email gathering a member's notifications and due items since the last one (decided 2026-11-20; roadmap 2.7c). | No model; `EmailNotificationType.NOTIFICATION_DIGEST` | Daily digest | Summary (as a model), Report (a view word), Newsletter |
+| Mention | A person named in a comment or description with `@`; recorded per source and person, and the only thing that renders as a chip or notifies (decided 2026-11-20; roadmap 2.7d). | `Mention` | Mention; "Mentioned you" | Tag (a label's word), Ping, Callout |
+| Recipient list | A named set of members, in a workspace or one project, that a person adds to an item's watchers in one step and that later features name as recipients; each member's preferences and project visibility are re-checked at send time (decided 2026-11-20; roadmap 2.7e, the roadmap's "distribution group"). | `RecipientList`; members `RecipientListMember` | Recipient list | Group (SCIM's word), Team (taken), List (alone: a layout), Notify list (intake's), Distribution group, Audience (as a model), Mailing list |
+| Search vector | The stored full-text search vector of one work item's description or one comment: its stemmed words in plain text, by ADR 0008 (decided 2026-11-20; roadmap 2.7f). | `SearchVector` (`lexemes`) | Not shown | Search document (Document is a page's word), Search token (no tokens are stored: ADR 0008 D1), Index (alone, as a model) |
 | My Work | A member's page of items assigned, created, watched and due soon. | No model | My Work | Home, Dashboard |
 
 **Documents and canvas**
@@ -235,6 +240,10 @@ Because "member" is also the concept "anyone with a membership", text about perm
 ### Work-item field words of sub-phase 2.4b — decided
 
 **Decided. Owner decisions 100 to 102, 2026-11-20 (relayed to the porting session by its coordinator; `docs/porting/maps/2.4b.md`, open questions 1 to 3; `docs/HANDOFF.md`).** The Work table gains the rows Waiting on, Field set and Answer. "Awaiting" stays the agent session's word (`AWAITING_INPUT`), and "Accept" stays intake's. By decision 106, waiting on may name the delegate's agent session from roadmap 6.3, through a second column beside `waitingOnUserId`; that never makes the session, or its agent, accountable. "Question" is a work item type a workspace makes (user data, like Feature), offered as a Settings preset and not seeded (decision 116).
+
+### Search, inbox and mention words of sub-phase 2.7 — decided
+
+**Decided. Owner decision 143, 2026-11-20 (relayed to the porting session by its coordinator; `docs/porting/maps/2.7.md`, open questions 11, 15 and 20; `docs/HANDOFF.md` decisions 134, 138 and 143).** The "Views, intake and inbox" table gains the rows Notification preference, Digest, Mention, Recipient list and Search vector, and the Inbox row gains **Done** as its archive verb (`Notification.archivedAt`), not Dismiss or Clear. The roadmap's "distribution group" is a **Recipient list** (decision 138). The map's drafted "Search token" row was written for keyed word tokens; ADR 0008 chose a plaintext full-text index instead (decision 124), so the row is **Search vector** (`SearchVector`), and "search token" names nothing. "Document" stays a page's banned word, which is why the table is not `SearchDocument`. ADR 0003 is not amended: a recipient list only notifies and never assigns, and a mention never delegates (6.3's agent mention is its own amendment).
 
 ### How Islestone avoids inflect-compliance's two-vocabulary state
 
