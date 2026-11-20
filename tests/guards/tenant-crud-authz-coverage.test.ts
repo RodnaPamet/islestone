@@ -20,7 +20,7 @@ import { gitFiles } from '../helpers/git-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const T = 'src/app/api/t/[tenantSlug]';
-const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates', 'intake', 'search'].map((r) => `${T}/${r}/`);
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates', 'intake', 'search', 'recipient-lists'].map((r) => `${T}/${r}/`);
 
 type Spec = Partial<Record<'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', string>>;
 const W = `${T}/work-items`;
@@ -61,6 +61,20 @@ const SPEC: Readonly<Record<string, Spec>> = {
     // Sub-phase 2.5b (owner decision 72: milestones under the project keys).
     [`${T}/projects/[projectId]/milestones/route.ts`]: { GET: 'projects.view', POST: 'projects.edit' },
     [`${T}/projects/[projectId]/milestones/[milestoneId]/route.ts`]: { PATCH: 'projects.edit', DELETE: 'projects.edit' },
+    // Sub-phase 2.7e (owner decisions 139 and 140): workspace lists under
+    // admin.manage, a project's under projects.edit, both read under
+    // projects.view; a list onto an item's watchers is an item edit.
+    [`${T}/recipient-lists/route.ts`]: { GET: 'projects.view', POST: 'admin.manage' },
+    [`${T}/recipient-lists/[listId]/route.ts`]: { GET: 'projects.view', PATCH: 'admin.manage' },
+    [`${T}/recipient-lists/[listId]/members/route.ts`]: { PUT: 'admin.manage', PATCH: 'admin.manage' },
+    [`${T}/recipient-lists/[listId]/archive/route.ts`]: { POST: 'admin.manage' },
+    [`${T}/recipient-lists/[listId]/restore/route.ts`]: { POST: 'admin.manage' },
+    [`${T}/projects/[projectId]/recipient-lists/route.ts`]: { GET: 'projects.view', POST: 'projects.edit' },
+    [`${T}/projects/[projectId]/recipient-lists/[listId]/route.ts`]: { GET: 'projects.view', PATCH: 'projects.edit' },
+    [`${T}/projects/[projectId]/recipient-lists/[listId]/members/route.ts`]: { PUT: 'projects.edit', PATCH: 'projects.edit' },
+    [`${T}/projects/[projectId]/recipient-lists/[listId]/archive/route.ts`]: { POST: 'projects.edit' },
+    [`${T}/projects/[projectId]/recipient-lists/[listId]/restore/route.ts`]: { POST: 'projects.edit' },
+    [`${W}/[workItemId]/watchers/recipient-list/route.ts`]: { POST: 'work_items.edit' },
     [`${W}/[workItemId]/milestone/route.ts`]: { PUT: 'work_items.edit' },
     // Sub-phase 2.4b (owner decision 104: waiting on under `work_items.edit`).
     [`${W}/[workItemId]/waiting-on/route.ts`]: { PUT: 'work_items.edit' },

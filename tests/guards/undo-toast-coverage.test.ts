@@ -5,7 +5,8 @@
  *   1. In the work-item views (`src/components/work-items/**`), the
  *      Settings pages (`src/components/settings/**`, decision 55) and the
  *      cycle pages (`src/components/cycles/**`, 2.5a), the milestone pages
- *      (`src/components/milestones/**`, 2.5b), every
+ *      (`src/components/milestones/**`, 2.5b), the recipient-list pages
+ *      (`src/components/recipient-lists/**`, 2.7e), every
  *      DELETE request and every bulk delete is sent from inside a
  *      `triggerUndo(…)` or `removeWithUndo(…)` call, so nothing leaves the
  *      server until the undo window closes.
@@ -42,6 +43,7 @@ const SITE_CONTRACTS: Record<string, string> = {
     'src/components/work-items/data/use-item-templates.ts': 'item template delete (the project page\'s templates manager, 2.5c)',
     'src/components/milestones/use-milestones.ts': 'milestone delete (a project\'s milestones and a milestone\'s page, 2.5b)',
     'src/components/inbox/use-inbox.ts': 'marking a notification Done, and moving one back to the Inbox (the Inbox, 2.7c)',
+    'src/components/recipient-lists/use-recipient-lists.ts': 'removing a person from a recipient list (Settings → Recipient lists and a project\'s lists, 2.7e)',
 };
 
 const HOOK_FILE = 'src/components/ui/hooks/use-toast-with-undo.ts';
@@ -49,7 +51,7 @@ const UNDO_CALLEES = new Set(['triggerUndo', 'removeWithUndo']);
 /** A DELETE through `apiSend`, or through the Settings pages' `send` wrapper, or a bulk delete. */
 const DESTRUCTIVE = /(?:apiSend|(?<![\w.$])send)\s*(?:<[^>]*>)?\s*\(\s*'DELETE'|\/bulk\/delete/g;
 /** The folders whose deletes must leave through the undo toast. */
-const UNDO_ROOTS = ['src/components/work-items/', 'src/components/settings/', 'src/components/cycles/', 'src/components/milestones/'];
+const UNDO_ROOTS = ['src/components/work-items/', 'src/components/settings/', 'src/components/cycles/', 'src/components/milestones/', 'src/components/recipient-lists/'];
 
 function ownSources(root: string): Array<{ rel: string; code: string }> {
     const mirrorFile = path.join(root, 'ui-mirror.json');

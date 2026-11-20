@@ -24,6 +24,7 @@ import { FormField } from '@/components/ui/form-field';
 import { useToast } from '@/components/ui/hooks';
 import { Input } from '@/components/ui/input';
 import { createColumns } from '@/components/ui/table';
+import { projectRecipientListsHref } from '@/components/recipient-lists/ProjectRecipientListsLink';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import { Switch } from '@/components/ui/switch';
 import type { TemplateAffordances, WorkConfigAffordances } from '@/lib/work-items/types';
@@ -78,6 +79,20 @@ export function ProjectsSettings({ affordances, templates = NO_TEMPLATES }: { af
             { id: 'key', header: t('projects.col.key'), cell: ({ row }) => <span className="font-mono text-xs">{row.original.keyPrefix}</span> },
             { id: 'team', header: t('projects.col.team'), cell: ({ row }) => teamName.get(row.original.teamId) ?? '' },
             { id: 'status', header: t('projects.col.status'), cell: ({ row }) => (row.original.archivedAt ? t('common.archived') : t('common.active')) },
+            {
+                // A project's recipient lists (2.7e): its own page, read by every member.
+                id: 'recipientLists',
+                header: t('projects.col.recipientLists'),
+                cell: ({ row }) => (
+                    <Link
+                        href={tenantHref(projectRecipientListsHref(row.original.keyPrefix))}
+                        className="text-sm text-content-emphasis underline"
+                        aria-label={t('projects.recipientListsOf', { name: row.original.name })}
+                    >
+                        {t('projects.recipientLists')}
+                    </Link>
+                ),
+            },
             ...(showActions
                 ? [
                       {

@@ -284,6 +284,8 @@ describe('the schema speaks ADR 0006', () => {
             'ProjectKeyPrefix',
             'ProjectKeySequence',
             'ProjectTemplate',
+            'RecipientList',
+            'RecipientListMember',
             'SavedView',
             'Team',
             'Tenant',

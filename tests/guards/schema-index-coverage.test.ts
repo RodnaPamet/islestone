@@ -123,6 +123,10 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 
 /** Tenant models whose list queries are fully served by Layers A + B, with the reason. */
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // Sub-phase 2.7e. A scope's lists (at most RECIPIENT_LISTS_TAKE), and the
+    // people of a page of lists (at most RECIPIENT_LIST_MEMBERS_MAX each).
+    RecipientList: "A scope's recipient lists: @@index([tenantId, projectId, archivedAt]).",
+    RecipientListMember: "A page of lists' people: @@index([tenantId, listId]); a member's lists: @@index([tenantId, userId]).",
     // Sub-phase 2.7d. One source's people (at most MAX_MENTIONS_PER_TEXT
     // recorded per text), or a page of an item's comments' people.
     Mention: "One comment's or description's mentions, or a page of comments': @@index([tenantId, commentId]) and @@index([tenantId, workItemId]).",
@@ -231,7 +235,7 @@ describe('schema-index-coverage — parser sanity', () => {
     it('parses the tenancy models, their indexes and their relation FK groups', () => {
         const membership = MODELS.find((m) => m.name === 'TenantMembership');
         expect(MODELS.map((m) => m.name).sort()).toEqual([
-            'Account', 'AuditLog', 'AuditOutbox', 'Comment', 'CustomField', 'CustomFieldOption', 'CustomFieldValue', 'Cycle', 'CycleSchedule', 'IntakeBlockedSender', 'IntakeFollowUp', 'IntakeForm', 'IntakeInboundEmail', 'IntakeNotifyMember', 'IntakeRequest', 'Label', 'Mention', 'Milestone', 'Notification', 'NotificationOutbox', 'NotificationPreference', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Project', 'ProjectIntake', 'ProjectKeyPrefix', 'ProjectKeySequence', 'ProjectTemplate', 'SavedView', 'Team', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken', 'WorkItem', 'WorkItemKeyAlias', 'WorkItemLabel', 'WorkItemLink', 'WorkItemRecurrence', 'WorkItemRelation', 'WorkItemTemplate', 'WorkItemTemplateLabel', 'WorkItemTransition', 'WorkItemType', 'WorkItemTypeField', 'WorkItemWatcher', 'WorkflowState',
+            'Account', 'AuditLog', 'AuditOutbox', 'Comment', 'CustomField', 'CustomFieldOption', 'CustomFieldValue', 'Cycle', 'CycleSchedule', 'IntakeBlockedSender', 'IntakeFollowUp', 'IntakeForm', 'IntakeInboundEmail', 'IntakeNotifyMember', 'IntakeRequest', 'Label', 'Mention', 'Milestone', 'Notification', 'NotificationOutbox', 'NotificationPreference', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Project', 'ProjectIntake', 'ProjectKeyPrefix', 'ProjectKeySequence', 'ProjectTemplate', 'RecipientList', 'RecipientListMember', 'SavedView', 'Team', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken', 'WorkItem', 'WorkItemKeyAlias', 'WorkItemLabel', 'WorkItemLink', 'WorkItemRecurrence', 'WorkItemRelation', 'WorkItemTemplate', 'WorkItemTemplateLabel', 'WorkItemTransition', 'WorkItemType', 'WorkItemTypeField', 'WorkItemWatcher', 'WorkflowState',
         ]);
         expect(membership?.fieldIdName).toBe('id');
         expect(membership?.blockIndexes).toContainEqual(['tenantId', 'status']);

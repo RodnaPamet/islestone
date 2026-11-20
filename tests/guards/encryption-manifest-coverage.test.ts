@@ -71,6 +71,9 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    // ── Recipient lists (sub-phase 2.7e) ───────────────────────────────
+    'RecipientList.description':
+        'Workspace configuration (what a named set of people is for), shown wherever the list is offered, sanitised on write (recipient-list.ts); like a custom role\'s description, not business content.',
     // ── Mentions (sub-phase 2.7d) ──────────────────────────────────────
     'Mention.commentId':
         'A pointer to the comment that mentions the person (a cuid, FK-checked); the comment\'s text is Comment.body, encrypted.',

@@ -389,6 +389,28 @@ Comments and descriptions stay plain text (decision 127): a mention is the token
 - **The description** is shown with its chips and links, and edited on request ("Edit description", then Save or Cancel).
 - Copy is `workItems.mentions.*`, `workItems.detail.editDescription` and `workItems.activity.mentioned*`.
 
+## Recipient lists (2.7e)
+
+Built by [`docs/porting/maps/2.7.md`](porting/maps/2.7.md), part 6, under owner decisions 79 and 138 to 142 (`docs/HANDOFF.md`) and ADR 0006 ("Recipient list": never Group, Team or List alone). Written fresh; inflect-compliance has no distribution lists.
+
+### The model
+
+`RecipientList` (`tenantId`, `projectId` NULL for a workspace list, `name` plaintext and sanitised, at most 80, unique in its scope with archived lists included (two partial uniques), `description` at most 500, `archivedAt`, `createdById` an actor stamp) and `RecipientListMember` (`listId`, `userId`, `addedById`; the membership FK cascades, so a removed member leaves every list; at most 500 people a list). A project's lists cascade with the project. Lists are archived and restored, never deleted (decision 141): `app_user` holds no DELETE on `RecipientList`. RLS, grants and the two-tenant test `tests/integration/recipient-lists.test.ts`. Migration `20261206120000_recipient_lists`.
+
+### Writes and who may make them
+
+- **Keys** (decision 140). Workspace lists are managed under `admin.manage`, a project's under `projects.edit` (Members hold it); anyone who reads projects reads both (`projects.view`). The routes are split by scope, so each carries its scope's literal key and a refusal is the middleware's audited `AUTHZ_DENIED`: `/recipient-lists` (GET, POST), `/recipient-lists/:id` (GET, PATCH), `/recipient-lists/:id/members` (PUT the set, PATCH `{ add, remove }`), `/recipient-lists/:id/archive` and `/restore` (POST), and the same five under `/projects/:projectId/recipient-lists`. The usecases (`src/app-layer/usecases/recipient-list.ts`) assert the same predicates (`recipient-list.policies.ts`); a list named under the wrong scope is a 404. Pages read `recipientListAffordances` on the server.
+- **Rules.** A person must be an ACTIVE member when added (400); a name taken in the scope is 409 `RECIPIENT_LIST_NAME_TAKEN` (writes in one scope take an advisory lock); an archived list is read-only (409 `RECIPIENT_LIST_ARCHIVED`) until restored; an archived project's lists are read-only (409 `PROJECT_ARCHIVED`). `GET /recipient-lists?projectId=` lists the live lists usable on that project's items (the workspace's and its own), `?usable=1` those of every visible project.
+- **Audit.** `RECIPIENT_LIST_CREATED`, `_UPDATED`, `_MEMBERS_CHANGED` (the people's ids), `_ARCHIVED` and `_RESTORED`.
+- **Adding a list to an item's watchers** (decision 139) copies the people the list resolves to now as ordinary watchers, each free to stop watching; later features that name a list resolve it when they send. `addRecipientListAsWatchers` takes `work_items.edit`, refuses another project's list (400) and an archived one (409), and adds only active members who read work items and see the item's project, through `resolveListRecipients` (`docs/notifications.md`, "Recipient lists (2.7e)"). Audited `WORK_ITEM_WATCHERS_ADDED_FROM_LIST`; Activity shows "added watchers from a recipient list".
+
+### The views
+
+- Settings → Recipient lists (`/settings/recipient-lists`) for the workspace's lists, behind the Settings gate; a project's lists at `/projects/<KEY>/recipient-lists`, linked from the project page's header and from Settings → Projects. Both are `RecipientListsView` (`src/components/recipient-lists/`): each list with its people, create and edit (name and description), add a person, remove one through the undo toast (`use-recipient-lists.ts`, in `SITE_CONTRACTS`), archive at once (not a delete) and restore from the folded "archived" group.
+- The detail's watchers panel offers "Add recipient list" (the live lists usable on the item, workspace lists marked) to a member who may edit items.
+- Settings → Intake picks the one list a project's intake also rings (decision 142; `docs/intake.md`).
+- Copy is `recipientLists.*`, `settings.intake.recipientList*`, `settings.sections.recipientLists` and `workItems.detail.addRecipientList`.
+
 ## Settings (decision 55)
 
 A workspace admin configures work without the API on the Settings pages (`src/app/t/[tenantSlug]/(app)/settings/`, components in `src/components/settings/`), built on 2.2's routes with no new route or usecase:
@@ -400,7 +422,8 @@ A workspace admin configures work without the API on the Settings pages (`src/ap
 | A team's workflow (`/settings/teams/<id>`) | `GET /teams/<id>` | create a state with a category fixed from then on, rename, move up or down within its category, make default, archive and unarchive, delete moving its items to a state the person chooses |
 | Work item types (`/settings/work-item-types`) | `GET /work-item-types?includeArchived=1` | create, rename, archive and unarchive |
 | Labels (`/settings/labels`) | `GET /labels` | create for the workspace or one team, rename, delete |
-| Projects (`/settings/projects`) | `GET /projects?includeArchived=1` | create (team, name, key prefix), rename, archive behind a typed confirmation (the key prefix), unarchive |
+| Projects (`/settings/projects`) | `GET /projects?includeArchived=1` | create (team, name, key prefix), rename, archive behind a typed confirmation (the key prefix), unarchive; a link to each project's recipient lists (2.7e) |
+| Recipient lists (`/settings/recipient-lists`, 2.7e) | `GET /recipient-lists?includeArchived=1` | create, edit, add and remove people, archive and restore workspace lists (see "Recipient lists (2.7e)") |
 
 - **Who sees what.** Every page asks `mayOpenSettings` on the server (`settingsPageAccess`, `src/lib/server/settings-pages.server.ts`), the sidebar gear's rule; anybody else gets a 404. The writes each page offers are `workConfigAffordances` (`work-config.policies.ts`), built from the same predicates the usecases assert (`mayManageWorkConfig`, `mayCreateProject`, `mayEditProject`, `mayArchiveProject`), so an Admin whose custom role withholds `admin.manage` reads the configuration and is offered no change to it. No component restates decision 52.
 - **Writes.** `apiSend` through `useSettingsApi` (`settings-data.ts`), then the list is read again; a refusal is shown as the server words it, in the dialog for a create or rename, as a toast otherwise. Deletes (a team, a state, a label) leave the list at once and are sent from inside the undo toast (`use-undo-delete.ts`, listed in `SITE_CONTRACTS`); a refusal that arrives when the window closes (a team with projects) puts the row back with the reason. Archiving a project is a typed confirmation, because its work items stop taking changes.

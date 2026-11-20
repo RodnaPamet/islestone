@@ -59,6 +59,8 @@ export const SetProjectIntakeSchema = z
     .object({
         enabled: z.boolean(),
         notifyUserIds: z.array(Id).max(500).optional(),
+        /** A recipient list rung beside the notify list (2.7e, decision 142); `null` names none, absent leaves it. */
+        recipientListId: Id.nullable().optional(),
         /** The project's email address takes mail (2.6c). */
         emailEnabled: z.boolean().optional(),
     })

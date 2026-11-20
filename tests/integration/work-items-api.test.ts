@@ -2,8 +2,8 @@
  * The work-item API, route by route, against a real Postgres (sub-phase 2.2,
  * roadmap H2's permission matrix seed).
  *
- *   - Every route file under work-items, projects, teams, work-item-types and
- *     labels is driven here, and the suite fails if one is not
+ *   - Every route file under work-items, projects, teams, work-item-types,
+ *     labels, and the others in `ROOTS` (recipient lists since 2.7e) is driven here, and the suite fails if one is not
  *     (the population is read from git).
  *   - A VIEWER is refused every write with a 403 and an `AUTHZ_DENIED` audit
  *     row; a MEMBER is admitted. The one write a VIEWER makes is its own
@@ -46,6 +46,7 @@ import { verifyAuditChain } from '@/lib/audit';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { createCustomField } from '@/app-layer/usecases/custom-field';
 import { createSavedView } from '@/app-layer/usecases/saved-view';
+import { createRecipientList } from '@/app-layer/usecases/recipient-list';
 
 import { gitFiles } from '../helpers/git-files';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
@@ -56,7 +57,7 @@ import { DB_AVAILABLE } from './db-helper';
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const TAG = `wapi${Date.now().toString(36)}`;
 const ROOT = path.resolve(__dirname, '../..');
-const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'users', 'views', 'cycles', 'project-templates'];
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'users', 'views', 'cycles', 'project-templates', 'recipient-lists'];
 
 type Handler = (req: NextRequest, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>;
 
@@ -80,6 +81,8 @@ interface Ids {
     milestone: string;
     itemTemplate: string;
     projectTemplate: string;
+    workspaceList: string;
+    projectList: string;
 }
 
 /** One request per route and method: the template, a body, and whether it reads an item. */
@@ -222,6 +225,24 @@ const CALLS: Call[] = [
     // Sub-phase 2.6a: a project's intake (its other routes are driven in intake-api.test.ts).
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/intake/route.ts', method: 'PUT', path: (i) => `/projects/${i.project}/intake`, params: (i) => P(i, { projectId: i.project }), body: () => ({ enabled: false }), write: true, key: 'intake.manage' },
     // Sub-phase 2.6c: a new address for the project's intake (409 while it has none; the flow is in intake-email.test.ts).
+    // Sub-phase 2.7e: recipient lists, split by scope (decision 140).
+    { file: 'src/app/api/t/[tenantSlug]/recipient-lists/route.ts', method: 'GET', path: () => '/recipient-lists', params: (i) => P(i), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/recipient-lists/route.ts', method: 'POST', path: () => '/recipient-lists', params: (i) => P(i), body: () => ({ name: `List ${Math.random()}` }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/recipient-lists/[listId]/route.ts', method: 'GET', path: (i) => `/recipient-lists/${i.workspaceList}`, params: (i) => P(i, { listId: i.workspaceList }), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/recipient-lists/[listId]/route.ts', method: 'PATCH', path: (i) => `/recipient-lists/${i.workspaceList}`, params: (i) => P(i, { listId: i.workspaceList }), body: () => ({ description: 'Who signs off' }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/recipient-lists/[listId]/members/route.ts', method: 'PUT', path: (i) => `/recipient-lists/${i.workspaceList}/members`, params: (i) => P(i, { listId: i.workspaceList }), body: (i) => ({ userIds: [i.member] }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/recipient-lists/[listId]/members/route.ts', method: 'PATCH', path: (i) => `/recipient-lists/${i.workspaceList}/members`, params: (i) => P(i, { listId: i.workspaceList }), body: (i) => ({ add: [i.member] }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/recipient-lists/[listId]/archive/route.ts', method: 'POST', path: () => '/recipient-lists/none/archive', params: (i) => P(i, { listId: 'none' }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/recipient-lists/[listId]/restore/route.ts', method: 'POST', path: () => '/recipient-lists/none/restore', params: (i) => P(i, { listId: 'none' }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/recipient-lists/route.ts', method: 'GET', path: (i) => `/projects/${i.project}/recipient-lists`, params: (i) => P(i, { projectId: i.project }), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/recipient-lists/route.ts', method: 'POST', path: (i) => `/projects/${i.project}/recipient-lists`, params: (i) => P(i, { projectId: i.project }), body: () => ({ name: `List ${Math.random()}` }), write: true, key: 'projects.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/recipient-lists/[listId]/route.ts', method: 'GET', path: (i) => `/projects/${i.project}/recipient-lists/${i.projectList}`, params: (i) => P(i, { projectId: i.project, listId: i.projectList }), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/recipient-lists/[listId]/route.ts', method: 'PATCH', path: (i) => `/projects/${i.project}/recipient-lists/${i.projectList}`, params: (i) => P(i, { projectId: i.project, listId: i.projectList }), body: () => ({ description: 'Desk' }), write: true, key: 'projects.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/recipient-lists/[listId]/members/route.ts', method: 'PUT', path: (i) => `/projects/${i.project}/recipient-lists/${i.projectList}/members`, params: (i) => P(i, { projectId: i.project, listId: i.projectList }), body: (i) => ({ userIds: [i.member] }), write: true, key: 'projects.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/recipient-lists/[listId]/members/route.ts', method: 'PATCH', path: (i) => `/projects/${i.project}/recipient-lists/${i.projectList}/members`, params: (i) => P(i, { projectId: i.project, listId: i.projectList }), body: (i) => ({ add: [i.member] }), write: true, key: 'projects.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/recipient-lists/[listId]/archive/route.ts', method: 'POST', path: (i) => `/projects/${i.project}/recipient-lists/none/archive`, params: (i) => P(i, { projectId: i.project, listId: 'none' }), write: true, key: 'projects.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/recipient-lists/[listId]/restore/route.ts', method: 'POST', path: (i) => `/projects/${i.project}/recipient-lists/none/restore`, params: (i) => P(i, { projectId: i.project, listId: 'none' }), write: true, key: 'projects.edit' },
+    { file: `${W}/[workItemId]/watchers/recipient-list/route.ts`, method: 'POST', path: (i) => `/work-items/${i.other}/watchers/recipient-list`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ listId: i.projectList }), write: true, key: 'work_items.edit' },
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/intake/email-address/route.ts', method: 'POST', path: (i) => `/projects/${i.project}/intake/email-address`, params: (i) => P(i, { projectId: i.project }), write: true, key: 'intake.manage' },
 ];
 
@@ -283,7 +304,11 @@ describeFn('the work-item API', () => {
         const milestone = await createMilestone(owner, project.id, { name: 'API milestone' });
         const itemTemplate = await createWorkItemTemplate(owner, project.id, { name: 'API template', title: 'From a template' });
         const projectTemplate = await saveProjectAsTemplate(owner, { fromProjectId: project.id, name: 'API project template' });
+        const workspaceList = await createRecipientList(owner, null, { name: 'API leads', userIds: [users.MEMBER!] });
+        const projectList = await createRecipientList(owner, project.id, { name: 'API desk', userIds: [users.MEMBER!, users.VIEWER!] });
         Object.assign(ids, {
+            workspaceList: workspaceList.id,
+            projectList: projectList.id,
             itemTemplate: itemTemplate.id,
             projectTemplate: projectTemplate.id,
             cycle: cycle.id,

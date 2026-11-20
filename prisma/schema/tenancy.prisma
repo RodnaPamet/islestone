@@ -82,6 +82,8 @@ model Tenant {
   notificationSettings TenantNotificationSettings?
   notificationPrefs    NotificationPreference[]
   mentions             Mention[]
+  recipientLists       RecipientList[]
+  recipientListMembers RecipientListMember[]
 
   teams                  Team[]
   workflowStates         WorkflowState[]
@@ -156,6 +158,7 @@ model TenantMembership {
   intakeNotify      IntakeNotifyMember[]     @relation("IntakeNotifyMembership")
   notificationPrefs NotificationPreference[]
   mentions          Mention[]                @relation("MentionMember")
+  recipientLists    RecipientListMember[]    @relation("RecipientListMembership")
 
   @@unique([tenantId, userId])
   /// The composite an FK from a tenant-scoped child references. `id` alone is

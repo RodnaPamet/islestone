@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 
 import { ProjectMilestonesLink } from '@/components/milestones/ProjectMilestonesLink';
+import { ProjectRecipientListsLink } from '@/components/recipient-lists/ProjectRecipientListsLink';
 import { ProjectTemplatesButton } from '@/components/work-items/templates/ProjectTemplatesButton';
 import { WorkConfigProvider } from '@/components/work-items/data/use-work-config';
 import { WorkItemsView } from '@/components/work-items/WorkItemsView';
@@ -30,6 +31,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ tenant
                 headerLinks={
                     <>
                         <ProjectMilestonesLink keyPrefix={project.keyPrefix} />
+                        <ProjectRecipientListsLink keyPrefix={project.keyPrefix} />
                         {templateAffordances(ctx).manageItemTemplates && !project.archived && (
                             <ProjectTemplatesButton projectId={project.id} teamId={project.teamId} projectName={project.name} />
                         )}

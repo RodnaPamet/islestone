@@ -340,6 +340,13 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note: 'List watchers; the caller watches or stops watching.',
     },
     {
+        // Above the per-member rule, which its path would also match.
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/watchers\\/recipient-list$`),
+        methods: ['POST'],
+        permission: 'work_items.edit',
+        note: "Copy a recipient list's people onto the item's watchers (2.7e, decision 139): adding others is the edit key.",
+    },
+    {
         path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/watchers\\/[^\\/]+$`),
         methods: ['POST', 'DELETE'],
         permission: 'work_items.edit',
@@ -577,6 +584,51 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         methods: ['PUT'],
         permission: 'work_items.edit',
         note: 'Put an item in a cycle of its team, or take it out (the version increases).',
+    },
+
+    // ── Recipient lists (sub-phase 2.7e; owner decision 140) ─────────
+    // Split by scope, so each route carries the key its scope takes.
+    {
+        path: new RegExp(`^${T}\\/recipient-lists$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: "The workspace's recipient lists, or the live lists usable on one or every visible project's items.",
+    },
+    {
+        path: new RegExp(`^${T}\\/recipient-lists$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note: 'Create a workspace recipient list: workspace lists are workspace settings (decision 140).',
+    },
+    {
+        path: new RegExp(`^${T}\\/recipient-lists\\/[^\\/]+$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: 'One workspace recipient list with its people.',
+    },
+    {
+        path: new RegExp(`^${T}\\/recipient-lists\\/[^\\/]+(\\/(members|archive|restore))?$`),
+        methods: ['PATCH', 'PUT', 'POST'],
+        permission: 'admin.manage',
+        note: 'Rename, change the people of, archive or restore a workspace recipient list (never deleted, decision 141).',
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/recipient-lists(\\/[^\\/]+)?$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: "A visible project's recipient lists, or one of them.",
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/recipient-lists$`),
+        methods: ['POST'],
+        permission: 'projects.edit',
+        note: "Create a project's recipient list: a project's lists are part of it (decision 140).",
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/recipient-lists\\/[^\\/]+(\\/(members|archive|restore))?$`),
+        methods: ['PATCH', 'PUT', 'POST'],
+        permission: 'projects.edit',
+        note: "Rename, change the people of, archive or restore a project's recipient list.",
     },
 
     // ── Milestones (sub-phase 2.5b; owner decision 72: the project keys) ──

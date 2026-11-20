@@ -23,7 +23,7 @@
  * 5528464fc54a8681956f3b9ce23ca9c075f0420e; written fresh here.
  */
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { Button } from '@inflect/ui/components/ui/button';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
@@ -46,6 +46,7 @@ import {
 import { AssigneePicker } from '../pickers';
 import { WorkItemPicker } from '../WorkItemPicker';
 import { activityPhraseKey } from './activity-phrases';
+import { useUsableRecipientLists } from '@/components/recipient-lists/use-recipient-lists';
 import { MentionText } from '../mentions/MentionText';
 import { MentionTextarea } from '../mentions/MentionTextarea';
 
@@ -346,7 +347,35 @@ export function LinksPanel({ workItemId, canEdit }: { workItemId: string; canEdi
 
 // ─── Watchers ─────────────────────────────────────────────────────────────
 
-export function WatchersPanel({ workItemId }: { workItemId: string }) {
+/**
+ * "Add recipient list" (2.7e, decision 139): the live lists usable on the
+ * item (the workspace's and its project's). Choosing one copies its people
+ * onto the watchers; the server skips anyone who cannot see the item.
+ */
+function RecipientListWatcherPicker({ workItemId, projectId }: { workItemId: string; projectId: string }) {
+    const tLists = useTranslations('workItems');
+    const collab = useWorkItemCollab(workItemId);
+    const { data, isLoading } = useUsableRecipientLists(projectId);
+    const options = useMemo<ComboboxOption[]>(
+        () => (data ?? []).map((l) => ({ value: l.id, label: l.projectId ? l.name : tLists('detail.workspaceList', { name: l.name }) })),
+        [data, tLists],
+    );
+    if (!isLoading && options.length === 0) return null;
+    return (
+        <Combobox
+            id={`watchers-list-${workItemId}`}
+            selected={null}
+            setSelected={(o) => o && void collab.addRecipientList(o.value, (data ?? []).find((l) => l.id === o.value)?.name ?? '')}
+            options={isLoading ? undefined : options}
+            caret
+            placeholder={tLists('detail.addRecipientList')}
+            searchPlaceholder={tLists('detail.searchRecipientLists')}
+            buttonProps={{ 'aria-label': tLists('detail.addRecipientList') }}
+        />
+    );
+}
+
+export function WatchersPanel({ workItemId, projectId }: { workItemId: string; projectId: string }) {
     const tWatchers = useTranslations('workItems');
     const me = useCurrentUserId();
     const perms = usePermissions();
@@ -386,6 +415,8 @@ export function WatchersPanel({ workItemId }: { workItemId: string }) {
                         onChange={(userId) => userId && collab.watch(userId, userId === me)}
                     />
                 )}
+                {/* Adding a list is an item edit, the key the route takes (2.7e). */}
+                {perms.work_items.edit === true && <RecipientListWatcherPicker workItemId={workItemId} projectId={projectId} />}
             </div>
         </section>
     );

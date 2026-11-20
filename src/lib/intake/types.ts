@@ -132,6 +132,8 @@ export interface ProjectIntakeSettings {
     keyPrefix: string;
     enabled: boolean;
     notifyUserIds: string[];
+    /** The recipient list rung beside the notify list (2.7e, decision 142), or none. */
+    recipientListId: string | null;
     pendingCount: number;
     /** Whether the project's email address takes mail (2.6c). */
     emailEnabled: boolean;

@@ -23,15 +23,23 @@ model ProjectIntake {
   /// before any workspace is known. A new one retires the old for good.
   emailToken          String?   @unique
   emailTokenRotatedAt DateTime?
+  /// A recipient list rung for each new request beside the notify list's
+  /// member rows (2.7e, owner decision 142): a workspace list or one of this
+  /// project's, resolved when the bell is sent. `(recipientListId, tenantId)`
+  /// → `RecipientList(id, tenantId)`, `ON DELETE SET NULL ("recipientListId")`
+  /// in SQL (lists are archived, never deleted; only a cascade removes one).
+  recipientListId     String?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project Project @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project       Project        @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  recipientList RecipientList? @relation(fields: [recipientListId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
 
   /// One per project; also the target the one-to-one relation needs.
   @@unique([projectId, tenantId])
   @@index([tenantId, projectId])
+  @@index([tenantId, recipientListId])
 }
 
 /// One member on a project's notify list (ADR 0006 "Notify list"): rung for

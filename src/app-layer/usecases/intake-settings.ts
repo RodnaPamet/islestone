@@ -4,6 +4,10 @@
  * writes them under `intake.manage`. Turning intake on for the first time with
  * no notify list puts the person who turned it on on the list (decision 95).
  *
+ * Sub-phase 2.7e (owner decision 142): the intake may name one recipient
+ * list, the workspace's or the project's own and live when named, rung beside
+ * the notify list's member rows; it is resolved when the bell is sent.
+ *
  * Sub-phase 2.6c: the project's email address. Turning email on mints the
  * address the first time (`<token>@<INTAKE_EMAIL_DOMAIN>`), only while inbound
  * email is open on the deployment; generating a new address retires the old
@@ -16,6 +20,7 @@ import { IntakeEmailRepository } from '../repositories/IntakeEmailRepository';
 import { IntakeRepository } from '../repositories/IntakeRepository';
 import { MembershipRepository } from '../repositories/MembershipRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
+import { RecipientListRepository } from '../repositories/RecipientListRepository';
 import { assertCanManageIntake } from '../policies/intake.policies';
 import { visibleProjects } from '../policies/project-visibility';
 import type { RequestContext } from '../types';
@@ -40,6 +45,7 @@ export async function listProjectIntakeSettings(ctx: RequestContext): Promise<Pr
         ]);
         const emailBy = new Map(emails.map((e) => [e.projectId, e]));
         const enabled = new Map(intakes.map((i) => [i.projectId, i.enabled]));
+        const listBy = new Map(intakes.map((i) => [i.projectId, i.recipientListId]));
         const pendingBy = new Map(pending.map((p) => [p.projectId, p._count._all]));
         return projects.map((p) => ({
             projectId: p.id,
@@ -47,6 +53,7 @@ export async function listProjectIntakeSettings(ctx: RequestContext): Promise<Pr
             keyPrefix: p.keyPrefix,
             enabled: enabled.get(p.id) ?? false,
             notifyUserIds: notify.filter((n) => n.projectId === p.id).map((n) => n.userId),
+            recipientListId: listBy.get(p.id) ?? null,
             pendingCount: pendingBy.get(p.id) ?? 0,
             ...emailView(emailBy.get(p.id)),
         }));
@@ -63,6 +70,8 @@ export interface SetProjectIntakeInput {
     notifyUserIds?: string[];
     /** Whether the project's email address takes mail (2.6c); absent leaves it. */
     emailEnabled?: boolean;
+    /** The recipient list rung beside the notify list (2.7e); `null` names none, absent leaves it. */
+    recipientListId?: string | null;
 }
 
 export async function setProjectIntake(ctx: RequestContext, projectId: string, input: SetProjectIntakeInput): Promise<ProjectIntakeSettings> {
@@ -84,8 +93,18 @@ export async function setProjectIntake(ctx: RequestContext, projectId: string, i
             notify = [ctx.userId];
         }
 
+        if (input.recipientListId) {
+            // A live list of the workspace or of this project (decision 142).
+            const list = await RecipientListRepository.getById(db, ctx, input.recipientListId);
+            if (!list || (list.projectId !== null && list.projectId !== project.id)) throw badRequest('Choose a recipient list of the workspace or of this project.');
+            if (list.archivedAt) throw badRequest(`The recipient list ${list.name} is archived.`);
+        }
+
         const after = await IntakeRepository.upsertProjectIntake(db, ctx, project.id, input.enabled);
         if (notify !== current) await IntakeRepository.replaceNotifyMembers(db, ctx, project.id, notify);
+        const listBefore = before?.recipientListId ?? null;
+        const listAfter = input.recipientListId === undefined ? listBefore : input.recipientListId;
+        if (listAfter !== listBefore) await IntakeRepository.setRecipientList(db, ctx, project.id, listAfter);
         const emailBefore = await IntakeEmailRepository.getProjectEmail(db, ctx, project.id);
         let email = emailBefore;
         if (input.emailEnabled !== undefined && input.emailEnabled !== (emailBefore?.emailEnabled ?? false)) {
@@ -100,6 +119,7 @@ export async function setProjectIntake(ctx: RequestContext, projectId: string, i
         const changed: string[] = [];
         if ((before?.enabled ?? false) !== after.enabled) changed.push('enabled');
         if ([...notify].sort().join() !== [...current].sort().join()) changed.push('notifyList');
+        if (listAfter !== listBefore) changed.push('recipientListId');
         if ((emailBefore?.emailEnabled ?? false) !== (email?.emailEnabled ?? false)) changed.push('emailEnabled');
         if (changed.length > 0) {
             await logEvent(db, ctx, {
@@ -108,7 +128,7 @@ export async function setProjectIntake(ctx: RequestContext, projectId: string, i
                 entityId: project.id,
                 details: `Changed the intake of project ${project.keyPrefix}`,
                 detailsJson: { category: 'entity_lifecycle', entityName: 'ProjectIntake', operation: before ? 'updated' : 'created', changedFields: changed, summary: 'PROJECT_INTAKE_UPDATED' },
-                metadata: { projectId: project.id, enabled: after.enabled, notifyCount: notify.length, emailEnabled: email?.emailEnabled ?? false },
+                metadata: { projectId: project.id, enabled: after.enabled, notifyCount: notify.length, recipientListId: listAfter, emailEnabled: email?.emailEnabled ?? false },
             });
         }
         const [pending] = await IntakeRepository.countPendingByProject(db, ctx, v, [project.id]);
@@ -118,6 +138,7 @@ export async function setProjectIntake(ctx: RequestContext, projectId: string, i
             keyPrefix: project.keyPrefix,
             enabled: after.enabled,
             notifyUserIds: notify,
+            recipientListId: listAfter,
             pendingCount: pending?._count._all ?? 0,
             ...emailView(email),
         };

@@ -20,6 +20,7 @@ import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { ApiClientError, apiSend } from '@/lib/data/api-client';
 import { useTenantSWR } from '@/lib/data/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import type { RecipientListWatchersResult } from '@/lib/recipient-lists/types';
 import type { CommentRow, LinkRow, RelationRow, WatcherRow, WorkItemDetailData } from '@/lib/work-items/types';
 
 import { workItemDetailPath, useWorkItemCache } from './work-item-cache';
@@ -181,6 +182,25 @@ export function useWorkItemCollab(id: string) {
                     () => apiSend('DELETE', apiUrl(self ? paths.watchers : `${paths.watchers}/${userId}`)),
                     self ? revalidateWatching : undefined,
                 );
+            },
+
+            /**
+             * Copy a recipient list's people onto the watchers (2.7e, decision
+             * 139): the server resolves who may see the item; the panel
+             * re-reads the watchers and says how many were added.
+             */
+            async addRecipientList(listId: string, listName: string) {
+                try {
+                    const result = await apiSend<RecipientListWatchersResult>('POST', apiUrl(`${paths.watchers}/recipient-list`), { listId });
+                    void cache.revalidatePath(paths.watchers);
+                    revalidateWatching();
+                    if (result.added.length > 0) toast.success(t('listWatchersAdded', { count: result.added.length, list: listName }));
+                    else toast.info(t('listWatchersNone', { list: listName }));
+                    return result;
+                } catch (err) {
+                    fail(err);
+                    return null;
+                }
             },
 
             // ── Labels (each change increases the item's version) ──

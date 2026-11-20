@@ -386,7 +386,7 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                             </section>
                         )}
                         <PinnedAnswer item={item} row={row} canEdit={perms.edit} />
-                        <WatchersPanel workItemId={item.id} />
+                        <WatchersPanel workItemId={item.id} projectId={item.projectId} />
                     </div>
                 );
             case 'sub-items':

@@ -2100,6 +2100,14 @@ Built by [`docs/porting/maps/2.7.md`](docs/porting/maps/2.7.md) ("Part 4") under
 | `NotificationPreference`, `EmailDelivery` (`prisma/schema/notifications.prisma`, `enums.prisma`), `src/lib/notifications/preferences.ts` | inflect-compliance at `5528464fc54a8681956f3b9ce23ca9c075f0420e`: `prisma/schema/automation.prisma` lines 116–128 (`UserNotificationPreference`) and `enums.prisma` line 848 (`NotificationDelivery`), BUSL-1.1 | Pattern only, no code copied | inflect's model is read and written by nothing; its shape (one row per user and type, a delivery enum) was the starting point. Islestone's row is per workspace member (`TenantMembership` FK, cascade), separates the bell (`inApp`) from email (`OFF`, `IMMEDIATE`, `DAILY`; inflect's `DISABLED` would have governed both), allows IMMEDIATE only for the direct types (a CHECK), and is capped by the workspace's settings in one pure resolution. |
 | `src/components/inbox/`, `src/app-layer/jobs/notification-digest.ts`, `notification-purge.ts`, `src/app-layer/usecases/notification-preferences.ts`, `notification-retention.ts`, the Inbox's additions to `NotificationRepository.ts` and `usecases/notification.ts`, the notification routes' 2.7c methods, `src/components/settings/NotificationSettings.tsx`, the waiting-on and digest email templates, migrations `20261204120000`–`20261204120200`, and their tests | — | Islestone-owned | Written fresh. inflect has no inbox page, no member preferences in use and only compliance digests (`src/app-layer/notifications/digest-templates.ts`, not taken). 1.6's copied digest dispatcher (`digest-dispatcher.ts`, the due-digest template) had no caller and was removed. |
 
+## The document lock (sub-phase 2.7e, a fix)
+
+The md+ `html, body` height lock that `src/components/layout/AppShellFrame.tsx` (copied in 1.7) relies on for its `md:h-full`, and the print release, were not taken with the 1.2 and 1.7 stylesheet copies; without them the shell grew to its content and the window scrolled. Found when 2.7e's project-page link wrapped the header in CI and a board drag lost its drop.
+
+| File | Source | Action | Changes |
+|---|---|---|---|
+| `src/app/globals.css` (the document lock and its print release) | inflect-compliance at `5528464fc54a8681956f3b9ce23ca9c075f0420e`: `src/app/globals.css` ("List-page-shell document lock" and the `@media print` release), BUSL-1.1 | COPY+EDIT | The two rules unchanged; the comment rewritten. Held by `tests/unit/document-lock.test.ts` (written fresh). |
+
 ## Adopted
 
 | Component | Source (repository and path) | Commit | Licence | What was taken | Changes |

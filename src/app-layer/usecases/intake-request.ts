@@ -67,6 +67,7 @@ import {
 import { formatKey } from '../domain/work-item-key';
 import { enqueueEmail } from '../notifications/enqueue';
 import { createIntakeNotifications } from '../notifications/intake';
+import { resolveListRecipients } from '../notifications/recipient-list';
 import { dayKeyInTz } from '../notifications/work-item-due';
 import { blockSenderInTx } from './intake-blocked-senders';
 import { formIsOpen } from './intake-form';
@@ -229,17 +230,33 @@ export async function intakeReaders(db: PrismaTx, ctx: RequestContext, userIds: 
     return new Set(memberships.filter((m) => permissionsForMembership(m).intake.view === true).map((m) => m.userId));
 }
 
-/** After the commit: a bell to each member on the notify list who may read intake, never the sender. */
+/**
+ * After the commit: a bell to each person the notify list names who may read
+ * intake, never the sender. The list is the union of the member rows and the
+ * intake's recipient list (2.7e, decision 142), each person once, resolved
+ * now (`resolveListRecipients`: an active member who holds `intake.view` and
+ * sees the project, in a live workspace); the bell writer then asks each
+ * person's preference.
+ */
 export async function notifyIntakeReceived(ctx: RequestContext, row: IntakeRequestListRow, keyPrefix: string): Promise<void> {
     if (!ctx.tenantSlug) return;
     const tenantSlug = ctx.tenantSlug;
     try {
         await runInTenantContext(ctx, async (db) => {
-            const listed = (await IntakeRepository.listNotifyMembers(db, ctx, [row.projectId])).map((n) => n.userId).filter((id) => id !== ctx.userId);
-            if (listed.length === 0) return;
-            const readers = await intakeReaders(db, ctx, listed);
+            const [rows, intake] = await Promise.all([
+                IntakeRepository.listNotifyMembers(db, ctx, [row.projectId]),
+                IntakeRepository.getProjectIntake(db, ctx, row.projectId),
+            ]);
+            const resolved = await resolveListRecipients(db, ctx.tenantId, {
+                listIds: intake?.recipientListId ? [intake.recipientListId] : [],
+                projectId: row.projectId,
+                alsoUserIds: rows.map((n) => n.userId),
+                may: (p) => p.intake.view === true,
+            });
+            const recipients = resolved.userIds.filter((id) => id !== ctx.userId);
+            if (recipients.length === 0) return;
             await createIntakeNotifications(db, ctx.tenantId, tenantSlug, 'INTAKE_REQUEST_RECEIVED', [
-                { requestId: row.id, projectKeyPrefix: keyPrefix, title: row.title, recipientUserIds: listed.filter((id) => readers.has(id)) },
+                { requestId: row.id, projectKeyPrefix: keyPrefix, title: row.title, recipientUserIds: recipients },
             ]);
         });
     } catch (err) {
