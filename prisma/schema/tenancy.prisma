@@ -101,6 +101,7 @@ model Tenant {
   savedViews         SavedView[]
   cycleSchedules     CycleSchedule[]
   cycles             Cycle[]
+  milestones         Milestone[]
   workItemTransitions WorkItemTransition[]
 
   @@index([organizationId])

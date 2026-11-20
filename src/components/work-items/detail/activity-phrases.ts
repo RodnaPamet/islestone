@@ -31,6 +31,7 @@ export const ACTIVITY_PHRASE = {
     WORK_ITEM_WATCHER_REMOVED: 'activity.watcherRemoved',
     WORK_ITEM_CUSTOM_FIELD_SET: 'activity.customFieldSet',
     WORK_ITEM_CYCLE_CHANGED: 'activity.cycleChanged',
+    WORK_ITEM_MILESTONE_CHANGED: 'activity.milestoneChanged',
 } as const;
 
 /**

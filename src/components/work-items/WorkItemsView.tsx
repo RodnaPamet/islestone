@@ -67,10 +67,11 @@ import { WorkItemSheet } from './WorkItemSheet';
 export interface WorkItemsViewProps {
     /**
      * The view's fixed scope: a project (and its team), one cycle (and its
-     * team, 2.5a), or none (every visible item).
+     * team, 2.5a), one milestone (and its project, 2.5b), or none (every
+     * visible item).
      */
-    scope: { projectId?: string; teamId?: string; cycleId?: string };
-    /** Shown above the filters (a cycle's stats and burn-up, 2.5a). */
+    scope: { projectId?: string; teamId?: string; cycleId?: string; milestoneId?: string };
+    /** Shown above the filters (a cycle's stats and burn-up, 2.5a; a milestone's progress, 2.5b). */
     summary?: React.ReactNode;
     title: string;
     description?: string;
@@ -80,6 +81,8 @@ export interface WorkItemsViewProps {
     savedViews?: SavedViewAffordances;
     /** The project's fields may be defined here (2.4, `manageCustomFields`, asked on the server). */
     manageCustomFields?: boolean;
+    /** Links shown first among the header's actions (a project's Milestones, 2.5b). */
+    headerLinks?: React.ReactNode;
 }
 
 const NO_SAVED_VIEWS: SavedViewAffordances = { savePersonal: false, saveShared: false, moderate: false };
@@ -198,8 +201,13 @@ function DeletedView({ onBack }: { onBack: () => void }) {
 
 export function WorkItemsView(props: WorkItemsViewProps) {
     const filterScope = useMemo(
-        () => ({ projectId: props.scope.projectId, teamId: props.scope.teamId, fixedCycle: props.scope.cycleId !== undefined }),
-        [props.scope.projectId, props.scope.teamId, props.scope.cycleId],
+        () => ({
+            projectId: props.scope.projectId,
+            teamId: props.scope.teamId,
+            fixedCycle: props.scope.cycleId !== undefined,
+            fixedMilestone: props.scope.milestoneId !== undefined,
+        }),
+        [props.scope.projectId, props.scope.teamId, props.scope.cycleId, props.scope.milestoneId],
     );
     const { filterCtx, filterDefs } = useWorkItemFilterContext(filterScope);
     return (
@@ -218,6 +226,7 @@ function WorkItemsViewBody({
     savedViews = NO_SAVED_VIEWS,
     manageCustomFields = false,
     summary,
+    headerLinks,
 }: WorkItemsViewProps & { filterDefs: ReturnType<typeof buildWorkItemFilterDefs>['filters'] }) {
     const tBody = useTranslations('workItems');
     const searchParams = useSearchParams();
@@ -325,8 +334,9 @@ function WorkItemsViewBody({
                 ];
                 const actions = (
                     <div className="flex flex-wrap items-center gap-tight">
-                        {/* A cycle's page has no saved views: a view's scope is the workspace or a project. */}
-                        {!scope.cycleId && (
+                        {headerLinks}
+                        {/* A cycle's or a milestone's page has no saved views: a view's scope is the workspace or a project. */}
+                        {!scope.cycleId && !scope.milestoneId && (
                             <SavedViewsMenu
                                 projectId={scope.projectId ?? null}
                                 affordances={savedViews}
@@ -375,7 +385,7 @@ function WorkItemsViewBody({
                             onOpenChange={(open) => {
                                 if (!open) setCreating(null);
                             }}
-                            initial={{ projectId: scope.projectId, stateId: creating?.stateId, cycleId: scope.cycleId }}
+                            initial={{ projectId: scope.projectId, stateId: creating?.stateId, cycleId: scope.cycleId, milestoneId: scope.milestoneId }}
                             onCreated={(item) => setSheetId(item.id)}
                         />
                         {manageCustomFields && scope.projectId && (
@@ -459,9 +469,10 @@ function FiltersBound({
             ...fromContext,
             ...(scope.projectId ? { projectId: scope.projectId } : {}),
             ...(scope.cycleId ? { cycleId: scope.cycleId } : {}),
+            ...(scope.milestoneId ? { milestoneId: scope.milestoneId } : {}),
             order: sort,
         }),
-        [fromContext, scope.projectId, scope.cycleId, sort],
+        [fromContext, scope.projectId, scope.cycleId, scope.milestoneId, sort],
     );
     const toolbar = useCallback(
         (leading: React.ReactNode) => (

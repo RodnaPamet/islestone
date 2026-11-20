@@ -2,7 +2,7 @@
  * The configuration the work-item views render with (sub-phase 2.3): the
  * visible projects (archived ones included, so an archived project's items
  * still name it), the teams, every team's live workflow states, the live work
- * item types, the live labels and every team's cycles (2.5a). One transaction, read once by the server
+ * item types, the live labels, every team's cycles (2.5a) and the visible projects' milestones (2.5b). One transaction, read once by the server
  * page and handed to the client, so the list, the board and the detail never
  * derive a filter option from the rows they happen to have loaded (with
  * cursor pages the loaded rows are a subset).
@@ -16,6 +16,7 @@ import { ProjectRepository } from '../repositories/ProjectRepository';
 import { TeamRepository } from '../repositories/TeamRepository';
 import { WorkItemTypeRepository } from '../repositories/WorkItemTypeRepository';
 import { viewCyclesInTx } from './cycle';
+import { viewMilestonesInTx } from './milestone';
 import { assertCanReadWorkItems } from '../policies/work-item.policies';
 import { assertCanReadWorkConfig } from '../policies/work-config.policies';
 import { visibleProjects } from '../policies/project-visibility';
@@ -45,6 +46,7 @@ export async function getWorkItemViewConfig(
         const fields = fieldsOf ? await CustomFieldRepository.listFields(db, ctx, fieldsOf.id) : [];
         const states = await TeamRepository.liveStatesOfTeams(db, ctx, teams.map((t) => t.id));
         const cycles = await viewCyclesInTx(db, ctx);
+        const milestones = await viewMilestonesInTx(db, ctx, projects.map((p) => p.id));
         return {
             projects: projects.map((p) => ({
                 id: p.id,
@@ -66,6 +68,7 @@ export async function getWorkItemViewConfig(
                 options: f.options.map((o) => ({ id: o.id, name: o.name, color: o.color, archived: o.archivedAt !== null })),
             })),
             cycles,
+            milestones,
         };
     });
 }

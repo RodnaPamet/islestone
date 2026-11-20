@@ -4,7 +4,8 @@
  *
  *   1. In the work-item views (`src/components/work-items/**`), the
  *      Settings pages (`src/components/settings/**`, decision 55) and the
- *      cycle pages (`src/components/cycles/**`, 2.5a), every
+ *      cycle pages (`src/components/cycles/**`, 2.5a), the milestone pages
+ *      (`src/components/milestones/**`, 2.5b), every
  *      DELETE request and every bulk delete is sent from inside a
  *      `triggerUndo(…)` or `removeWithUndo(…)` call, so nothing leaves the
  *      server until the undo window closes.
@@ -37,6 +38,7 @@ const SITE_CONTRACTS: Record<string, string> = {
     'src/components/work-items/data/use-saved-views.ts': 'saved view delete (the views menu, 2.4)',
     'src/components/work-items/data/use-custom-fields.ts': 'custom-field option delete (the field manager, 2.4)',
     'src/components/cycles/use-cycles.ts': 'upcoming cycle delete (the Cycles page and a cycle\'s page, 2.5a)',
+    'src/components/milestones/use-milestones.ts': 'milestone delete (a project\'s milestones and a milestone\'s page, 2.5b)',
 };
 
 const HOOK_FILE = 'src/components/ui/hooks/use-toast-with-undo.ts';
@@ -44,7 +46,7 @@ const UNDO_CALLEES = new Set(['triggerUndo', 'removeWithUndo']);
 /** A DELETE through `apiSend`, or through the Settings pages' `send` wrapper, or a bulk delete. */
 const DESTRUCTIVE = /(?:apiSend|(?<![\w.$])send)\s*(?:<[^>]*>)?\s*\(\s*'DELETE'|\/bulk\/delete/g;
 /** The folders whose deletes must leave through the undo toast. */
-const UNDO_ROOTS = ['src/components/work-items/', 'src/components/settings/', 'src/components/cycles/'];
+const UNDO_ROOTS = ['src/components/work-items/', 'src/components/settings/', 'src/components/cycles/', 'src/components/milestones/'];
 
 function ownSources(root: string): Array<{ rel: string; code: string }> {
     const mirrorFile = path.join(root, 'ui-mirror.json');

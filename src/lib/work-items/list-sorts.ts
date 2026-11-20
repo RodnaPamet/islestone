@@ -28,5 +28,9 @@ export function isListOrder(value: string): value is ListOrder {
     return (LIST_SORTS as readonly string[]).includes(value) || /^cf:[A-Za-z0-9_-]{1,64}$/.test(value);
 }
 
-/** The board's swimlane groupings (2.3), plus a custom field's (`cf:<fieldId>`, 2.4). */
-export const BUILT_IN_LANES = ['none', 'assignee', 'priority', 'type', 'label', 'project'] as const;
+/**
+ * The board's swimlane groupings (2.3; cycle 2.5a, milestone 2.5b), plus a
+ * custom field's (`cf:<fieldId>`, 2.4). The board's lane chooser and the
+ * saved-view schema both read this one list.
+ */
+export const BUILT_IN_LANES = ['none', 'assignee', 'priority', 'type', 'label', 'project', 'cycle', 'milestone'] as const;

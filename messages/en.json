@@ -637,7 +637,8 @@
             "type": "By type",
             "project": "By project",
             "choose": "Swimlanes",
-            "cycle": "By cycle"
+            "cycle": "By cycle",
+            "milestone": "By milestone"
         },
         "category": {
             "BACKLOG": "Backlog",
@@ -663,7 +664,8 @@
             "created": "Created",
             "updated": "Updated",
             "type": "Type",
-            "cycle": "Cycle"
+            "cycle": "Cycle",
+            "milestone": "Milestone"
         },
         "fields": {
             "title": "Title",
@@ -675,7 +677,8 @@
             "assignee": "Assignee",
             "labels": "Labels",
             "dueDate": "Due date",
-            "cycle": "Cycle"
+            "cycle": "Cycle",
+            "milestone": "Milestone"
         },
         "filters": {
             "category": "Category",
@@ -691,7 +694,9 @@
             "next7d": "Due in the next 7 days",
             "cycle": "Cycle",
             "currentCycle": "Current cycle",
-            "noCycle": "No cycle"
+            "noCycle": "No cycle",
+            "milestone": "Milestone",
+            "noMilestone": "No milestone"
         },
         "bulk": {
             "setState": "Set state",
@@ -816,7 +821,8 @@
             "changed": "changed this work item",
             "commented": "commented",
             "customFieldSet": "changed a field",
-            "cycleChanged": "changed the cycle"
+            "cycleChanged": "changed the cycle",
+            "milestoneChanged": "changed the milestone"
         },
         "subItems": {
             "title": "Sub-items",
@@ -846,7 +852,8 @@
             "cannotMove": "You cannot move work items.",
             "noStateInTeam": "The work item’s team has no state in {column}.",
             "announcements": "Board announcements",
-            "noCycle": "No cycle"
+            "noCycle": "No cycle",
+            "noMilestone": "No milestone"
         },
         "projects": {
             "col": {
@@ -937,6 +944,9 @@
             "numbered": "Cycle {number}",
             "none": "No cycle",
             "currentLabel": "{name} (current)"
+        },
+        "milestone": {
+            "none": "No milestone"
         }
     },
     "settings": {
@@ -1243,6 +1253,55 @@
             "aria": "Burn-up: scope {scope}, completed {completed} today",
             "tooltip": "Scope {scope} · started {started} · completed {completed}",
             "caption": "Scope, started and completed work items at the end of each day"
+        }
+    },
+    "milestones": {
+        "title": "Milestones",
+        "description": "{project}: each milestone's due date and how much of its work is done.",
+        "open": "Milestones",
+        "new": "Milestone",
+        "listHeading": "In order",
+        "archived": "This project is archived: its milestones are read-only.",
+        "empty": "This project has no milestones.",
+        "emptyEditable": "No milestones yet. Add one to group work towards a date.",
+        "due": "Due {date}",
+        "noDueDate": "No due date",
+        "late": "Late",
+        "complete": "Complete",
+        "progress": "{done} of {scope} done",
+        "progressAria": "{name}: {percent}% done",
+        "moveUp": "Move up",
+        "moveUpNamed": "Move {name} up",
+        "moveDown": "Move down",
+        "moveDownNamed": "Move {name} down",
+        "rowEdit": "Edit",
+        "editNamed": "Edit {name}",
+        "rowDelete": "Delete",
+        "deleteNamed": "Delete {name}",
+        "edit": "Edit milestone",
+        "delete": "Delete milestone",
+        "deleted": "Milestone deleted. Its work items left it.",
+        "undo": "Undo",
+        "failed": "This could not be saved. Try again.",
+        "subtitle": "Milestone of {project}",
+        "stats": {
+            "label": "Milestone progress",
+            "dueDate": "Due date",
+            "scope": "Scope",
+            "done": "Done",
+            "percent": "Done %"
+        },
+        "form": {
+            "createTitle": "New milestone",
+            "editTitle": "Edit milestone",
+            "create": "Create milestone",
+            "save": "Save milestone",
+            "name": "Name",
+            "nameRequired": "A milestone needs a name.",
+            "dueDate": "Due date",
+            "dueDateHint": "Optional. After it passes with work still open, the milestone shows as late.",
+            "saved": "Milestone saved.",
+            "created": "Milestone created."
         }
     }
 }

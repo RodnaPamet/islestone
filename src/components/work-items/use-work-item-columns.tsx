@@ -80,6 +80,11 @@ export function useWorkItemColumns(extended = false) {
                     return cycle ? cycle.name?.trim() || tCols('cycle.numbered', { number: cycle.number }) : '';
                 },
             },
+            {
+                id: 'milestone',
+                header: tCols('col.milestone'),
+                cell: ({ row }) => (row.original.milestoneId ? config.milestoneById.get(row.original.milestoneId)?.name ?? '' : ''),
+            },
             ...(config.customFields ?? [])
                 .filter((f) => !f.archived)
                 .map((field): ColumnDef<WorkItemRow> => ({
@@ -119,6 +124,7 @@ export function useWorkItemColumnChoices() {
             { id: 'updated', label: tChoice('col.updated'), defaultVisible: false },
             { id: 'type', label: tChoice('col.type'), defaultVisible: false },
             { id: 'cycle', label: tChoice('col.cycle'), defaultVisible: false },
+            { id: 'milestone', label: tChoice('col.milestone'), defaultVisible: false },
             ...(config.customFields ?? []).filter((f) => !f.archived).map((f) => ({ id: `cf:${f.id}`, label: f.name, defaultVisible: false })),
         ],
         [tChoice, config],

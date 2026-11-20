@@ -33,6 +33,7 @@ jest.mock('@/app-layer/context', () => ({
 
 import { createProject } from '@/app-layer/usecases/project';
 import { createCycle } from '@/app-layer/usecases/cycle';
+import { createMilestone } from '@/app-layer/usecases/milestone';
 import { createTeam } from '@/app-layer/usecases/team';
 import { listWorkItemTypes } from '@/app-layer/usecases/work-item-type';
 import { createWorkItem } from '@/app-layer/usecases/work-item';
@@ -74,6 +75,7 @@ interface Ids {
     option: string;
     view: string;
     cycle: string;
+    milestone: string;
 }
 
 /** One request per route and method: the template, a body, and whether it reads an item. */
@@ -182,6 +184,12 @@ const CALLS: Call[] = [
     { file: 'src/app/api/t/[tenantSlug]/cycles/[cycleId]/route.ts', method: 'DELETE', path: () => '/cycles/none', params: (i) => P(i, { cycleId: 'none' }), write: true, key: 'cycles.manage' },
     { file: 'src/app/api/t/[tenantSlug]/cycles/[cycleId]/burn-up/route.ts', method: 'GET', path: (i) => `/cycles/${i.cycle}/burn-up`, params: (i) => P(i, { cycleId: i.cycle }), write: false, key: 'cycles.view' },
     { file: 'src/app/api/t/[tenantSlug]/teams/[teamId]/cycle-schedule/route.ts', method: 'GET', path: (i) => `/teams/${i.team}/cycle-schedule`, params: (i) => P(i, { teamId: i.team }), write: false, key: 'cycles.view' },
+    // Sub-phase 2.5b: milestones.
+    { file: `${W}/[workItemId]/milestone/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/milestone`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ milestoneId: i.milestone }), write: true, key: 'work_items.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/milestones/route.ts', method: 'GET', path: (i) => `/projects/${i.project}/milestones`, params: (i) => P(i, { projectId: i.project }), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/milestones/route.ts', method: 'POST', path: (i) => `/projects/${i.project}/milestones`, params: (i) => P(i, { projectId: i.project }), body: () => ({ name: `Milestone ${Math.random()}` }), write: true, key: 'projects.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/milestones/[milestoneId]/route.ts', method: 'PATCH', path: (i) => `/projects/${i.project}/milestones/${i.milestone}`, params: (i) => P(i, { projectId: i.project, milestoneId: i.milestone }), body: () => ({ dueDate: '2040-03-01' }), write: true, key: 'projects.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/milestones/[milestoneId]/route.ts', method: 'DELETE', path: (i) => `/projects/${i.project}/milestones/none`, params: (i) => P(i, { projectId: i.project, milestoneId: 'none' }), write: true, key: 'projects.edit' },
     { file: 'src/app/api/t/[tenantSlug]/teams/[teamId]/cycle-schedule/route.ts', method: 'PUT', path: (i) => `/teams/${i.team}/cycle-schedule`, params: (i) => P(i, { teamId: i.team }), body: () => ({ enabled: false, lengthWeeks: 2, firstStartsOn: '2040-02-06', upcomingCount: 2, rollover: 'NEXT_CYCLE' }), write: true, key: 'cycles.manage' },
 ];
 
@@ -240,8 +248,10 @@ describeFn('the work-item API', () => {
         const field = await createCustomField(owner, project.id, { name: 'Stage gate', type: 'SELECT', options: [{ name: 'Alpha' }, { name: 'Beta' }] });
         const view = await createSavedView(ctxFor('MEMBER'), { name: 'Shared by a member', visibility: 'SHARED', layout: 'LIST', config: { filters: {}, sort: 'manual', laneBy: 'none' } });
         const cycle = await createCycle(owner, { teamId: team.id, startsOn: '2039-01-03', endsOn: '2039-01-16' });
+        const milestone = await createMilestone(owner, project.id, { name: 'API milestone' });
         Object.assign(ids, {
             cycle: cycle.id,
+            milestone: milestone.id,
             field: field.id,
             option: field.options[0]!.id,
             view: view.id,

@@ -1973,6 +1973,17 @@ Built by [`docs/porting/maps/2.5.md`](docs/porting/maps/2.5.md) under owner deci
 | `src/components/cycles/*`; `src/app/t/[tenantSlug]/(app)/cycles/**`; `src/lib/server/cycle-pages.server.ts`; the 2.5a changes to `WorkItemsView.tsx`, `WorkItemDetail.tsx`, `NewWorkItemModal.tsx`, `pickers.tsx`, `board/*`, `filter-defs.ts`, `use-work-item-columns.tsx`, `data/*`, the navigation | — | Islestone-owned | Written fresh; the chart composes the shared `@inflect/ui` chart primitives (already mirrored, 1.2). |
 | `tests/integration/cycles.test.ts`, `cycles-sql-constructs.test.ts`, `tests/unit/domain/cycle.test.ts`, `burn-up.test.ts`, `tests/rendered/cycles.test.tsx`, `tests/e2e/cycles.spec.ts` | — | Islestone-owned | Written fresh. |
 
+## Milestones (sub-phase 2.5b)
+
+Built by [`docs/porting/maps/2.5.md`](docs/porting/maps/2.5.md) under owner decisions 62 and 72. **Nothing was copied.** inflect-compliance has no milestones; no other project's code was read for this part.
+
+| File | Source | Action | Changes |
+|---|---|---|---|
+| `prisma/schema/work.prisma` (`Milestone`, `WorkItem.milestoneId`, `WorkItemTransition.milestoneId`), migration `20261122120000_milestones` | ADR 0002 §2, §10 (the item's `milestoneId`) | Islestone-owned | Written fresh: the composite NO ACTION foreign key, `COLLATE "C"` on `sortKey`, the transition trigger extended to the milestone. |
+| `src/app-layer/repositories/MilestoneRepository.ts`; `src/app-layer/usecases/milestone.ts`; `src/app-layer/policies/milestone.policies.ts`; `src/lib/schemas/milestone.ts`; the milestone routes under `src/app/api/t/[tenantSlug]/projects/[projectId]/milestones/` and `work-items/[workItemId]/milestone/`; the 2.5b changes to `WorkItemRepository.ts`, `work-item.ts`, `work-item-moves.ts`, `work-item-views.ts` | — | Islestone-owned | Written fresh. |
+| `src/components/milestones/*`; `src/app/t/[tenantSlug]/(app)/projects/[projectKey]/milestones/**`; `src/lib/server/milestone-pages.server.ts`; the 2.5b changes to `WorkItemsView.tsx`, `WorkItemDetail.tsx`, `NewWorkItemModal.tsx`, `pickers.tsx`, `board/*`, `filter-defs.ts`, `use-work-item-columns.tsx`, `data/*`, `list-sorts.ts`, `saved-view.ts`, the navigation | — | Islestone-owned | Written fresh. |
+| `tests/integration/milestones.test.ts`, `tests/rendered/milestones.test.tsx`, `tests/unit/work-items/saved-view-config-keys.test.ts`, `tests/e2e/milestones.spec.ts` | — | Islestone-owned | Written fresh. |
+
 ## Adopted
 
 | Component | Source (repository and path) | Commit | Licence | What was taken | Changes |

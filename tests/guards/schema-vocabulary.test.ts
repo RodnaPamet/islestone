@@ -263,6 +263,7 @@ describe('the schema speaks ADR 0006', () => {
             'Cycle',
             'CycleSchedule',
             'Label',
+            'Milestone',
             'Notification',
             'NotificationOutbox',
             'OrgAuditLog',

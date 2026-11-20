@@ -44,6 +44,10 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/projects/[projectKey]': { href: '/projects', label: 'Projects' },
     // Sub-phase 2.5a.
     '/cycles/[cycleId]': { href: '/cycles', label: 'Cycles' },
+    // Sub-phase 2.5b. A project's milestones fall back to the project; one
+    // milestone to its project's milestones.
+    '/projects/[projectKey]/milestones': { href: '/projects/[projectKey]', label: 'Project' },
+    '/projects/[projectKey]/milestones/[milestoneId]': { href: '/projects/[projectKey]/milestones', label: 'Milestones' },
     // Decision 55. Each Settings section falls back to Settings; a team's
     // workflow to the teams list.
     '/settings/teams': { href: '/settings', label: 'Settings' },

@@ -692,4 +692,20 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    - UI: the Cycles page (`/cycles`, in the sidebar and the palette), a cycle's page (stats,
      the burn-up chart with its table, the cycle's list and board), the detail's Cycle
      picker, the create dialog's cycle, the Cycle column, filter and lanes.
-   Next: 2.5b milestones, 2.5c templates, 2.5d repeats, each by the same map.
+   **2.5b has landed** (its own pull request), per `docs/work-items.md`, "Milestones (2.5b)"
+   and `PROVENANCE.md`, "Milestones":
+   - Schema: `Milestone` (per project: name unique in it, optional `dueDate`, `sortKey`),
+     `WorkItem.milestoneId` (composite NO ACTION FK to the item's own project's milestone),
+     `WorkItemTransition.milestoneId` (the trigger records a milestone change). Migration
+     `20261122120000_milestones`.
+   - API: `/projects/:id/milestones` (`projects.view` reads with progress, `projects.edit`
+     writes: create, rename, re-date, reorder by neighbour, delete clearing its items),
+     `PUT /work-items/:id/milestone` (`work_items.edit`, versioned), `milestoneId` on create
+     and as a list filter (ids, `none`). A move to another project clears it; the rollover
+     leaves it alone.
+   - UI: a project's milestones page (linked from the project's header) and a milestone's
+     page (progress, its list and board), the detail's and the create dialog's Milestone
+     picker, the Milestone column, filter and lanes (drops on a one-project board only).
+   - Also fixed: the saved-view schema refused the cycle filter and lanes (2.5a), so a view
+     saved with either was a 400; it now takes both, and the milestone ones.
+   Next: 2.5c templates, 2.5d repeats, each by the same map.

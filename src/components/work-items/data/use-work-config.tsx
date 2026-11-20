@@ -11,7 +11,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
 import { useTenantSWR } from '@/lib/data/use-tenant-swr';
-import type { Member, ViewCycle, ViewState, WorkItemViewConfig, WorkflowStateCategory } from '@/lib/work-items/types';
+import type { Member, ViewCycle, ViewMilestone, ViewState, WorkItemViewConfig, WorkflowStateCategory } from '@/lib/work-items/types';
 import { WORKFLOW_STATE_CATEGORIES } from '@/app-layer/domain/workflow-state';
 
 export interface WorkConfigIndex extends WorkItemViewConfig {
@@ -22,12 +22,15 @@ export interface WorkConfigIndex extends WorkItemViewConfig {
     cycleById: Map<string, ViewCycle>;
     /** A team's cycles that take items (not completed), oldest first (2.5a). */
     openCyclesOfTeam: (teamId: string) => ViewCycle[];
+    milestoneById: Map<string, ViewMilestone>;
+    /** A project's milestones, in the project's order (2.5b). */
+    milestonesOfProject: (projectId: string) => ViewMilestone[];
     statesOfTeam: (teamId: string) => ViewState[];
     /** A team's default state of a category (the first of it when none is marked). */
     defaultStateOf: (teamId: string, category: WorkflowStateCategory) => ViewState | undefined;
 }
 
-const EMPTY: WorkItemViewConfig = { projects: [], teams: [], states: [], types: [], labels: [], customFields: [], cycles: [] };
+const EMPTY: WorkItemViewConfig = { projects: [], teams: [], states: [], types: [], labels: [], customFields: [], cycles: [], milestones: [] };
 
 export function indexConfig(config: WorkItemViewConfig): WorkConfigIndex {
     const byTeam = new Map<string, ViewState[]>();
@@ -59,6 +62,9 @@ export function indexConfig(config: WorkItemViewConfig): WorkConfigIndex {
             (config.cycles ?? [])
                 .filter((c) => c.teamId === teamId && c.status !== 'completed')
                 .sort((a, b) => (a.startsOn < b.startsOn ? -1 : a.startsOn > b.startsOn ? 1 : 0)),
+        milestoneById: new Map((config.milestones ?? []).map((m) => [m.id, m])),
+        // The server sends them in each project's order.
+        milestonesOfProject: (projectId) => (config.milestones ?? []).filter((m) => m.projectId === projectId),
         statesOfTeam: (teamId) => byTeam.get(teamId) ?? [],
         defaultStateOf: (teamId, category) => {
             const ofCategory = (byTeam.get(teamId) ?? []).filter((s) => s.category === category);

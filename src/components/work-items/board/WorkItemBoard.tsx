@@ -37,7 +37,7 @@ import { memberLabel, useMembers, useWorkConfig } from '../data/use-work-config'
 import { useWorkItemList, type WorkItemListResult } from '../data/use-work-item-list';
 import { useWorkItemMutations } from '../data/use-work-item-mutations';
 import {
-    MOVABLE_LANES,
+    laneMovableInScope,
     isMovableFieldLane,
     laneFieldId,
     type BuiltInLaneBy,
@@ -271,12 +271,17 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
             case 'cycle':
                 // Oldest first, as a team plans them (the config lists newest first).
                 return [...(config.cycles ?? [])].reverse().map((x) => x.id);
+            case 'milestone':
+                // Each project's order (the config lists them so).
+                return (config.milestones ?? []).map((x) => x.id);
             default:
                 return [];
         }
     }, [laneBy, members, config, laneField]);
     const lanes = useMemo(() => lanesOf(allRows, laneBy, laneCtx, laneOrder), [allRows, laneBy, laneCtx, laneOrder]);
-    const lanesMovable = laneField ? isMovableFieldLane(laneField.type) && canEdit : MOVABLE_LANES.has(laneBy) && (laneBy !== 'assignee' || canAssign);
+    // One project on the board (a project's page, or a filter naming one): milestone lanes take drops.
+    const singleProjectId = scope.projectId && !scope.projectId.includes(',') ? scope.projectId : undefined;
+    const lanesMovable = laneField ? isMovableFieldLane(laneField.type) && canEdit : laneMovableInScope(laneBy, singleProjectId) && (laneBy !== 'assignee' || canAssign);
 
     const laneLabel = (key: string): string => {
         if (laneField) {
@@ -302,6 +307,13 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
                 const cycle = (config.cycles ?? []).find((c) => c.id === key);
                 if (!key) return tBoard('board.noCycle');
                 return cycle ? cycle.name?.trim() || tBoard('cycle.numbered', { number: cycle.number }) : tBoard('board.noValue');
+            }
+            case 'milestone': {
+                if (!key) return tBoard('board.noMilestone');
+                const milestone = config.milestoneById.get(key);
+                if (!milestone) return tBoard('board.noValue');
+                // On a board of several projects a lane names its project too.
+                return singleProjectId ? milestone.name : `${milestone.name} · ${config.projectById.get(milestone.projectId)?.keyPrefix ?? ''}`;
             }
         }
     };
@@ -347,6 +359,7 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
             else if (laneBy === 'priority') void mutations.updateFields(moved, { priority: laneKey as WorkItemRow['priority'] });
             else if (laneBy === 'type' && laneKey) void mutations.updateFields(moved, { typeId: laneKey });
             else if (laneBy === 'cycle') void mutations.setCycle(moved, laneKey || null);
+            else if (laneBy === 'milestone') void mutations.setMilestone(moved, laneKey || null);
         }
     };
 

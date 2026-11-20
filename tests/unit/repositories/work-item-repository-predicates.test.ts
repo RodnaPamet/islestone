@@ -84,6 +84,8 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
         ['metrics', (db) => WorkItemRepository.metrics(db, ctx, GUEST, {}, new Date())],
         ['countsByCycle (2.5a)', (db) => WorkItemRepository.countsByCycle(db, ctx, GUEST, ['c1'])],
         ['list (a cycle filter, 2.5a)', (db) => WorkItemRepository.list(db, ctx, GUEST, { cycleId: 'c1,c2' }, { limit: 10, sort: listSortSpec('manual') })],
+        ['countsByMilestone (2.5b)', (db) => WorkItemRepository.countsByMilestone(db, ctx, GUEST, ['m1'])],
+        ['list (a milestone filter, 2.5b)', (db) => WorkItemRepository.list(db, ctx, GUEST, { milestoneId: 'm1,none' }, { limit: 10, sort: listSortSpec('manual') })],
     ];
 
     it.each(cases)('%s', async (_name, run) => {
@@ -150,6 +152,24 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
         expect(JSON.stringify(WorkItemRepository._buildWhere(ctx, GUEST, { cycleId: '' }))).toContain('"cycleId":{"in":[]}');
         expect(JSON.stringify(WorkItemRepository._buildWhere(ctx, GUEST, { cycleId: 'none' }))).toContain('"cycleId":null');
         expect(JSON.stringify(WorkItemRepository._buildWhere(ctx, GUEST, { cycleId: 'none,c1' }))).toContain('{"OR":[{"cycleId":null},{"cycleId":{"in":["c1"]}}]}');
+    });
+
+    it('deleting a milestone clears it from every item, deleted ones included, and bumps the version (2.5b)', async () => {
+        const { db, calls } = recorder();
+        await WorkItemRepository.idsInMilestoneIncludingDeleted(db, ctx, 'm1', 10);
+        await WorkItemRepository.clearMilestoneIncludingDeleted(db, ctx, ['w1'], 'm1');
+        expect(calls.map((c) => c.op)).toEqual(['findMany', 'updateMany']);
+        for (const call of calls) {
+            expect(call.args.where).toMatchObject({ tenantId: 'tenant-1', milestoneId: 'm1' });
+            expect(deletedPredicate(call.args.where as Record<string, unknown>)).toBe(false);
+        }
+        expect(calls[1]!.args.data).toEqual({ milestoneId: null, version: { increment: 1 } });
+    });
+
+    it('a milestone filter: "none" matches items in no milestone, and an id list its items (2.5b)', () => {
+        expect(JSON.stringify(WorkItemRepository._buildWhere(ctx, GUEST, { milestoneId: 'none' }))).toContain('"milestoneId":null');
+        expect(JSON.stringify(WorkItemRepository._buildWhere(ctx, GUEST, { milestoneId: 'm1,m2' }))).toContain('"milestoneId":{"in":["m1","m2"]}');
+        expect(JSON.stringify(WorkItemRepository._buildWhere(ctx, GUEST, { milestoneId: 'none,m1' }))).toContain('{"OR":[{"milestoneId":null},{"milestoneId":{"in":["m1"]}}]}');
     });
 
     it('the soft delete is an updateMany over live rows, never a delete', async () => {

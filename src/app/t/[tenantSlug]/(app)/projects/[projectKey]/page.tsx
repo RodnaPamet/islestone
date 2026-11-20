@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 
+import { ProjectMilestonesLink } from '@/components/milestones/ProjectMilestonesLink';
 import { WorkConfigProvider } from '@/components/work-items/data/use-work-config';
 import { WorkItemsView } from '@/components/work-items/WorkItemsView';
 import { workItemPageContext } from '@/lib/server/work-item-pages.server';
@@ -24,6 +25,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ tenant
                 viewKey={`project:${project.id}`}
                 savedViews={savedViews}
                 manageCustomFields={workConfig.manageCustomFields && !project.archived}
+                headerLinks={<ProjectMilestonesLink keyPrefix={project.keyPrefix} />}
             />
         </WorkConfigProvider>
     );
