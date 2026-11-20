@@ -37,7 +37,7 @@ test.describe('Settings', () => {
         const slug = isolatedTenant.tenantSlug;
 
         // Settings, from the sidebar's gear.
-        await page.getByRole('link', { name: 'Settings' }).click();
+        await page.getByRole('link', { name: 'Settings', exact: true }).click();
         await page.waitForURL(`**/t/${slug}/settings`, { timeout: 30_000 });
         const steps = page.getByRole('region', { name: 'Your first project' });
         await expect(steps).toBeVisible();
@@ -69,7 +69,7 @@ test.describe('Settings', () => {
         await expect(steps).toHaveCount(0);
 
         // A work item from the Work items page.
-        await page.getByRole('link', { name: 'Work items' }).click();
+        await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Work items', exact: true }).click();
         await page.waitForURL(`**/t/${slug}/work-items`);
         await page.getByRole('button', { name: 'Work item', exact: true }).click();
         const dialog = page.getByRole('dialog', { name: 'New work item' });

@@ -50,11 +50,12 @@ import { SettingsOverview } from '@/components/settings/SettingsOverview';
 import { TeamsSettings } from '@/components/settings/TeamsSettings';
 import { WorkflowStatesSettings } from '@/components/settings/WorkflowStatesSettings';
 import { WorkItemTypesSettings } from '@/components/settings/WorkItemTypesSettings';
+import { NewWorkItemModal } from '@/components/work-items/NewWorkItemModal';
 import { __resetPendingUndoToastsForTest } from '@/components/ui/hooks/use-toast-with-undo';
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { WorkConfigAffordances } from '@/lib/work-items/types';
 
-import { installFetch, renderWorkspace } from '../helpers/work-items-harness';
+import { CONFIG, installFetch, renderWorkspace } from '../helpers/work-items-harness';
 
 const ALL: WorkConfigAffordances = { manageWorkConfig: true, createProject: true, editProject: true, archiveProject: true };
 const NONE: WorkConfigAffordances = { manageWorkConfig: false, createProject: false, editProject: false, archiveProject: false };
@@ -521,6 +522,25 @@ describe('Projects', () => {
         expect(screen.getByRole('button', { name: 'Rename Islands' })).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Archive Islands' })).toBeNull();
         expect(screen.queryByRole('button', { name: 'Project' })).toBeNull();
+    });
+});
+
+describe('the new-work-item dialog with no open project', () => {
+    const NO_PROJECTS = { ...CONFIG, projects: [] };
+
+    it('sends a member who may open Settings to Settings → Projects', async () => {
+        installFetch({ 'GET /users/assignable': { body: [] } });
+        renderWorkspace(<NewWorkItemModal open onOpenChange={() => {}} />, { role: 'ADMIN', config: NO_PROJECTS });
+        const dialog = await screen.findByRole('dialog', { name: 'New work item' });
+        expect(within(dialog).getByRole('link', { name: 'Set up a project in Settings' })).toHaveAttribute('href', '/t/acme/settings/projects');
+    });
+
+    it('names no Settings link to a member who may not open it', async () => {
+        installFetch({ 'GET /users/assignable': { body: [] } });
+        renderWorkspace(<NewWorkItemModal open onOpenChange={() => {}} />, { role: 'MEMBER', config: NO_PROJECTS });
+        const dialog = await screen.findByRole('dialog', { name: 'New work item' });
+        expect(within(dialog).getByText('There is no open project to add a work item to.')).toBeInTheDocument();
+        expect(within(dialog).queryByRole('link', { name: 'Set up a project in Settings' })).toBeNull();
     });
 });
 
