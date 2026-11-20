@@ -685,7 +685,8 @@
             "dueDate": "Due date",
             "cycle": "Cycle",
             "milestone": "Milestone",
-            "template": "Template"
+            "template": "Template",
+            "repeat": "Repeat"
         },
         "filters": {
             "category": "Category",
@@ -996,6 +997,84 @@
             "save": "Save template",
             "cancelEdit": "Cancel",
             "done": "Done"
+        },
+        "repeat": {
+            "badgeRepeats": "Repeats",
+            "badgeOccurrence": "In a series",
+            "none": "Does not repeat",
+            "set": "Set repeat",
+            "needsDueDate": "Give it a due date to set a repeat.",
+            "edit": "Edit repeat",
+            "hold": "Put on hold",
+            "resume": "Resume",
+            "stop": "Stop repeat",
+            "stopped": "Repeat stopped. The work items it made stay.",
+            "undo": "Undo",
+            "failed": "The repeat could not be saved. Try again.",
+            "next": "Next copy due {date}, made {lead} day(s) before.",
+            "occurrenceOf": "A copy for {date}, from",
+            "every": {
+                "DAILY": "Every day",
+                "WEEKLY": "Every week",
+                "MONTHLY": "Every month",
+                "YEARLY": "Every year"
+            },
+            "everyN": {
+                "days": "Every {count} days",
+                "weeks": "Every {count} weeks",
+                "months": "Every {count} months",
+                "years": "Every {count} years"
+            },
+            "onDays": "on {days}",
+            "until": "until {date}",
+            "times": "{count} times",
+            "weekday": {
+                "0": "Sun",
+                "1": "Mon",
+                "2": "Tue",
+                "3": "Wed",
+                "4": "Thu",
+                "5": "Fri",
+                "6": "Sat"
+            },
+            "held": {
+                "OWNER_NOT_ACTIVE": "On hold: the person who set it is no longer an active member. Resume it to take it over.",
+                "OWNER_NOT_PERMITTED": "On hold: the person who set it can no longer create work items here. Resume it to take it over.",
+                "SOURCE_DELETED": "On hold: this work item was deleted.",
+                "PROJECT_ARCHIVED": "On hold: the project is archived.",
+                "ENDED": "Ended: the last copy has been made.",
+                "HELD_BY_MEMBER": "On hold. Resume it to make copies again."
+            },
+            "dialogTitle": "Repeat",
+            "dialogDescription": "Copies of this work item are made on a schedule, counted from its due date, as you.",
+            "frequencyLabel": "Repeats",
+            "frequency": {
+                "DAILY": "Daily",
+                "WEEKLY": "Weekly",
+                "MONTHLY": "Monthly",
+                "YEARLY": "Yearly"
+            },
+            "intervalLabel": "Every",
+            "intervalHint": "1 to 99 days, weeks, months or years.",
+            "weekdaysLabel": "On",
+            "weekdaysHint": "None chosen: the due date's weekday.",
+            "endsLabel": "Ends",
+            "ends": {
+                "never": "Never",
+                "on": "On a date",
+                "after": "After a number of times"
+            },
+            "endsOnLabel": "End date",
+            "timesLabel": "Times",
+            "timesHint": "This work item counts as the first (2 to 1000).",
+            "leadLabel": "Make each copy this many days before it is due",
+            "leadHint": "0 to 30.",
+            "invalidInterval": "Every is a whole number from 1 to 99.",
+            "invalidLead": "Days before is a whole number from 0 to 30.",
+            "invalidTimes": "Times is a whole number from 2 to 1000.",
+            "invalidEndsOn": "Choose the end date.",
+            "cancel": "Cancel",
+            "save": "Save repeat"
         }
     },
     "settings": {

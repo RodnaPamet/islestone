@@ -49,6 +49,11 @@ export function useWorkItemColumns(extended = false) {
                         }}
                     >
                         {row.original.title}
+                        {(row.original.repeats || row.original.recurrenceId) && (
+                            <span className="ml-2 rounded border border-border-subtle px-1 text-xs text-content-muted">
+                                {row.original.repeats ? tCols('repeat.badgeRepeats') : tCols('repeat.badgeOccurrence')}
+                            </span>
+                        )}
                     </a>
                 ),
             },
