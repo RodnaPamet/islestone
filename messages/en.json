@@ -873,7 +873,9 @@
             "customFieldSet": "changed a field",
             "cycleChanged": "changed the cycle",
             "milestoneChanged": "changed the milestone",
-            "waitingOnChanged": "changed who the item waits on"
+            "waitingOnChanged": "changed who the item waits on",
+            "answerMarked": "marked an answer",
+            "answerCleared": "cleared the answer"
         },
         "subItems": {
             "title": "Sub-items",
@@ -930,7 +932,8 @@
             "watcherRemoved": "Watcher removed",
             "labelRemoved": "Label removed",
             "relationRemoved": "Relation removed",
-            "linkRemoved": "Link removed"
+            "linkRemoved": "Link removed",
+            "answerCleared": "Answer of {key} cleared"
         },
         "sort": {
             "choose": "Sort by",
@@ -1038,7 +1041,8 @@
             "create": "Create template",
             "save": "Save template",
             "cancelEdit": "Cancel",
-            "done": "Done"
+            "done": "Done",
+            "addQuestion": "Add a Question template"
         },
         "repeat": {
             "badgeRepeats": "Repeats",
@@ -1118,6 +1122,20 @@
             "invalidEndsOn": "Choose the end date.",
             "cancel": "Cancel",
             "save": "Save repeat"
+        },
+        "answer": {
+            "title": "Answer",
+            "formerMember": "A former member",
+            "clear": "Clear answer",
+            "badge": "Answer",
+            "locked": "This is the answer. Clear the answer to edit or delete it.",
+            "mark": "Mark as answer",
+            "markCommentBy": "Mark the comment by {name} as the answer",
+            "dialogTitle": "Mark as answer",
+            "dialogDescription": "Marking the answer moves this work item to a Done state. Choose which one.",
+            "doneState": "Done state",
+            "cancel": "Cancel",
+            "confirm": "Mark as answer"
         }
     },
     "settings": {
@@ -1268,7 +1286,13 @@
             },
             "created": "Type {name} created",
             "resource": "type",
-            "resourcePlural": "types"
+            "resourcePlural": "types",
+            "question": {
+                "add": "Add the Question type",
+                "title": "Add the Question type",
+                "submit": "Add type",
+                "description": "A type whose items need a due date and someone they wait on, and whose comments can be marked as the answer. You can change its name and fields afterwards."
+            }
         },
         "labels": {
             "title": "Labels",

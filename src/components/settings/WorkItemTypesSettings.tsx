@@ -6,6 +6,10 @@
  * refused for new ones. Names only: icon, colour and order are API-only
  * for now (the coordinator's decision for this pull request).
  *
+ * "Add the Question type" (2.4b-c, decision 116) makes a type with the
+ * Question preset's field set in one request; its name is offered as
+ * "Question" and can be changed when that name is taken.
+ *
  * Written fresh for Islestone.
  */
 import Link from 'next/link';
@@ -20,12 +24,13 @@ import { useToast } from '@/components/ui/hooks';
 import { Input } from '@/components/ui/input';
 import { createColumns } from '@/components/ui/table';
 import { useTenantHref } from '@/lib/tenant-context-provider';
+import { QUESTION_TYPE_PRESET } from '@/lib/work-items/question-preset';
 import type { WorkConfigAffordances } from '@/lib/work-items/types';
 
 import { refusalText, SETTINGS_PATHS, type SettingsType, useSettingsApi, useWorkItemTypes } from './settings-data';
 import { SettingsFormModal } from './SettingsFormModal';
 
-type Editing = { mode: 'create' } | { mode: 'rename'; type: SettingsType } | null;
+type Editing = { mode: 'create' } | { mode: 'question' } | { mode: 'rename'; type: SettingsType } | null;
 
 const typePath = (id: string) => `/work-item-types/${encodeURIComponent(id)}`;
 
@@ -103,6 +108,9 @@ export function WorkItemTypesSettings({ affordances }: { affordances: WorkConfig
             if (editing.mode === 'create') {
                 await send('POST', '/work-item-types', { name: value });
                 toast.success(t('types.created', { name: value }));
+            } else if (editing.mode === 'question') {
+                await send('POST', '/work-item-types/question-preset', { name: value });
+                toast.success(t('types.created', { name: value }));
             } else {
                 await send('PATCH', typePath(editing.type.id), { name: value });
             }
@@ -120,16 +128,27 @@ export function WorkItemTypesSettings({ affordances }: { affordances: WorkConfig
                 description: t('types.description'),
                 back: { smart: true },
                 actions: canManage ? (
-                    <Button
-                        id="new-type-btn"
-                        variant="primary"
-                        icon={<Plus />}
-                        text={t('types.create')}
-                        onClick={() => {
-                            setName('');
-                            setEditing({ mode: 'create' });
-                        }}
-                    />
+                    <div className="flex flex-wrap gap-tight">
+                        <Button
+                            id="add-question-type-btn"
+                            variant="secondary"
+                            text={t('types.question.add')}
+                            onClick={() => {
+                                setName(QUESTION_TYPE_PRESET.name);
+                                setEditing({ mode: 'question' });
+                            }}
+                        />
+                        <Button
+                            id="new-type-btn"
+                            variant="primary"
+                            icon={<Plus />}
+                            text={t('types.create')}
+                            onClick={() => {
+                                setName('');
+                                setEditing({ mode: 'create' });
+                            }}
+                        />
+                    </div>
                 ) : undefined,
             }}
             table={{
@@ -147,10 +166,11 @@ export function WorkItemTypesSettings({ affordances }: { affordances: WorkConfig
             <SettingsFormModal
                 open={editing !== null}
                 onOpenChange={(v) => !v && setEditing(null)}
-                title={editing?.mode === 'rename' ? t('types.renameTitle') : t('types.createTitle')}
-                submitLabel={editing?.mode === 'rename' ? t('common.save') : t('types.createSubmit')}
+                title={editing?.mode === 'rename' ? t('types.renameTitle') : editing?.mode === 'question' ? t('types.question.title') : t('types.createTitle')}
+                submitLabel={editing?.mode === 'rename' ? t('common.save') : editing?.mode === 'question' ? t('types.question.submit') : t('types.createSubmit')}
                 onSubmit={submit}
             >
+                {editing?.mode === 'question' && <p className="text-sm text-content-muted">{t('types.question.description')}</p>}
                 <FormField label={t('common.name')} required>
                     <Input id="type-name-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} autoFocus />
                 </FormField>

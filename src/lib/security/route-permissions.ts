@@ -605,6 +605,20 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note: 'Name the active member an open item waits on, or nobody (the version increases).',
     },
 
+    // ── The marked answer (sub-phase 2.4b-c; owner decisions 113 to 118) ──
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/answer$`),
+        methods: ['PUT', 'DELETE'],
+        permission: 'work_items.edit',
+        note: 'Mark a comment as the item\'s answer (an open item moves to Done), or clear it; a person only (the usecase refuses an API key).',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-item-types\\/question-preset$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note: 'Add the Question type with its field set (decision 116: offered, never seeded).',
+    },
+
     // ── Templates (sub-phase 2.5c; owner decisions 71 and 72) ──────
     {
         path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/work-item-templates$`),

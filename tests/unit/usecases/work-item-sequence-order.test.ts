@@ -9,7 +9,10 @@
  *   - a state change, single or bulk: audit inside; then COMMIT, then the
  *     automation event, then the watcher fan-out;
  *   - waiting on (2.4b): audit inside; then COMMIT, then the bell to the
- *     person named, then the watcher fan-out.
+ *     person named, then the watcher fan-out;
+ *   - marking an answer (2.4b-c): the answer's and the state change's audit
+ *     inside; then COMMIT, the state change's automation and fan-out, then
+ *     the watchers told the item was answered.
  *
  * Copied in shape from inflect-compliance's
  * `tests/unit/usecases/task-status-sequence-order.test.ts`, with the create
@@ -70,7 +73,10 @@ const ROW = {
 const STATES: Record<string, object> = {
     's-todo': { id: 's-todo', teamId: 't1', name: 'Todo', category: 'UNSTARTED', archivedAt: null, isDefault: true },
     's-doing': { id: 's-doing', teamId: 't1', name: 'In progress', category: 'STARTED', archivedAt: null, isDefault: false },
+    's-done': { id: 's-done', teamId: 't1', name: 'Done', category: 'DONE', archivedAt: null, isDefault: false },
 };
+/** The field set's rows (2.4b-b); a test that marks an answer shows it on the item's type. */
+const fieldSetRows: object[] = [];
 
 jest.mock('@/app-layer/repositories/ProjectRepository', () => ({
     ProjectRepository: {
@@ -87,6 +93,7 @@ jest.mock('@/app-layer/repositories/TeamRepository', () => ({
         getState: jest.fn(async (_db: unknown, _ctx: unknown, id: string) => STATES[id]),
         defaultState: jest.fn(async () => STATES['s-todo']),
         liveStatesOfTeams: jest.fn(async () => Object.values(STATES)),
+        listStates: jest.fn(async () => Object.values(STATES)),
     },
 }));
 jest.mock('@/app-layer/repositories/MembershipRepository', () => ({
@@ -97,11 +104,14 @@ jest.mock('@/app-layer/repositories/MembershipRepository', () => ({
 }));
 jest.mock('@/app-layer/repositories/LabelRepository', () => ({ LabelRepository: { attach: jest.fn(), getMany: jest.fn(async () => []) } }));
 // The field set (2.4b-b): no entries, no project fields.
-jest.mock('@/app-layer/repositories/FieldSetRepository', () => ({ FieldSetRepository: { listForTypesInProject: jest.fn(async () => []) } }));
+jest.mock('@/app-layer/repositories/FieldSetRepository', () => ({ FieldSetRepository: { listForTypesInProject: jest.fn(async () => fieldSetRows) } }));
 jest.mock('@/app-layer/repositories/CustomFieldRepository', () => ({ CustomFieldRepository: { listFields: jest.fn(async () => []) } }));
 jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
     LIST_ORDERS: { manual: { column: 'sortKey', direction: 'asc', kind: 'string' } },
-    CommentRepository: {},
+    CommentRepository: {
+        get: jest.fn(async (_db: unknown, _ctx: unknown, workItemId: string, id: string) => ({ id, workItemId, authorUserId: 'u2', createdAt: new Date() })),
+        getWithBody: jest.fn(async () => null),
+    },
     WorkItemRepository: {
         lastSortKey: jest.fn(async () => null),
         create: jest.fn(async (_db: unknown, _ctx: unknown, data: { waitingOnUserId?: string | null }) => ({ ...ROW, assigneeId: 'u-assignee', dueDate: new Date(), waitingOnUserId: data.waitingOnUserId ?? null })),
@@ -135,6 +145,7 @@ jest.mock('@/app-layer/usecases/work-item-shared', () => {
 });
 
 import { bulkSetWorkItemState, createWorkItem, setWorkItemState, setWorkItemWaitingOn } from '@/app-layer/usecases/work-item';
+import { markWorkItemAnswer } from '@/app-layer/usecases/work-item-answer';
 
 import { makeRequestContext } from '../../helpers/make-context';
 
@@ -142,6 +153,7 @@ const ctx = makeRequestContext('OWNER');
 
 beforeEach(() => {
     events.length = 0;
+    fieldSetRows.length = 0;
 });
 
 describe('work-item side-effect order', () => {
@@ -180,6 +192,22 @@ describe('work-item side-effect order', () => {
     it('a create naming who it waits on rings that bell after the commit, last', async () => {
         await createWorkItem(ctx, { projectId: 'p1', typeId: 'ty1', title: 'New', waitingOnUserId: 'u-other' });
         expect(events.slice(events.indexOf('tx:commit'))).toEqual(['tx:commit', 'bell:due', 'bell:assigned', 'bell:waiting-on']);
+    });
+
+    it('marking an answer: both audits inside; then COMMIT, the state change\'s automation and fan-out, then "answered"', async () => {
+        fieldSetRows.push({ typeId: 'ty1', projectId: null, builtInField: 'answer', customFieldId: null, requirement: 'OPTIONAL' });
+        await markWorkItemAnswer(ctx, 'w1', { commentId: 'c1' });
+        expect(events).toEqual([
+            'tx:begin',
+            'audit:WORK_ITEM_ANSWER_MARKED',
+            'audit:WORK_ITEM_STATE_CHANGED',
+            'tx:commit',
+            'automation:WORK_ITEM_STATE_CHANGED',
+            'watchers:fan-out',
+            'tx:begin',
+            'tx:commit',
+            'watchers:fan-out',
+        ]);
     });
 
     it('a refused transition writes nothing and emits nothing', async () => {

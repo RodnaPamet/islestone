@@ -71,6 +71,9 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    // ── The marked answer (sub-phase 2.4b-c) ──────────────────────────
+    'WorkItem.answerCommentId':
+        'A pointer to one of the item\'s own comments (a cuid, FK-checked); the comment\'s text is Comment.body, encrypted.',
     // ── The notification outbox (sub-phase 1.6) ───────────────────────
     'NotificationOutbox.bodyText':
         'Rendered email body from a template over a work item title and a name; the recipient is the PII column, encrypted by the PII extension. Purged by the retention job (8.3).',

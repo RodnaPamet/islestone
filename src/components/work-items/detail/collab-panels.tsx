@@ -10,7 +10,9 @@
  * author or a workspace admin deletes. The buttons ask the SAME functions the
  * server asks (`mayEditComment`, `commentDeleteBasis` in
  * `src/app-layer/policies/comment.policies.ts`), so the page offers exactly
- * what the server allows.
+ * what the server allows. The marked answer (2.4b-c, decision 113) locks its
+ * comment until the answer is cleared, and "Mark as answer" is offered where
+ * the field set shows the answer: `commentAffordances`, the same module.
  *
  * The comment and activity lists follow inflect-compliance's task detail
  * page (lines 1586–1678) and `PanelActivityFeed.tsx` at
@@ -21,7 +23,7 @@ import { useState } from 'react';
 
 import { Button } from '@inflect/ui/components/ui/button';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
-import { commentDeleteBasis, mayEditComment } from '@/app-layer/policies/comment.policies';
+import { commentAffordances } from '@/app-layer/policies/comment.policies';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
@@ -50,7 +52,15 @@ function useMemberName() {
 
 // ─── Comments ─────────────────────────────────────────────────────────────
 
-export function CommentsPanel({ workItemId }: { workItemId: string }) {
+/** The item's marked answer as the comments panel needs it (2.4b-c). */
+export interface CommentsAnswerProps {
+    commentId: string | null;
+    /** The item's field set shows the answer. */
+    shown: boolean;
+    onMark: (commentId: string) => void;
+}
+
+export function CommentsPanel({ workItemId, answer }: { workItemId: string; answer?: CommentsAnswerProps }) {
     const tComments = useTranslations('workItems');
     const { data, error } = useWorkItemComments(workItemId);
     const collab = useWorkItemCollab(workItemId);
@@ -84,14 +94,21 @@ export function CommentsPanel({ workItemId }: { workItemId: string }) {
             {error && <p role="alert">{tComments('detail.loadFailed')}</p>}
             <ul className="space-y-default" aria-label={tComments('detail.comments')}>
                 {(data?.items ?? []).map((c) => {
-                    const mayEdit = mayEditComment({ userId }, c);
-                    const deleteBasis = commentDeleteBasis({ userId, permissions }, c);
+                    const allowed = commentAffordances({ userId, permissions }, c, { answerCommentId: answer?.commentId ?? null }, {
+                        mayEditItem: perms.work_items.edit === true,
+                        answerShown: answer?.shown ?? false,
+                    });
+                    const mayEdit = allowed.edit;
+                    const deleteBasis = allowed.deleteBasis;
+                    // A comment still being sent (its optimistic row) has no server id to mark yet.
+                    const markAnswer = allowed.markAnswer && answer !== undefined && !c.id.startsWith('pending-');
                     const isEditing = editing?.id === c.id;
                     return (
                         <li key={c.id} className="rounded-md border border-border-subtle p-3">
                             <p className="text-xs text-content-muted">
                                 {nameOf(c.authorUserId)} · {formatDateTime(c.createdAt)}
                                 {c.editedAt ? ` · ${tComments('detail.edited')}` : ''}
+                                {allowed.isAnswer ? ` · ${tComments('answer.badge')}` : ''}
                             </p>
                             {isEditing ? (
                                 <div className="mt-2 space-y-tight">
@@ -117,8 +134,18 @@ export function CommentsPanel({ workItemId }: { workItemId: string }) {
                             ) : (
                                 <p className="mt-1 whitespace-pre-wrap text-sm text-content-default">{c.body}</p>
                             )}
-                            {!isEditing && (mayEdit || deleteBasis) && (
+                            {allowed.isAnswer && <p className="mt-1 text-xs text-content-muted">{tComments('answer.locked')}</p>}
+                            {!isEditing && (mayEdit || deleteBasis || markAnswer) && (
                                 <div className="mt-2 flex gap-tight">
+                                    {markAnswer && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            text={tComments('answer.mark')}
+                                            aria-label={tComments('answer.markCommentBy', { name: nameOf(c.authorUserId) })}
+                                            onClick={() => answer?.onMark(c.id)}
+                                        />
+                                    )}
                                     {mayEdit && (
                                         <Button
                                             variant="ghost"

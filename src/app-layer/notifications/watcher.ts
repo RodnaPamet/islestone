@@ -39,9 +39,10 @@ import { isInAppTypeEnabled } from './settings';
  * re-parent, move) — the changes a watcher needs to know about that aren't a
  * comment, state move, or assignment. Cosmetic edits (title/description
  * wording) deliberately do NOT notify: a bell for every keystroke-level save
- * trains people to ignore the bell.
+ * trains people to ignore the bell. `answered` is a question's marked answer
+ * (sub-phase 2.4b-c, owner decision 117).
  */
-export type WatcherActivityKind = 'commented' | 'state_changed' | 'assigned' | 'updated';
+export type WatcherActivityKind = 'commented' | 'state_changed' | 'assigned' | 'updated' | 'answered';
 
 export interface WatcherActivity {
     tenantId: string;

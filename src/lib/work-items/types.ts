@@ -31,6 +31,8 @@ export interface WorkItemRow {
     assigneeId: string | null;
     /** Who must act next (2.4b): an active member; never accountable. Cleared when the item closes. */
     waitingOnUserId?: string | null;
+    /** The marked answer's comment id (2.4b-c, ADR 0002 §15). */
+    answerCommentId?: string | null;
     /** Who created the item (My Work's "Created by me"). */
     createdByUserId: string;
     parentId: string | null;
@@ -63,6 +65,8 @@ export interface WorkItemPage {
 /** The detail read (`GET /work-items/:id`). */
 export interface WorkItemDetailData extends WorkItemRow {
     description: string | null;
+    /** The marked answer, pinned on the detail (2.4b-c). */
+    answer?: { id: string; authorUserId: string; body: string; editedAt: string | null; createdAt: string } | null;
     project: { id?: string; keyPrefix: string; name?: string; archivedAt?: string | null };
     state: { id: string; name: string; category: WorkflowStateCategory; archivedAt?: string | null };
     type: { id: string; name: string } | null;

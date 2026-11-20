@@ -48,6 +48,7 @@ import { ActivityPanel, CommentsPanel, LinksPanel, RelationsPanel, WatchersPanel
 import { SubItemsPanel } from './detail/SubItemsPanel';
 import { CustomFieldInput } from './fields/CustomFieldInput';
 import { RepeatControl } from './detail/RepeatControl';
+import { PinnedAnswer, useMarkAnswer } from './detail/AnswerControls';
 import { AssigneePicker, CyclePicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker, WaitingOnPicker } from './pickers';
 
 export type DetailTab = 'overview' | 'sub-items' | 'links' | 'comments' | 'activity';
@@ -119,6 +120,7 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                       dueDate: item.dueDate,
                       cycleId: item.cycleId ?? null,
                       milestoneId: item.milestoneId ?? null,
+                      answerCommentId: item.answerCommentId ?? null,
                       customFields: item.customFields ?? {},
                   }
                 : {},
@@ -127,6 +129,8 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
     const offers = (key: FieldKey) => requirementOf(fieldSet, key) !== 'HIDDEN' || !isFieldEmpty(key, fieldValues);
     const requiredMark = (key: FieldKey) => (requirementOf(fieldSet, key) === 'REQUIRED' ? t('fieldSet.required') : undefined);
     const gaps = item && !isClosedCategory(item.stateCategory) ? fieldSetGaps(fieldSet, fieldValues) : [];
+    // The answer (2.4b-c, decision 118): marking is offered where the type's field set shows it.
+    const answerShown = requirementOf(fieldSet, 'answer') !== 'HIDDEN';
     const fieldName = (key: FieldKey) => (key.startsWith('cf:') ? (projectFields.find((f) => f.id === key.slice(3))?.name ?? key) : t(`fieldSet.field.${key}`));
     const [tab, setTab] = useState<DetailTab>('overview');
     const now = useHydratedNow();
@@ -145,6 +149,7 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
     }, [item?.description]);
 
     const row = useMemo<WorkItemRow | null>(() => (item ? toRow(item) : null), [item]);
+    const markAnswer = useMarkAnswer(row);
     const openItem = (target: { id: string; key: string }) => {
         if (onOpenItem) onOpenItem(target);
         else router.push(tenantHref(workItemPath(target.key)));
@@ -352,6 +357,7 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                                 )}
                             </section>
                         )}
+                        <PinnedAnswer item={item} row={row} canEdit={perms.edit} />
                         <WatchersPanel workItemId={item.id} />
                     </div>
                 );
@@ -365,7 +371,9 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                     </div>
                 );
             case 'comments':
-                return <CommentsPanel workItemId={item.id} />;
+                return (
+                    <CommentsPanel workItemId={item.id} answer={{ commentId: item.answerCommentId ?? null, shown: answerShown, onMark: markAnswer.mark }} />
+                );
             case 'activity':
                 return <ActivityPanel workItemId={item.id} />;
         }
@@ -436,6 +444,7 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                     selectAction={(v) => setTab(v as DetailTab)}
                 />
                 {sectionFor(tab)}
+                {markAnswer.dialog}
             </div>
         );
     }
@@ -457,6 +466,7 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
             rail={properties || undefined}
         >
             {sectionFor(tab)}
+            {markAnswer.dialog}
         </EntityDetailLayout>
     );
 }

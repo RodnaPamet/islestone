@@ -813,4 +813,19 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      carry custom-field rules.
    - UI: Settings → a type's fields, the field manager's "Per type", the create dialog,
      detail, accept dialog and item-templates manager reading the rules from the server.
-   - Next: 2.4b-c (questions), per the map.
+   2.4b-b merged as #52. **2.4b-c (questions) is built** on branch `wt/p24b`, per
+   `docs/work-items.md`, "Questions (2.4b-c)" and `PROVENANCE.md`, "Questions"; with it 2.4b is
+   complete:
+   - Schema: `WorkItem.answerCommentId` (composite FK to `Comment(id, workItemId, tenantId)`,
+     `Comment @@unique([id, workItemId, tenantId])`, `NO ACTION`), the trigger
+     `comment_answer_not_deleted` refusing a soft delete of the marked comment. Migration
+     `20261202120000_answers`.
+   - Domain: `planAnswerMark` (`src/app-layer/domain/work-item-answer.ts`): an open item to the
+     chosen or first live Done state, a closed one keeps its state.
+   - API: `PUT`/`DELETE /work-items/:id/answer` (`work_items.edit`, a person only, the field set
+     must show the answer), `POST /work-item-types/question-preset` (`admin.manage`); editing or
+     deleting the marked comment is 409 `ANSWER_LOCKED`; the creator of an item whose type shows
+     the answer watches it; watchers are told when it is answered.
+   - UI: "Mark as answer" on comments (asked of `commentAffordances`), the Done-state dialog, the
+     pinned answer with "Clear answer" (undo toast), "Add the Question type" in Settings → Work
+     item types, "Add a Question template" in a project's item-templates manager.

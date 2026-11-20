@@ -394,11 +394,38 @@ describe('Work item types', () => {
         await waitFor(() => expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ name: 'Spike' }));
     });
 
+    it('adds the Question type through its preset, offering the name Question; a refusal (a taken name) is shown and the name can change (2.4b-c)', async () => {
+        let first = true;
+        const { calls } = installFetch({
+            'GET /work-item-types': { body: TYPES },
+            'POST /work-item-types/question-preset': () => {
+                if (first) {
+                    first = false;
+                    return { status: 409, body: { error: { code: 'CONFLICT', message: 'A type named Question already exists. Give the new type another name.', reason: 'TYPE_NAME_TAKEN' } } };
+                }
+                return { status: 201, body: { id: 'ty-q', name: 'Ask' } };
+            },
+        });
+        renderWorkspace(<WorkItemTypesSettings affordances={ALL} />);
+        await screen.findByText('Feature');
+        fireEvent.click(screen.getByRole('button', { name: 'Add the Question type' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Add the Question type' });
+        expect(within(dialog).getByLabelText(/^Name/)).toHaveValue('Question');
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Add type' }));
+        await waitFor(() => expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1));
+        expect(calls.find((c) => c.method === 'POST')).toMatchObject({ path: '/work-item-types/question-preset', body: { name: 'Question' } });
+        expect(await within(dialog).findByText(/already exists/)).toBeInTheDocument();
+        fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: 'Ask' } });
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Add type' }));
+        await waitFor(() => expect(calls.filter((c) => c.method === 'POST').map((c) => c.body)).toEqual([{ name: 'Question' }, { name: 'Ask' }]));
+    });
+
     it('offers no write to a viewer the server says may not manage', async () => {
         installFetch({ 'GET /work-item-types': { body: TYPES } });
         renderWorkspace(<WorkItemTypesSettings affordances={NONE} />);
         await screen.findByText('Feature');
         expect(screen.queryByRole('button', { name: 'Type' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Add the Question type' })).toBeNull();
         expect(screen.queryByRole('button', { name: 'Archive Feature' })).toBeNull();
     });
 });
