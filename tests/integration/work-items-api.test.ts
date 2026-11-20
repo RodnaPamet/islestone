@@ -32,6 +32,7 @@ jest.mock('@/app-layer/context', () => ({
 }));
 
 import { createProject } from '@/app-layer/usecases/project';
+import { createCycle } from '@/app-layer/usecases/cycle';
 import { createTeam } from '@/app-layer/usecases/team';
 import { listWorkItemTypes } from '@/app-layer/usecases/work-item-type';
 import { createWorkItem } from '@/app-layer/usecases/work-item';
@@ -52,7 +53,7 @@ import { DB_AVAILABLE } from './db-helper';
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const TAG = `wapi${Date.now().toString(36)}`;
 const ROOT = path.resolve(__dirname, '../..');
-const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'users', 'views'];
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'users', 'views', 'cycles'];
 
 type Handler = (req: NextRequest, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>;
 
@@ -72,6 +73,7 @@ interface Ids {
     field: string;
     option: string;
     view: string;
+    cycle: string;
 }
 
 /** One request per route and method: the template, a body, and whether it reads an item. */
@@ -171,6 +173,16 @@ const CALLS: Call[] = [
     { file: 'src/app/api/t/[tenantSlug]/views/[viewId]/route.ts', method: 'PATCH', path: (i) => `/views/${i.view}`, params: (i) => P(i, { viewId: i.view }), body: () => ({ name: 'Renamed view' }), write: true, key: 'views.edit' },
     // The MEMBER's shared view: a VIEWER is not its creator and holds no views.share (decisions 59, 60).
     { file: 'src/app/api/t/[tenantSlug]/views/[viewId]/route.ts', method: 'DELETE', path: (i) => `/views/${i.view}`, params: (i) => P(i, { viewId: i.view }), write: true, key: 'views.edit' },
+    // Sub-phase 2.5a: cycles.
+    { file: `${W}/[workItemId]/cycle/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/cycle`, params: (i) => P(i, { workItemId: i.other }), body: () => ({ cycleId: null }), write: true, key: 'work_items.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/cycles/route.ts', method: 'GET', path: () => '/cycles', params: (i) => P(i), write: false, key: 'cycles.view' },
+    { file: 'src/app/api/t/[tenantSlug]/cycles/route.ts', method: 'POST', path: () => '/cycles', params: (i) => P(i), body: (i) => ({ teamId: i.team, startsOn: '2040-01-01', endsOn: '2040-01-14' }), write: true, key: 'cycles.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/cycles/[cycleId]/route.ts', method: 'GET', path: (i) => `/cycles/${i.cycle}`, params: (i) => P(i, { cycleId: i.cycle }), write: false, key: 'cycles.view' },
+    { file: 'src/app/api/t/[tenantSlug]/cycles/[cycleId]/route.ts', method: 'PATCH', path: (i) => `/cycles/${i.cycle}`, params: (i) => P(i, { cycleId: i.cycle }), body: () => ({ name: 'Renamed cycle' }), write: true, key: 'cycles.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/cycles/[cycleId]/route.ts', method: 'DELETE', path: () => '/cycles/none', params: (i) => P(i, { cycleId: 'none' }), write: true, key: 'cycles.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/cycles/[cycleId]/burn-up/route.ts', method: 'GET', path: (i) => `/cycles/${i.cycle}/burn-up`, params: (i) => P(i, { cycleId: i.cycle }), write: false, key: 'cycles.view' },
+    { file: 'src/app/api/t/[tenantSlug]/teams/[teamId]/cycle-schedule/route.ts', method: 'GET', path: (i) => `/teams/${i.team}/cycle-schedule`, params: (i) => P(i, { teamId: i.team }), write: false, key: 'cycles.view' },
+    { file: 'src/app/api/t/[tenantSlug]/teams/[teamId]/cycle-schedule/route.ts', method: 'PUT', path: (i) => `/teams/${i.team}/cycle-schedule`, params: (i) => P(i, { teamId: i.team }), body: () => ({ enabled: false, lengthWeeks: 2, firstStartsOn: '2040-02-06', upcomingCount: 2, rollover: 'NEXT_CYCLE' }), write: true, key: 'cycles.manage' },
 ];
 
 function request(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): NextRequest {
@@ -227,7 +239,9 @@ describeFn('the work-item API', () => {
         const relation = await addWorkItemRelation(owner, item.id, { type: 'BLOCKS', toId: other.id });
         const field = await createCustomField(owner, project.id, { name: 'Stage gate', type: 'SELECT', options: [{ name: 'Alpha' }, { name: 'Beta' }] });
         const view = await createSavedView(ctxFor('MEMBER'), { name: 'Shared by a member', visibility: 'SHARED', layout: 'LIST', config: { filters: {}, sort: 'manual', laneBy: 'none' } });
+        const cycle = await createCycle(owner, { teamId: team.id, startsOn: '2039-01-03', endsOn: '2039-01-16' });
         Object.assign(ids, {
+            cycle: cycle.id,
             field: field.id,
             option: field.options[0]!.id,
             view: view.id,

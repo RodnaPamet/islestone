@@ -25,6 +25,8 @@ export interface WorkItemListFilters {
     labelId?: string;
     assigneeId?: string;
     createdById?: string;
+    /** Cycle ids, `none`, or `current` (2.5a; the server resolves `current`). */
+    cycleId?: string;
     /** `me` only: the server reads the caller from the request context. */
     watching?: 'me';
     parentId?: string;
@@ -47,6 +49,7 @@ export const LIST_FILTER_KEYS = [
     'labelId',
     'assigneeId',
     'createdById',
+    'cycleId',
     'watching',
     'parentId',
     'due',
@@ -105,11 +108,13 @@ export function rowBelongs(filters: WorkItemListFilters, row: WorkItemRow): 'yes
         inList(f.assigneeId, row.assigneeId),
         inList(f.createdById, row.createdByUserId),
         inList(f.parentId, row.parentId),
+        // `current` names cycles only the server resolves: undecided here.
+        f.cycleId && !f.cycleId.split(',').includes('current') ? inList(f.cycleId, row.cycleId ?? null) : undefined,
         f.labelId ? f.labelId.split(',').some((id) => row.labelIds.includes(id)) : undefined,
     ];
     if (checks.some((c) => c === false)) return 'no';
     // The watcher set is not on the row: a watch or unwatch revalidates the lists.
-    if (f.q || f.due || f.watching || f.customFields) return 'unknown';
+    if (f.q || f.due || f.watching || f.customFields || f.cycleId?.split(',').includes('current')) return 'unknown';
     return 'yes';
 }
 

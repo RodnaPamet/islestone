@@ -221,14 +221,12 @@ async function keyHitFor(db: PrismaTx, ctx: RequestContext, q: string | undefine
 }
 
 /**
- * The cycle filter (2.5a): `none` as given; `current` becomes the ids of the
+ * The cycle filter (2.5a): ids and `none` as given; `current` becomes the ids of the
  * cycles current today (each team's), alongside any ids given. An empty
  * result is the empty string, which matches nothing.
  */
 async function resolveCycleFilter(db: PrismaTx, ctx: RequestContext, raw: string): Promise<string> {
     const members = raw.split(',').map((m) => m.trim()).filter(Boolean);
-    if (members.length === 1 && members[0] === 'none') return 'none';
-    if (members.includes('none')) throw badRequest('The cycle filter takes "none" on its own.');
     if (!members.includes('current')) return members.join(',');
     const current = await currentCycleIdsInTx(db, ctx);
     return [...members.filter((m) => m !== 'current'), ...current].join(',');

@@ -34,15 +34,15 @@ import type { ViewCustomField, ViewState, WorkflowStateCategory, WorkItemRow } f
 
 import { customFieldLaneKey } from '../fields/custom-field-format';
 
-export type BuiltInLaneBy = 'none' | 'assignee' | 'priority' | 'type' | 'label' | 'project';
+export type BuiltInLaneBy = 'none' | 'assignee' | 'priority' | 'type' | 'label' | 'project' | 'cycle';
 
 /** A built-in grouping, or a custom field's (`cf:<fieldId>`, sub-phase 2.4). */
 export type LaneBy = BuiltInLaneBy | `cf:${string}`;
 
-export const LANE_BY_VALUES: readonly BuiltInLaneBy[] = ['none', 'assignee', 'priority', 'type', 'label', 'project'];
+export const LANE_BY_VALUES: readonly BuiltInLaneBy[] = ['none', 'assignee', 'priority', 'type', 'label', 'project', 'cycle'];
 
 /** Lanes whose value a drop may change. */
-export const MOVABLE_LANES: ReadonlySet<LaneBy> = new Set<LaneBy>(['none', 'assignee', 'priority', 'type']);
+export const MOVABLE_LANES: ReadonlySet<LaneBy> = new Set<LaneBy>(['none', 'assignee', 'priority', 'type', 'cycle']);
 
 /**
  * Field types a board groups by (2.4): a select, a multi-select (by its
@@ -132,6 +132,8 @@ export function laneKeyOf(row: WorkItemRow, laneBy: LaneBy, ctx: LaneContext): s
             return row.typeId;
         case 'project':
             return row.projectId;
+        case 'cycle':
+            return row.cycleId ?? '';
         case 'label': {
             const first = ctx.labelOrder.find((id) => row.labelIds.includes(id));
             return first ?? '';

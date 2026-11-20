@@ -149,6 +149,7 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
     it('an empty cycle filter matches nothing, and "none" matches items in no cycle (2.5a)', () => {
         expect(JSON.stringify(WorkItemRepository._buildWhere(ctx, GUEST, { cycleId: '' }))).toContain('"cycleId":{"in":[]}');
         expect(JSON.stringify(WorkItemRepository._buildWhere(ctx, GUEST, { cycleId: 'none' }))).toContain('"cycleId":null');
+        expect(JSON.stringify(WorkItemRepository._buildWhere(ctx, GUEST, { cycleId: 'none,c1' }))).toContain('{"OR":[{"cycleId":null},{"cycleId":{"in":["c1"]}}]}');
     });
 
     it('the soft delete is an updateMany over live rows, never a delete', async () => {

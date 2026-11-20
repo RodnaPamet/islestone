@@ -238,6 +238,13 @@ export function useWorkItemMutations() {
                 );
             },
 
+            /** Put the item in a cycle of its team, or take it out (2.5a; `If-Match`). */
+            setCycle(item: WorkItemRow, cycleId: string | null) {
+                return write(item, { cycleId }, (version) =>
+                    apiSend<WorkItemDetailData>('PUT', url(`/work-items/${item.id}/cycle`), { cycleId }, { ifMatch: version }),
+                );
+            },
+
             /** Assign or clear (`If-Match`). */
             assign(item: WorkItemRow, assigneeId: string | null) {
                 return write(item, { assigneeId }, (version) =>

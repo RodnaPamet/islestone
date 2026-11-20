@@ -78,7 +78,7 @@ export interface WorkItemFilters {
     assigneeId?: string;
     /** The creator's user id (comma-joinable), as `assigneeId` takes one. */
     createdById?: string;
-    /** Cycle ids (comma-joinable), or `none` for items in no cycle (2.5a; the usecase resolves `current`). */
+    /** Cycle ids (comma-joinable), with `none` for items in no cycle (2.5a; the usecase resolves `current`). */
     cycleId?: string;
     /** `me`: the items the CALLER watches, read from the request context, never a user id from the client. */
     watching?: 'me';
@@ -311,11 +311,14 @@ export class WorkItemRepository {
         if (filters.assigneeId === 'none') and.push({ assigneeId: null });
         else if (filters.assigneeId) and.push({ assigneeId: parseIdListFilter(filters.assigneeId) });
         if (filters.createdById) and.push({ createdByUserId: parseIdListFilter(filters.createdById) });
-        if (filters.cycleId === 'none') and.push({ cycleId: null });
-        else if (filters.cycleId !== undefined) {
-            const ids = parseIdListFilter(filters.cycleId);
+        if (filters.cycleId !== undefined) {
+            const members = [...new Set(filters.cycleId.split(',').map((m) => m.trim()).filter(Boolean))];
+            const ids = members.filter((m) => m !== 'none');
+            const none = members.length !== ids.length;
             // An empty list (no current cycle) matches nothing rather than everything.
-            and.push({ cycleId: ids ?? { in: [] } });
+            if (none && ids.length > 0) and.push({ OR: [{ cycleId: null }, { cycleId: { in: ids } }] });
+            else if (none) and.push({ cycleId: null });
+            else and.push({ cycleId: { in: ids } });
         }
         if (filters.watching !== undefined) {
             if (filters.watching !== 'me') throw badRequest('Invalid watching filter. Must be: me.');
