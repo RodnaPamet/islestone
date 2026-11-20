@@ -6,14 +6,17 @@
  * Runs at 08:00 in `NOTIFICATIONS_TZ`. Two scope modes: no `tenantId` sweeps
  * every live workspace; a `tenantId` re-runs one. For each workspace it
  * scans, INSIDE that workspace's context (the worker connects as `app_user`,
- * so a global scan would read nothing), the open, assigned items due today,
- * tomorrow or in seven days, in pages of 500 keyed on `(dueDate, id)`, and
+ * so a global scan would read nothing), the open items due today, tomorrow
+ * or in seven days that have an ACTIVE assignee or an ACTIVE member they wait
+ * on (owner decision 137: both are reminded, one reminder when they are the
+ * same person, unassigned items included), in pages of 500 keyed on `(dueDate, id)`, and
  * writes each page's reminders with ONE `createMany({ skipDuplicates })` and
  * ONE id read-back (`createWorkItemDueNotifications`). The source wrote and
  * read back per item; at H2's 100,000 items that is the N+1 the query-shape
  * guard exists for. Items in a deleted or archived project, closed items
- * (DONE or CANCELLED) and items whose assignee is not an ACTIVE member are
- * skipped. A deleted workspace is never scanned.
+ * (DONE or CANCELLED) and items with neither an ACTIVE assignee nor an
+ * ACTIVE member they wait on are skipped; an inactive one of the two is
+ * never reminded. A deleted workspace is never scanned.
  *
  * Idempotent: the dedupe key (`…:WORK_ITEM_DUE:{window}:{item}:{user}:{day}`)
  * absorbs a re-run and the usecases' post-commit reminder on the same day.
@@ -81,7 +84,9 @@ export async function processWorkItemDueNotifications(options: WorkItemDueNotifi
                         title: r.title,
                         key: formatKey(r.project.keyPrefix, r.number),
                         dueDate: r.dueDate!,
-                        assigneeUserId: r.assigneeId!,
+                        // Only ACTIVE members are reminded; either may be absent (decision 137).
+                        assigneeUserId: r.assignee?.status === 'ACTIVE' ? r.assigneeId : null,
+                        waitingOnUserId: r.waitingOn?.status === 'ACTIVE' ? r.waitingOnUserId : null,
                     }));
                     const written = await createWorkItemDueNotifications(db, tenant.id, targets, now, tz);
                     return { rows, created: written.created };

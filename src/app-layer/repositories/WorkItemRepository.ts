@@ -78,7 +78,7 @@ export interface WorkItemFilters {
     assigneeId?: string;
     /** The creator's user id (comma-joinable), as `assigneeId` takes one. */
     createdById?: string;
-    /** Member user ids (comma-joinable) an item waits on, with `none` for items waiting on nobody (2.4b). */
+    /** Member user ids (comma-joinable) an item waits on, with `none` for items waiting on nobody (2.4b) and `me` for the caller (2.7a). */
     waitingOnId?: string;
     /** Cycle ids (comma-joinable), with `none` for items in no cycle (2.5a; the usecase resolves `current`). */
     cycleId?: string;
@@ -328,7 +328,17 @@ export class WorkItemRepository {
         else if (filters.assigneeId) and.push({ assigneeId: parseIdListFilter(filters.assigneeId) });
         if (filters.createdById) and.push({ createdByUserId: parseIdListFilter(filters.createdById) });
         if (filters.waitingOnId) {
-            const members = [...new Set(filters.waitingOnId.split(',').map((m) => m.trim()).filter(Boolean))];
+            // `me` is the caller, read from the request context (My Work's "Waiting on me", 2.7a),
+            // as `watching=me` is: the client never has to send its own id.
+            const members = [
+                ...new Set(
+                    filters.waitingOnId
+                        .split(',')
+                        .map((m) => m.trim())
+                        .filter(Boolean)
+                        .map((m) => (m === 'me' ? ctx.userId : m)),
+                ),
+            ];
             const ids = members.filter((m) => m !== 'none');
             const none = members.length !== ids.length;
             if (none && ids.length > 0) and.push({ OR: [{ waitingOnUserId: null }, { waitingOnUserId: { in: ids } }] });
@@ -1277,14 +1287,26 @@ export class WorkItemRepository {
                 deletedAt: null,
                 stateCategory: OPEN_CATEGORY_FILTER,
                 dueDate: { in: [...dueDates] },
-                assigneeId: { not: null },
-                assignee: { status: 'ACTIVE' },
                 project: { deletedAt: null, archivedAt: null },
-                ...(after ? { OR: [{ dueDate: { gt: after.dueDate } }, { dueDate: after.dueDate, id: { gt: after.id } }] } : {}),
+                AND: [
+                    // Someone to remind: an ACTIVE assignee, or an ACTIVE member it waits on (decision 137).
+                    { OR: [{ assignee: { status: 'ACTIVE' } }, { waitingOn: { status: 'ACTIVE' } }] },
+                    ...(after ? [{ OR: [{ dueDate: { gt: after.dueDate } }, { dueDate: after.dueDate, id: { gt: after.id } }] }] : []),
+                ],
             },
             orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
             take,
-            select: { id: true, title: true, number: true, dueDate: true, assigneeId: true, project: { select: { keyPrefix: true } } },
+            select: {
+                id: true,
+                title: true,
+                number: true,
+                dueDate: true,
+                assigneeId: true,
+                waitingOnUserId: true,
+                assignee: { select: { status: true } },
+                waitingOn: { select: { status: true } },
+                project: { select: { keyPrefix: true } },
+            },
         });
     }
 

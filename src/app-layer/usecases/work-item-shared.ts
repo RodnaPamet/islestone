@@ -287,12 +287,24 @@ export async function emitWaitingOnBell(
     }
 }
 
-/** The due reminder, when an assigned item's due date is on a window today. */
+/**
+ * The due reminder, when an item's due date is on a window today: to its
+ * assignee and to the person it waits on (owner decision 137; one reminder
+ * when they are the same person, unassigned items included).
+ */
 export async function emitDueBell(
     ctx: RequestContext,
-    item: { id: string; title: string; key: string; dueDate: Date | null; assigneeId: string | null; stateCategory: WorkflowStateCategory },
+    item: {
+        id: string;
+        title: string;
+        key: string;
+        dueDate: Date | null;
+        assigneeId: string | null;
+        waitingOnUserId?: string | null;
+        stateCategory: WorkflowStateCategory;
+    },
 ): Promise<void> {
-    if (!ctx.tenantSlug || !item.dueDate || !item.assigneeId) return;
+    if (!ctx.tenantSlug || !item.dueDate || (!item.assigneeId && !item.waitingOnUserId)) return;
     if (item.stateCategory === 'DONE' || item.stateCategory === 'CANCELLED') return;
     const tenantSlug = ctx.tenantSlug;
     try {
@@ -306,7 +318,8 @@ export async function emitDueBell(
                     title: item.title,
                     key: item.key,
                     dueDate: item.dueDate!,
-                    assigneeUserId: item.assigneeId!,
+                    assigneeUserId: item.assigneeId,
+                    waitingOnUserId: item.waitingOnUserId ?? null,
                 },
                 new Date(),
                 notificationsTz(),

@@ -191,6 +191,7 @@ Common rules: a CHECK refuses `fromId = toId`; `@@unique([tenantId, type, fromId
   - **S3. Store keyed hashes of normalised words**, keyed per workspace. Exact-word search without readable words; no ranking by prefix or meaning.
   - **S4. Do not encrypt descriptions and comments.** Simplest; drops roadmap 2.2's requirement.
   - **Decision: S1 now; a search ADR chooses between S2 and S3 later.** Owner decision, 2026-11-19 (open question 2); the owner chose "S1 now, decide later". This is the recommendation. Until that ADR, search covers titles, keys and unencrypted fields only. The search ADR is due before roadmap 2.7, because 2.7 asks for full-text search over items and comments, and comment bodies are encrypted: under S1 alone, comments cannot be searched. Embeddings (6.5) are S2 by nature, so 6.5 needs that decision too. S4 was not chosen: descriptions and comments stay encrypted.
+  - **Superseded for descriptions and comments by [ADR 0008](0008-search-over-encrypted-fields.md)** (owner decisions 124 to 126, 2026-11-20). The owner chose S2: a plaintext `tsvector` full-text index (Bulgarian and English stemming, one custom configuration) over `WorkItem.description` and `Comment.body`, kept in `SearchVector` and written by the usecase in the text's own transaction; titles and keys get Postgres full-text and trigram indexes. The searchable words of descriptions and comments are therefore readable in the database, its dumps and its off-host backups; the text itself stays encrypted. Every other encrypted or personal field stays out of search (ADR 0008 lists them). Embeddings (6.5) and pages (4.1) need their own amendment to ADR 0008.
 
 ### 12. Schema sketch (illustrative, not final)
 
@@ -504,7 +505,7 @@ List queries also filter `deletedAt IS NULL`. If the pinned Prisma version canno
 All five were answered on 2026-11-19 in the working session.
 
 1. Answered: fractional-index implementation. F1, in-house, with property tests (section 5). The owner chose "Accept all".
-2. Answered: search versus encryption. S1 now; a search ADR, due before roadmap 2.7, chooses between S2 and S3 (section 11). The owner chose "S1 now, decide later".
+2. Answered: search versus encryption. S1 now; a search ADR, due before roadmap 2.7, chooses between S2 and S3 (section 11). The owner chose "S1 now, decide later". ADR 0008 (2026-11-20) chose S2 for descriptions and comments.
 3. Answered: soft-delete retention window. 30 days (section 8). The owner chose "Accept all".
 4. Answered: depth caps. 5 levels of sub-items, 3 levels of goals (section 2). The owner chose "Accept all".
 5. Answered: moving a sub-item on its own to another project is refused (section 2). The owner chose "Accept all".
@@ -518,7 +519,7 @@ All five were answered on 2026-11-19 in the working session.
 - Several guarantees live in migration SQL that Prisma cannot express: the `"C"` collation, a deferrable foreign key, CHECKs, partial unique indexes. Each needs a database-backed test, in the style of the RLS coverage guardrail.
 - One advisory lock per workspace serialises blocking-graph and re-parenting writes. A very large import must batch those writes.
 - `If-Match` on text edits means clients must handle 409. The automatic retry keeps most conflicts invisible.
-- Description and comment encryption limits search (section 11). The search ADR decides before 2.7, and 2.7's search over comments depends on it.
+- Description and comment encryption limited search (section 11) until ADR 0008 (2026-11-20) chose a plaintext full-text index over both, at the cost stated there.
 - Custom text values are filterable and therefore not encrypted.
 - **An intake request is not a work item** (owner decision 85, 2026-11-20; roadmap 2.6). Requests from forms and email wait in their own table, `IntakeRequest`, outside `WorkItem`: they take no key number, and no work-item read, list, board, search, transition, notification, automation or agent read has to exclude them. Accepting a request creates the work item through the ordinary create path, in the same transaction, so every rule in this ADR applies to it from its first row. Principle 3 concerns tracked work; a request becomes tracked work only when a person accepts it.
 - The inflect-compliance patterns named here were read, not copied. Code written fresh from them is recorded in `PROVENANCE.md` as pattern only; code copied under ADR 0001 D1 gets a row per copied file.
@@ -529,7 +530,7 @@ All five were answered on 2026-11-19 in the working session.
 - Customers need workspace-wide custom fields for cross-project reporting.
 - Customers need a different manual order per view. A `(viewId, workItemId, sortKey)` table would then replace the single key for those views.
 - Field-level conflicts become common enough that the client retry is not enough. Per-field versions, or Yjs for descriptions under ADR 0005, would replace the single version for those fields.
-- The search ADR chooses S2 or S3, which adds a derived search store alongside the encrypted fields; or the owner later chooses S4, or a retention window other than 30 days.
+- The search ADR chose S2 (ADR 0008, 2026-11-20), which adds a plaintext search store beside the encrypted fields; a later move to keyed tokens (S3), S4, or a retention window other than 30 days would change this ADR again.
 - Per-team transition rules or review gates become a requirement.
 - Measurement at H2 shows a listed index unused, or a query without one.
 

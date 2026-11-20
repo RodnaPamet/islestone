@@ -98,6 +98,40 @@ describeFn('work-item jobs', () => {
             expect(row?.title).toBe('Work item due tomorrow');
         });
 
+        it('reminds the person an item waits on, unassigned items included, once per person, never an inactive member (decision 137)', async () => {
+            const four = await workspace('four', 'FOU');
+            const make = async (email: string, status: 'ACTIVE' | 'DEACTIVATED' = 'ACTIVE') => {
+                const u = await prisma.user.create({ data: { email: `${email}-${TAG}@example.test` } });
+                await prisma.tenantMembership.create({ data: { tenantId: four.id, userId: u.id, role: 'MEMBER', status } });
+                return u.id;
+            };
+            const bea = await make('bea');
+            const departed = await make('departed', 'DEACTIVATED');
+            const seed = (title: string, sortKey: string, assigneeId: string | null, waitingOnUserId: string | null) =>
+                seedWorkItem(prisma, four.id, four.world, { title, createdByUserId: four.userId, sortKey, assigneeId, waitingOnUserId, dueDate: day(1) });
+            const both = await seed('both', 'B', four.userId, bea);
+            const unassigned = await seed('unassigned', 'C', null, bea);
+            const same = await seed('same person', 'D', four.userId, four.userId);
+            const inactiveWaiting = await seed('waits on a departed member', 'E', four.userId, departed);
+            const nobody = await seed('nobody active', 'F', null, departed);
+
+            const r = await processWorkItemDueNotifications({ now: NOW, tz: 'UTC', tenantId: four.id });
+            expect(r.notificationsCreated).toBe(5);
+            const rows = await prisma.notification.findMany({ where: { tenantId: four.id, type: 'WORK_ITEM_DUE' } });
+            const forItem = (id: string) => rows.filter((n) => n.linkUrl?.endsWith(id)).map((n) => n.userId).sort();
+            expect(forItem(both.id)).toEqual([four.userId, bea].sort());
+            expect(forItem(unassigned.id)).toEqual([bea]);
+            expect(forItem(same.id)).toEqual([four.userId]);
+            expect(forItem(inactiveWaiting.id)).toEqual([four.userId]);
+            expect(forItem(nobody.id)).toEqual([]);
+            const toBea = rows.find((n) => n.userId === bea && n.linkUrl?.endsWith(unassigned.id));
+            expect(toBea).toMatchObject({ title: 'Waiting on you: due tomorrow', body: `FOU-${unassigned.number} "unassigned" is waiting on you and is due tomorrow.` });
+            expect(rows.find((n) => n.userId === four.userId && n.linkUrl?.endsWith(same.id))?.title).toBe('Work item due tomorrow');
+            expect(rows.every((n) => n.userId !== departed)).toBe(true);
+            // A re-run on the same day adds nothing.
+            expect((await processWorkItemDueNotifications({ now: NOW, tz: 'UTC', tenantId: four.id })).notificationsCreated).toBe(0);
+        });
+
         it('skips archived and deleted projects and deleted workspaces', async () => {
             const three = await workspace('three', 'THR');
             const archived = await seedWorkItem(prisma, three.id, three.world, {

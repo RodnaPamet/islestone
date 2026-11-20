@@ -1,8 +1,9 @@
 /** @jest-environment jsdom */
 
 /**
- * My Work (owner decision 54): four sections, each a read of the shared list
- * query with its own filters, a count, an empty state and an explicit
+ * My Work (owner decisions 54 and 76): five sections, each a read of the
+ * shared list query with its own filters ("Waiting on me" asks the server for
+ * `waitingOnId=me`, 2.7a), a count, an empty state and an explicit
  * "Load more"; closed categories hidden unless the category filter names
  * some; an item in several sections; a row opening the detail sheet; no axe
  * violations. Queries are by role and label.
@@ -26,9 +27,10 @@ const ME = 'u-ada';
 const shared = row(1, { title: 'Shared item', assigneeId: ME, createdByUserId: ME, dueDate: '2026-11-21' });
 
 /** Which section a list read is, by its filters. */
-function sectionOf(req: Recorded): 'assigned' | 'created' | 'watching' | 'dueSoon' | 'other' {
+function sectionOf(req: Recorded): 'assigned' | 'waitingOn' | 'created' | 'watching' | 'dueSoon' | 'other' {
     const s = req.search;
     if (s.get('watching') === 'me') return 'watching';
+    if (s.get('waitingOnId') === 'me') return 'waitingOn';
     if (s.get('createdById') === ME) return 'created';
     if (s.get('assigneeId') === ME && s.get('due') === 'soon') return 'dueSoon';
     if (s.get('assigneeId') === ME) return 'assigned';
@@ -63,9 +65,10 @@ beforeEach(() => {
 });
 
 describe('My Work', () => {
-    it('shows four sections, an item in each it belongs to, with counts and empty states, and no axe violations', async () => {
+    it('shows five sections, an item in each it belongs to, with counts and empty states, and no axe violations', async () => {
         routes({
             assigned: { items: [shared, row(2, { title: 'Only assigned', assigneeId: ME })] },
+            waitingOn: { items: [row(3, { title: 'Waits on me', assigneeId: 'u-grace', waitingOnUserId: ME })] },
             created: { items: [shared] },
             dueSoon: { items: [shared] },
             watching: { items: [] },
@@ -73,16 +76,19 @@ describe('My Work', () => {
         const { container } = renderMyWork();
         expect(screen.getByRole('heading', { level: 1, name: 'My Work' })).toBeInTheDocument();
         const names = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
-        expect(names).toEqual(['Assigned to me', 'Created by me', 'Watching', 'Due soon']);
+        expect(names).toEqual(['Assigned to me', 'Waiting on me', 'Created by me', 'Watching', 'Due soon']);
 
         expect(await within(region('Assigned to me')).findByRole('link', { name: 'Only assigned' })).toBeInTheDocument();
         expect(within(region('Assigned to me')).getByRole('link', { name: 'Shared item' })).toBeInTheDocument();
+        expect(await within(region('Waiting on me')).findByRole('link', { name: 'Waits on me' })).toBeInTheDocument();
+        expect(within(region('Waiting on me')).queryByRole('link', { name: 'Shared item' })).toBeNull();
         expect(await within(region('Created by me')).findByRole('link', { name: 'Shared item' })).toBeInTheDocument();
         expect(await within(region('Due soon')).findByRole('link', { name: 'Shared item' })).toBeInTheDocument();
         expect(await within(region('Watching')).findByText('Nothing you watch matches these filters.')).toBeInTheDocument();
 
         // Counts of the loaded rows.
         expect(within(region('Assigned to me')).getByText('2')).toBeInTheDocument();
+        expect(within(region('Waiting on me')).getByText('1')).toBeInTheDocument();
         expect(within(region('Created by me')).getByText('1')).toBeInTheDocument();
         expect(within(region('Watching')).getByText('0')).toBeInTheDocument();
         expect(within(region('Due soon')).getByText(`Your open items that are overdue or due within ${DUE_SOON_DAYS} days.`)).toBeInTheDocument();
@@ -97,13 +103,17 @@ describe('My Work', () => {
         ).toHaveNoViolations();
     });
 
-    it('reads each section with its own filters, the person from the page and watching=me, open categories by default', async () => {
+    it('reads each section with its own filters, the person from the page, watching=me and waitingOnId=me, open categories by default', async () => {
         const { calls } = routes({});
         renderMyWork();
-        await waitFor(() => expect(calls.filter((c) => c.method === 'GET' && c.path === '/work-items')).toHaveLength(4));
+        await waitFor(() => expect(calls.filter((c) => c.method === 'GET' && c.path === '/work-items')).toHaveLength(5));
         const reads = calls.filter((c) => c.method === 'GET' && c.path === '/work-items');
         const bySection = Object.fromEntries(reads.map((r) => [sectionOf(r), r.search]));
-        expect(Object.keys(bySection).sort()).toEqual(['assigned', 'created', 'dueSoon', 'watching']);
+        expect(Object.keys(bySection).sort()).toEqual(['assigned', 'created', 'dueSoon', 'waitingOn', 'watching']);
+        // The server resolves `me` from the request context; the client never sends its own id for it.
+        expect(bySection.waitingOn!.get('waitingOnId')).toBe('me');
+        expect(bySection.waitingOn!.get('assigneeId')).toBeNull();
+        expect(bySection.waitingOn!.get('createdById')).toBeNull();
         expect(bySection.watching!.get('assigneeId')).toBeNull();
         expect(bySection.watching!.get('createdById')).toBeNull();
         expect(bySection.created!.get('assigneeId')).toBeNull();
@@ -121,7 +131,7 @@ describe('My Work', () => {
         window.history.replaceState(null, '', '/t/acme/my-work?stateCategory=DONE');
         const { calls } = routes({});
         renderMyWork();
-        await waitFor(() => expect(calls.filter((c) => c.path === '/work-items')).toHaveLength(4));
+        await waitFor(() => expect(calls.filter((c) => c.path === '/work-items')).toHaveLength(5));
         for (const c of calls.filter((x) => x.path === '/work-items')) expect(c.search.get('stateCategory')).toBe('DONE');
         expect(screen.queryByText(/Done and cancelled items are hidden/)).toBeNull();
     });
