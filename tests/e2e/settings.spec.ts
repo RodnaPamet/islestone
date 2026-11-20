@@ -4,7 +4,8 @@
  * first-project steps to create a team (which brings its workflow) and a
  * project, then creates a work item from the Work items page. A second test
  * archives a project behind the typed confirmation and sees its work items
- * refuse changes.
+ * refuse changes. A third creates a project from the Projects page, outside
+ * Settings (decision 57), and sees the page's server list carry it.
  *
  * Written fresh for Islestone. Nothing is seeded through the API: the path
  * under test is the one a person without the API takes.
@@ -118,5 +119,22 @@ test.describe('Settings', () => {
         // Unarchive brings it back.
         await row.getByRole('button', { name: 'Unarchive Runbooks' }).click();
         await expect(row.getByText('Active')).toBeVisible();
+    });
+
+    test('a project is created from the Projects page and the list shows it (decision 57)', async ({ authedPage: page, isolatedTenant }) => {
+        const slug = isolatedTenant.tenantSlug;
+        await page.goto(`/t/${slug}/settings/teams`);
+        await createTeam(page, 'Platform');
+
+        await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Projects', exact: true }).click();
+        await page.waitForURL(`**/t/${slug}/projects`);
+        await createProject(page, 'Gateway', 'gw');
+        const row = page.locator('#projects-table').getByRole('row').filter({ hasText: 'Gateway' });
+        await expect(row.getByText('GW', { exact: true })).toBeVisible();
+        await expect(row.getByText('Platform', { exact: true })).toBeVisible();
+
+        // The server's list has it, not only the page that created it.
+        await page.reload();
+        await expect(page.locator('#projects-table').getByRole('row').filter({ hasText: 'Gateway' })).toBeVisible();
     });
 });
