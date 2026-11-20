@@ -9,9 +9,11 @@
  *
  * Written fresh for Islestone.
  */
-import type { WorkflowStateCategory, WorkItemPriority } from '@prisma/client';
+import type { CustomFieldType, WorkflowStateCategory, WorkItemPriority } from '@prisma/client';
 
-export type { WorkflowStateCategory, WorkItemPriority };
+import type { CustomFieldValueData } from './custom-fields';
+
+export type { CustomFieldType, WorkflowStateCategory, WorkItemPriority };
 
 /** One work item as the list, the board and the sub-items table read it. */
 export interface WorkItemRow {
@@ -34,6 +36,8 @@ export interface WorkItemRow {
     dueDate: string | null;
     version: number;
     labelIds: string[];
+    /** Custom-field values (2.4): field id → value (`toWorkItemDto`). */
+    customFields: Record<string, CustomFieldValueData>;
     createdAt: string;
     updatedAt: string;
 }
@@ -85,6 +89,24 @@ export interface ViewLabel {
     color: string | null;
 }
 
+export interface ViewCustomFieldOption {
+    id: string;
+    name: string;
+    color: string | null;
+    archived: boolean;
+}
+
+/** A project's custom field as the views render it (2.4). */
+export interface ViewCustomField {
+    id: string;
+    projectId: string;
+    name: string;
+    type: CustomFieldType;
+    archived: boolean;
+    /** In option order, archived ones included (they stay on the items that hold them). */
+    options: ViewCustomFieldOption[];
+}
+
 /** What every work-item view renders with: small sets, read once on the server. */
 export interface WorkItemViewConfig {
     projects: ViewProject[];
@@ -93,6 +115,38 @@ export interface WorkItemViewConfig {
     states: ViewState[];
     types: ViewType[];
     labels: ViewLabel[];
+    /** The live custom fields of the page's project (none on a workspace-wide page; 2.4). */
+    customFields: ViewCustomField[];
+}
+
+/** What the views menu offers its viewer (2.4), asked on the server. */
+export interface SavedViewAffordances {
+    savePersonal: boolean;
+    saveShared: boolean;
+    /** Delete someone else's shared view (an admin, for moderation). */
+    moderate: boolean;
+}
+
+/** A saved view as the API returns it (`GET /views`). */
+export interface SavedViewData {
+    id: string;
+    name: string;
+    visibility: 'PERSONAL' | 'SHARED';
+    projectId: string | null;
+    project: { keyPrefix: string; name: string } | null;
+    layout: 'LIST' | 'BOARD' | 'TIMELINE' | 'CALENDAR';
+    config: {
+        filters: Record<string, string[]>;
+        q?: string;
+        sort: string;
+        direction?: 'asc' | 'desc';
+        laneBy: string;
+        columns?: string[];
+    };
+    createdByUserId: string;
+    mine: boolean;
+    createdAt: string;
+    updatedAt: string;
 }
 
 /**
@@ -108,6 +162,8 @@ export interface WorkConfigAffordances {
     editProject: boolean;
     /** Archive and unarchive a project. */
     archiveProject: boolean;
+    /** Define a project's custom fields and options (2.4). */
+    manageCustomFields: boolean;
 }
 
 /** A member a picker offers (`GET /users/assignable`). */

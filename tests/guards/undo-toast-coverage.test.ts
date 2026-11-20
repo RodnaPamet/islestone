@@ -33,6 +33,8 @@ const SITE_CONTRACTS: Record<string, string> = {
     'src/components/work-items/data/use-work-item-mutations.ts': 'work item delete (detail, sheet, board card) and the list bulk delete',
     'src/components/work-items/data/use-work-item-collab.ts': 'comment delete, watcher, label, relation and link removal',
     'src/components/settings/use-undo-delete.ts': 'Settings: team, workflow state and label delete (decision 55)',
+    'src/components/work-items/data/use-saved-views.ts': 'saved view delete (the views menu, 2.4)',
+    'src/components/work-items/data/use-custom-fields.ts': 'custom-field option delete (the field manager, 2.4)',
 };
 
 const HOOK_FILE = 'src/components/ui/hooks/use-toast-with-undo.ts';

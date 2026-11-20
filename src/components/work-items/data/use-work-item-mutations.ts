@@ -34,6 +34,7 @@ import { useMemo } from 'react';
 import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { ApiClientError, apiSend } from '@/lib/data/api-client';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import type { CustomFieldValueData } from '@/lib/work-items/custom-fields';
 import type { WorkItemDetailData, WorkItemRow, WorkflowStateCategory } from '@/lib/work-items/types';
 
 import { useWorkConfig, type WorkConfigIndex } from './use-work-config';
@@ -60,6 +61,7 @@ export function toRow(item: WorkItemRow): WorkItemRow {
         dueDate: item.dueDate,
         version: item.version,
         labelIds: item.labelIds,
+        customFields: item.customFields ?? {},
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
     };
@@ -217,6 +219,21 @@ export function useWorkItemMutations() {
                 const fields: Partial<WorkItemRow> = { stateId, ...(state ? { stateCategory: state.category } : {}) };
                 return write(item, fields, (version) =>
                     apiSend<WorkItemDetailData>('POST', url(`/work-items/${item.id}/state`), { stateId }, { ifMatch: version }),
+                );
+            },
+
+            /**
+             * Set or clear one custom field (2.4): `PUT …/custom-fields/:id`
+             * with `If-Match`, optimistic over the row's `customFields`.
+             * `null` (or an empty list) clears.
+             */
+            setCustomField(item: WorkItemRow, fieldId: string, value: CustomFieldValueData | null) {
+                const next = { ...(item.customFields ?? {}) };
+                const empty = value === null || value === false || (Array.isArray(value) && value.length === 0) || value === '';
+                if (empty) delete next[fieldId];
+                else next[fieldId] = value;
+                return write(item, { customFields: next }, (version) =>
+                    apiSend<WorkItemDetailData>('PUT', url(`/work-items/${item.id}/custom-fields/${fieldId}`), { value: empty ? null : value }, { ifMatch: version }),
                 );
             },
 

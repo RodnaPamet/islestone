@@ -20,9 +20,9 @@ import { gitFiles } from '../helpers/git-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const T = 'src/app/api/t/[tenantSlug]';
-const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels'].map((r) => `${T}/${r}/`);
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views'].map((r) => `${T}/${r}/`);
 
-type Spec = Partial<Record<'GET' | 'POST' | 'PATCH' | 'DELETE', string>>;
+type Spec = Partial<Record<'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', string>>;
 const W = `${T}/work-items`;
 const SPEC: Readonly<Record<string, Spec>> = {
     [`${W}/route.ts`]: { GET: 'work_items.view', POST: 'work_items.create' },
@@ -50,6 +50,14 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${W}/[workItemId]/relations/[relationId]/route.ts`]: { DELETE: 'work_items.edit' },
     [`${W}/[workItemId]/labels/route.ts`]: { POST: 'work_items.edit' },
     [`${W}/[workItemId]/labels/[labelId]/route.ts`]: { DELETE: 'work_items.edit' },
+    // Sub-phase 2.4.
+    [`${W}/[workItemId]/custom-fields/[fieldId]/route.ts`]: { PUT: 'work_items.edit' },
+    [`${T}/projects/[projectId]/custom-fields/route.ts`]: { GET: 'projects.view', POST: 'projects.edit' },
+    [`${T}/projects/[projectId]/custom-fields/[fieldId]/route.ts`]: { PATCH: 'projects.edit' },
+    [`${T}/projects/[projectId]/custom-fields/[fieldId]/options/route.ts`]: { POST: 'projects.edit' },
+    [`${T}/projects/[projectId]/custom-fields/[fieldId]/options/[optionId]/route.ts`]: { PATCH: 'projects.edit', DELETE: 'projects.edit' },
+    [`${T}/views/route.ts`]: { GET: 'views.view', POST: 'views.create' },
+    [`${T}/views/[viewId]/route.ts`]: { GET: 'views.view', PATCH: 'views.edit', DELETE: 'views.edit' },
     [`${T}/projects/route.ts`]: { GET: 'projects.view', POST: 'projects.create' },
     [`${T}/projects/[projectId]/route.ts`]: { GET: 'projects.view', PATCH: 'projects.edit', DELETE: 'projects.archive' },
     [`${T}/projects/[projectId]/archive/route.ts`]: { POST: 'projects.archive' },
@@ -68,7 +76,7 @@ const SPEC: Readonly<Record<string, Spec>> = {
 export function keysByMethod(src: string): Spec {
     const code = codeOf(src);
     const out: Spec = {};
-    const exports = [...code.matchAll(/export const (GET|POST|PATCH|DELETE)\s*=/g)];
+    const exports = [...code.matchAll(/export const (GET|POST|PUT|PATCH|DELETE)\s*=/g)];
     exports.forEach((m, i) => {
         const block = code.slice(m.index!, exports[i + 1]?.index ?? code.length);
         const key = /requirePermission\s*(?:<[^>]*>)?\s*\(\s*'([a-z_]+\.[a-z_]+)'/.exec(block)?.[1];

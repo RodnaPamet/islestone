@@ -128,3 +128,31 @@ enum WorkItemRelationType {
   RELATES
   DUPLICATES
 }
+
+/// The type of a project's custom field (ADR 0002 §7). Fixed at creation:
+/// the value row's composite FK to `CustomField(id, type, …)` keeps it.
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  SELECT
+  MULTI_SELECT
+  DATE
+  PERSON
+  URL
+  CHECKBOX
+}
+
+/// How a saved view renders its rows (ADR 0006 "Layout"). TIMELINE and
+/// CALENDAR are reserved for 3.1 and 3.3: the usecase refuses them until then.
+enum ViewLayout {
+  LIST
+  BOARD
+  TIMELINE
+  CALENDAR
+}
+
+/// Who sees a saved view: its creator only, or every member who sees its scope.
+enum SavedViewVisibility {
+  PERSONAL
+  SHARED
+}

@@ -95,6 +95,10 @@ model Tenant {
   comments           Comment[]
   workItemWatchers   WorkItemWatcher[]
   workItemLinks      WorkItemLink[]
+  customFields       CustomField[]
+  customFieldOptions CustomFieldOption[]
+  customFieldValues  CustomFieldValue[]
+  savedViews         SavedView[]
 
   @@index([organizationId])
 }
@@ -127,8 +131,9 @@ model TenantMembership {
   customRole       TenantCustomRole? @relation(fields: [customRoleId], references: [id])
 
   /// Work items this member is the assignee of (ADR 0003, RESTRICT).
-  assignedWorkItems WorkItem[]        @relation("WorkItemAssignee")
-  watching          WorkItemWatcher[] @relation("WorkItemWatcherMember")
+  assignedWorkItems WorkItem[]         @relation("WorkItemAssignee")
+  watching          WorkItemWatcher[]  @relation("WorkItemWatcherMember")
+  personFieldValues CustomFieldValue[] @relation("CustomFieldValuePerson")
 
   @@unique([tenantId, userId])
   /// The composite an FK from a tenant-scoped child references. `id` alone is
@@ -193,4 +198,5 @@ model User {
   createdWorkItemRelations WorkItemRelation[] @relation("WorkItemRelationCreator")
   createdWorkItemLinks     WorkItemLink[]     @relation("WorkItemLinkCreator")
   comments                 Comment[]          @relation("CommentAuthor")
+  createdSavedViews        SavedView[]        @relation("SavedViewCreator")
 }

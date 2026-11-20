@@ -68,6 +68,10 @@ porting maps now record them (next step 2); the last column says where.
 | 55 | A minimal Settings page for admins (`admin.manage`) to create and edit teams, workflow states, work item types, labels and projects is built now, as its own pull request after 2.3, so a new workspace can get its first project without the API. Decided 2026-11-20, relayed. Applied: a landing page with the first-project steps, and Teams (with each team's workflow states), Work item types, Labels and Projects, on 2.2's routes, gated by `mayOpenSettings` and offering the writes `workConfigAffordances` returns; not offered in this pull request: project delete and restore, key-prefix changes, type icons, colours and order, label colours; a Member still creates a project only through the API (open question; answered by decision 57). | relayed | `src/app/t/[tenantSlug]/(app)/settings/`; `src/components/settings/`; `src/lib/server/settings-pages.server.ts`; `src/app-layer/policies/work-config.policies.ts`; `docs/work-items.md` ("Settings"); `tests/rendered/settings-pages.test.tsx`; `tests/integration/settings-first-project.test.ts`; `tests/e2e/settings.spec.ts` |
 | 56 | The mirrored filter select's no-op URL write on mount (it cancelled navigation the person had started) is fixed upstream in inflect-compliance's `filter-select.tsx` / `filter-context.tsx`; Islestone re-pins the part B mirror once that merges and then drops the work-item views' guard. Decided 2026-11-20, relayed. Applied: inflect-compliance #5778 merged, the part B mirror re-pinned to `f916dfa`, and the work-item views' local guard removed. | relayed | `ui-mirror.json`; `src/components/ui/filter/filter-select.tsx`, `filter-context.tsx`; `src/components/work-items/use-work-item-filter-context.ts`; `tests/rendered/filter-toolbar-no-noop-url-write.test.tsx` |
 | 57 | Anyone who holds `projects.create` can create a project from the Projects page, outside Settings; Settings stays admin-only (`mayOpenSettings`). Decided 2026-11-20, relayed. Applied: the Projects page asks `mayCreateProject(ctx)` on the server and offers a Project button opening the create dialog shared with Settings → Projects (`ProjectCreateDialog`); with no team, the dialog links to Settings → Teams only for a viewer who may open Settings and otherwise asks them to ask an admin. | relayed | `src/app/t/[tenantSlug]/(app)/projects/page.tsx`; `src/components/work-items/ProjectsList.tsx`; `src/components/settings/ProjectCreateDialog.tsx`; `src/components/settings/ProjectsSettings.tsx`; `messages/en.json` (`settings.projects.noTeamsAskAdmin`); `docs/work-items.md` ("Views (2.3)", "Settings"); `tests/rendered/projects-page.test.tsx` |
+| 58 | Custom fields are defined (create, rename, reorder, archive fields and their options) under `projects.edit`, so members can: a field belongs to its project. Kept as built (2.4 map open question 1). Decided 2026-11-20, relayed. Applied. | relayed | `src/app-layer/policies/work-config.policies.ts` (`mayManageCustomFields`); `src/app-layer/usecases/custom-field.ts`; `src/lib/security/route-permissions.ts`; `docs/porting/maps/2.4.md` ("Open questions"); `docs/work-items.md` ("Custom fields and saved views (2.4)") |
+| 59 | A shared saved view is changed only by its creator; a workspace admin (`admin.manage`) may delete someone else's shared view as moderation, audited `SAVED_VIEW_MODERATED`, and never edits it. Kept as built (2.4 map open question 2). Decided 2026-11-20, relayed. Applied. | relayed | `src/app-layer/policies/saved-view.policies.ts`; `src/app-layer/usecases/saved-view.ts`; `tests/integration/custom-fields-and-views.test.ts`; `docs/porting/maps/2.4.md`; `docs/work-items.md` |
+| 60 | VIEWERs may save their own personal views: VIEWER gains `views.create` and `views.edit`, not `views.share`, so a shared view stays with the roles that hold `views.share` (2.4 map open question 9). Decided 2026-11-20, relayed. Applied: `viewerPermissions()` (also the fallback for an unresolvable role, where a personal view is harmless) grants both keys; the saved-view policy, unchanged, keeps a VIEWER to personal views; a refusal past the route's key (saving or switching to a shared view, changing someone else's) is audited `AUTHZ_DENIED` in the usecase; the views menu offers a VIEWER "Save view" with no share box. | relayed | `src/lib/permissions.ts`; `src/app-layer/policies/saved-view.policies.ts`; `src/app-layer/usecases/saved-view.ts`; `tests/unit/permissions.test.ts`; `tests/unit/policies/saved-view-policies.test.ts`; `tests/integration/custom-fields-and-views.test.ts`; `tests/integration/work-items-api.test.ts`; `tests/rendered/custom-fields-and-views.test.tsx`; `CLAUDE.md`; `docs/porting/maps/2.4.md`; `docs/work-items.md` |
+| 61 | A person custom field holds one person. Kept as built (ADR 0002; 2.4 map open question 5). Decided 2026-11-20, relayed. Applied. | relayed | `src/lib/work-items/custom-fields.ts` (`CUSTOM_FIELD_TYPE_SPECS`); `src/app-layer/domain/custom-field.ts`; `docs/porting/maps/2.4.md`; `docs/work-items.md` |
 
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
@@ -605,3 +609,31 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    creating teams, states, types, labels and projects follows as its own pull request;
    the mirrored filter select's no-op URL write is fixed upstream in inflect-compliance
    and re-pinned here.
+
+   **2.4 (saved views and custom fields) has landed** on branch `wt/p24` (not pushed), by
+   `docs/porting/maps/2.4.md` (`PROVENANCE.md`, "Custom fields and saved views";
+   `docs/work-items.md`, "Custom fields and saved views (2.4)"):
+   - Schema: `CustomField`, `CustomFieldOption`, `CustomFieldValue` (one typed column per
+     type, CHECKed; TEXT and URL plaintext by ADR 0002 §7; `projectId` under both composite
+     FKs so a move must drop values), `SavedView`, enums `CustomFieldType`, `ViewLayout`,
+     `SavedViewVisibility`; `WorkItem.priorityRank` (trigger-written) and three sort indexes.
+     Migration `20261120120000_saved_views_and_custom_fields`, RLS and grants on all four
+     tables, two-tenant tests in `work-tables-isolation.test.ts`.
+   - API: field definitions under `/projects/:id/custom-fields` (`projects.edit`), a value at
+     `PUT /work-items/:id/custom-fields/:fieldId` (`work_items.edit`, the version increases,
+     `If-Match` optional), `customFields` on create and on every row, `cf.<fieldId>` list
+     filters, the sorts `created|due|priority|key|cf:<id>` with `dir` (multi-column cursor,
+     nulls last), saved views at `/views` (`views.*`).
+   - UI: the field manager (project page, Settings → Projects), field editors on the detail,
+     field columns in the column gear, field filters, field swimlanes, the Sort picker, the
+     views menu (apply, save, share, update, rename, delete with undo) and the Views page
+     (`?view=<id>` links), which replaced 1.7's placeholder.
+   - Teable `packages/` moved to Adopted (pattern only, pinned at `bd8cfc0`, licence re-read);
+     Kaneo got a 2.4 row. Nothing was copied.
+   Decided by the owner on 2026-11-20 (decisions 58 to 61): fields are defined under
+   `projects.edit`; only a shared view's creator changes it, an admin deletes one for
+   moderation; a VIEWER saves its own personal views (`views.create` and `views.edit`, not
+   `views.share`); a person field holds one person. Still open (the map's "Open questions",
+   each with the default applied): checkbox stores only `true`; field types never change;
+   relative date filters (need a workspace time zone and week start); hard delete of a
+   field; workspace-wide fields.

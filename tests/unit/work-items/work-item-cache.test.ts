@@ -28,6 +28,7 @@ function row(id: string, over: Partial<WorkItemRow> = {}): WorkItemRow {
         dueDate: null,
         version: 1,
         labelIds: [],
+        customFields: {},
         createdAt: '2026-11-01T00:00:00.000Z',
         updatedAt: '2026-11-01T00:00:00.000Z',
         ...over,

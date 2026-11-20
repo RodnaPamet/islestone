@@ -40,8 +40,8 @@ import {
     CommentRepository,
     LIST_ORDERS,
     WorkItemRepository,
+    listSortSpec,
     type KeyHit,
-    type ListOrderName,
     type WorkItemFilters,
     type WorkItemPatch,
 } from '../repositories/WorkItemRepository';
@@ -85,7 +85,22 @@ import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db-context';
 import { ConflictError, badRequest, notFound } from '@/lib/errors/types';
 import { WORK_ITEM_DELETED_LIST_CAP } from '@/lib/list-backfill-cap';
-import { clampLimit, computeKeysetPage, decodeCursor, InvalidCursorError, type CursorPayload, type KeysetOrder } from '@/lib/pagination';
+import {
+    clampLimit,
+    computeKeysetPage,
+    computeSortPage,
+    decodeCursor,
+    decodeSortCursor,
+    encodeSortCursor,
+    InvalidCursorError,
+    type CursorPayload,
+    type KeysetOrder,
+    type SortCursor,
+    type SortSpec,
+} from '@/lib/pagination';
+import { CUSTOM_FIELD_TYPE_SPECS, fieldIdOfOrder } from '@/lib/work-items/custom-fields';
+import { DEFAULT_SORT_DIRECTION, LIST_SORTS, type ListSort, type SortDirection } from '@/lib/work-items/list-sorts';
+import { resolveListCustomFields, writeInitialCustomFieldValues } from './custom-field';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────
@@ -176,10 +191,24 @@ export async function assertParentAllowed(
 
 // ─── List / get / key lookup ──────────────────────────────────────────────
 
-export interface ListWorkItemsQuery extends WorkItemFilters {
+export interface ListWorkItemsQuery extends Omit<WorkItemFilters, 'customFields'> {
     limit?: number;
     cursor?: string;
-    order?: ListOrderName;
+    /** A named sort (`LIST_SORTS`) or `cf:<fieldId>` (2.4). */
+    order?: string;
+    dir?: SortDirection;
+    /** `cf.<fieldId>` conditions, keyed by field id (2.4). */
+    customFields?: Readonly<Record<string, string>>;
+}
+
+function sortCursorOf(raw: string | undefined, spec: SortSpec): SortCursor | undefined {
+    if (!raw) return undefined;
+    try {
+        return decodeSortCursor(raw, spec);
+    } catch (err) {
+        if (err instanceof InvalidCursorError) throw badRequest('Invalid cursor.');
+        throw err;
+    }
 }
 
 /** Resolve a `q` that parses as a key to its project and number (any prefix the project had). */
@@ -190,17 +219,55 @@ async function keyHitFor(db: PrismaTx, ctx: RequestContext, q: string | undefine
     return prefix ? { projectId: prefix.projectId, number: parsed.number } : null;
 }
 
+/**
+ * The live list, one cursor page. Sorts (2.4, docs/pagination.md): a named
+ * sort over the item's own columns, or `cf:<fieldId>`, a custom field's value
+ * (empty values last). `cf.<fieldId>` conditions filter by a field.
+ */
 export async function listWorkItems(ctx: RequestContext, query: ListWorkItemsQuery = {}) {
     assertCanReadWorkItems(ctx);
-    const order = LIST_ORDERS[query.order ?? 'manual'];
+    const order = query.order ?? 'manual';
+    const sortFieldId = fieldIdOfOrder(order);
+    if (!sortFieldId && !(LIST_SORTS as readonly string[]).includes(order)) {
+        throw badRequest(`Invalid order. Must be one of: ${LIST_SORTS.join(', ')}, or cf:<fieldId>.`);
+    }
     const limit = clampLimit(query.limit);
-    const cursor = cursorOf(query.cursor, order);
+    const { customFields: rawConditions, order: _order, dir, cursor: rawCursor, ...filters } = query;
+    void _order;
     return runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const keyHit = await keyHitFor(db, ctx, query.q);
         const today = todayInTz(new Date(), notificationsTz());
-        const rows = await WorkItemRepository.list(db, ctx, v, query, { limit, order, cursor, keyHit, today });
-        const page = computeKeysetPage(rows, limit, order);
+        const { conditions, sortField } = await resolveListCustomFields(db, ctx, rawConditions ?? {}, sortFieldId);
+        const listFilters: WorkItemFilters = { ...filters, customFields: conditions };
+        if (sortField) {
+            const direction = dir ?? 'asc';
+            const valueKind = CUSTOM_FIELD_TYPE_SPECS[sortField.type].column === 'dateValue' ? 'date' : 'string';
+            const cursor = sortCursorOf(rawCursor, {
+                columns: [
+                    { path: ['phase'], direction: 'asc', kind: 'number' },
+                    { path: ['value'], direction, kind: valueKind, nullable: true },
+                ],
+            });
+            if (cursor && cursor.v[0] !== 0 && cursor.v[0] !== 1) throw badRequest('Invalid cursor.');
+            const page = await WorkItemRepository.listByCustomField(db, ctx, v, listFilters, {
+                limit,
+                field: sortField,
+                direction,
+                cursor,
+                keyHit,
+                today,
+            });
+            const items = page.rows.slice(0, limit);
+            return {
+                items: items.map(toWorkItemDto),
+                pageInfo: page.next ? { hasNextPage: true, nextCursor: encodeSortCursor(page.next) } : { hasNextPage: false },
+            };
+        }
+        const sort = listSortSpec(order as ListSort, order === 'manual' ? undefined : (dir ?? DEFAULT_SORT_DIRECTION[order as ListSort]));
+        const cursor = sortCursorOf(rawCursor, sort);
+        const rows = await WorkItemRepository.list(db, ctx, v, listFilters, { limit, sort, cursor, keyHit, today });
+        const page = computeSortPage(rows, limit, sort);
         return { items: page.items.map(toWorkItemDto), pageInfo: page.pageInfo };
     });
 }
@@ -290,6 +357,8 @@ export interface CreateWorkItemInput {
     startDate?: string | null;
     dueDate?: string | null;
     position?: { afterId?: string; beforeId?: string };
+    /** Field id → value, for the project's live custom fields (2.4). */
+    customFields?: Readonly<Record<string, unknown>>;
 }
 
 export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemInput): Promise<WorkItemDto> {
@@ -351,6 +420,7 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
             cancelledAt: effects.cancelledAt ?? null,
         });
         if (labelIds.length > 0) await LabelRepository.attach(db, ctx, row.id, labelIds);
+        const customFieldIds = await writeInitialCustomFieldValues(db, ctx, { id: row.id, projectId: project.id }, input.customFields ?? {});
         const key = formatKey(project.keyPrefix, number);
 
         await logEvent(db, ctx, {
@@ -359,7 +429,13 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
             entityId: row.id,
             details: `Created work item ${key}: ${title}`,
             detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'created', summary: 'WORK_ITEM_CREATED' },
-            metadata: { typeId: type.id, priority: row.priority, projectId: project.id, parentId: row.parentId },
+            metadata: {
+                typeId: type.id,
+                priority: row.priority,
+                projectId: project.id,
+                parentId: row.parentId,
+                ...(customFieldIds.length ? { customFieldIds } : {}),
+            },
         });
 
         await emitAutomationEvent(ctx, {
@@ -386,7 +462,9 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
             await enqueueAssignedEmail(db, ctx, row.assigneeId, [{ id: row.id, title, key, typeName: type.name }]);
         }
         const withLabels = labelIds.length > 0 ? { ...row, labels: labelIds.map((labelId) => ({ labelId })) } : row;
-        return toWorkItemDto(withLabels);
+        if (customFieldIds.length === 0) return toWorkItemDto(withLabels);
+        const reread = await WorkItemRepository.getById(db, ctx, v, row.id);
+        return toWorkItemDto({ ...withLabels, customFieldValues: reread?.customFieldValues ?? [] });
     });
 
     // After the commit: the due reminder and the assignment bell.

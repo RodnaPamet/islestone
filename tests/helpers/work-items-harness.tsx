@@ -44,6 +44,7 @@ export const CONFIG: WorkItemViewConfig = {
         { id: 'lb-ui', teamId: null, name: 'UI', color: null },
         { id: 'lb-api', teamId: TEAM, name: 'API', color: null },
     ],
+    customFields: [],
 };
 
 export const MEMBERS: Member[] = [
@@ -71,6 +72,7 @@ export function row(n: number, over: Partial<WorkItemRow> = {}): WorkItemRow {
         dueDate: null,
         version: 1,
         labelIds: [],
+        customFields: {},
         createdAt: '2026-11-01T10:00:00.000Z',
         updatedAt: '2026-11-01T10:00:00.000Z',
         ...over,

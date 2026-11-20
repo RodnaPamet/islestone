@@ -7,7 +7,8 @@
  * restore and a key-prefix change stay API-only for now (the coordinator's
  * decision for this pull request). The create dialog is `ProjectCreateDialog`,
  * shared with the Projects page (decision 57); with no team yet, it sends the
- * person to Teams first.
+ * person to Teams first. A project's custom fields open from its row (2.4,
+ * `CustomFieldsManager`, offered on `manageCustomFields`).
  *
  * Written fresh for Islestone.
  */
@@ -16,6 +17,7 @@ import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
 import { Button } from '@inflect/ui/components/ui/button';
+import { CustomFieldsManager } from '@/components/work-items/fields/CustomFieldsManager';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { EntityListPage } from '@/components/layout/EntityListPage';
 import { FormField } from '@/components/ui/form-field';
@@ -42,6 +44,7 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
     const [creating, setCreating] = useState(false);
     const [renaming, setRenaming] = useState<SettingsProject | null>(null);
     const [archiving, setArchiving] = useState<SettingsProject | null>(null);
+    const [fieldsOf, setFieldsOf] = useState<SettingsProject | null>(null);
     const [name, setName] = useState('');
     const teamName = useMemo(() => new Map((teams ?? []).map((x) => [x.id, x.name])), [teams]);
 
@@ -55,7 +58,7 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
                 toast.error(refusalText(err, t('common.failed')));
             }
         };
-        const showActions = affordances.editProject || affordances.archiveProject;
+        const showActions = affordances.editProject || affordances.archiveProject || affordances.manageCustomFields;
         return createColumns<SettingsProject>([
             {
                 id: 'name',
@@ -88,6 +91,15 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
                                                   setName(project.name);
                                                   setRenaming(project);
                                               }}
+                                          />
+                                      )}
+                                      {affordances.manageCustomFields && !project.archivedAt && (
+                                          <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              text={t('projects.fields')}
+                                              aria-label={t('projects.fieldsOf', { name: project.name })}
+                                              onClick={() => setFieldsOf(project)}
                                           />
                                       )}
                                       {affordances.archiveProject &&
@@ -190,6 +202,14 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
                     <Input id="project-name-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} autoFocus />
                 </FormField>
             </SettingsFormModal>
+            {fieldsOf && (
+                <CustomFieldsManager
+                    projectId={fieldsOf.id}
+                    projectName={fieldsOf.name}
+                    open
+                    onOpenChange={(open) => !open && setFieldsOf(null)}
+                />
+            )}
             <TypedConfirmModal
                 open={archiving !== null}
                 onOpenChange={(v) => !v && setArchiving(null)}

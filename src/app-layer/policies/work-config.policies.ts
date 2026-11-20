@@ -50,6 +50,17 @@ export function mayEditProject(ctx: WorkConfigViewer): boolean {
     return ctx.permissions.canWrite && granted(ctx, (p) => p.projects?.edit);
 }
 
+/**
+ * Define a project's custom fields and their options (sub-phase 2.4). A
+ * field is part of its project (ADR 0006: a project has "its own key prefix
+ * and custom fields"), so the key is `projects.edit`, the one re-prefixing
+ * takes. Owner question (docs/porting/maps/2.4.md, open question 1):
+ * `admin.manage` instead.
+ */
+export function mayManageCustomFields(ctx: WorkConfigViewer): boolean {
+    return mayEditProject(ctx);
+}
+
 export function mayArchiveProject(ctx: WorkConfigViewer): boolean {
     return ctx.permissions.canWrite && granted(ctx, (p) => p.projects?.archive);
 }
@@ -65,6 +76,7 @@ export function workConfigAffordances(ctx: WorkConfigViewer): WorkConfigAffordan
         createProject: mayCreateProject(ctx),
         editProject: mayEditProject(ctx),
         archiveProject: mayArchiveProject(ctx),
+        manageCustomFields: mayManageCustomFields(ctx),
     };
 }
 
@@ -98,5 +110,12 @@ export function assertCanEditProject(ctx: RequestContext) {
 export function assertCanArchiveProject(ctx: RequestContext) {
     if (!mayArchiveProject(ctx)) {
         throw forbidden('You do not have permission to archive or delete projects.');
+    }
+}
+
+/** Create, rename, reorder and archive a project's custom fields and options. */
+export function assertCanManageCustomFields(ctx: RequestContext) {
+    if (!mayManageCustomFields(ctx)) {
+        throw forbidden('You do not have permission to change this project\'s fields.');
     }
 }

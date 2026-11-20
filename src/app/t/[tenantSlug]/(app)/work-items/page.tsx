@@ -11,11 +11,11 @@ import { workItemPageContext } from '@/lib/server/work-item-pages.server';
  */
 export default async function WorkItemsPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
     const { tenantSlug } = await params;
-    const { config } = await workItemPageContext(tenantSlug);
+    const { config, savedViews } = await workItemPageContext(tenantSlug);
     const t = await getTranslations('workItems');
     return (
         <WorkConfigProvider config={config}>
-            <WorkItemsView scope={{}} title={t('list.title')} viewKey="workspace" />
+            <WorkItemsView scope={{}} title={t('list.title')} viewKey="workspace" savedViews={savedViews} />
         </WorkConfigProvider>
     );
 }

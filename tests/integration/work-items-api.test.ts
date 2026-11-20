@@ -6,7 +6,10 @@
  *     labels is driven here, and the suite fails if one is not
  *     (the population is read from git).
  *   - A VIEWER is refused every write with a 403 and an `AUTHZ_DENIED` audit
- *     row; a MEMBER is admitted.
+ *     row; a MEMBER is admitted. The one write a VIEWER makes is its own
+ *     PERSONAL saved view (owner decision 60), driven on its own below; the
+ *     matrix drives the saved-view routes at a shared view, which it is refused.
+ *     (Also a self-watch, driven on its own.)
  *   - A GUEST membership (written with the raw client: GUEST is not
  *     assignable until 8.4) sees NO item through any read route: the list is
  *     empty, metrics are zero, and every per-item read is a 404.
@@ -37,6 +40,8 @@ import { createLabel } from '@/app-layer/usecases/label';
 import { addWorkItemRelation } from '@/app-layer/usecases/work-item-relations';
 import { verifyAuditChain } from '@/lib/audit';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
+import { createCustomField } from '@/app-layer/usecases/custom-field';
+import { createSavedView } from '@/app-layer/usecases/saved-view';
 
 import { gitFiles } from '../helpers/git-files';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
@@ -47,7 +52,7 @@ import { DB_AVAILABLE } from './db-helper';
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const TAG = `wapi${Date.now().toString(36)}`;
 const ROOT = path.resolve(__dirname, '../..');
-const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'users'];
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'users', 'views'];
 
 type Handler = (req: NextRequest, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>;
 
@@ -64,12 +69,15 @@ interface Ids {
     type: string;
     member: string;
     key: string;
+    field: string;
+    option: string;
+    view: string;
 }
 
 /** One request per route and method: the template, a body, and whether it reads an item. */
 interface Call {
     file: string;
-    method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
     path: (i: Ids) => string;
     params: (i: Ids) => Record<string, string>;
     body?: (i: Ids) => unknown;
@@ -148,6 +156,21 @@ const CALLS: Call[] = [
     { file: 'src/app/api/t/[tenantSlug]/labels/route.ts', method: 'POST', path: () => '/labels', params: (i) => P(i), body: () => ({ name: `Label ${Math.random()}` }), write: true, key: 'admin.manage' },
     { file: 'src/app/api/t/[tenantSlug]/labels/[labelId]/route.ts', method: 'PATCH', path: (i) => `/labels/${i.label}`, params: (i) => P(i, { labelId: i.label }), body: () => ({ color: '#00ff00' }), write: true, key: 'admin.manage' },
     { file: 'src/app/api/t/[tenantSlug]/labels/[labelId]/route.ts', method: 'DELETE', path: () => '/labels/none', params: (i) => P(i, { labelId: 'none' }), write: true, key: 'admin.manage' },
+    // Sub-phase 2.4: custom fields and saved views.
+    { file: `${W}/[workItemId]/custom-fields/[fieldId]/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/custom-fields/${i.field}`, params: (i) => P(i, { workItemId: i.other, fieldId: i.field }), body: (i) => ({ value: i.option }), write: true, key: 'work_items.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/custom-fields/route.ts', method: 'GET', path: (i) => `/projects/${i.project}/custom-fields`, params: (i) => P(i, { projectId: i.project }), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/custom-fields/route.ts', method: 'POST', path: (i) => `/projects/${i.project}/custom-fields`, params: (i) => P(i, { projectId: i.project }), body: () => ({ name: `Field ${Math.random()}`, type: 'NUMBER' }), write: true, key: 'projects.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/custom-fields/[fieldId]/route.ts', method: 'PATCH', path: (i) => `/projects/${i.project}/custom-fields/${i.field}`, params: (i) => P(i, { projectId: i.project, fieldId: i.field }), body: () => ({ name: 'Stage' }), write: true, key: 'projects.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/custom-fields/[fieldId]/options/route.ts', method: 'POST', path: (i) => `/projects/${i.project}/custom-fields/${i.field}/options`, params: (i) => P(i, { projectId: i.project, fieldId: i.field }), body: () => ({ name: `Opt ${Math.random()}` }), write: true, key: 'projects.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/custom-fields/[fieldId]/options/[optionId]/route.ts', method: 'PATCH', path: (i) => `/projects/${i.project}/custom-fields/${i.field}/options/${i.option}`, params: (i) => P(i, { projectId: i.project, fieldId: i.field, optionId: i.option }), body: () => ({ color: '#123456' }), write: true, key: 'projects.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/custom-fields/[fieldId]/options/[optionId]/route.ts', method: 'DELETE', path: (i) => `/projects/${i.project}/custom-fields/${i.field}/options/none`, params: (i) => P(i, { projectId: i.project, fieldId: i.field, optionId: 'none' }), write: true, key: 'projects.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/views/route.ts', method: 'GET', path: () => '/views', params: (i) => P(i), write: false, key: 'views.view' },
+    // A SHARED view: a VIEWER holds views.create but not views.share (decision 60), so the usecase refuses it, audited.
+    { file: 'src/app/api/t/[tenantSlug]/views/route.ts', method: 'POST', path: () => '/views', params: (i) => P(i), body: () => ({ name: 'Ours', visibility: 'SHARED', config: { filters: {} } }), write: true, key: 'views.create' },
+    { file: 'src/app/api/t/[tenantSlug]/views/[viewId]/route.ts', method: 'GET', path: (i) => `/views/${i.view}`, params: (i) => P(i, { viewId: i.view }), write: false, key: 'views.view' },
+    { file: 'src/app/api/t/[tenantSlug]/views/[viewId]/route.ts', method: 'PATCH', path: (i) => `/views/${i.view}`, params: (i) => P(i, { viewId: i.view }), body: () => ({ name: 'Renamed view' }), write: true, key: 'views.edit' },
+    // The MEMBER's shared view: a VIEWER is not its creator and holds no views.share (decisions 59, 60).
+    { file: 'src/app/api/t/[tenantSlug]/views/[viewId]/route.ts', method: 'DELETE', path: (i) => `/views/${i.view}`, params: (i) => P(i, { viewId: i.view }), write: true, key: 'views.edit' },
 ];
 
 function request(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): NextRequest {
@@ -202,7 +225,12 @@ describeFn('the work-item API', () => {
         const comment = await addComment(ctxFor('MEMBER'), item.id, { body: 'a comment' });
         const label = await createLabel(owner, { name: 'api label' });
         const relation = await addWorkItemRelation(owner, item.id, { type: 'BLOCKS', toId: other.id });
+        const field = await createCustomField(owner, project.id, { name: 'Stage gate', type: 'SELECT', options: [{ name: 'Alpha' }, { name: 'Beta' }] });
+        const view = await createSavedView(ctxFor('MEMBER'), { name: 'Shared by a member', visibility: 'SHARED', layout: 'LIST', config: { filters: {}, sort: 'manual', laneBy: 'none' } });
         Object.assign(ids, {
+            field: field.id,
+            option: field.options[0]!.id,
+            view: view.id,
             item: item.id,
             other: other.id,
             comment: comment.id,
@@ -230,7 +258,7 @@ describeFn('the work-item API', () => {
         for (const f of files) {
             // eslint-disable-next-line @typescript-eslint/no-require-imports
             const src = require('node:fs').readFileSync(path.join(ROOT, f), 'utf8') as string;
-            for (const m of ['GET', 'POST', 'PATCH', 'DELETE'] as const) {
+            for (const m of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const) {
                 if (new RegExp(`export const ${m}\\b`).test(src)) {
                     expect({ f, m, driven: CALLS.some((c) => c.file === f && c.method === m) }).toEqual({ f, m, driven: true });
                 }
@@ -287,6 +315,39 @@ describeFn('the work-item API', () => {
         expect(ok.status).toBe(200);
         expect(ok.body).toMatchObject({ title: 'renamed via api', version: details.version + 1 });
         expect((await call('OWNER', patch, { 'if-match': 'banana' })).status).toBe(400);
+    });
+
+    it('a VIEWER saves, renames and deletes its own personal view through the API, and switching it to SHARED is an audited 403 (decision 60)', async () => {
+        const viewsRoute = 'src/app/api/t/[tenantSlug]/views/route.ts';
+        const viewRoute = 'src/app/api/t/[tenantSlug]/views/[viewId]/route.ts';
+        const created = await call('VIEWER', {
+            file: viewsRoute,
+            method: 'POST',
+            path: () => '/views',
+            params: (i) => P(i),
+            body: () => ({ name: 'Viewer view', config: { filters: {} } }),
+            write: true,
+            key: 'views.create',
+        });
+        expect(created.status).toBe(201);
+        expect(created.body).toMatchObject({ name: 'Viewer view', visibility: 'PERSONAL', mine: true });
+        const viewId = created.body.id as string;
+        const one = (method: 'PATCH' | 'DELETE', body?: unknown): Call => ({
+            file: viewRoute,
+            method,
+            path: () => `/views/${viewId}`,
+            params: (i) => P(i, { viewId }),
+            body: body === undefined ? undefined : () => body,
+            write: true,
+            key: 'views.edit',
+        });
+        expect(await call('VIEWER', one('PATCH', { name: 'Viewer view, renamed' }))).toMatchObject({ status: 200, body: { name: 'Viewer view, renamed', visibility: 'PERSONAL' } });
+        const deniedBefore = await prisma.auditLog.count({ where: { tenantId, action: 'AUTHZ_DENIED', entityId: viewId } });
+        expect((await call('VIEWER', one('PATCH', { visibility: 'SHARED' }))).status).toBe(403);
+        expect(await prisma.auditLog.count({ where: { tenantId, action: 'AUTHZ_DENIED', entityId: viewId } })).toBe(deniedBefore + 1);
+        expect((await call('VIEWER', one('DELETE'))).status).toBe(200);
+        const actions = (await prisma.auditLog.findMany({ where: { tenantId, entityId: viewId, userId: users.VIEWER! }, select: { action: true } })).map((r) => r.action);
+        expect(actions).toEqual(expect.arrayContaining(['SAVED_VIEW_CREATED', 'SAVED_VIEW_UPDATED', 'SAVED_VIEW_DELETED']));
     });
 
     it('a VIEWER may watch an item themselves, but adding someone else is an audited 403', async () => {

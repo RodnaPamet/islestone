@@ -144,6 +144,7 @@ describe('the Settings affordances (decision 55)', () => {
                 createProject: true,
                 editProject: true,
                 archiveProject: true,
+                manageCustomFields: true,
             });
         }
     });
@@ -153,7 +154,7 @@ describe('the Settings affordances (decision 55)', () => {
         perms.admin.manage = false;
         perms.projects.archive = false;
         const ctx = makeRequestContext('ADMIN', { appPermissions: perms });
-        expect(workConfigAffordances(ctx)).toEqual({ manageWorkConfig: false, createProject: true, editProject: true, archiveProject: false });
+        expect(workConfigAffordances(ctx)).toEqual({ manageWorkConfig: false, createProject: true, editProject: true, archiveProject: false, manageCustomFields: true });
         expect(() => assertCanManageWorkConfig(ctx)).toThrow(expect.objectContaining({ status: 403 }));
     });
 });

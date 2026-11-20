@@ -104,7 +104,7 @@ describeFn('Settings: the first-project path and the affordances', () => {
 
     it('offers an Admin without admin.manage exactly the writes the usecases admit', async () => {
         const offered = workConfigAffordances(restrictedAdmin);
-        expect(offered).toEqual({ manageWorkConfig: false, createProject: true, editProject: true, archiveProject: true });
+        expect(offered).toEqual({ manageWorkConfig: false, createProject: true, editProject: true, archiveProject: true, manageCustomFields: true });
 
         const [team] = await listTeams(restrictedAdmin);
         await expect(createTeam(restrictedAdmin, { name: 'Nope' })).rejects.toMatchObject({ status: 403 });

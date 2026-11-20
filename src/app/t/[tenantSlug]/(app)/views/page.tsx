@@ -1,13 +1,13 @@
 import { getTranslations } from 'next-intl/server';
 
-import { PlaceholderPage } from '@/components/layout/PlaceholderPage';
+import { ViewsList } from '@/components/views/ViewsList';
 
 /**
- * Views: a placeholder until its feature arrives (see `PlaceholderPage`).
- * The layout has already admitted the member.
+ * Views (sub-phase 2.4): the saved views the member can see, each opening
+ * its page with the view applied. Replaces 1.7's placeholder. The layout has
+ * already admitted the member; the API decides what each one sees.
  */
 export default async function ViewsPage() {
     const tNav = await getTranslations('nav');
-    const t = await getTranslations('placeholders');
-    return <PlaceholderPage title={tNav('views')} emptyTitle={t('title')} body={t('views')} testId="placeholder-views" />;
+    return <ViewsList title={tNav('views')} />;
 }

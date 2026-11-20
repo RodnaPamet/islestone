@@ -52,6 +52,11 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     Comment: 'tests/integration/work-tables-isolation.test.ts',
     WorkItemWatcher: 'tests/integration/work-tables-isolation.test.ts',
     WorkItemLink: 'tests/integration/work-tables-isolation.test.ts',
+    // Sub-phase 2.4.
+    CustomField: 'tests/integration/work-tables-isolation.test.ts',
+    CustomFieldOption: 'tests/integration/work-tables-isolation.test.ts',
+    CustomFieldValue: 'tests/integration/work-tables-isolation.test.ts',
+    SavedView: 'tests/integration/work-tables-isolation.test.ts',
 };
 
 /** Models proven only structurally, pending a two-tenant test. Empty, and should stay so. */

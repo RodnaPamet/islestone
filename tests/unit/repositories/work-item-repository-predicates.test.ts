@@ -10,7 +10,7 @@
  * into projects it was never granted. Each method runs against a recording
  * client here and its `where` is inspected.
  */
-import { WorkItemRepository, CommentRepository } from '@/app-layer/repositories/WorkItemRepository';
+import { WorkItemRepository, CommentRepository, listSortSpec } from '@/app-layer/repositories/WorkItemRepository';
 import type { ProjectVisibility } from '@/app-layer/policies/project-visibility';
 import type { PrismaTx } from '@/lib/db-context';
 
@@ -35,6 +35,7 @@ function recorder() {
             groupBy: op('groupBy', []),
         },
         comment: { findMany: op('comment.findMany', []) },
+        customFieldValue: { findMany: op('customFieldValue.findMany', [{ id: 'v1', workItemId: 'w1', fieldType: 'NUMBER', numberValue: '2', textValue: null, dateValue: null, option: null }]) },
     } as unknown as PrismaTx;
     return { db, calls };
 }
@@ -49,14 +50,27 @@ const deletedPredicate = (where: Record<string, unknown>) => JSON.stringify(wher
 
 describe('WorkItemRepository — every person-facing method carries deletedAt AND visibility', () => {
     const cases: Array<[string, (db: PrismaTx) => Promise<unknown>]> = [
-        ['list', (db) => WorkItemRepository.list(db, ctx, GUEST, {}, { limit: 10, order: { column: 'sortKey', direction: 'asc', kind: 'string' } })],
+        ['list', (db) => WorkItemRepository.list(db, ctx, GUEST, {}, { limit: 10, sort: listSortSpec('manual') })],
         [
             'list (My Work filters)',
             (db) =>
                 WorkItemRepository.list(db, ctx, GUEST, { createdById: 'u-1', watching: 'me', due: 'soon' }, {
                     limit: 10,
-                    order: { column: 'sortKey', direction: 'asc', kind: 'string' },
+                    sort: listSortSpec('manual'),
                 }),
+        ],
+        ['list (every 2.4 sort)', (db) => Promise.all((['updated', 'created', 'due', 'priority', 'key'] as const).map((s) => WorkItemRepository.list(db, ctx, GUEST, {}, { limit: 10, sort: listSortSpec(s) })))],
+        [
+            'list (a custom-field filter)',
+            (db) =>
+                WorkItemRepository.list(db, ctx, GUEST, { customFields: [{ field: { id: 'f1', type: 'SELECT' }, condition: { op: 'any', ids: ['o1'], orEmpty: true } }] }, {
+                    limit: 10,
+                    sort: listSortSpec('manual'),
+                }),
+        ],
+        [
+            'listByCustomField (both phases and the row read)',
+            (db) => WorkItemRepository.listByCustomField(db, ctx, GUEST, {}, { limit: 10, field: { id: 'f1', type: 'NUMBER' }, direction: 'asc' }),
         ],
         ['listDeleted', (db) => WorkItemRepository.listDeleted(db, ctx, GUEST)],
         ['getById', (db) => WorkItemRepository.getById(db, ctx, GUEST, 'w1')],

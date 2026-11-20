@@ -49,6 +49,7 @@ import {
     writeCustomRoleInTx,
 } from './custom-roles';
 import { lockTenantOwners } from './tenant-owner-lock';
+import { clearPersonValuesInTx } from './custom-field';
 
 // Safety cap on the two whole-tenant membership scans below. Both feed
 // surfaces that legitimately want every member (the admin roster, and the
@@ -573,6 +574,21 @@ export async function removeTenantMember(
                 details: `Unassigned ${unassigned} work item(s) before removing a member`,
                 detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'updated', changedFields: ['assigneeId'] },
                 metadata: { unassignedCount: unassigned },
+            });
+        }
+
+        // Sub-phase 2.4: person custom-field values naming them go too (the
+        // value's member FK is NO ACTION, as the assignee's is RESTRICT), and
+        // those items' versions increase.
+        const clearedPersonValues = await clearPersonValuesInTx(db, ctx, membership.userId);
+        if (clearedPersonValues > 0) {
+            await logEvent(db, ctx, {
+                action: 'CUSTOM_FIELD_VALUES_CLEARED_ON_MEMBER_REMOVAL',
+                entityType: 'TenantMembership',
+                entityId: membership.id,
+                details: `Cleared ${clearedPersonValues} person field value(s) before removing a member`,
+                detailsJson: { category: 'entity_lifecycle', entityName: 'CustomFieldValue', operation: 'deleted' },
+                metadata: { clearedCount: clearedPersonValues },
             });
         }
 

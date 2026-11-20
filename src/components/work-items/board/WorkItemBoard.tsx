@@ -38,6 +38,9 @@ import { useWorkItemList, type WorkItemListResult } from '../data/use-work-item-
 import { useWorkItemMutations } from '../data/use-work-item-mutations';
 import {
     MOVABLE_LANES,
+    isMovableFieldLane,
+    laneFieldId,
+    type BuiltInLaneBy,
     laneKeyOf,
     lanesOf,
     nextTarget,
@@ -239,9 +242,21 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
     const columnName = useCallback((c: BoardColumnDef) => c.name ?? tBoard(`category.${c.category}`), [tBoard]);
     const columnNames = useMemo(() => columns.map(columnName), [columns, columnName]);
 
-    const laneCtx = useMemo(() => ({ labelOrder: config.labels.map((l) => l.id) }), [config]);
+    const laneField = useMemo(() => {
+        const id = laneFieldId(laneBy);
+        return id ? (config.customFields ?? []).find((f) => f.id === id) ?? null : null;
+    }, [laneBy, config]);
+    const laneCtx = useMemo(
+        () => ({ labelOrder: config.labels.map((l) => l.id), fields: new Map((config.customFields ?? []).map((f) => [f.id, f])) }),
+        [config],
+    );
     const allRows = useMemo(() => columns.flatMap((c) => columnData[c.id]?.items ?? []), [columns, columnData]);
     const laneOrder = useMemo(() => {
+        if (laneField) {
+            if (laneField.type === 'PERSON') return members.map((m) => m.id);
+            if (laneField.type === 'CHECKBOX') return ['checked'];
+            return laneField.options.map((o) => o.id);
+        }
         switch (laneBy) {
             case 'assignee':
                 return members.map((m) => m.id);
@@ -256,12 +271,18 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
             default:
                 return [];
         }
-    }, [laneBy, members, config]);
+    }, [laneBy, members, config, laneField]);
     const lanes = useMemo(() => lanesOf(allRows, laneBy, laneCtx, laneOrder), [allRows, laneBy, laneCtx, laneOrder]);
-    const lanesMovable = MOVABLE_LANES.has(laneBy) && (laneBy !== 'assignee' || canAssign);
+    const lanesMovable = laneField ? isMovableFieldLane(laneField.type) && canEdit : MOVABLE_LANES.has(laneBy) && (laneBy !== 'assignee' || canAssign);
 
     const laneLabel = (key: string): string => {
-        switch (laneBy) {
+        if (laneField) {
+            if (!key) return tBoard('customFields.noValue');
+            if (laneField.type === 'PERSON') return memberLabel(memberById.get(key)) ?? tBoard('detail.formerMember');
+            if (laneField.type === 'CHECKBOX') return tBoard('customFields.checked');
+            return laneField.options.find((o) => o.id === key)?.name ?? tBoard('board.noValue');
+        }
+        switch (laneBy as BuiltInLaneBy) {
             case 'none':
                 return '';
             case 'assignee':
@@ -313,7 +334,8 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
         const laneKey = lanes[lane] ?? '';
         if (lane !== currentLane && lanesMovable) {
             const moved = { ...row, stateId, ...(placement.sortKey ? { sortKey: placement.sortKey } : {}) };
-            if (laneBy === 'assignee') void mutations.assign(moved, laneKey || null);
+            if (laneField) void mutations.setCustomField(moved, laneField.id, laneField.type === 'CHECKBOX' ? laneKey === 'checked' : laneKey || null);
+            else if (laneBy === 'assignee') void mutations.assign(moved, laneKey || null);
             else if (laneBy === 'priority') void mutations.updateFields(moved, { priority: laneKey as WorkItemRow['priority'] });
             else if (laneBy === 'type' && laneKey) void mutations.updateFields(moved, { typeId: laneKey });
         }

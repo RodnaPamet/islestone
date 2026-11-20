@@ -14,10 +14,11 @@
  * loaded rows are a subset, and an option list built from them would shrink
  * as pages load (the map's risk 5).
  */
-import { CalendarDays, CircleDotted, Cube, Flag, Folder, Tag, UserCheck } from '@inflect/ui/components/ui/icons/nucleo';
+import { CalendarDays, CircleDotted, Cube, Flag, Folder, BulletList, Tag, UserCheck } from '@inflect/ui/components/ui/icons/nucleo';
 import { createFilterDefs, type FilterDefInput } from '@/components/ui/filter';
 import { WORKFLOW_STATE_CATEGORIES } from '@/app-layer/domain/workflow-state';
 import { PRIORITY_ORDER } from '@/lib/work-items/presentation';
+import { NO_VALUE, customFieldFilterKey } from '@/lib/work-items/custom-fields';
 import type { Member } from '@/lib/work-items/types';
 
 import type { WorkConfigIndex } from './data/use-work-config';
@@ -104,6 +105,39 @@ export function workItemFilterDefsInput(config: WorkConfigIndex, members: readon
             { value: 'next7d', label: t('filters.next7d') },
         ],
     };
+    // Sub-phase 2.4: one filter per live custom field of the page's project
+    // (the config carries fields only on a project's page). Keys `cf.<id>`;
+    // `customFieldFilterParam` turns the values into the list query.
+    for (const field of config.customFields ?? []) {
+        if (field.archived) continue;
+        const key = customFieldFilterKey(field.id);
+        const noValue = { value: NO_VALUE, label: t('customFields.noValue') };
+        if (field.type === 'SELECT' || field.type === 'MULTI_SELECT') {
+            defs[key] = { label: field.name, icon: BulletList, multiple: true, options: [...field.options.map((o) => ({ value: o.id, label: o.name })), noValue] };
+        } else if (field.type === 'PERSON') {
+            defs[key] = { label: field.name, icon: UserCheck, multiple: true, options: [...members.map((m) => ({ value: m.id, label: m.name?.trim() || m.email })), noValue] };
+        } else if (field.type === 'CHECKBOX') {
+            defs[key] = {
+                label: field.name,
+                icon: BulletList,
+                singleSelect: true,
+                options: [
+                    { value: 'checked', label: t('customFields.checked') },
+                    { value: 'unchecked', label: t('customFields.unchecked') },
+                ],
+            };
+        } else {
+            defs[key] = {
+                label: field.name,
+                icon: BulletList,
+                singleSelect: true,
+                options: [
+                    { value: 'set', label: t('customFields.hasValue') },
+                    { value: 'empty', label: t('customFields.noValue') },
+                ],
+            };
+        }
+    }
     return defs;
 }
 

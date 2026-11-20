@@ -46,15 +46,55 @@ export function parseDateOnly(s: string | null | undefined): Date | null {
     return s ? new Date(`${s}T00:00:00.000Z`) : null;
 }
 
+/**
+ * An item's custom-field values as the API returns them (sub-phase 2.4):
+ * field id → a string (text, URL), a number, a `YYYY-MM-DD` date, `true`, an
+ * option id (select), option ids (multi-select) or a user id (person).
+ */
+export function customFieldsOf(values: WorkItemListRow['customFieldValues'] | undefined): Record<string, string | number | boolean | string[]> {
+    const out: Record<string, string | number | boolean | string[]> = {};
+    for (const v of values ?? []) {
+        switch (v.fieldType) {
+            case 'TEXT':
+            case 'URL':
+                if (v.textValue !== null) out[v.fieldId] = v.textValue;
+                break;
+            case 'NUMBER':
+                if (v.numberValue !== null) out[v.fieldId] = Number(v.numberValue);
+                break;
+            case 'DATE':
+                if (v.dateValue) out[v.fieldId] = dateOnly(v.dateValue)!;
+                break;
+            case 'CHECKBOX':
+                out[v.fieldId] = true;
+                break;
+            case 'SELECT':
+                if (v.optionId) out[v.fieldId] = v.optionId;
+                break;
+            case 'MULTI_SELECT': {
+                const held = out[v.fieldId];
+                if (v.optionId) out[v.fieldId] = Array.isArray(held) ? [...held, v.optionId] : [v.optionId];
+                break;
+            }
+            case 'PERSON':
+                if (v.userId) out[v.fieldId] = v.userId;
+                break;
+        }
+    }
+    return out;
+}
+
 /** The list and response shape of a work item. */
 export function toWorkItemDto(row: WorkItemListRow) {
-    const { project, labels, startDate, dueDate, ...rest } = row;
+    const { project, labels, startDate, dueDate, customFieldValues, priorityRank: _rank, ...rest } = row;
+    void _rank;
     return {
         ...rest,
         key: formatKey(project.keyPrefix, row.number),
         labelIds: labels.map((l) => l.labelId),
         startDate: dateOnly(startDate),
         dueDate: dateOnly(dueDate),
+        customFields: customFieldsOf(customFieldValues),
     };
 }
 
