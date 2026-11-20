@@ -31,8 +31,11 @@ import { CustomFieldsManager } from '@/components/work-items/fields/CustomFields
 import { WorkItemDetail } from '@/components/work-items/WorkItemDetail';
 import { WorkItemsView } from '@/components/work-items/WorkItemsView';
 import { ViewsList } from '@/components/views/ViewsList';
+import { savedViewAffordances } from '@/app-layer/policies/saved-view.policies';
+import { getPermissionsForRole } from '@/lib/permissions';
 import type { SavedViewData, ViewCustomField, WorkItemViewConfig } from '@/lib/work-items/types';
 
+import { makeRequestContext } from '../helpers/make-context';
 import { CONFIG, detail, installFetch, MEMBERS, page, PROJECT, renderWorkspace, row, TEAM, type Recorded } from '../helpers/work-items-harness';
 
 const STAGE: ViewCustomField = {
@@ -155,6 +158,41 @@ describe('the list with custom fields and saved views', () => {
         expect(await screen.findByText('View Alpha items deleted')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
         expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
+    });
+
+    it('a VIEWER is offered a personal save, never a share (decision 60): the dialog has no share box and posts PERSONAL', async () => {
+        // The affordances a VIEWER's own permission set yields on the server.
+        const viewerOffer = savedViewAffordances(makeRequestContext('VIEWER', { appPermissions: getPermissionsForRole('VIEWER') }));
+        expect(viewerOffer).toEqual({ savePersonal: true, saveShared: false, moderate: false });
+        const { calls } = listRoutes({ 'POST /views': { status: 201, body: { ...VIEW, id: 'v-3', name: 'Just mine' } } });
+        renderWorkspace(<WorkItemsView scope={{ projectId: PROJECT, teamId: TEAM }} title="Islands" viewKey="cf-test-3" savedViews={viewerOffer} />, {
+            config: WITH_FIELDS,
+            role: 'VIEWER',
+        });
+        await screen.findByRole('link', { name: 'Item 1' });
+        fireEvent.click(screen.getByRole('button', { name: 'Save view' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Save view' });
+        expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument();
+        fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: 'Just mine' } });
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+        await waitFor(() => expect(calls.some((c) => c.method === 'POST' && c.path === '/views')).toBe(true));
+        expect(calls.find((c) => c.method === 'POST' && c.path === '/views')?.body).toMatchObject({ name: 'Just mine', visibility: 'PERSONAL' });
+        expect(screen.queryByRole('button', { name: 'Fields' })).not.toBeInTheDocument();
+    });
+
+    it('a VIEWER renames its own personal view without a share box', async () => {
+        listRoutes();
+        const viewerOffer = savedViewAffordances(makeRequestContext('VIEWER', { appPermissions: getPermissionsForRole('VIEWER') }));
+        renderWorkspace(<WorkItemsView scope={{ projectId: PROJECT, teamId: TEAM }} title="Islands" viewKey="cf-test-4" savedViews={viewerOffer} />, {
+            config: WITH_FIELDS,
+            role: 'VIEWER',
+        });
+        await screen.findByRole('link', { name: 'Item 1' });
+        fireEvent.click(screen.getByRole('combobox', { name: 'Views' }));
+        fireEvent.click(await screen.findByRole('option', { name: 'Alpha items' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Rename view' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Rename view' });
+        expect(within(dialog).queryByRole('checkbox')).not.toBeInTheDocument();
     });
 
     it('offers no save to a viewer who may not save views', async () => {

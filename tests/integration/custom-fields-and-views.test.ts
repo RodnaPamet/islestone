@@ -373,8 +373,34 @@ describeFn('custom fields and saved views', () => {
             expect((await listSavedViews(viewer, undefined)).views.map((v) => v.id)).toContain(shared.id);
         });
 
-        it('a VIEWER cannot save; only the creator changes a view; an admin may delete a shared one, audited as moderation', async () => {
-            await expect(createSavedView(viewer, { name: 'V', visibility: 'PERSONAL', layout: 'LIST', config })).rejects.toMatchObject({ status: 403 });
+        it('a VIEWER saves and edits its own personal view, audited, and is refused a shared one (decision 60)', async () => {
+            const own = await createSavedView(viewer, { name: 'Viewer only', visibility: 'PERSONAL', layout: 'LIST', config });
+            expect(own).toMatchObject({ visibility: 'PERSONAL', mine: true, createdByUserId: viewer.userId });
+            expect((await listSavedViews(member, undefined)).views.map((v) => v.id)).not.toContain(own.id);
+            const created = await prisma.auditLog.findFirst({ where: { tenantId, entityId: own.id, action: 'SAVED_VIEW_CREATED' } });
+            expect(created?.userId).toBe(viewer.userId);
+            expect(await updateSavedView(viewer, own.id, { name: 'Viewer only, renamed', config: { ...config, sort: 'created' } })).toMatchObject({
+                name: 'Viewer only, renamed',
+                visibility: 'PERSONAL',
+                config: { sort: 'created' },
+            });
+            const updated = await prisma.auditLog.findFirst({ where: { tenantId, entityId: own.id, action: 'SAVED_VIEW_UPDATED' } });
+            expect(updated?.userId).toBe(viewer.userId);
+
+            const denied = () => prisma.auditLog.count({ where: { tenantId, userId: viewer.userId, action: 'AUTHZ_DENIED' } });
+            const before = await denied();
+            await expect(createSavedView(viewer, { name: 'Ours', visibility: 'SHARED', layout: 'LIST', config })).rejects.toMatchObject({ status: 403 });
+            await expect(updateSavedView(viewer, own.id, { visibility: 'SHARED' })).rejects.toMatchObject({ status: 403 });
+            const teamView = await createSavedView(member, { name: 'Team board', visibility: 'SHARED', layout: 'LIST', config });
+            await expect(updateSavedView(viewer, teamView.id, { name: 'Mine now' })).rejects.toMatchObject({ status: 403 });
+            await expect(deleteSavedView(viewer, teamView.id)).rejects.toMatchObject({ status: 403 });
+            expect(await denied()).toBe(before + 4);
+            expect((await getSavedView(viewer, own.id)).visibility).toBe('PERSONAL');
+            expect(await deleteSavedView(viewer, own.id)).toEqual({ deleted: true, moderated: false });
+            await deleteSavedView(member, teamView.id);
+        });
+
+        it('only the creator changes a view; an admin may delete a shared one, audited as moderation', async () => {
             const shared = await createSavedView(member, { name: 'Team view', visibility: 'SHARED', layout: 'LIST', config });
             await expect(updateSavedView(member2, shared.id, { name: 'Hijacked' })).rejects.toMatchObject({ status: 403 });
             await expect(updateSavedView(owner, shared.id, { name: 'Hijacked' })).rejects.toMatchObject({ status: 403 });

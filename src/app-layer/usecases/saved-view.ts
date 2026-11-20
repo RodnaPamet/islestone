@@ -9,7 +9,10 @@
  * another person's personal view (the repository's own `where`). The config
  * is validated by `SavedViewConfigSchema` on every write and its search text
  * sanitised. Every write is audited; an admin's delete of someone else's
- * shared view is `SAVED_VIEW_MODERATED` (decision 53's shape).
+ * shared view is `SAVED_VIEW_MODERATED` (owner decision 59). A refusal decided
+ * here, past the route's key (a VIEWER saving or switching to a shared view,
+ * decision 60; anyone changing a view not theirs), writes the same
+ * `AUTHZ_DENIED` entry a `requirePermission` denial writes.
  *
  * Written fresh for Islestone.
  */
@@ -20,12 +23,13 @@ import { ProjectRepository } from '../repositories/ProjectRepository';
 import { SAVED_VIEW_LIST_CAP, SavedViewRepository, type SavedViewRow, type SavedViewScopeFilter } from '../repositories/SavedViewRepository';
 import {
     assertCanReadSavedViews,
-    assertCanSaveSavedView,
     mayChangeSavedView,
+    maySaveSavedView,
     savedViewDeleteBasis,
 } from '../policies/saved-view.policies';
 import { visibleProjects } from '../policies/project-visibility';
 import type { RequestContext } from '../types';
+import { appendAuditEntryOrQueue } from '@/lib/audit';
 import { runInTenantContext } from '@/lib/db-context';
 import { badRequest, forbidden, notFound } from '@/lib/errors/types';
 import { SavedViewConfigSchema, type SavedViewConfig } from '@/lib/schemas/saved-view';
@@ -104,8 +108,45 @@ export interface CreateSavedViewInput {
     config: SavedViewConfig;
 }
 
+type SavedViewRefusal =
+    | 'SAVED_VIEW_SAVE_NOT_PERMITTED'
+    | 'SAVED_VIEW_SHARE_NOT_PERMITTED'
+    | 'SAVED_VIEW_CHANGE_NOT_PERMITTED'
+    | 'SAVED_VIEW_CHANGE_CREATOR_ONLY'
+    | 'SAVED_VIEW_DELETE_CREATOR_OR_ADMIN';
+
+/**
+ * A refusal decided here, after the route's key admitted the caller: the same
+ * hash-chained `AUTHZ_DENIED` entry a `requirePermission` denial writes (in a
+ * transaction of its own, so the request's rollback keeps it), then a 403.
+ */
+async function refuseSavedView(ctx: RequestContext, viewId: string, verb: 'save' | 'change' | 'delete', reason: SavedViewRefusal, message: string): Promise<never> {
+    await appendAuditEntryOrQueue({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        actorType: ctx.apiKeyId ? 'API_KEY' : 'USER',
+        entity: 'SavedView',
+        entityId: viewId,
+        action: 'AUTHZ_DENIED',
+        details: `Saved view ${verb} refused`,
+        detailsJson: { category: 'access', event: 'authz_denied', reason, role: ctx.role },
+        requestId: ctx.requestId,
+        metadataJson: { role: ctx.role, verb },
+    });
+    throw forbidden(message);
+}
+
 export async function createSavedView(ctx: RequestContext, input: CreateSavedViewInput): Promise<SavedViewDto> {
-    assertCanSaveSavedView(ctx, input.visibility);
+    if (!maySaveSavedView(ctx, input.visibility)) {
+        const sharing = input.visibility === 'SHARED' && maySaveSavedView(ctx, 'PERSONAL');
+        await refuseSavedView(
+            ctx,
+            'new',
+            'save',
+            sharing ? 'SAVED_VIEW_SHARE_NOT_PERMITTED' : 'SAVED_VIEW_SAVE_NOT_PERMITTED',
+            sharing ? 'You do not have permission to share views.' : 'You do not have permission to save views.',
+        );
+    }
     const name = cleanName(input.name);
     const configJson = cleanConfig(input.config);
     return runInTenantContext(ctx, async (db) => {
@@ -142,7 +183,14 @@ export async function updateSavedView(ctx: RequestContext, id: string, input: Up
         const view = await SavedViewRepository.getReadable(db, ctx, v, id);
         if (!view) throw notFound('View not found');
         if (!mayChangeSavedView(ctx, view, input.visibility)) {
-            throw forbidden(view.createdByUserId === ctx.userId ? 'You do not have permission to change this view.' : 'Only the person who saved a view can change it.');
+            const own = view.createdByUserId === ctx.userId;
+            await refuseSavedView(
+                ctx,
+                view.id,
+                'change',
+                own ? 'SAVED_VIEW_CHANGE_NOT_PERMITTED' : 'SAVED_VIEW_CHANGE_CREATOR_ONLY',
+                own ? 'You do not have permission to change this view.' : 'Only the person who saved a view can change it.',
+            );
         }
         const data: { name?: string; visibility?: SavedViewVisibility; layout?: ViewLayout; configJson?: Prisma.InputJsonValue } = {};
         if (input.name !== undefined) data.name = cleanName(input.name);
@@ -172,7 +220,9 @@ export async function deleteSavedView(ctx: RequestContext, id: string) {
         const view = await SavedViewRepository.getReadable(db, ctx, await visibleProjects(ctx, db), id);
         if (!view) throw notFound('View not found');
         const basis = savedViewDeleteBasis(ctx, view);
-        if (!basis) throw forbidden('Only the person who saved a view, or a workspace admin for a shared view, can delete it.');
+        if (!basis) {
+            await refuseSavedView(ctx, view.id, 'delete', 'SAVED_VIEW_DELETE_CREATOR_OR_ADMIN', 'Only the person who saved a view, or a workspace admin for a shared view, can delete it.');
+        }
         await SavedViewRepository.delete(db, ctx, view.id);
         await logEvent(db, ctx, {
             action: basis === 'moderation' ? 'SAVED_VIEW_MODERATED' : 'SAVED_VIEW_DELETED',

@@ -19,16 +19,35 @@ import { makeRequestContext } from '../../helpers/make-context';
 const ctx = (role: Role, userId = 'me', appPermissions = getPermissionsForRole(role)) => makeRequestContext(role, { userId, appPermissions });
 
 describe('saved-view policies', () => {
-    it('every role reads; OWNER, ADMIN and MEMBER save personal and shared; VIEWER and GUEST save nothing', () => {
+    it('every role reads; OWNER, ADMIN and MEMBER save personal and shared; VIEWER personal only (decision 60); GUEST nothing', () => {
         for (const role of ['OWNER', 'ADMIN', 'MEMBER', 'VIEWER', 'GUEST'] as Role[]) expect(mayReadSavedViews(ctx(role))).toBe(true);
         for (const role of ['OWNER', 'ADMIN', 'MEMBER'] as Role[]) {
             expect(maySaveSavedView(ctx(role), 'PERSONAL')).toBe(true);
             expect(maySaveSavedView(ctx(role), 'SHARED')).toBe(true);
         }
-        for (const role of ['VIEWER', 'GUEST'] as Role[]) {
-            expect(maySaveSavedView(ctx(role), 'PERSONAL')).toBe(false);
-            expect(maySaveSavedView(ctx(role), 'SHARED')).toBe(false);
-        }
+        expect(maySaveSavedView(ctx('VIEWER'), 'PERSONAL')).toBe(true);
+        expect(maySaveSavedView(ctx('VIEWER'), 'SHARED')).toBe(false);
+        expect(maySaveSavedView(ctx('GUEST'), 'PERSONAL')).toBe(false);
+        expect(maySaveSavedView(ctx('GUEST'), 'SHARED')).toBe(false);
+    });
+
+    it('a VIEWER changes and deletes its own personal view, never shares it, and never touches a shared or another person\'s view (decision 60)', () => {
+        const own = { createdByUserId: 'me', visibility: 'PERSONAL' as const };
+        const ownShared = { createdByUserId: 'me', visibility: 'SHARED' as const };
+        const othersShared = { createdByUserId: 'someone', visibility: 'SHARED' as const };
+        const othersPersonal = { createdByUserId: 'someone', visibility: 'PERSONAL' as const };
+        const viewer = ctx('VIEWER');
+        expect(mayChangeSavedView(viewer, own)).toBe(true);
+        expect(mayChangeSavedView(viewer, own, 'PERSONAL')).toBe(true);
+        expect(mayChangeSavedView(viewer, own, 'SHARED')).toBe(false);
+        expect(savedViewDeleteBasis(viewer, own)).toBe('creator');
+        // A shared view it somehow holds (saved before a demotion) stays out of reach.
+        expect(mayChangeSavedView(viewer, ownShared)).toBe(false);
+        expect(mayChangeSavedView(viewer, ownShared, 'PERSONAL')).toBe(false);
+        expect(mayChangeSavedView(viewer, othersShared)).toBe(false);
+        expect(savedViewDeleteBasis(viewer, othersShared)).toBeNull();
+        expect(mayChangeSavedView(viewer, othersPersonal)).toBe(false);
+        expect(savedViewDeleteBasis(viewer, othersPersonal)).toBeNull();
     });
 
     it('a custom role without views.share saves personal views only, and cannot share one later', () => {
@@ -58,6 +77,7 @@ describe('saved-view policies', () => {
     it('affordances are the predicates', () => {
         expect(savedViewAffordances(ctx('MEMBER'))).toEqual({ savePersonal: true, saveShared: true, moderate: false });
         expect(savedViewAffordances(ctx('OWNER'))).toEqual({ savePersonal: true, saveShared: true, moderate: true });
-        expect(savedViewAffordances(ctx('VIEWER'))).toEqual({ savePersonal: false, saveShared: false, moderate: false });
+        expect(savedViewAffordances(ctx('VIEWER'))).toEqual({ savePersonal: true, saveShared: false, moderate: false });
+        expect(savedViewAffordances(ctx('GUEST'))).toEqual({ savePersonal: false, saveShared: false, moderate: false });
     });
 });

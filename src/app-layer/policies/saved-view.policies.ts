@@ -2,22 +2,24 @@
  * Who may see, save, change and delete a saved view (sub-phase 2.4;
  * docs/porting/maps/2.4.md, "Saved views: permissions"). 1.4's `views`
  * domain (`view`, `create`, `edit`, `share`) is the only set of keys read;
- * no key is added. The narrowest safe default, pending the owner (map open
- * question 2):
+ * no key is added. Owner decisions 59 and 60 (2026-11-20):
  *
  *   - see: your own personal views, and every shared view whose scope you
  *     can see (`views.view`; the scope is the repository's predicate);
  *   - save a personal view: `views.create`; a shared one, or share it later:
- *     also `views.share`;
+ *     also `views.share`. A VIEWER holds `views.create` and `views.edit` but
+ *     not `views.share` (decision 60), so it saves, changes and deletes its
+ *     own personal views and never a shared one;
  *   - change or delete: the CREATOR only, holding `views.edit` (and
  *     `views.share` for a shared view);
  *   - a workspace admin (`admin.manage`) may DELETE someone else's shared
- *     view, for moderation (decision 53's shape: audited
- *     `SAVED_VIEW_MODERATED`), never change it.
+ *     view, for moderation (decision 59: audited `SAVED_VIEW_MODERATED`),
+ *     never change it.
  *
  * The coarse tier applies first: reading needs `canRead`; with no granular
  * layer at all (the defensive branch), writing needs `canWrite`. Each rule is
- * a predicate the pages ask on the server and an assertion the usecases ask.
+ * a predicate the pages ask on the server and the usecases ask (which audit a
+ * refusal past the route's key as `AUTHZ_DENIED`).
  *
  * Written fresh for Islestone.
  */
@@ -79,10 +81,4 @@ export function savedViewAffordances(ctx: SavedViewViewer) {
 
 export function assertCanReadSavedViews(ctx: RequestContext) {
     if (!mayReadSavedViews(ctx)) throw forbidden('You do not have permission to view saved views.');
-}
-
-export function assertCanSaveSavedView(ctx: RequestContext, visibility: 'PERSONAL' | 'SHARED') {
-    if (!maySaveSavedView(ctx, visibility)) {
-        throw forbidden(visibility === 'SHARED' ? 'You do not have permission to share views.' : 'You do not have permission to save views.');
-    }
 }

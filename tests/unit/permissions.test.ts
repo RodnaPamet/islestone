@@ -109,13 +109,15 @@ describe('the role matrix', () => {
         );
     });
 
-    it('VIEWER reads every project and agent, and writes nothing', () => {
+    it('VIEWER reads every project and agent, and writes nothing but its own personal views (decision 60)', () => {
         expect(granted(getPermissionsForRole('VIEWER'))).toEqual(
             [
                 'workspace.view',
                 'projects.view',
                 'work_items.view',
                 'views.view',
+                'views.create',
+                'views.edit',
                 'cycles.view',
                 'docs.view',
                 'canvas.view',
@@ -167,6 +169,10 @@ describe('hasPermission over the matrix', () => {
         ['MEMBER', 'admin.members', false],
         ['MEMBER', 'work_items.create', true],
         ['VIEWER', 'work_items.create', false],
+        ['VIEWER', 'views.create', true],
+        ['VIEWER', 'views.edit', true],
+        ['VIEWER', 'views.share', false],
+        ['GUEST', 'views.create', false],
         ['GUEST', 'work_items.comment', true],
         ['GUEST', 'agents.view', false],
     ] as const)('%s → %s is %s', (role, key, expected) => {

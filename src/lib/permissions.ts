@@ -105,7 +105,10 @@ const ALL_DOMAINS: Grants = Object.fromEntries(
  *           view/create/edit/assign/comment, views view/create/edit/share,
  *           cycles, docs view/create/edit, canvas view/edit, automations and
  *           integrations view, agents view/delegate, workspace view.
- *   VIEWER  reads every project: `view` on the work domains and agents.
+ *   VIEWER  reads every project (`view` on the work domains and agents) and
+ *           saves personal views: `views.create` and `views.edit`, never
+ *           `views.share`, so a shared view stays with the roles that hold it
+ *           (owner decision 60, 2026-11-20).
  *   GUEST   not assignable until sub-phase 8.4 scopes it to named projects:
  *           `view` on the work domains, plus creating and commenting on work
  *           items. No agents, automations or integrations.
@@ -163,13 +166,22 @@ export function getPermissionsForRole(role: Role): PermissionSet {
     }
 }
 
-/** VIEWER: reads every project and agent; writes nothing. */
+/**
+ * VIEWER: reads every project and agent, and saves, changes and deletes its own
+ * PERSONAL views (`views.create`, `views.edit`; owner decision 60). It holds no
+ * `views.share`, so it never saves, shares or changes a shared view
+ * (`saved-view.policies.ts`), and it writes nothing else.
+ *
+ * This is also the set an unresolvable role falls back to (ADR 0006: Viewer,
+ * never Guest). Saving a personal view there is harmless: the view is visible
+ * to its creator alone, and reaches no work item, project or other member.
+ */
 function viewerPermissions(): PermissionSet {
     return permissionSetOf({
         workspace: ['view'],
         projects: ['view'],
         work_items: ['view'],
-        views: ['view'],
+        views: ['view', 'create', 'edit'],
         cycles: ['view'],
         docs: ['view'],
         canvas: ['view'],
