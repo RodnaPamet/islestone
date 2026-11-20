@@ -63,6 +63,7 @@ export const NOT_ITEM_ACTIVITY: ReadonlySet<string> = new Set([
     'WORK_ITEM_WATCH_UPDATE',
     'WORK_ITEM_WAITING_ON',
     'WORK_ITEM_TYPE_FIELD_SET',
+    'WORK_ITEM_TYPE_REVIEW_STEPS_SET',
     // Review steps (2.8a): notification kinds, and member removal's counts-only entry.
     'WORK_ITEM_REVIEW_REQUESTED',
     'WORK_ITEM_REVIEW_DUE',

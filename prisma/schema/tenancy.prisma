@@ -77,19 +77,22 @@ model Tenant {
   auditLogs        AuditLog[]
   auditOutbox      AuditOutbox[]
 
-  notifications           Notification[]
-  notificationOutbox      NotificationOutbox[]
-  notificationSettings    TenantNotificationSettings?
-  notificationPrefs       NotificationPreference[]
-  mentions                Mention[]
-  searchVectors           SearchVector[]
-  recipientLists          RecipientList[]
-  recipientListMembers    RecipientListMember[]
+  notifications                   Notification[]
+  notificationOutbox              NotificationOutbox[]
+  notificationSettings            TenantNotificationSettings?
+  notificationPrefs               NotificationPreference[]
+  mentions                        Mention[]
+  searchVectors                   SearchVector[]
+  recipientLists                  RecipientList[]
+  recipientListMembers            RecipientListMember[]
   // Sub-phase 2.8a: review steps (ADR 0009).
-  workItemReviewRounds    WorkItemReviewRound[]
-  workItemReviewSteps     WorkItemReviewStep[]
-  workItemReviewStepLists WorkItemReviewStepList[]
-  workItemReviewers       WorkItemReviewer[]
+  workItemReviewRounds            WorkItemReviewRound[]
+  workItemReviewSteps             WorkItemReviewStep[]
+  workItemReviewStepLists         WorkItemReviewStepList[]
+  workItemReviewers               WorkItemReviewer[]
+  // Sub-phase 2.8c: default review steps per type.
+  workItemTypeReviewSteps         WorkItemTypeReviewStep[]
+  workItemTypeReviewStepReviewers WorkItemTypeReviewStepReviewer[]
 
   teams                  Team[]
   workflowStates         WorkflowState[]
@@ -157,14 +160,16 @@ model TenantMembership {
   customRole       TenantCustomRole? @relation(fields: [customRoleId], references: [id])
 
   /// Work items this member is the assignee of (ADR 0003, RESTRICT).
-  assignedWorkItems WorkItem[]               @relation("WorkItemAssignee")
-  waitedOnWorkItems WorkItem[]               @relation("WorkItemWaitingOn")
-  watching          WorkItemWatcher[]        @relation("WorkItemWatcherMember")
-  personFieldValues CustomFieldValue[]       @relation("CustomFieldValuePerson")
-  intakeNotify      IntakeNotifyMember[]     @relation("IntakeNotifyMembership")
+  assignedWorkItems WorkItem[]                       @relation("WorkItemAssignee")
+  waitedOnWorkItems WorkItem[]                       @relation("WorkItemWaitingOn")
+  watching          WorkItemWatcher[]                @relation("WorkItemWatcherMember")
+  personFieldValues CustomFieldValue[]               @relation("CustomFieldValuePerson")
+  intakeNotify      IntakeNotifyMember[]             @relation("IntakeNotifyMembership")
   notificationPrefs NotificationPreference[]
-  mentions          Mention[]                @relation("MentionMember")
-  recipientLists    RecipientListMember[]    @relation("RecipientListMembership")
+  mentions          Mention[]                        @relation("MentionMember")
+  recipientLists    RecipientListMember[]            @relation("RecipientListMembership")
+  /// The default review steps of types that name this member (2.8c, decision 159).
+  typeReviewSteps   WorkItemTypeReviewStepReviewer[] @relation("TypeReviewStepMember")
 
   @@unique([tenantId, userId])
   /// The composite an FK from a tenant-scoped child references. `id` alone is

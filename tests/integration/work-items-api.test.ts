@@ -223,6 +223,9 @@ const CALLS: Call[] = [
     // Sub-phase 2.4b-b: field sets (OPTIONAL removes a rule, so the calls leave nothing behind).
     { file: 'src/app/api/t/[tenantSlug]/work-item-types/[typeId]/fields/route.ts', method: 'GET', path: (i) => `/work-item-types/${i.type}/fields`, params: (i) => P(i, { typeId: i.type }), write: false, key: 'projects.view' },
     { file: 'src/app/api/t/[tenantSlug]/work-item-types/[typeId]/fields/route.ts', method: 'PUT', path: (i) => `/work-item-types/${i.type}/fields`, params: (i) => P(i, { typeId: i.type }), body: () => ({ field: 'dueDate', requirement: 'OPTIONAL' }), write: true, key: 'admin.manage' },
+    // Sub-phase 2.8c: a type's default review steps and its Done check.
+    { file: 'src/app/api/t/[tenantSlug]/work-item-types/[typeId]/review-steps/route.ts', method: 'GET', path: (i) => `/work-item-types/${i.type}/review-steps`, params: (i) => P(i, { typeId: i.type }), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/work-item-types/[typeId]/review-steps/route.ts', method: 'PUT', path: (i) => `/work-item-types/${i.type}/review-steps`, params: (i) => P(i, { typeId: i.type }), body: () => ({ reviewRequiredForDone: false, steps: [] }), write: true, key: 'admin.manage' },
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/type-fields/route.ts', method: 'GET', path: (i) => `/projects/${i.project}/type-fields`, params: (i) => P(i, { projectId: i.project }), write: false, key: 'projects.view' },
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/type-fields/route.ts', method: 'PUT', path: (i) => `/projects/${i.project}/type-fields`, params: (i) => P(i, { projectId: i.project }), body: (i) => ({ typeId: i.type, customFieldId: i.field, requirement: 'OPTIONAL' }), write: true, key: 'projects.edit' },
     // Sub-phase 2.5b: milestones.

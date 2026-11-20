@@ -80,6 +80,8 @@ export const SUBPAGES: readonly string[] = [
     '/settings/work-item-types',
     // Sub-phase 2.4b-b: a type's fields.
     '/settings/work-item-types/[typeId]',
+    // Sub-phase 2.8c: a type's default review steps and its Done check.
+    '/settings/work-item-types/[typeId]/review-steps',
     '/settings/labels',
     '/settings/projects',
     // Sub-phase 2.5c.

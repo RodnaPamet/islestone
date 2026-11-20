@@ -42,3 +42,15 @@ export const RespondToReviewSchema = z
 
 /** `POST …/review/steps/:stepId/reviewers`: add one person to a step not yet ended. */
 export const AddReviewerSchema = z.object({ userId: Id }).strict();
+
+/**
+ * `PUT /work-item-types/:typeId/review-steps` (2.8c; decisions 149 and 159):
+ * the type's default steps as a whole, in order, and whether its review must
+ * finish before Done.
+ */
+export const SetTypeReviewStepsSchema = z
+    .object({
+        reviewRequiredForDone: z.boolean(),
+        steps: z.array(ReviewStepInputSchema).max(REVIEW_LIMITS.maxSteps),
+    })
+    .strict();

@@ -11,7 +11,10 @@ import {
     changedSinceSignedOff,
     evaluateStep,
     nextPendingStep,
+    reviewHoldMessage,
+    reviewHoldsDone,
     reviewSummaryOf,
+    type DoneCheckRound,
     type ReviewerState,
     type ReviewSummaryRound,
 } from '@/app-layer/domain/review-steps';
@@ -159,5 +162,52 @@ describe('changedSinceSignedOff (decision 163)', () => {
         expect(changedSinceSignedOff({ outcome: null, itemVersionAt: null, withdrawnAt: null }, 'OPEN', 9)).toBe(false);
         expect(changedSinceSignedOff({ ...signed, withdrawnAt: '2026-11-20T10:00:00.000Z' }, 'OPEN', 9)).toBe(false);
         for (const status of ['COMPLETED', 'RETURNED', 'WITHDRAWN', 'PLANNED'] as const) expect(changedSinceSignedOff(signed, status, 9)).toBe(false);
+    });
+});
+
+describe('reviewHoldsDone (2.8c, decision 149)', () => {
+    const r = (number: number, status: DoneCheckRound['status'], stepCount = 2, openStepName: string | null = null): DoneCheckRound => ({ number, status, stepCount, openStepName });
+
+    it('an item with no round, or none with steps, is not held', () => {
+        expect(reviewHoldsDone([])).toBeNull();
+        expect(reviewHoldsDone([r(1, 'PLANNED', 0)])).toBeNull();
+    });
+
+    it('holds while the newest round with steps is not completed', () => {
+        expect(reviewHoldsDone([r(1, 'PLANNED')])).toEqual({ roundNumber: 1, status: 'PLANNED', openStepName: null });
+        expect(reviewHoldsDone([r(1, 'OPEN', 2, 'Legal')])).toEqual({ roundNumber: 1, status: 'OPEN', openStepName: 'Legal' });
+        expect(reviewHoldsDone([r(1, 'RETURNED'), r(2, 'PLANNED')])).toMatchObject({ roundNumber: 2, status: 'PLANNED' });
+        expect(reviewHoldsDone([r(1, 'WITHDRAWN')])).toMatchObject({ status: 'WITHDRAWN' });
+        expect(reviewHoldsDone([r(1, 'COMPLETED')])).toBeNull();
+    });
+
+    it('an emptied planned round after an ended one leaves the ended one deciding', () => {
+        expect(reviewHoldsDone([r(2, 'PLANNED', 0), r(1, 'COMPLETED')])).toBeNull();
+        expect(reviewHoldsDone([r(1, 'RETURNED'), r(2, 'PLANNED', 0)])).toMatchObject({ roundNumber: 1, status: 'RETURNED' });
+        // A new round planned after a completed one holds until it completes too.
+        expect(reviewHoldsDone([r(1, 'COMPLETED'), r(2, 'PLANNED')])).toMatchObject({ roundNumber: 2 });
+    });
+
+    it('decides by the newest round with steps, whatever the order given', () => {
+        const status = fc.constantFrom<DoneCheckRound['status']>('PLANNED', 'OPEN', 'COMPLETED', 'RETURNED', 'WITHDRAWN');
+        fc.assert(
+            fc.property(fc.array(fc.tuple(status, fc.integer({ min: 0, max: 3 })), { maxLength: 6 }), fc.integer(), (spec, seed) => {
+                const rounds = spec.map(([st, n], i) => r(i + 1, st, n));
+                const shuffled = [...rounds].sort((a, b) => ((a.number * 7919 + seed) % 13) - ((b.number * 7919 + seed) % 13));
+                const newest = [...rounds].reverse().find((x) => x.stepCount > 0);
+                const hold = reviewHoldsDone(shuffled);
+                if (!newest || newest.status === 'COMPLETED') expect(hold).toBeNull();
+                else expect(hold).toMatchObject({ roundNumber: newest.number, status: newest.status });
+            }),
+        );
+    });
+
+    it('the message names the item and the round, and says cancelling is allowed', () => {
+        expect(reviewHoldMessage('SUP-4', { roundNumber: 2, status: 'OPEN', openStepName: 'Legal' })).toBe(
+            'SUP-4 cannot move to Done until its review is complete: round 2 is open at the step "Legal". Cancelling is always allowed.',
+        );
+        expect(reviewHoldMessage('SUP-4', { roundNumber: 1, status: 'PLANNED', openStepName: null })).toContain('round 1 is planned and has not been sent for review');
+        expect(reviewHoldMessage('SUP-4', { roundNumber: 1, status: 'RETURNED', openStepName: null })).toContain('was returned');
+        expect(reviewHoldMessage('SUP-4', { roundNumber: 1, status: 'WITHDRAWN', openStepName: null })).toContain('was withdrawn');
     });
 });

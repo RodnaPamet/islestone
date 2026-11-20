@@ -314,6 +314,8 @@ describe('the schema speaks ADR 0006', () => {
             'WorkItemTransition',
             'WorkItemType',
             'WorkItemTypeField',
+            'WorkItemTypeReviewStep',
+            'WorkItemTypeReviewStepReviewer',
             'WorkItemWatcher',
             'WorkflowState',
         ]);

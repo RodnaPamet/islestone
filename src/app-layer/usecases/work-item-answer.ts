@@ -35,6 +35,7 @@ import { TeamRepository } from '../repositories/TeamRepository';
 import { planAnswerMark } from '../domain/work-item-answer';
 import { checkWorkflowStateTransition, formatStateTransitionError, stateTransitionEffects } from '../domain/workflow-state';
 import { endOpenRoundsOnClose } from './review-engine';
+import { assertReviewAllowsDone } from './review-defaults';
 import { assertFieldWrite } from './field-set';
 import { afterStateCommit, applyStateAudit, getWorkItem } from './work-item';
 import { emitWatcherActivity, keyOf, loadWritableItem, throwWriteConflict } from './work-item-shared';
@@ -72,6 +73,8 @@ export async function markWorkItemAnswer(
         if (plan.kind === 'move') {
             const err = checkWorkflowStateTransition(from!, plan.to);
             if (err) throw badRequest(formatStateTransitionError(err), { reason: err.kind });
+            // The type may require its review to finish before Done (2.8c, decision 149): the mark is refused whole.
+            await assertReviewAllowsDone(db, ctx, [{ item, fromCategory: from!.category, toCategory: plan.to.category }]);
         }
         const move =
             plan.kind === 'move'

@@ -59,6 +59,8 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/settings/work-item-types': { href: '/settings', label: 'Settings' },
     // Sub-phase 2.4b-b: a type's fields fall back to the types list.
     '/settings/work-item-types/[typeId]': { href: '/settings/work-item-types', label: 'Work item types' },
+    // Sub-phase 2.8c: a type's default review steps fall back to the types list.
+    '/settings/work-item-types/[typeId]/review-steps': { href: '/settings/work-item-types', label: 'Work item types' },
     '/settings/labels': { href: '/settings', label: 'Settings' },
     '/settings/projects': { href: '/settings', label: 'Settings' },
     '/settings/project-templates': { href: '/settings', label: 'Settings' },

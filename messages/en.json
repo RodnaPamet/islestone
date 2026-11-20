@@ -1281,7 +1281,8 @@
                 "save": "Save step",
                 "nameRequired": "Give the review step a name.",
                 "daysInvalid": "Due in working days is a whole number from 1 to {max}.",
-                "nobody": "Name at least one reviewer or recipient list."
+                "nobody": "Name at least one reviewer or recipient list.",
+                "workspaceListsHint": "The workspace's lists only: a type's default steps apply in every project."
             },
             "respond": {
                 "signOffTitle": "Sign off {step}",
@@ -1450,7 +1451,8 @@
             },
             "empty": "No fields.",
             "resource": "field",
-            "resourcePlural": "fields"
+            "resourcePlural": "fields",
+            "reviewSteps": "Review steps"
         },
         "types": {
             "title": "Work item types",
@@ -1462,7 +1464,8 @@
             "empty": "No work item types yet. Feature, Bug and Chore are added with the first team.",
             "col": {
                 "name": "Name",
-                "status": "Status"
+                "status": "Status",
+                "review": "Review"
             },
             "created": "Type {name} created",
             "resource": "type",
@@ -1472,7 +1475,10 @@
                 "title": "Add the Question type",
                 "submit": "Add type",
                 "description": "A type whose items need a due date and someone they wait on, and whose comments can be marked as the answer. You can change its name and fields afterwards."
-            }
+            },
+            "reviewSteps": "Review steps",
+            "reviewStepsFor": "Review steps of {name}",
+            "reviewRequired": "Required before Done"
         },
         "labels": {
             "title": "Labels",
@@ -1727,6 +1733,41 @@
             },
             "sendNow": "Send queued email now",
             "sendNowDone": "{sent} sent, {failed} failed, {skipped} skipped"
+        },
+        "typeReviewSteps": {
+            "title": "{type} review steps",
+            "description": "The review steps every new work item of this type starts with: its first round, planned and not yet sent. They name members and the workspace's recipient lists. A change applies to items made afterwards, never to existing ones, and an item's assignee is never asked to review it.",
+            "add": "Review step",
+            "required": "Review must finish before Done",
+            "requiredFor": "Review must finish before an item of the type {type} moves to Done",
+            "requiredHint": "An item of this type cannot move to Done until its latest round of review steps has been signed off. Cancelling is always allowed.",
+            "requiredWithoutSteps": "This type has no default review steps, so its items are held only once someone plans review steps on them.",
+            "requiredOn": "Review must now finish before Done",
+            "requiredOff": "Review no longer holds Done",
+            "col": {
+                "position": "#",
+                "name": "Step",
+                "mode": "Who must sign off",
+                "days": "Due in working days",
+                "reviewers": "Reviewers"
+            },
+            "list": "{name} (list)",
+            "archivedList": "{name} (archived list, not copied)",
+            "unknownList": "A recipient list",
+            "formerMember": "Former member",
+            "nobody": "Nobody named: a new item gets this step without reviewers.",
+            "edit": "Edit",
+            "editNamed": "Edit the review step {name}",
+            "moveUp": "Up",
+            "moveUpNamed": "Move the review step {name} up",
+            "moveDown": "Down",
+            "moveDownNamed": "Move the review step {name} down",
+            "remove": "Remove",
+            "removeNamed": "Remove the review step {name}",
+            "stepRemoved": "Review step {name} removed",
+            "empty": "No default review steps. New items of this type start with none.",
+            "resource": "review step",
+            "resourcePlural": "review steps"
         }
     },
     "views": {

@@ -487,3 +487,24 @@ export interface WorkItemReviewData {
     waitingOnReviewerIds: string[];
     viewer: ReviewViewerAffordances;
 }
+
+/** One default review step of a type (2.8c, decision 159): whom it names, members and workspace lists. */
+export interface TypeReviewStepData {
+    id: string;
+    position: number;
+    name: string;
+    mode: ReviewStepModeValue;
+    dueInWorkingDays: number;
+    memberIds: string[];
+    recipientListIds: string[];
+    /** The lists it names, with their names (an archived one is not copied onto a new item). */
+    lists: Array<{ id: string; name: string; archived: boolean }>;
+}
+
+/** `GET`/`PUT /work-item-types/:typeId/review-steps` (2.8c; decisions 149 and 159). */
+export interface TypeReviewStepsData {
+    typeId: string;
+    /** Review must finish before an item of this type moves to Done; cancelling is never held. */
+    reviewRequiredForDone: boolean;
+    steps: TypeReviewStepData[];
+}

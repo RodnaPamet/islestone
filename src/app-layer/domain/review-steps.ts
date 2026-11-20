@@ -174,3 +174,55 @@ export function changedSinceSignedOff(
         reviewer.itemVersionAt < itemVersion
     );
 }
+
+/** One round as the Done check reads it (sub-phase 2.8c): any status, with its step count and its open step. */
+export interface DoneCheckRound {
+    number: number;
+    status: ReviewRoundStatusValue;
+    stepCount: number;
+    /** The name of its OPEN step, if any. */
+    openStepName: string | null;
+}
+
+/** Why a move into Done is held: the round that stands in its way. */
+export interface ReviewHold {
+    roundNumber: number;
+    status: Exclude<ReviewRoundStatusValue, 'COMPLETED'>;
+    openStepName: string | null;
+}
+
+/**
+ * The per-type Done check (sub-phase 2.8c; ADR 0009 §14; owner decision 149):
+ * for an item whose type requires its review to finish before Done, what
+ * holds a move into Done, or null when nothing does.
+ *
+ * The review that must finish is the item's newest round that has at least
+ * one step: a planned round with no steps left is no review at all (as
+ * `reviewSummaryOf` reads it). An item with no such round is not held (a
+ * type with no default steps holds nothing, and Settings says so). Held when
+ * that round is not COMPLETED: planned and not sent, open, returned (a new
+ * round is planned after it), or withdrawn (a person withdrew it, or the item
+ * was closed or deleted while it was open; reopening does not reopen it).
+ * Cancelling is never held: the caller asks only for a move into DONE.
+ */
+export function reviewHoldsDone(rounds: readonly DoneCheckRound[]): ReviewHold | null {
+    let newest: DoneCheckRound | null = null;
+    for (const r of rounds) if (r.stepCount > 0 && (!newest || r.number > newest.number)) newest = r;
+    if (!newest || newest.status === 'COMPLETED') return null;
+    return { roundNumber: newest.number, status: newest.status, openStepName: newest.status === 'OPEN' ? newest.openStepName : null };
+}
+
+/** The sentence a held move answers with: the item's key and the round that holds it. */
+export function reviewHoldMessage(key: string, hold: ReviewHold): string {
+    const why =
+        hold.status === 'OPEN'
+            ? hold.openStepName
+                ? `round ${hold.roundNumber} is open at the step "${hold.openStepName}"`
+                : `round ${hold.roundNumber} is open`
+            : hold.status === 'PLANNED'
+              ? `round ${hold.roundNumber} is planned and has not been sent for review`
+              : hold.status === 'RETURNED'
+                ? `round ${hold.roundNumber} was returned; send the next round and finish it`
+                : `round ${hold.roundNumber} was withdrawn; send a new round and finish it`;
+    return `${key} cannot move to Done until its review is complete: ${why}. Cancelling is always allowed.`;
+}

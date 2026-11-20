@@ -335,6 +335,8 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             'WorkItemTransition',
             'WorkItemType',
             'WorkItemTypeField',
+            'WorkItemTypeReviewStep',
+            'WorkItemTypeReviewStepReviewer',
             'WorkItemWatcher',
             'WorkflowState',
         ]);

@@ -65,6 +65,23 @@ export function WorkItemTypesSettings({ affordances }: { affordances: WorkConfig
                 ),
             },
             { id: 'status', header: t('types.col.status'), cell: ({ row }) => (row.original.archivedAt ? t('common.archived') : t('common.active')) },
+            {
+                id: 'review',
+                header: t('types.col.review'),
+                // A type's default review steps and its Done check (2.8c).
+                cell: ({ row }) => (
+                    <span className="flex flex-wrap items-center gap-tight">
+                        <Link
+                            href={tenantHref(`/settings/work-item-types/${row.original.id}/review-steps`)}
+                            aria-label={t('types.reviewStepsFor', { name: row.original.name })}
+                            className="text-content-emphasis hover:underline"
+                        >
+                            {t('types.reviewSteps')}
+                        </Link>
+                        {row.original.reviewRequiredForDone && <span className="text-xs text-content-muted">{t('types.reviewRequired')}</span>}
+                    </span>
+                ),
+            },
             ...(canManage
                 ? [
                       {

@@ -42,6 +42,11 @@ export function useUsableRecipientLists(projectId: string | null) {
     return useTenantSWR<RecipientListData[]>(projectId ? `${workspaceListsPath()}?projectId=${encodeURIComponent(projectId)}` : null);
 }
 
+/** The workspace's live lists (a type's default review steps name only these, 2.8c). */
+export function useWorkspaceRecipientLists(enabled = true) {
+    return useTenantSWR<RecipientListData[]>(enabled ? workspaceListsPath() : null);
+}
+
 /** The live lists usable on any visible project's items: Settings → Intake's pickers. */
 export function useAllUsableRecipientLists(enabled = true) {
     return useTenantSWR<RecipientListData[]>(enabled ? `${workspaceListsPath()}?usable=1` : null);
