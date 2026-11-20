@@ -257,6 +257,9 @@ describe('the schema speaks ADR 0006', () => {
             'AuditLog',
             'AuditOutbox',
             'Comment',
+            'CustomField',
+            'CustomFieldOption',
+            'CustomFieldValue',
             'Label',
             'Notification',
             'NotificationOutbox',
@@ -268,6 +271,7 @@ describe('the schema speaks ADR 0006', () => {
             'Project',
             'ProjectKeyPrefix',
             'ProjectKeySequence',
+            'SavedView',
             'Team',
             'Tenant',
             'TenantCustomRole',
@@ -288,7 +292,7 @@ describe('the schema speaks ADR 0006', () => {
             'WorkItemWatcher',
             'WorkflowState',
         ]);
-        expect(ids.filter((i) => i.kind === 'enum').length).toBe(13);
+        expect(ids.filter((i) => i.kind === 'enum').length).toBe(16);
         expect(ids).toEqual(expect.arrayContaining([{ kind: 'value', name: 'MEMBER', where: 'Role.MEMBER' }]));
     });
 });

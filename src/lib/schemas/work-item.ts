@@ -15,6 +15,10 @@ import { z } from 'zod';
 
 import { DUE_FILTERS } from '@/app-layer/domain/work-item-due';
 import { WORKFLOW_STATE_CATEGORIES } from '@/app-layer/domain/workflow-state';
+import { CustomFieldValuesInputSchema } from '@/lib/schemas/custom-field';
+import { fieldIdOfFilterKey } from '@/lib/work-items/custom-fields';
+import { isListOrder } from '@/lib/work-items/list-sorts';
+import { badRequest } from '@/lib/errors/types';
 
 export const WORK_ITEM_PRIORITIES = ['NONE', 'URGENT', 'HIGH', 'MEDIUM', 'LOW'] as const;
 export const WORK_ITEM_RELATION_TYPES = ['BLOCKS', 'RELATES', 'DUPLICATES'] as const;
@@ -52,6 +56,7 @@ export const CreateWorkItemSchema = z
         startDate: DateOnly.nullish(),
         dueDate: DateOnly.nullish(),
         position: PositionSchema.optional(),
+        customFields: CustomFieldValuesInputSchema.optional(),
     })
     .strict();
 
@@ -139,7 +144,13 @@ export const WorkItemQuerySchema = z.object({
     due: z.enum(DUE_FILTERS).optional(),
     q: z.string().max(200).optional(),
     includeArchived: z.enum(['true', 'false', '1', '0']).optional(),
-    order: z.enum(['manual', 'updated']).optional(),
+    /** A named sort or `cf:<fieldId>` (2.4; checked by the usecase). */
+    order: z
+        .string()
+        .max(70)
+        .refine((o) => isListOrder(o), 'Unknown order.')
+        .optional(),
+    dir: z.enum(['asc', 'desc']).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),
     cursor: z.string().max(1000).optional(),
     deleted: z.enum(['true', '1']).optional(),
@@ -149,3 +160,19 @@ export const PageQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).optional(),
     cursor: z.string().max(1000).optional(),
 });
+
+/**
+ * The list query's custom-field conditions (2.4): every `cf.<fieldId>`
+ * parameter, keyed by field id. The value (`<op>[:<operand>]`) is parsed
+ * against the field's type by the usecase.
+ */
+export function customFieldConditionsOf(params: URLSearchParams): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const [key, value] of params) {
+        if (!key.startsWith('cf.')) continue;
+        const fieldId = fieldIdOfFilterKey(key);
+        if (!fieldId || value.length > 2_000) throw badRequest(`Invalid field filter ${key}.`);
+        out[fieldId] = value;
+    }
+    return out;
+}

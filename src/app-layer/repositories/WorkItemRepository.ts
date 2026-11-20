@@ -23,12 +23,26 @@
  * are the source's `TaskCommentRepository`, `TaskWatcherRepository` and
  * `TaskLinkRepository`, renamed (ADR 0006: no aliases).
  */
-import type { Prisma, WorkflowStateCategory, WorkItemPriority } from '@prisma/client';
+import type { CustomFieldType, Prisma, WorkflowStateCategory, WorkItemPriority } from '@prisma/client';
 
 import type { PrismaTx } from '@/lib/db-context';
 import { badRequest } from '@/lib/errors/types';
 import { WORK_ITEM_DELETED_LIST_CAP } from '@/lib/list-backfill-cap';
-import { buildKeysetWhere, keysetOrderBy, type CursorPayload, type KeysetOrder } from '@/lib/pagination';
+import {
+    buildKeysetWhere,
+    buildSortWhere,
+    keysetOrderBy,
+    sortOrderBy,
+    sortValuesOf,
+    type CursorPayload,
+    type KeysetOrder,
+    type SortColumn,
+    type SortCursor,
+    type SortSpec,
+} from '@/lib/pagination';
+import { CUSTOM_FIELD_LIMITS, CUSTOM_FIELD_TYPE_SPECS } from '@/lib/work-items/custom-fields';
+import { DEFAULT_SORT_DIRECTION, type ListSort, type SortDirection } from '@/lib/work-items/list-sorts';
+import type { CustomFieldCondition } from '../domain/custom-field';
 import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
 import { DUE_FILTERS, DUE_SOON_DAYS, type DueFilter } from '../domain/work-item-due';
 import { OPEN_CATEGORY_FILTER, WORKFLOW_STATE_CATEGORIES } from '../domain/workflow-state';
@@ -72,6 +86,8 @@ export interface WorkItemFilters {
     q?: string;
     /** Include archived projects' items (default: excluded). */
     includeArchived?: boolean;
+    /** Custom-field conditions (2.4), each already parsed against its field's type. */
+    customFields?: ReadonlyArray<{ field: { id: string; type: CustomFieldType }; condition: CustomFieldCondition }>;
 }
 
 /** A `q` that parsed as a key and resolved to a project and number. */
@@ -86,6 +102,63 @@ export const LIST_ORDERS = {
     updated: { column: 'updatedAt', direction: 'desc', kind: 'date' },
 } as const satisfies Record<string, KeysetOrder>;
 export type ListOrderName = keyof typeof LIST_ORDERS;
+
+/**
+ * The columns of each named list sort (sub-phase 2.4, docs/pagination.md):
+ * nulls last; `manual` has one direction; `key` is the project's prefix,
+ * then the number. Each is backed by a `[tenantId, projectId, <column>, id]`
+ * index (ADR 0002 §13).
+ */
+export function listSortSpec(sort: ListSort, direction?: SortDirection): SortSpec {
+    const dir = sort === 'manual' ? 'asc' : (direction ?? DEFAULT_SORT_DIRECTION[sort]);
+    const one = (path: string[], kind: SortColumn['kind'], nullable = false): SortSpec => ({
+        columns: [{ path, direction: dir, kind, nullable }],
+    });
+    switch (sort) {
+        case 'manual':
+            return one(['sortKey'], 'string');
+        case 'updated':
+            return one(['updatedAt'], 'date');
+        case 'created':
+            return one(['createdAt'], 'date');
+        case 'due':
+            return one(['dueDate'], 'date', true);
+        case 'priority':
+            return one(['priorityRank'], 'number');
+        case 'key':
+            return {
+                columns: [
+                    { path: ['project', 'keyPrefix'], direction: dir, kind: 'string' },
+                    { path: ['number'], direction: dir, kind: 'number' },
+                ],
+            };
+    }
+}
+
+/** The sort of a custom field's value rows (phase 0 of `listByCustomField`). */
+export function customFieldValueSortSpec(type: CustomFieldType, direction: SortDirection): SortSpec {
+    const column = CUSTOM_FIELD_TYPE_SPECS[type].column;
+    // A checkbox's rows are all `true`: the constant type column carries the
+    // direction, and the row id orders them.
+    if (type === 'CHECKBOX') return { columns: [{ path: ['fieldType'], direction, kind: 'string' }] };
+    if (column === 'optionId') return { columns: [{ path: ['option', 'sortKey'], direction, kind: 'string' }] };
+    return { columns: [{ path: [column], direction, kind: column === 'dateValue' ? 'date' : 'string' }] };
+}
+
+/** One value as a list row carries it: what `toWorkItemDto` folds into `customFields`. */
+const customFieldValueSelect = {
+    fieldId: true,
+    fieldType: true,
+    textValue: true,
+    numberValue: true,
+    dateValue: true,
+    boolValue: true,
+    optionId: true,
+    userId: true,
+} satisfies Prisma.CustomFieldValueSelect;
+
+/** Values on one list row: every field of a project, and a multi-select's options. */
+export const ROW_CUSTOM_VALUES_TAKE = CUSTOM_FIELD_LIMITS.fieldsPerProject * 4;
 
 export const workItemListSelect = {
     id: true,
@@ -111,6 +184,7 @@ export const workItemListSelect = {
     updatedAt: true,
     project: { select: { keyPrefix: true } },
     labels: { select: { labelId: true }, take: 20, orderBy: { labelId: 'asc' } },
+    customFieldValues: { select: customFieldValueSelect, take: ROW_CUSTOM_VALUES_TAKE, orderBy: { id: 'asc' } },
 } satisfies Prisma.WorkItemSelect;
 
 export type WorkItemListRow = Prisma.WorkItemGetPayload<{ select: typeof workItemListSelect }>;
@@ -154,6 +228,49 @@ export type WorkItemPatch = Partial<{
     cancelledAt: Date | null;
     parentId: string | null;
 }>;
+
+/**
+ * A custom-field condition as a relation filter over `CustomFieldValue`
+ * (sub-phase 2.4). `empty` and every "not" read `none` (no value row), so a
+ * negative condition includes empty values (Teable's rule, kept explicit;
+ * docs/porting/oss/teable.md §5.6). Each is served by the value table's
+ * `[tenantId, fieldId, <column>]` index.
+ */
+export function customFieldWhere(
+    ctx: Pick<RequestContext, 'tenantId'>,
+    field: { id: string; type: CustomFieldType },
+    condition: CustomFieldCondition,
+): Prisma.WorkItemWhereInput {
+    const base = { tenantId: ctx.tenantId, fieldId: field.id };
+    const has = (extra: Prisma.CustomFieldValueWhereInput): Prisma.WorkItemWhereInput => ({ customFieldValues: { some: { ...base, ...extra } } });
+    const none: Prisma.WorkItemWhereInput = { customFieldValues: { none: base } };
+    const column = CUSTOM_FIELD_TYPE_SPECS[field.type].column;
+    switch (condition.op) {
+        case 'empty':
+            return none;
+        case 'set':
+            return has({});
+        case 'is':
+            return condition.checked ? has({}) : none;
+        case 'any': {
+            const or: Prisma.WorkItemWhereInput[] = [];
+            if (condition.ids.length) or.push(has({ [column]: { in: condition.ids } }));
+            if (condition.orEmpty) or.push(none);
+            return { OR: or };
+        }
+        default:
+            break;
+    }
+    if ('number' in condition) {
+        return has({ numberValue: condition.op === 'eq' ? condition.number : { [condition.op]: condition.number } });
+    }
+    if ('date' in condition) {
+        const d = new Date(`${condition.date}T00:00:00.000Z`);
+        const ops = { eq: 'equals', before: 'lt', after: 'gt', onOrBefore: 'lte', onOrAfter: 'gte' } as const;
+        return has({ dateValue: { [ops[condition.op]]: d } });
+    }
+    return has({ textValue: condition.op === 'contains' ? { contains: condition.text, mode: 'insensitive' } : condition.text });
+}
 
 export class WorkItemRepository {
     /**
@@ -205,6 +322,8 @@ export class WorkItemRepository {
             }
         }
 
+        for (const { field, condition } of filters.customFields ?? []) and.push(customFieldWhere(ctx, field, condition));
+
         if (filters.q) {
             const or: Prisma.WorkItemWhereInput[] = [{ title: { contains: filters.q, mode: 'insensitive' } }];
             if (keyHit) or.push({ projectId: keyHit.projectId, number: keyHit.number });
@@ -215,22 +334,104 @@ export class WorkItemRepository {
         return where;
     }
 
-    /** One page of the live list; returns `limit + 1` rows for `computeKeysetPage`. */
+    /** One page of the live list; returns `limit + 1` rows for `computeSortPage`. */
     static async list(
         db: PrismaTx,
         ctx: RequestContext,
         v: ProjectVisibility,
         filters: WorkItemFilters,
-        page: { limit: number; order: KeysetOrder; cursor?: CursorPayload; keyHit?: KeyHit | null; today?: Date },
+        page: { limit: number; sort: SortSpec; cursor?: SortCursor; keyHit?: KeyHit | null; today?: Date },
     ): Promise<WorkItemListRow[]> {
         const where = WorkItemRepository._buildWhere(ctx, v, filters, page.keyHit ?? null, page.today);
-        if (page.cursor) (where.AND as Prisma.WorkItemWhereInput[]).push(buildKeysetWhere(page.order, page.cursor) as Prisma.WorkItemWhereInput);
+        if (page.cursor) (where.AND as Prisma.WorkItemWhereInput[]).push(buildSortWhere(page.sort, page.cursor) as Prisma.WorkItemWhereInput);
         return db.workItem.findMany({
             where,
-            orderBy: keysetOrderBy(page.order) as Prisma.WorkItemOrderByWithRelationInput[],
+            orderBy: sortOrderBy(page.sort) as Prisma.WorkItemOrderByWithRelationInput[],
             take: page.limit + 1,
             select: workItemListSelect,
         });
+    }
+
+    /**
+     * One page of the live list sorted by a custom field (sub-phase 2.4):
+     * phase 0 reads the field's VALUE rows in value order (a select by its
+     * option's order), the items' filters applied as a relation filter;
+     * when it runs out, phase 1 reads the items with NO value, by id. Empty
+     * values come last in both directions. The cursor is
+     * `{ v: [phase, value], id }`, where `id` is the value row's in phase 0
+     * and the item's in phase 1. The rows are then read once by id and put
+     * in order: three bounded reads, none in a loop. Returns at most
+     * `limit + 1` rows, and the cursor of the row at `limit` when there is
+     * one more.
+     */
+    static async listByCustomField(
+        db: PrismaTx,
+        ctx: RequestContext,
+        v: ProjectVisibility,
+        filters: WorkItemFilters,
+        page: {
+            limit: number;
+            field: { id: string; type: CustomFieldType };
+            direction: SortDirection;
+            cursor?: SortCursor;
+            keyHit?: KeyHit | null;
+            today?: Date;
+        },
+    ): Promise<{ rows: WorkItemListRow[]; next: SortCursor | null }> {
+        const itemWhere = WorkItemRepository._buildWhere(ctx, v, filters, page.keyHit ?? null, page.today);
+        const spec = customFieldValueSortSpec(page.field.type, page.direction);
+        const phase = page.cursor ? page.cursor.v[0] : 0;
+        const want = page.limit + 1;
+        const picked: Array<{ itemId: string; cursor: SortCursor }> = [];
+
+        if (phase === 0) {
+            const where: Prisma.CustomFieldValueWhereInput = {
+                tenantId: ctx.tenantId,
+                fieldId: page.field.id,
+                workItem: itemWhere,
+                AND: page.cursor ? [buildSortWhere(spec, { v: page.cursor.v.slice(1, 1 + spec.columns.length), id: page.cursor.id }) as Prisma.CustomFieldValueWhereInput] : [],
+            };
+            const values = await db.customFieldValue.findMany({
+                where,
+                orderBy: sortOrderBy(spec) as Prisma.CustomFieldValueOrderByWithRelationInput[],
+                take: want,
+                select: { id: true, workItemId: true, fieldType: true, textValue: true, numberValue: true, dateValue: true, option: { select: { sortKey: true } } },
+            });
+            for (const row of values) {
+                picked.push({ itemId: row.workItemId, cursor: { v: [0, ...sortValuesOf(spec, row)], id: row.id } });
+            }
+        }
+        if (picked.length < want) {
+            const idOp = page.direction === 'asc' ? 'gt' : 'lt';
+            const empties = await db.workItem.findMany({
+                where: {
+                    ...itemWhere,
+                    AND: [
+                        ...(itemWhere.AND as Prisma.WorkItemWhereInput[]),
+                        { customFieldValues: { none: { tenantId: ctx.tenantId, fieldId: page.field.id } } },
+                        ...(phase === 1 && page.cursor ? [{ id: idOp === 'gt' ? { gt: page.cursor.id } : { lt: page.cursor.id } }] : []),
+                    ],
+                },
+                orderBy: [{ id: page.direction }],
+                take: want - picked.length,
+                select: { id: true },
+            });
+            for (const row of empties) picked.push({ itemId: row.id, cursor: { v: [1, null], id: row.id } });
+        }
+
+        const kept = picked.slice(0, want);
+        const ids = kept.map((p) => p.itemId);
+        const rows = ids.length
+            ? await db.workItem.findMany({
+                  where: { tenantId: ctx.tenantId, id: { in: ids }, deletedAt: null, AND: [projectVisibilityWhere(v, { includeArchived: true })] },
+                  take: ids.length,
+                  select: workItemListSelect,
+              })
+            : [];
+        const byId = new Map(rows.map((r) => [r.id, r]));
+        const ordered = ids.map((id) => byId.get(id)).filter((r): r is WorkItemListRow => r !== undefined);
+        const next = kept.length > page.limit ? kept[page.limit - 1]!.cursor : null;
+        return { rows: ordered, next };
     }
 
     /**

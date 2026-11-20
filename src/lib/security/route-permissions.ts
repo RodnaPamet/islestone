@@ -433,6 +433,68 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'projects.archive',
         note: 'Archive, unarchive or restore a project.',
     },
+
+    // ── Custom fields and saved views (sub-phase 2.4) ───────────────
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/custom-fields$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: "A visible project's custom fields.",
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/custom-fields$`),
+        methods: ['POST'],
+        permission: 'projects.edit',
+        note: 'Define a custom field: a field is part of its project (map 2.4, open question 1).',
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/custom-fields\\/[^\\/]+$`),
+        methods: ['PATCH'],
+        permission: 'projects.edit',
+        note: 'Rename, reorder, archive or unarchive a custom field.',
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/custom-fields\\/[^\\/]+\\/options$`),
+        methods: ['POST'],
+        permission: 'projects.edit',
+        note: "Add an option to a select field.",
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/custom-fields\\/[^\\/]+\\/options\\/[^\\/]+$`),
+        methods: ['PATCH', 'DELETE'],
+        permission: 'projects.edit',
+        note: 'Change, archive or delete an unused option.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/custom-fields\\/[^\\/]+$`),
+        methods: ['PUT'],
+        permission: 'work_items.edit',
+        note: "Set or clear a custom field's value on an item (the version increases).",
+    },
+    {
+        path: new RegExp(`^${T}\\/views$`),
+        methods: ['GET'],
+        permission: 'views.view',
+        note: 'The saved views the caller can see: their own, and shared ones in visible scopes.',
+    },
+    {
+        path: new RegExp(`^${T}\\/views$`),
+        methods: ['POST'],
+        permission: 'views.create',
+        note: 'Save a view; a shared one also needs views.share (asked in the usecase).',
+    },
+    {
+        path: new RegExp(`^${T}\\/views\\/[^\\/]+$`),
+        methods: ['GET'],
+        permission: 'views.view',
+        note: 'Read one saved view the caller can see.',
+    },
+    {
+        path: new RegExp(`^${T}\\/views\\/[^\\/]+$`),
+        methods: ['PATCH', 'DELETE'],
+        permission: 'views.edit',
+        note: 'Change or delete a saved view: its creator; an admin may delete a shared one (moderation).',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────

@@ -57,8 +57,8 @@ import type { WorkConfigAffordances } from '@/lib/work-items/types';
 
 import { CONFIG, deferred, installFetch, renderWorkspace } from '../helpers/work-items-harness';
 
-const ALL: WorkConfigAffordances = { manageWorkConfig: true, createProject: true, editProject: true, archiveProject: true };
-const NONE: WorkConfigAffordances = { manageWorkConfig: false, createProject: false, editProject: false, archiveProject: false };
+const ALL: WorkConfigAffordances = { manageWorkConfig: true, createProject: true, editProject: true, archiveProject: true, manageCustomFields: true };
+const NONE: WorkConfigAffordances = { manageWorkConfig: false, createProject: false, editProject: false, archiveProject: false, manageCustomFields: false };
 
 const TEAMS = [
     { id: 'team-1', name: 'Core' },

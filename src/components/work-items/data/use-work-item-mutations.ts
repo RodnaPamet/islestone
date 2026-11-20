@@ -60,6 +60,7 @@ export function toRow(item: WorkItemRow): WorkItemRow {
         dueDate: item.dueDate,
         version: item.version,
         labelIds: item.labelIds,
+        customFields: item.customFields ?? {},
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
     };

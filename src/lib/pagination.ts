@@ -117,3 +117,141 @@ export function computeKeysetPage<T extends { id: string }>(
     const k = raw instanceof Date ? raw.toISOString() : String(raw);
     return { items, pageInfo: { hasNextPage: true, nextCursor: encodeCursor({ k, id: last.id }) } };
 }
+
+// ─── Multi-column sorts (sub-phase 2.4) ───────────────────────────────────
+//
+// The list sorts of 2.4 (due date, priority, created, key, a custom field)
+// order by one or more columns, some nullable, before the `id` tie-break.
+// Nulls sort LAST in both directions (docs/pagination.md). The cursor is
+// `{ v: [value per column], id }`; a `null` value continues among the nulls.
+// Written fresh for Islestone.
+
+/** One column of a sort: a Prisma path (`['dueDate']`, `['project', 'keyPrefix']`). */
+export interface SortColumn {
+    path: readonly string[];
+    direction: 'asc' | 'desc';
+    kind: 'string' | 'date' | 'number';
+    nullable?: boolean;
+}
+
+/** An ordered list of columns; `id` breaks ties in the last column's direction. */
+export interface SortSpec {
+    columns: readonly SortColumn[];
+}
+
+export type SortValue = string | number | null;
+
+export interface SortCursor {
+    v: SortValue[];
+    id: string;
+}
+
+export function encodeSortCursor(cursor: SortCursor): string {
+    return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+}
+
+/** Decode a sort cursor for `spec`; anything else is refused, never read as the first page. */
+export function decodeSortCursor(raw: string, spec: SortSpec): SortCursor {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+    } catch {
+        throw new InvalidCursorError();
+    }
+    if (!parsed || typeof parsed !== 'object') throw new InvalidCursorError();
+    const { v, id } = parsed as { v?: unknown; id?: unknown };
+    if (typeof id !== 'string' || id.length === 0 || id.length > 64) throw new InvalidCursorError();
+    if (!Array.isArray(v) || v.length !== spec.columns.length) throw new InvalidCursorError();
+    spec.columns.forEach((col, i) => {
+        const value = v[i] as unknown;
+        if (value === null) {
+            if (!col.nullable) throw new InvalidCursorError();
+            return;
+        }
+        if (col.kind === 'number') {
+            if (typeof value !== 'number' || !Number.isFinite(value)) throw new InvalidCursorError();
+        } else {
+            if (typeof value !== 'string' || value.length > 512) throw new InvalidCursorError();
+            if (col.kind === 'date' && Number.isNaN(Date.parse(value))) throw new InvalidCursorError();
+        }
+    });
+    return { v: v as SortValue[], id };
+}
+
+function atPath(path: readonly string[], leaf: unknown): Record<string, unknown> {
+    let out: unknown = leaf;
+    for (let i = path.length - 1; i >= 0; i -= 1) out = { [path[i]!]: out };
+    return out as Record<string, unknown>;
+}
+
+function sortValue(col: SortColumn, value: SortValue): string | number | Date {
+    return col.kind === 'date' ? new Date(value as string) : (value as string | number);
+}
+
+/**
+ * The `where` for "rows after the cursor" under `spec`: a lexicographic OR
+ * over the columns (equal on every earlier column, after on this one), then
+ * equal on all and `id` after. "After" a non-null value includes every null
+ * of a nullable column (nulls last); after a null, only a later `id` among
+ * the nulls.
+ */
+export function buildSortWhere(spec: SortSpec, cursor: SortCursor): Record<string, unknown> {
+    const or: Array<Record<string, unknown>> = [];
+    const equal: Array<Record<string, unknown>> = [];
+    spec.columns.forEach((col, i) => {
+        const value = cursor.v[i] ?? null;
+        if (value !== null) {
+            const op = col.direction === 'asc' ? 'gt' : 'lt';
+            const after: Array<Record<string, unknown>> = [atPath(col.path, { [op]: sortValue(col, value) })];
+            if (col.nullable) after.push(atPath(col.path, null));
+            or.push({ AND: [...equal, after.length === 1 ? after[0]! : { OR: after }] });
+            equal.push(atPath(col.path, sortValue(col, value)));
+        } else {
+            equal.push(atPath(col.path, null));
+        }
+    });
+    const last = spec.columns[spec.columns.length - 1];
+    const idOp = (last?.direction ?? 'asc') === 'asc' ? 'gt' : 'lt';
+    or.push({ AND: [...equal, { id: { [idOp]: cursor.id } }] });
+    return { OR: or };
+}
+
+/** The `orderBy` for `spec`: each column (nulls last), then `id`. */
+export function sortOrderBy(spec: SortSpec): Array<Record<string, unknown>> {
+    const order = spec.columns.map((col) =>
+        atPath(col.path, col.nullable ? { sort: col.direction, nulls: 'last' } : col.direction),
+    );
+    const last = spec.columns[spec.columns.length - 1];
+    order.push({ id: last?.direction ?? 'asc' });
+    return order;
+}
+
+function readPath(row: unknown, path: readonly string[]): unknown {
+    let at: unknown = row;
+    for (const key of path) at = at == null ? undefined : (at as Record<string, unknown>)[key];
+    return at;
+}
+
+/** The cursor values of `row` under `spec`. */
+export function sortValuesOf(spec: SortSpec, row: unknown): SortValue[] {
+    return spec.columns.map((col) => {
+        const raw = readPath(row, col.path);
+        if (raw === null || raw === undefined) return null;
+        if (raw instanceof Date) return raw.toISOString();
+        if (col.kind === 'number') return Number(raw);
+        return String(raw);
+    });
+}
+
+/** Trim a `limit + 1` read under `spec` and compute the next cursor. */
+export function computeSortPage<T extends { id: string }>(
+    rows: T[],
+    limit: number,
+    spec: SortSpec,
+): { items: T[]; pageInfo: { nextCursor?: string; hasNextPage: boolean } } {
+    const hasNextPage = rows.length > limit;
+    const items = hasNextPage ? rows.slice(0, limit) : rows;
+    const last = items[items.length - 1];
+    if (!hasNextPage || !last) return { items, pageInfo: { hasNextPage: false } };
+    return { items, pageInfo: { hasNextPage: true, nextCursor: encodeSortCursor({ v: sortValuesOf(spec, last), id: last.id }) } };
+}

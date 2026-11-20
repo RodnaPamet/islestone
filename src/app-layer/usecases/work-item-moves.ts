@@ -34,6 +34,7 @@
 import type { WorkflowStateCategory } from '@prisma/client';
 
 import { logEvent } from '../events/audit';
+import { CustomFieldRepository } from '../repositories/CustomFieldRepository';
 import { LabelRepository } from '../repositories/LabelRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
 import { TeamRepository } from '../repositories/TeamRepository';
@@ -210,6 +211,10 @@ export async function moveWorkItemToProject(ctx: RequestContext, id: string, inp
             }
         }
 
+        // Custom fields belong to a project (2.4): the moved rows' values go,
+        // or the value's composite FK (ON UPDATE NO ACTION) refuses the move.
+        const clearedCustomFieldValues = await CustomFieldRepository.deleteValuesOfItems(db, ctx, rows.map((r) => r.id));
+
         const first = await ProjectRepository.claimNumbers(db, ctx, dest.id, rows.length);
         const rootKey = await sortKeyForPosition(db, ctx, dest.id, input.position);
         const stateRemapped: Array<{ id: string; fromStateId: string; toStateId: string }> = [];
@@ -250,6 +255,7 @@ export async function moveWorkItemToProject(ctx: RequestContext, id: string, inp
                 toKey,
                 movedCount: rows.length,
                 stateRemapped,
+                clearedCustomFieldValues,
             },
         });
         return { fromKey, toKey, movedCount: rows.length };

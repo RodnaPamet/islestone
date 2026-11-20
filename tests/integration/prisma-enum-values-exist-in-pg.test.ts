@@ -161,6 +161,7 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
         const enums = schemaEnums();
         expect(enums.map((e) => e.name).sort()).toEqual([
             'AuditOutboxStatus',
+            'CustomFieldType',
             'EmailNotificationType',
             'EmailOutboxStatus',
             'MembershipStatus',
@@ -170,6 +171,8 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
             'OrgAuditAction',
             'OrgRole',
             'Role',
+            'SavedViewVisibility',
+            'ViewLayout',
             'WorkItemPriority',
             'WorkItemRelationType',
             'WorkflowStateCategory',

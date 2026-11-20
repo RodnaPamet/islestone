@@ -803,7 +803,8 @@
             "watcherAdded": "added a watcher",
             "watcherRemoved": "removed a watcher",
             "changed": "changed this work item",
-            "commented": "commented"
+            "commented": "commented",
+            "customFieldSet": "changed a field"
         },
         "subItems": {
             "title": "Sub-items",

@@ -82,6 +82,20 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
     { model: 'WorkItemRelation', fields: ['tenantId', 'toId', 'type'], justification: 'Incoming relations ("blocked by").' },
     { model: 'WorkItemLabel', fields: ['tenantId', 'labelId', 'workItemId'], justification: 'Filter by label; the batched detach.' },
     { model: 'AuditLog', fields: ['tenantId', 'entityId', 'createdAt'], justification: "A work item's Activity, newest first (keyset)." },
+    // Sub-phase 2.4: the list sorts (docs/pagination.md) and the field reads.
+    { model: 'WorkItem', fields: ['tenantId', 'projectId', 'createdAt', 'id'], justification: 'Sort by created, keyset over (createdAt, id).' },
+    { model: 'WorkItem', fields: ['tenantId', 'projectId', 'dueDate', 'id'], justification: 'Sort by due date (nulls last), keyset over (dueDate, id).' },
+    { model: 'WorkItem', fields: ['tenantId', 'projectId', 'priorityRank', 'id'], justification: 'Sort by priority (urgent first), keyset over (priorityRank, id).' },
+    { model: 'CustomField', fields: ['tenantId', 'projectId', 'sortKey'], justification: "A project's fields, in order." },
+    { model: 'CustomFieldOption', fields: ['tenantId', 'fieldId', 'sortKey'], justification: "A select field's options, in order." },
+    { model: 'CustomFieldValue', fields: ['tenantId', 'fieldId', 'numberValue'], justification: 'Filter and sort by a number field.' },
+    { model: 'CustomFieldValue', fields: ['tenantId', 'fieldId', 'dateValue'], justification: 'Filter and sort by a date field.' },
+    { model: 'CustomFieldValue', fields: ['tenantId', 'fieldId', 'textValue'], justification: 'Filter and sort by a text or URL field.' },
+    { model: 'CustomFieldValue', fields: ['tenantId', 'fieldId', 'optionId'], justification: 'Filter by a select option; sort by a select.' },
+    { model: 'CustomFieldValue', fields: ['tenantId', 'fieldId', 'userId'], justification: 'Filter by a person field.' },
+    { model: 'CustomFieldValue', fields: ['tenantId', 'userId'], justification: "A leaving member's person values, a batch at a time." },
+    { model: 'SavedView', fields: ['tenantId', 'createdByUserId', 'projectId'], justification: "A member's own views in a scope." },
+    { model: 'SavedView', fields: ['tenantId', 'visibility', 'projectId'], justification: 'The shared views of a scope.' },
 ];
 
 /** Tenant models whose list queries are fully served by Layers A + B, with the reason. */
@@ -180,7 +194,7 @@ describe('schema-index-coverage — parser sanity', () => {
     it('parses the tenancy models, their indexes and their relation FK groups', () => {
         const membership = MODELS.find((m) => m.name === 'TenantMembership');
         expect(MODELS.map((m) => m.name).sort()).toEqual([
-            'Account', 'AuditLog', 'AuditOutbox', 'Comment', 'Label', 'Notification', 'NotificationOutbox', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Project', 'ProjectKeyPrefix', 'ProjectKeySequence', 'Team', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken', 'WorkItem', 'WorkItemKeyAlias', 'WorkItemLabel', 'WorkItemLink', 'WorkItemRelation', 'WorkItemType', 'WorkItemWatcher', 'WorkflowState',
+            'Account', 'AuditLog', 'AuditOutbox', 'Comment', 'CustomField', 'CustomFieldOption', 'CustomFieldValue', 'Label', 'Notification', 'NotificationOutbox', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Project', 'ProjectKeyPrefix', 'ProjectKeySequence', 'SavedView', 'Team', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken', 'WorkItem', 'WorkItemKeyAlias', 'WorkItemLabel', 'WorkItemLink', 'WorkItemRelation', 'WorkItemType', 'WorkItemWatcher', 'WorkflowState',
         ]);
         expect(membership?.fieldIdName).toBe('id');
         expect(membership?.blockIndexes).toContainEqual(['tenantId', 'status']);

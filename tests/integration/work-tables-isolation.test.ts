@@ -3,7 +3,9 @@
  * (roadmap section 4: every tenant table gets a two-tenant test):
  * Team, WorkflowState, Project, ProjectKeyPrefix, ProjectKeySequence,
  * WorkItemType, WorkItem, WorkItemKeyAlias, WorkItemRelation, Label,
- * WorkItemLabel, Comment, WorkItemWatcher and WorkItemLink.
+ * WorkItemLabel, Comment, WorkItemWatcher and WorkItemLink; and, from
+ * sub-phase 2.4, CustomField, CustomFieldOption, CustomFieldValue and
+ * SavedView.
  *
  * Every operation runs through `runInTenantContext` as tenant B, i.e. as
  * `app_user` with `app.tenant_id` = B: none may read, count, change or remove
@@ -43,6 +45,8 @@ interface Side {
     commentId: string;
     linkId: string;
     relationId: string;
+    fieldId: string;
+    optionId: string;
 }
 
 type Delegate = {
@@ -152,6 +156,42 @@ const TABLES: ReadonlyArray<{
         deletable: true,
         insert: (s) => ({ tenantId: s.tenantId, workItemId: s.itemId, type: 'URL', location: 'https://example.com/p', createdByUserId: s.userId }),
     },
+    // Sub-phase 2.4.
+    {
+        model: 'CustomField',
+        delegate: 'customField',
+        update: { name: 'renamed' },
+        deletable: true,
+        insert: (s) => ({ tenantId: s.tenantId, projectId: s.world.projectId, name: 'planted', type: 'TEXT', sortKey: 'z' }),
+    },
+    {
+        model: 'CustomFieldOption',
+        delegate: 'customFieldOption',
+        update: { name: 'renamed' },
+        deletable: true,
+        insert: (s) => ({ tenantId: s.tenantId, fieldId: s.fieldId, name: 'planted', sortKey: 'z' }),
+    },
+    {
+        model: 'CustomFieldValue',
+        delegate: 'customFieldValue',
+        update: { createdAt: new Date() },
+        deletable: true,
+        insert: (s) => ({
+            tenantId: s.tenantId,
+            projectId: s.world.projectId,
+            workItemId: s.otherItemId,
+            fieldId: s.fieldId,
+            fieldType: 'SELECT',
+            optionId: s.optionId,
+        }),
+    },
+    {
+        model: 'SavedView',
+        delegate: 'savedView',
+        update: { name: 'renamed' },
+        deletable: true,
+        insert: (s) => ({ tenantId: s.tenantId, name: 'planted', visibility: 'SHARED', layout: 'LIST', configJson: {}, createdByUserId: s.userId }),
+    },
 ];
 
 describeFn('work tables — two-tenant isolation as app_user', () => {
@@ -177,7 +217,19 @@ describeFn('work tables — two-tenant isolation as app_user', () => {
             data: { tenantId: tenant.id, type: 'BLOCKS', fromId: item.id, toId: other.id, createdByUserId: user.id },
         });
         await prisma.workItemKeyAlias.create({ data: { tenantId: tenant.id, projectId: world.projectId, number: 500, workItemId: item.id } });
+        const field = await prisma.customField.create({
+            data: { tenantId: tenant.id, projectId: world.projectId, name: `${tag} stage`, type: 'SELECT', sortKey: 'V' },
+        });
+        const option = await prisma.customFieldOption.create({ data: { tenantId: tenant.id, fieldId: field.id, name: 'One', sortKey: 'V' } });
+        await prisma.customFieldValue.create({
+            data: { tenantId: tenant.id, projectId: world.projectId, workItemId: item.id, fieldId: field.id, fieldType: 'SELECT', optionId: option.id },
+        });
+        await prisma.savedView.create({
+            data: { tenantId: tenant.id, name: `${tag} view`, visibility: 'SHARED', layout: 'LIST', configJson: {}, createdByUserId: user.id },
+        });
         return {
+            fieldId: field.id,
+            optionId: option.id,
             tenantId: tenant.id,
             userId: user.id,
             world,
@@ -248,6 +300,21 @@ describeFn('work tables — two-tenant isolation as app_user', () => {
         it('an insert carrying A id is refused', async () => {
             await expect(runInTenantContext(ctxB, (db) => delegateOf(db, t.delegate).create({ data: t.insert(sides.a!) }))).rejects.toThrow();
         });
+    });
+
+    it('a custom-field value cannot point B at A, or at another project\'s field (raw client, RLS bypassed)', async () => {
+        const a = sides.a!;
+        const b = sides.b!;
+        await expect(
+            prisma.customFieldValue.create({
+                data: { tenantId: b.tenantId, projectId: a.world.projectId, workItemId: a.otherItemId, fieldId: a.fieldId, fieldType: 'SELECT', optionId: a.optionId },
+            }),
+        ).rejects.toThrow();
+        await expect(
+            prisma.customFieldValue.create({
+                data: { tenantId: b.tenantId, projectId: b.world.projectId, workItemId: b.otherItemId, fieldId: b.fieldId, fieldType: 'SELECT', optionId: a.optionId },
+            }),
+        ).rejects.toThrow();
     });
 
     it('a child row cannot point B at A: the composite FKs refuse a cross-tenant parent (raw client, RLS bypassed)', async () => {

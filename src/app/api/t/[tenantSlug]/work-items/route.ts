@@ -13,7 +13,7 @@ import { jsonResponse } from '@/lib/api-response';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
 import { createWorkItem, listWorkItems } from '@/app-layer/usecases/work-item';
-import { CreateWorkItemSchema, WorkItemQuerySchema } from '@/lib/schemas/work-item';
+import { CreateWorkItemSchema, WorkItemQuerySchema, customFieldConditionsOf } from '@/lib/schemas/work-item';
 import { normalizeQ } from '@/lib/filters/query-helpers';
 import { parseJsonBody } from '@/lib/validation/route';
 
@@ -22,6 +22,7 @@ export const GET = withApiErrorHandling(
         const query = WorkItemQuerySchema.parse(Object.fromEntries(req.nextUrl.searchParams));
         const result = await listWorkItems(ctx, {
             ...query,
+            customFields: customFieldConditionsOf(req.nextUrl.searchParams),
             q: normalizeQ(query.q),
             includeArchived: query.includeArchived === 'true' || query.includeArchived === '1',
         });
