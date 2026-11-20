@@ -253,6 +253,15 @@ export interface WorkItemPurgePayload {
     tenantId?: string;
 }
 
+/**
+ * Daily cycle rollover (sub-phase 2.5a): close ended cycles, move their
+ * unfinished items on, keep the schedules filled. No `tenantId` sweeps every
+ * workspace with cycles; a `tenantId` re-runs one.
+ */
+export interface CycleRolloverPayload {
+    tenantId?: string;
+}
+
 /** Daily rebalance of projects whose sort keys passed the length bound (ADR 0002 §5). */
 export interface WorkItemSortKeyRebalancePayload {
     tenantId?: string;
@@ -290,6 +299,7 @@ export interface JobPayloadMap {
     'work-item-due-notification': WorkItemDueNotificationPayload;
     'work-item-purge': WorkItemPurgePayload;
     'work-item-sortkey-rebalance': WorkItemSortKeyRebalancePayload;
+    'cycle-rollover': CycleRolloverPayload;
 }
 
 /** Union of all valid job names */
@@ -392,6 +402,15 @@ export const JOB_DEFAULTS: Record<JobName, {
     'work-item-sortkey-rebalance': {
         attempts: 1,
         backoff: { type: 'fixed', delay: 60_000 },
+        removeOnComplete: 30,
+        removeOnFail: 100,
+    },
+    'cycle-rollover': {
+        // Two attempts, five minutes apart: a retry the same night is
+        // harmless (closed cycles are not closed twice), and a cycle left
+        // ended until the next night holds its items a day longer.
+        attempts: 2,
+        backoff: { type: 'fixed', delay: 300_000 },
         removeOnComplete: 30,
         removeOnFail: 100,
     },

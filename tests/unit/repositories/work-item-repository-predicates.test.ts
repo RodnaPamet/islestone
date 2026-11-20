@@ -82,6 +82,8 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
         ['listSubItems', (db) => WorkItemRepository.listSubItems(db, ctx, GUEST, 'p1', { limit: 10 })],
         ['findByNumber', (db) => WorkItemRepository.findByNumber(db, ctx, GUEST, 'p1', 3)],
         ['metrics', (db) => WorkItemRepository.metrics(db, ctx, GUEST, {}, new Date())],
+        ['countsByCycle (2.5a)', (db) => WorkItemRepository.countsByCycle(db, ctx, GUEST, ['c1'])],
+        ['list (a cycle filter, 2.5a)', (db) => WorkItemRepository.list(db, ctx, GUEST, { cycleId: 'c1,c2' }, { limit: 10, sort: listSortSpec('manual') })],
     ];
 
     it.each(cases)('%s', async (_name, run) => {
@@ -118,6 +120,35 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
         for (const call of calls) {
             expect(call.args.where).toMatchObject({ tenantId: 'tenant-1', deletedAt: null, project: { deletedAt: null, archivedAt: null } });
         }
+    });
+
+    it('the rollover reads and moves live, open items in live, unarchived projects only (2.5a)', async () => {
+        const { db, calls } = recorder();
+        await WorkItemRepository.rolloverCandidates(db, ctx, 'c1', 10);
+        await WorkItemRepository.moveCycle(db, ctx, ['w1'], 'c1', 'c2');
+        expect(calls.map((c) => c.op)).toEqual(['findMany', 'updateMany']);
+        for (const call of calls) {
+            expect(call.args.where).toMatchObject({ tenantId: 'tenant-1', cycleId: 'c1', deletedAt: null });
+            expect(JSON.stringify(call.args.where)).toContain('"project":{"deletedAt":null,"archivedAt":null}');
+        }
+        expect(calls[0]!.args.where).toMatchObject({ stateCategory: { in: ['BACKLOG', 'UNSTARTED', 'STARTED'] } });
+        expect(calls[1]!.args.data).toEqual({ cycleId: 'c2', version: { increment: 1 } });
+    });
+
+    it('deleting a cycle clears it from every item, deleted ones included, and bumps the version (2.5a)', async () => {
+        const { db, calls } = recorder();
+        await WorkItemRepository.idsInCycleIncludingDeleted(db, ctx, 'c1', 10);
+        await WorkItemRepository.clearCycleIncludingDeleted(db, ctx, ['w1'], 'c1');
+        for (const call of calls) {
+            expect(call.args.where).toMatchObject({ tenantId: 'tenant-1', cycleId: 'c1' });
+            expect(deletedPredicate(call.args.where as Record<string, unknown>)).toBe(false);
+        }
+        expect(calls[1]!.args.data).toEqual({ cycleId: null, version: { increment: 1 } });
+    });
+
+    it('an empty cycle filter matches nothing, and "none" matches items in no cycle (2.5a)', () => {
+        expect(JSON.stringify(WorkItemRepository._buildWhere(ctx, GUEST, { cycleId: '' }))).toContain('"cycleId":{"in":[]}');
+        expect(JSON.stringify(WorkItemRepository._buildWhere(ctx, GUEST, { cycleId: 'none' }))).toContain('"cycleId":null');
     });
 
     it('the soft delete is an updateMany over live rows, never a delete', async () => {

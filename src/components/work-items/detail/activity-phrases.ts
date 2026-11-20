@@ -30,6 +30,7 @@ export const ACTIVITY_PHRASE = {
     WORK_ITEM_WATCHER_ADDED: 'activity.watcherAdded',
     WORK_ITEM_WATCHER_REMOVED: 'activity.watcherRemoved',
     WORK_ITEM_CUSTOM_FIELD_SET: 'activity.customFieldSet',
+    WORK_ITEM_CYCLE_CHANGED: 'activity.cycleChanged',
 } as const;
 
 /**

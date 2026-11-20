@@ -36,6 +36,7 @@ function row(n: number, over: Partial<WorkItemRow> = {}): WorkItemRow {
         assigneeId: null,
         createdByUserId: 'u-ada',
         parentId: null,
+        cycleId: null,
         sortKey: `a${n}`,
         startDate: null,
         dueDate: null,

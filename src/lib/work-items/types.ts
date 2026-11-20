@@ -31,6 +31,8 @@ export interface WorkItemRow {
     /** Who created the item (My Work's "Created by me"). */
     createdByUserId: string;
     parentId: string | null;
+    /** The team's cycle the item is planned in (2.5a). */
+    cycleId: string | null;
     sortKey: string;
     startDate: string | null;
     dueDate: string | null;
@@ -107,6 +109,20 @@ export interface ViewCustomField {
     options: ViewCustomFieldOption[];
 }
 
+export type CycleStatusName = 'upcoming' | 'current' | 'ended' | 'completed';
+
+/** A cycle as the views name it (2.5a): pickers, filters, lanes and the column. */
+export interface ViewCycle {
+    id: string;
+    teamId: string;
+    number: number;
+    name: string | null;
+    /** `YYYY-MM-DD`, inclusive. */
+    startsOn: string;
+    endsOn: string;
+    status: CycleStatusName;
+}
+
 /** What every work-item view renders with: small sets, read once on the server. */
 export interface WorkItemViewConfig {
     projects: ViewProject[];
@@ -117,6 +133,8 @@ export interface WorkItemViewConfig {
     labels: ViewLabel[];
     /** The live custom fields of the page's project (none on a workspace-wide page; 2.4). */
     customFields: ViewCustomField[];
+    /** Every team's cycles, newest first (2.5a); empty for a viewer without `cycles.view`. */
+    cycles: ViewCycle[];
 }
 
 /** What the views menu offers its viewer (2.4), asked on the server. */
@@ -220,4 +238,52 @@ export interface LinkRow {
 export interface WatcherRow {
     userId: string;
     createdAt: string;
+}
+
+/** What the cycle pages offer their viewer (2.5a), asked on the server. */
+export interface CycleAffordances {
+    /** Create, change and delete cycles and change a team's cycle schedule (`cycles.manage`). */
+    manageCycles: boolean;
+    /** Put an item in a cycle or take it out (`work_items.edit`). */
+    planItems: boolean;
+}
+
+/** Live, visible items of a cycle by what the burn-up counts. */
+export interface CycleCounts {
+    scope: number;
+    started: number;
+    completed: number;
+}
+
+/** A cycle as `GET /cycles` and `GET /cycles/:id` return it. */
+export interface CycleData extends ViewCycle {
+    fromSchedule: boolean;
+    completedAt: string | null;
+    daysLeft: number;
+    counts: CycleCounts;
+}
+
+/** A team's cycle settings (`GET /teams/:id/cycle-schedule`); `null` fields mean never saved. */
+export interface CycleScheduleData {
+    teamId: string;
+    saved: boolean;
+    enabled: boolean;
+    lengthWeeks: number;
+    firstStartsOn: string;
+    upcomingCount: number;
+    rollover: 'NEXT_CYCLE' | 'NO_CYCLE';
+}
+
+export interface BurnUpPointData {
+    date: string;
+    scope: number;
+    started: number;
+    completed: number;
+}
+
+/** `GET /cycles/:id/burn-up`. */
+export interface BurnUpData {
+    points: BurnUpPointData[];
+    /** More items than the burn-up reads: the chart counts the first ones only. */
+    truncated: boolean;
 }

@@ -45,6 +45,7 @@ export const CONFIG: WorkItemViewConfig = {
         { id: 'lb-api', teamId: TEAM, name: 'API', color: null },
     ],
     customFields: [],
+    cycles: [],
 };
 
 export const MEMBERS: Member[] = [
@@ -67,6 +68,7 @@ export function row(n: number, over: Partial<WorkItemRow> = {}): WorkItemRow {
         assigneeId: null,
         createdByUserId: 'u-ada',
         parentId: null,
+        cycleId: null,
         sortKey: `a${n}`,
         startDate: null,
         dueDate: null,

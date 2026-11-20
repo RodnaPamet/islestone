@@ -495,6 +495,56 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'views.edit',
         note: 'Change or delete a saved view: its creator; an admin may delete a shared one (moderation).',
     },
+
+    // ── Cycles (sub-phase 2.5a; owner decision 72: no new key) ─────
+    {
+        path: new RegExp(`^${T}\\/cycles$`),
+        methods: ['GET'],
+        permission: 'cycles.view',
+        note: "Every team's cycles with their counts over visible items.",
+    },
+    {
+        path: new RegExp(`^${T}\\/cycles$`),
+        methods: ['POST'],
+        permission: 'cycles.manage',
+        note: 'Create a one-off cycle (no overlap with the team\'s cycles).',
+    },
+    {
+        path: new RegExp(`^${T}\\/cycles\\/[^\\/]+$`),
+        methods: ['GET'],
+        permission: 'cycles.view',
+        note: 'Read one cycle with its counts.',
+    },
+    {
+        path: new RegExp(`^${T}\\/cycles\\/[^\\/]+$`),
+        methods: ['PATCH', 'DELETE'],
+        permission: 'cycles.manage',
+        note: 'Rename a cycle or move its dates; delete an upcoming one.',
+    },
+    {
+        path: new RegExp(`^${T}\\/cycles\\/[^\\/]+\\/burn-up$`),
+        methods: ['GET'],
+        permission: 'cycles.view',
+        note: "A cycle's burn-up, from the transition record, over visible items.",
+    },
+    {
+        path: new RegExp(`^${T}\\/teams\\/[^\\/]+\\/cycle-schedule$`),
+        methods: ['GET'],
+        permission: 'cycles.view',
+        note: "Read a team's cycle schedule.",
+    },
+    {
+        path: new RegExp(`^${T}\\/teams\\/[^\\/]+\\/cycle-schedule$`),
+        methods: ['PUT'],
+        permission: 'cycles.manage',
+        note: "Save a team's cycle schedule: Members run their team's cycles (the team itself stays under admin.manage).",
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/cycle$`),
+        methods: ['PUT'],
+        permission: 'work_items.edit',
+        note: 'Put an item in a cycle of its team, or take it out (the version increases).',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────

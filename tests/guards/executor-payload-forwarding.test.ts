@@ -53,6 +53,7 @@ describe('GUARD: executors read their payload', () => {
         const calls = code.match(/executorRegistry\.register\(/g) ?? [];
         expect(regs.map((r) => r.job).sort()).toEqual([
             'audit-outbox-flush',
+            'cycle-rollover',
             'health-check',
             'key-rotation',
             'notification-outbox-flush',

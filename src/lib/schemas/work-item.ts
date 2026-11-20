@@ -75,6 +75,9 @@ export const SetWorkItemStateSchema = z.object({ stateId: Id }).strict();
 
 export const AssignWorkItemSchema = z.object({ assigneeId: Id.nullable() }).strict();
 
+/** Put an item in a cycle of its team, or take it out (`null`; 2.5a). */
+export const SetWorkItemCycleSchema = z.object({ cycleId: Id.nullable() }).strict();
+
 export const AddCommentSchema = z.object({ body: z.string().trim().min(1).max(20_000) }).strict();
 
 export const AddWorkItemLinkSchema = z
@@ -139,6 +142,8 @@ export const WorkItemQuerySchema = z.object({
     assigneeId: z.string().max(2000).optional(),
     /** Creator user ids, comma-joinable, as `assigneeId`. */
     createdById: z.string().max(2000).optional(),
+    /** Cycle ids (comma-joinable), `none`, or `current` (each team's current cycle; 2.5a). */
+    cycleId: z.string().max(2000).optional(),
     /** Only `me`: the caller's watched items, resolved from the request context. */
     watching: z.enum(['me']).optional(),
     due: z.enum(DUE_FILTERS).optional(),

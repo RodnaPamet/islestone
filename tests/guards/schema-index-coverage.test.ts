@@ -96,6 +96,12 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
     { model: 'CustomFieldValue', fields: ['tenantId', 'userId'], justification: "A leaving member's person values, a batch at a time." },
     { model: 'SavedView', fields: ['tenantId', 'createdByUserId', 'projectId'], justification: "A member's own views in a scope." },
     { model: 'SavedView', fields: ['tenantId', 'visibility', 'projectId'], justification: 'The shared views of a scope.' },
+    // Sub-phase 2.5a: cycles and the transition record.
+    { model: 'WorkItem', fields: ['tenantId', 'cycleId', 'stateCategory'], justification: 'A cycle\'s items, its counts and the rollover\'s open items.' },
+    { model: 'Cycle', fields: ['tenantId', 'teamId', 'startsOn'], justification: "A team's cycles by date; the overlap check." },
+    { model: 'Cycle', fields: ['tenantId', 'completedAt', 'endsOn'], justification: 'The rollover: open cycles that have ended.' },
+    { model: 'WorkItemTransition', fields: ['tenantId', 'cycleId', 'workItemId'], justification: 'The burn-up: the items ever in a cycle.' },
+    { model: 'WorkItemTransition', fields: ['tenantId', 'workItemId', 'at'], justification: "The burn-up: those items' transitions in time order." },
 ];
 
 /** Tenant models whose list queries are fully served by Layers A + B, with the reason. */
@@ -117,6 +123,8 @@ const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
     Label: 'A workspace\'s labels (and one team\'s), capped at 500: @@index([tenantId, teamId]).',
     WorkItemLink: "One item's links, capped at 50: @@index([tenantId, workItemId]).",
     WorkItemWatcher: "One item's watchers (or a page of items' for the fan-out): @@index([tenantId, workItemId]).",
+    // Sub-phase 2.5a.
+    CycleSchedule: 'At most one per team, read by team or the whole small set: @@index([tenantId, teamId]).',
     // Sub-phase 1.6.
     Notification:
         "The bell: one user's rows in one workspace, newest first, capped at 50: @@index([tenantId, userId, createdAt]).",
@@ -194,7 +202,7 @@ describe('schema-index-coverage — parser sanity', () => {
     it('parses the tenancy models, their indexes and their relation FK groups', () => {
         const membership = MODELS.find((m) => m.name === 'TenantMembership');
         expect(MODELS.map((m) => m.name).sort()).toEqual([
-            'Account', 'AuditLog', 'AuditOutbox', 'Comment', 'CustomField', 'CustomFieldOption', 'CustomFieldValue', 'Label', 'Notification', 'NotificationOutbox', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Project', 'ProjectKeyPrefix', 'ProjectKeySequence', 'SavedView', 'Team', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken', 'WorkItem', 'WorkItemKeyAlias', 'WorkItemLabel', 'WorkItemLink', 'WorkItemRelation', 'WorkItemType', 'WorkItemWatcher', 'WorkflowState',
+            'Account', 'AuditLog', 'AuditOutbox', 'Comment', 'CustomField', 'CustomFieldOption', 'CustomFieldValue', 'Cycle', 'CycleSchedule', 'Label', 'Notification', 'NotificationOutbox', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Project', 'ProjectKeyPrefix', 'ProjectKeySequence', 'SavedView', 'Team', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken', 'WorkItem', 'WorkItemKeyAlias', 'WorkItemLabel', 'WorkItemLink', 'WorkItemRelation', 'WorkItemTransition', 'WorkItemType', 'WorkItemWatcher', 'WorkflowState',
         ]);
         expect(membership?.fieldIdName).toBe('id');
         expect(membership?.blockIndexes).toContainEqual(['tenantId', 'status']);

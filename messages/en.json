@@ -806,7 +806,8 @@
             "watcherRemoved": "removed a watcher",
             "changed": "changed this work item",
             "commented": "commented",
-            "customFieldSet": "changed a field"
+            "customFieldSet": "changed a field",
+            "cycleChanged": "changed the cycle"
         },
         "subItems": {
             "title": "Sub-items",
