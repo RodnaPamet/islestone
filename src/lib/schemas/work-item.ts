@@ -45,8 +45,9 @@ export const PositionSchema = z
 export const CreateWorkItemSchema = z
     .object({
         projectId: Id,
-        typeId: Id,
-        title: Title,
+        /** Required unless `templateId` names a template that gives one. */
+        typeId: Id.optional(),
+        title: Title.optional(),
         description: Description.nullish(),
         stateId: Id.optional(),
         priority: z.enum(WORK_ITEM_PRIORITIES).optional(),
@@ -61,8 +62,11 @@ export const CreateWorkItemSchema = z
         cycleId: Id.nullish(),
         /** A milestone of the project (2.5b). */
         milestoneId: Id.nullish(),
+        /** An item template of the project (2.5c). */
+        templateId: Id.optional(),
     })
-    .strict();
+    .strict()
+    .refine((b) => b.templateId !== undefined || (b.typeId !== undefined && b.title !== undefined), 'Give a title and a type, or a template.');
 
 export const UpdateWorkItemSchema = z
     .object({

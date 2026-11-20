@@ -103,6 +103,8 @@ import { DEFAULT_SORT_DIRECTION, LIST_SORTS, type ListSort, type SortDirection }
 import { resolveListCustomFields, writeInitialCustomFieldValues } from './custom-field';
 import { assertCycleTakesItems, currentCycleIdsInTx } from './cycle';
 import { assertMilestoneOfProject } from './milestone';
+import { loadUsableTemplate, peopleNamedBy, templateSource, templateUseContextInTx } from './work-item-template';
+import { templateToCreateInput, type TemplateOverrides, type TemplateProjection } from '../domain/work-item-template';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────
@@ -363,8 +365,10 @@ export async function getWorkItemByKey(ctx: RequestContext, rawKey: string) {
 
 export interface CreateWorkItemInput {
     projectId: string;
-    typeId: string;
-    title: string;
+    /** Required unless a template gives one. */
+    typeId?: string;
+    /** Required unless a template gives one. */
+    title?: string;
     description?: string | null;
     stateId?: string;
     priority?: WorkItemPriority;
@@ -380,25 +384,72 @@ export interface CreateWorkItemInput {
     cycleId?: string | null;
     /** A milestone of the project (2.5b). */
     milestoneId?: string | null;
+    /**
+     * An item template of the project (2.5c): the item starts from it, every
+     * field the request names winning, and its sub-items are made with it.
+     */
+    templateId?: string;
 }
 
-export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemInput): Promise<WorkItemDto> {
+/** The fields a create names, which win over a template's (`templateToCreateInput`). */
+function overridesOf(input: CreateWorkItemInput): TemplateOverrides {
+    const out: TemplateOverrides = {};
+    if (input.title !== undefined) out.title = input.title;
+    if (input.description !== undefined) out.description = input.description;
+    if (input.typeId !== undefined) out.typeId = input.typeId;
+    if (input.priority !== undefined) out.priority = input.priority;
+    if (input.labelIds !== undefined) out.labelIds = input.labelIds;
+    if (input.assigneeId !== undefined) out.assigneeId = input.assigneeId;
+    if (input.dueDate !== undefined) out.dueDate = input.dueDate;
+    if (input.milestoneId !== undefined) out.milestoneId = input.milestoneId;
+    if (input.customFields !== undefined) out.customFields = input.customFields;
+    return out;
+}
+
+export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemInput): Promise<WorkItemDto & { templateSkipped?: string[] }> {
     assertCanCreateWorkItem(ctx);
-    const title = sanitizePlainText(input.title).trim();
-    if (!title) throw badRequest('A work item needs a title.');
-    const description = input.description ? sanitizePlainText(input.description) : null;
-    const labelIds = uniqueIds(input.labelIds ?? []);
 
     const result = await runInTenantContext(ctx, async (db) => {
-        // The graph lock comes FIRST, before any row read or lock.
-        if (input.parentId) await lockWorkItemGraph(db, ctx.tenantId);
+        // The graph lock comes FIRST, before any row read or lock (a
+        // template may bring sub-items, which are parent links).
+        if (input.parentId || input.templateId) await lockWorkItemGraph(db, ctx.tenantId);
         const v = await visibleProjects(ctx, db);
         const project = await ProjectRepository.getVisible(db, ctx, v, input.projectId);
         if (!project) throw notFound('Project not found');
         assertProjectWritable(project);
 
-        const type = await WorkItemTypeRepository.getById(db, ctx, input.typeId);
+        // A template is projected into the create (the ONE projection,
+        // `templateToCreateInput`), then the create runs as any other.
+        let fromTemplate: TemplateProjection | null = null;
+        let plan: CreateWorkItemInput = input;
+        if (input.templateId) {
+            const template = await loadUsableTemplate(db, ctx, project.id, input.templateId);
+            const source = templateSource(template);
+            fromTemplate = templateToCreateInput(source, overridesOf(input), await templateUseContextInTx(db, ctx, project, peopleNamedBy(source)));
+            plan = {
+                ...input,
+                title: fromTemplate.title,
+                description: fromTemplate.description,
+                typeId: fromTemplate.typeId ?? undefined,
+                priority: fromTemplate.priority,
+                labelIds: fromTemplate.labelIds,
+                assigneeId: fromTemplate.assigneeId,
+                dueDate: fromTemplate.dueDate,
+                milestoneId: fromTemplate.milestoneId,
+                customFields: fromTemplate.customFields,
+            };
+        }
+        const title = sanitizePlainText(plan.title ?? '').trim();
+        if (!title) throw badRequest('A work item needs a title.');
+        const description = plan.description ? sanitizePlainText(plan.description) : null;
+        const labelIds = uniqueIds(plan.labelIds ?? []);
+        if (!plan.typeId) throw badRequest('A work item needs a type.');
+
+        const type = await WorkItemTypeRepository.getById(db, ctx, plan.typeId);
         if (!type) throw notFound('Work item type not found');
+        if (type.archivedAt && fromTemplate && input.typeId === undefined) {
+            throw new ConflictError(`The template's type ${type.name} is archived. Choose another type.`, { reason: 'TEMPLATE_TYPE_ARCHIVED' });
+        }
         if (type.archivedAt) throw badRequest(`The type ${type.name} is archived and takes no new work items.`);
 
         const state = input.stateId
@@ -408,11 +459,12 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
         if (state.teamId !== project.teamId) throw badRequest(`${state.name} belongs to another team's workflow.`);
         if (state.archivedAt) throw badRequest(`${state.name} is archived and takes no work items.`);
 
-        if (input.assigneeId) await assertActiveMember(db, ctx, input.assigneeId);
-        if (input.cycleId) await assertCycleTakesItems(db, ctx, input.cycleId, project.teamId);
-        if (input.milestoneId) await assertMilestoneOfProject(db, ctx, input.milestoneId, project.id);
+        if (plan.assigneeId) await assertActiveMember(db, ctx, plan.assigneeId);
+        if (plan.cycleId) await assertCycleTakesItems(db, ctx, plan.cycleId, project.teamId);
+        if (plan.milestoneId) await assertMilestoneOfProject(db, ctx, plan.milestoneId, project.id);
         if (labelIds.length > 0) await assertLabelsUsable(db, ctx, labelIds, project.teamId);
-        if (input.parentId) await assertParentAllowed(db, ctx, v, input.parentId, { projectId: project.id, subtreeHeight: 0 });
+        const subItems = fromTemplate?.subItems ?? [];
+        if (input.parentId) await assertParentAllowed(db, ctx, v, input.parentId, { projectId: project.id, subtreeHeight: subItems.length > 0 ? 1 : 0 });
 
         // The number first: its row lock serialises creates in the project,
         // so the append below reads a settled last key.
@@ -432,20 +484,20 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
             description,
             stateId: state.id,
             stateCategory: state.category,
-            priority: input.priority ?? 'NONE',
-            assigneeId: input.assigneeId ?? null,
+            priority: plan.priority ?? 'NONE',
+            assigneeId: plan.assigneeId ?? null,
             parentId: input.parentId ?? null,
-            cycleId: input.cycleId ?? null,
-            milestoneId: input.milestoneId ?? null,
+            cycleId: plan.cycleId ?? null,
+            milestoneId: plan.milestoneId ?? null,
             sortKey,
             startDate: parseDateOnly(input.startDate),
-            dueDate: parseDateOnly(input.dueDate),
+            dueDate: parseDateOnly(plan.dueDate),
             startedAt: effects.startedAt ?? null,
             completedAt: effects.completedAt ?? null,
             cancelledAt: effects.cancelledAt ?? null,
         });
         if (labelIds.length > 0) await LabelRepository.attach(db, ctx, row.id, labelIds);
-        const customFieldIds = await writeInitialCustomFieldValues(db, ctx, { id: row.id, projectId: project.id }, input.customFields ?? {});
+        const customFieldIds = await writeInitialCustomFieldValues(db, ctx, { id: row.id, projectId: project.id }, plan.customFields ?? {});
         const key = formatKey(project.keyPrefix, number);
 
         await logEvent(db, ctx, {
@@ -462,8 +514,14 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
                 ...(row.cycleId ? { cycleId: row.cycleId } : {}),
                 ...(row.milestoneId ? { milestoneId: row.milestoneId } : {}),
                 ...(customFieldIds.length ? { customFieldIds } : {}),
+                ...(fromTemplate ? { templateId: input.templateId, ...(fromTemplate.skipped.length ? { templateSkipped: fromTemplate.skipped } : {}) } : {}),
             },
         });
+        // The template's sub-items, in its order, in this transaction.
+        for (const sub of subItems) {
+            // guardrail-allow: n+1 — a template's sub-items, at most TEMPLATE_LIMITS.subItems (50), each claiming its number in order.
+            await insertTemplateItemInTx(db, ctx, project, { parentId: row.id, typeId: type.id, title: sub.title, milestoneId: row.milestoneId, templateId: input.templateId! });
+        }
 
         await emitAutomationEvent(ctx, {
             event: 'WORK_ITEM_CREATED',
@@ -489,9 +547,10 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
             await enqueueAssignedEmail(db, ctx, row.assigneeId, [{ id: row.id, title, key, typeName: type.name }]);
         }
         const withLabels = labelIds.length > 0 ? { ...row, labels: labelIds.map((labelId) => ({ labelId })) } : row;
-        if (customFieldIds.length === 0) return toWorkItemDto(withLabels);
+        const skipped = fromTemplate && fromTemplate.skipped.length > 0 ? { templateSkipped: fromTemplate.skipped } : {};
+        if (customFieldIds.length === 0) return { ...toWorkItemDto(withLabels), ...skipped };
         const reread = await WorkItemRepository.getById(db, ctx, v, row.id);
-        return toWorkItemDto({ ...withLabels, customFieldValues: reread?.customFieldValues ?? [] });
+        return { ...toWorkItemDto({ ...withLabels, customFieldValues: reread?.customFieldValues ?? [] }), ...skipped };
     });
 
     // After the commit: the due reminder and the assignment bell.
@@ -500,6 +559,86 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
         await emitAssignedBells(ctx, result.assigneeId, [{ id: result.id, title: result.title, key: result.key }]);
     }
     return result;
+}
+
+/**
+ * An item a template makes alongside a create (2.5c): an item template's
+ * sub-items, and a project template's starter items and theirs. Made in the
+ * caller's transaction in the team's default state, numbered and placed after
+ * the project's last item, audited with the template it came from. Its
+ * fields have been projected by `templateToCreateInput` and checked by the
+ * caller; no person is assigned, so no bell or mail follows.
+ */
+export async function insertTemplateItemInTx(
+    db: PrismaTx,
+    ctx: RequestContext,
+    project: { id: string; teamId: string; keyPrefix: string },
+    sub: {
+        parentId: string | null;
+        typeId: string;
+        title: string;
+        description?: string | null;
+        priority?: WorkItemPriority;
+        labelIds?: readonly string[];
+        dueDate?: string | null;
+        milestoneId: string | null;
+        templateId: string | null;
+        projectTemplateId?: string;
+    },
+) {
+    const state = await TeamRepository.defaultState(db, ctx, project.teamId);
+    if (!state) throw new ConflictError('The team has no default state.', { reason: 'NO_DEFAULT_STATE' });
+    const number = await ProjectRepository.claimNumber(db, ctx, project.id);
+    const sortKey = await sortKeyForPosition(db, ctx, project.id, undefined);
+    const effects = stateTransitionEffects('BACKLOG', state.category, {}, new Date());
+    const title = sanitizePlainText(sub.title).trim();
+    const row = await WorkItemRepository.create(db, ctx, {
+        projectId: project.id,
+        teamId: project.teamId,
+        number,
+        typeId: sub.typeId,
+        title,
+        description: sub.description ? sanitizePlainText(sub.description) : null,
+        stateId: state.id,
+        stateCategory: state.category,
+        priority: sub.priority ?? 'NONE',
+        assigneeId: null,
+        parentId: sub.parentId,
+        cycleId: null,
+        milestoneId: sub.milestoneId,
+        sortKey,
+        startDate: null,
+        dueDate: parseDateOnly(sub.dueDate ?? null),
+        startedAt: effects.startedAt ?? null,
+        completedAt: effects.completedAt ?? null,
+        cancelledAt: effects.cancelledAt ?? null,
+    });
+    if (sub.labelIds && sub.labelIds.length > 0) await LabelRepository.attach(db, ctx, row.id, [...sub.labelIds]);
+    const key = formatKey(project.keyPrefix, number);
+    await logEvent(db, ctx, {
+        action: 'WORK_ITEM_CREATED',
+        entityType: 'WorkItem',
+        entityId: row.id,
+        details: `Created work item ${key}: ${title}`,
+        detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'created', summary: 'WORK_ITEM_CREATED' },
+        metadata: {
+            typeId: sub.typeId,
+            priority: row.priority,
+            projectId: project.id,
+            parentId: sub.parentId,
+            ...(sub.templateId ? { templateId: sub.templateId } : {}),
+            ...(sub.projectTemplateId ? { projectTemplateId: sub.projectTemplateId } : {}),
+        },
+    });
+    await emitAutomationEvent(ctx, {
+        event: 'WORK_ITEM_CREATED',
+        entityType: 'WorkItem',
+        entityId: row.id,
+        actorUserId: ctx.userId,
+        stableKey: row.id,
+        data: { key, title, projectId: project.id, teamId: project.teamId, typeId: sub.typeId, stateId: state.id, stateCategory: state.category, priority: row.priority, assigneeId: null, parentId: sub.parentId },
+    });
+    return { row, key };
 }
 
 async function assertLabelsUsable(db: PrismaTx, ctx: RequestContext, labelIds: readonly string[], teamId: string) {

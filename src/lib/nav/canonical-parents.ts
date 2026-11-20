@@ -55,6 +55,7 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/settings/work-item-types': { href: '/settings', label: 'Settings' },
     '/settings/labels': { href: '/settings', label: 'Settings' },
     '/settings/projects': { href: '/settings', label: 'Settings' },
+    '/settings/project-templates': { href: '/settings', label: 'Settings' },
 };
 
 /**

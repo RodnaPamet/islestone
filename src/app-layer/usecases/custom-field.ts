@@ -360,6 +360,34 @@ function sanitizedRaw(type: CustomFieldType, raw: unknown): unknown {
 }
 
 /**
+ * Check a template's `customFields` against the project as it is (sub-phase
+ * 2.5c): every field live, every value parsing and naming a live option or an
+ * active member. Returns the values with their text sanitised, ready to store.
+ */
+export async function checkCustomFieldValues(
+    db: PrismaTx,
+    ctx: RequestContext,
+    projectId: string,
+    raw: Readonly<Record<string, unknown>>,
+): Promise<Record<string, unknown>> {
+    const fieldIds = Object.keys(raw);
+    if (fieldIds.length === 0) return {};
+    const fields = await CustomFieldRepository.listFields(db, ctx, projectId);
+    const byId = new Map(fields.map((f) => [f.id, f]));
+    const out: Record<string, unknown> = {};
+    for (const fieldId of fieldIds) {
+        const field = byId.get(fieldId);
+        if (!field) throw badRequest(`${fieldId} is not a live field of this project.`);
+        const value = sanitizedRaw(field.type, raw[fieldId]);
+        const parsed = parseCustomFieldValue(field.type, value);
+        // guardrail-allow: n+1 — one check per field of the template, bounded by the project's field cap (50).
+        const rows = await valueRows(db, ctx, field, parsed, new Set());
+        if (rows.length > 0) out[fieldId] = value;
+    }
+    return out;
+}
+
+/**
  * Write the create's `customFields` for a new item, in the create's
  * transaction (the version is still 1: the values are part of the item as
  * created). Every field must be a live field of the item's project.

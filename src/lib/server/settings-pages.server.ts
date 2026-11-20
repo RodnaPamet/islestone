@@ -11,14 +11,15 @@
  */
 import { notFound } from 'next/navigation';
 
+import { templateAffordances } from '@/app-layer/policies/template.policies';
 import { workConfigAffordances } from '@/app-layer/policies/work-config.policies';
 import { mayOpenSettings } from '@/components/layout/nav-config';
 import { getSessionOrThrow } from '@/lib/auth/session';
 import { isAppError } from '@/lib/errors/types';
 import { getTenantServerContext } from '@/lib/server/tenant-context.server';
-import type { WorkConfigAffordances } from '@/lib/work-items/types';
+import type { TemplateAffordances, WorkConfigAffordances } from '@/lib/work-items/types';
 
-export async function settingsPageAccess(tenantSlug: string): Promise<{ affordances: WorkConfigAffordances }> {
+export async function settingsPageAccess(tenantSlug: string): Promise<{ affordances: WorkConfigAffordances; templates: TemplateAffordances }> {
     const session = await getSessionOrThrow();
     let ctx;
     try {
@@ -35,5 +36,5 @@ export async function settingsPageAccess(tenantSlug: string): Promise<{ affordan
         throw err;
     }
     if (!mayOpenSettings(ctx.appPermissions, ctx.membershipRole)) notFound();
-    return { affordances: workConfigAffordances(ctx) };
+    return { affordances: workConfigAffordances(ctx), templates: templateAffordances(ctx) };
 }

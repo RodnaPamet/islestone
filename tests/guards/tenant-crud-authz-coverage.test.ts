@@ -20,7 +20,7 @@ import { gitFiles } from '../helpers/git-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const T = 'src/app/api/t/[tenantSlug]';
-const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles'].map((r) => `${T}/${r}/`);
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates'].map((r) => `${T}/${r}/`);
 
 type Spec = Partial<Record<'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', string>>;
 const W = `${T}/work-items`;
@@ -62,6 +62,11 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${T}/projects/[projectId]/milestones/route.ts`]: { GET: 'projects.view', POST: 'projects.edit' },
     [`${T}/projects/[projectId]/milestones/[milestoneId]/route.ts`]: { PATCH: 'projects.edit', DELETE: 'projects.edit' },
     [`${W}/[workItemId]/milestone/route.ts`]: { PUT: 'work_items.edit' },
+    // Sub-phase 2.5c (owner decisions 71 and 72).
+    [`${T}/projects/[projectId]/work-item-templates/route.ts`]: { GET: 'projects.view', POST: 'projects.edit' },
+    [`${T}/projects/[projectId]/work-item-templates/[templateId]/route.ts`]: { PATCH: 'projects.edit', DELETE: 'projects.edit' },
+    [`${T}/project-templates/route.ts`]: { GET: 'projects.create', POST: 'admin.manage' },
+    [`${T}/project-templates/[templateId]/route.ts`]: { PATCH: 'admin.manage', DELETE: 'admin.manage' },
     [`${T}/projects/[projectId]/custom-fields/route.ts`]: { GET: 'projects.view', POST: 'projects.edit' },
     [`${T}/projects/[projectId]/custom-fields/[fieldId]/route.ts`]: { PATCH: 'projects.edit' },
     [`${T}/projects/[projectId]/custom-fields/[fieldId]/options/route.ts`]: { POST: 'projects.edit' },

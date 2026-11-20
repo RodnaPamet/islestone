@@ -1,8 +1,10 @@
 import { notFound } from 'next/navigation';
 
 import { ProjectMilestonesLink } from '@/components/milestones/ProjectMilestonesLink';
+import { ProjectTemplatesButton } from '@/components/work-items/templates/ProjectTemplatesButton';
 import { WorkConfigProvider } from '@/components/work-items/data/use-work-config';
 import { WorkItemsView } from '@/components/work-items/WorkItemsView';
+import { templateAffordances } from '@/app-layer/policies/template.policies';
 import { workItemPageContext } from '@/lib/server/work-item-pages.server';
 
 /**
@@ -13,7 +15,7 @@ import { workItemPageContext } from '@/lib/server/work-item-pages.server';
 export default async function ProjectPage({ params }: { params: Promise<{ tenantSlug: string; projectKey: string }> }) {
     const { tenantSlug, projectKey } = await params;
     const prefix = decodeURIComponent(projectKey).toUpperCase();
-    const { config, savedViews, workConfig } = await workItemPageContext(tenantSlug, { projectKeyPrefix: prefix });
+    const { ctx, config, savedViews, workConfig } = await workItemPageContext(tenantSlug, { projectKeyPrefix: prefix });
     const project = config.projects.find((p) => p.keyPrefix === prefix);
     if (!project) notFound();
     return (
@@ -25,7 +27,14 @@ export default async function ProjectPage({ params }: { params: Promise<{ tenant
                 viewKey={`project:${project.id}`}
                 savedViews={savedViews}
                 manageCustomFields={workConfig.manageCustomFields && !project.archived}
-                headerLinks={<ProjectMilestonesLink keyPrefix={project.keyPrefix} />}
+                headerLinks={
+                    <>
+                        <ProjectMilestonesLink keyPrefix={project.keyPrefix} />
+                        {templateAffordances(ctx).manageItemTemplates && !project.archived && (
+                            <ProjectTemplatesButton projectId={project.id} teamId={project.teamId} projectName={project.name} />
+                        )}
+                    </>
+                }
             />
         </WorkConfigProvider>
     );

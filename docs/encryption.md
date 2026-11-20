@@ -53,6 +53,8 @@ tripwire.
 | `TenantSecuritySettings` | `auditStreamSecretEncrypted` | The HMAC secret that signs the workspace's audit-stream deliveries. |
 | `WorkItem` | `description` | A work item's description (sub-phase 2.2, ADR 0002 §11). The title stays plaintext: it is searched and quoted. |
 | `Comment` | `body` | A comment's text (2.2). |
+| `WorkItemTemplate` | `description` | An item template's description (sub-phase 2.5c, owner decision 73). Its name and title stay plaintext. |
+| `ProjectTemplate` | `contentJson` | A project template's whole content, one JSON document (fields, milestones, item templates with their descriptions, starter items), encrypted as one value (2.5c, decision 73). Its name stays plaintext. |
 
 Both are sanitised before they are stored, and an audit entry records that
 the description changed, never its text. A top-level write encrypts only the

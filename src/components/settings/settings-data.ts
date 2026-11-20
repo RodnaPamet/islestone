@@ -15,7 +15,7 @@ import { useSWRConfig } from 'swr';
 import { ApiClientError, apiSend } from '@/lib/data/api-client';
 import { useTenantSWR } from '@/lib/data/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
-import type { WorkflowStateCategory } from '@/lib/work-items/types';
+import type { ProjectTemplateSummary, WorkflowStateCategory } from '@/lib/work-items/types';
 
 export interface SettingsTeam {
     id: string;
@@ -63,6 +63,10 @@ export const SETTINGS_PATHS = {
     types: '/work-item-types?includeArchived=1',
     labels: '/labels',
     projects: '/projects?includeArchived=1',
+    /** The live project templates, for the create dialog (2.5c; `projects.create`). */
+    projectTemplates: '/project-templates',
+    /** Every project template with what it holds, for Settings → Project templates (2.5c; admins). */
+    projectTemplatesAll: '/project-templates?includeArchived=1',
 } as const;
 
 export const useTeams = () => useTenantSWR<SettingsTeam[]>(SETTINGS_PATHS.teams);
@@ -70,6 +74,8 @@ export const useTeam = (teamId: string) => useTenantSWR<SettingsTeamDetail>(SETT
 export const useWorkItemTypes = () => useTenantSWR<SettingsType[]>(SETTINGS_PATHS.types);
 export const useLabels = () => useTenantSWR<SettingsLabel[]>(SETTINGS_PATHS.labels);
 export const useProjects = () => useTenantSWR<SettingsProject[]>(SETTINGS_PATHS.projects);
+export const useProjectTemplates = (enabled = true) => useTenantSWR<ProjectTemplateSummary[]>(enabled ? SETTINGS_PATHS.projectTemplates : null);
+export const useAllProjectTemplates = () => useTenantSWR<ProjectTemplateSummary[]>(SETTINGS_PATHS.projectTemplatesAll);
 
 /** The refusal a person reads: the server's sentence, or `fallback`. */
 export function refusalText(err: unknown, fallback: string): string {

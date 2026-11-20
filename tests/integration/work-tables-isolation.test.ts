@@ -7,7 +7,8 @@
  * sub-phase 2.4, CustomField, CustomFieldOption, CustomFieldValue and
  * SavedView; and, from sub-phase 2.5a, CycleSchedule, Cycle and
  * WorkItemTransition (which app_user may only read: its writer is a trigger);
- * and, from sub-phase 2.5b, Milestone.
+ * and, from sub-phase 2.5b, Milestone; and, from sub-phase 2.5c,
+ * WorkItemTemplate, WorkItemTemplateLabel and ProjectTemplate.
  *
  * Every operation runs through `runInTenantContext` as tenant B, i.e. as
  * `app_user` with `app.tenant_id` = B: none may read, count, change or remove
@@ -51,6 +52,7 @@ interface Side {
     optionId: string;
     cycleId: string;
     milestoneId: string;
+    templateId: string;
 }
 
 type Delegate = {
@@ -226,6 +228,27 @@ const TABLES: ReadonlyArray<{
         insert: (s) => ({ tenantId: s.tenantId, projectId: s.world.projectId, name: 'planted', sortKey: 'z' }),
     },
     {
+        model: 'WorkItemTemplate',
+        delegate: 'workItemTemplate',
+        update: { name: 'renamed' },
+        deletable: true,
+        insert: (s) => ({ tenantId: s.tenantId, projectId: s.world.projectId, name: 'planted', title: 'planted', sortKey: 'z', createdByUserId: s.userId }),
+    },
+    {
+        model: 'WorkItemTemplateLabel',
+        delegate: 'workItemTemplateLabel',
+        update: { createdAt: new Date('2030-01-01T00:00:00Z') },
+        deletable: true,
+        insert: (s) => ({ tenantId: s.tenantId, templateId: s.templateId, labelId: s.labelId }),
+    },
+    {
+        model: 'ProjectTemplate',
+        delegate: 'projectTemplate',
+        update: { name: 'renamed' },
+        deletable: true,
+        insert: (s) => ({ tenantId: s.tenantId, name: 'planted', contentJson: '{}', sortKey: 'z', createdByUserId: s.userId }),
+    },
+    {
         model: 'WorkItemTransition',
         delegate: 'workItemTransition',
         update: { deleted: true },
@@ -284,7 +307,13 @@ describeFn('work tables — two-tenant isolation as app_user', () => {
         await prisma.workItem.update({ where: { id: item.id }, data: { cycleId: cycle.id } });
         const milestone = await prisma.milestone.create({ data: { tenantId: tenant.id, projectId: world.projectId, name: `${tag} beta`, sortKey: 'V' } });
         await prisma.workItem.update({ where: { id: other.id }, data: { milestoneId: milestone.id } });
+        const template = await prisma.workItemTemplate.create({
+            data: { tenantId: tenant.id, projectId: world.projectId, name: `${tag} template`, title: 'From a template', sortKey: 'V', createdByUserId: user.id },
+        });
+        await prisma.workItemTemplateLabel.create({ data: { tenantId: tenant.id, templateId: template.id, labelId: label.id } });
+        await prisma.projectTemplate.create({ data: { tenantId: tenant.id, name: `${tag} starter`, contentJson: '{}', sortKey: 'V', createdByUserId: user.id } });
         return {
+            templateId: template.id,
             cycleId: cycle.id,
             milestoneId: milestone.id,
             fieldId: field.id,

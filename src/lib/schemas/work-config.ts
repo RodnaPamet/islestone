@@ -38,7 +38,7 @@ export const UpdateWorkflowStateSchema = z
 export const DeleteWorkflowStateSchema = z.object({ moveToStateId: Id.optional() }).strict();
 
 export const CreateProjectSchema = z
-    .object({ teamId: Id, name: Name, keyPrefix: z.string().trim().min(2).max(10) })
+    .object({ teamId: Id, name: Name, keyPrefix: z.string().trim().min(2).max(10), templateId: Id.optional() })
     .strict();
 
 export const UpdateProjectSchema = z

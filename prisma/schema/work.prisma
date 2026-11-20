@@ -89,12 +89,13 @@ model Project {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  team         Team          @relation(fields: [teamId, tenantId], references: [id, tenantId])
-  workItems    WorkItem[]
-  customFields CustomField[]
-  savedViews   SavedView[]
-  milestones   Milestone[]
+  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  team              Team               @relation(fields: [teamId, tenantId], references: [id, tenantId])
+  workItems         WorkItem[]
+  customFields      CustomField[]
+  savedViews        SavedView[]
+  milestones        Milestone[]
+  workItemTemplates WorkItemTemplate[]
 
   @@unique([id, tenantId])
   /// Target of WorkItem's composite FK: an item's team is its project's team.
@@ -155,8 +156,9 @@ model WorkItemType {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   workItems WorkItem[]
+  templates WorkItemTemplate[]
 
   @@unique([tenantId, name])
   @@unique([id, tenantId])
@@ -322,9 +324,10 @@ model Label {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  team      Team?           @relation(fields: [teamId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  tenant    Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  team      Team?                   @relation(fields: [teamId, tenantId], references: [id, tenantId], onDelete: Cascade)
   workItems WorkItemLabel[]
+  templates WorkItemTemplateLabel[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, teamId, name])
@@ -681,4 +684,91 @@ model Milestone {
   @@unique([id, projectId, tenantId])
   @@unique([tenantId, projectId, name])
   @@index([tenantId, projectId, sortKey])
+}
+
+/// An item template (sub-phase 2.5c, owner decisions 71 and 73): what a new
+/// work item of the project starts from. Managed under `projects.edit`.
+/// `description` is ENCRYPTED (manifest) and sanitised before it is stored;
+/// `name` and `title` are plaintext, like an item's title. The type, labels,
+/// assignee, custom-field values and sub-items are checked against the
+/// project at save and again at use (`templateToCreateInput`).
+model WorkItemTemplate {
+  id                    String           @id @default(cuid())
+  tenantId              String
+  projectId             String
+  /// Plaintext, sanitised; unique in the project.
+  name                  String
+  title                 String
+  description           String?
+  typeId                String?
+  priority              WorkItemPriority @default(NONE)
+  /// A member's user id, checked at save and at use; no FK (a removed member is cleared, `removeTenantMember`).
+  assigneeId            String?
+  /// The new item's due date, this many days after the day it is created (0 to 3650).
+  dueInDays             Int?
+  /// Field id → value, as `customFields` on a create.
+  customFieldValuesJson Json?
+  /// The sub-items made with the item: `[{ title }]`.
+  subItemsJson          Json?
+  /// Fractional index within the project; `COLLATE "C"` in SQL.
+  sortKey               String
+  archivedAt            DateTime?
+  /// Who made it (an actor stamp; no FK).
+  createdByUserId       String
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  tenant  Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project Project                 @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  type    WorkItemType?           @relation(fields: [typeId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  labels  WorkItemTemplateLabel[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, projectId, name])
+  @@index([tenantId, projectId, sortKey])
+  @@index([tenantId, typeId])
+}
+
+/// A label an item template puts on its items; goes with the template or the label.
+model WorkItemTemplateLabel {
+  tenantId   String
+  templateId String
+  labelId    String
+  createdAt  DateTime @default(now())
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template WorkItemTemplate @relation(fields: [templateId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  label    Label            @relation(fields: [labelId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@id([templateId, labelId])
+  @@index([tenantId, templateId])
+  @@index([tenantId, labelId])
+}
+
+/// A project template (sub-phase 2.5c, owner decisions 71 and 73): the
+/// workspace's starting point for a new project, made from an existing one
+/// ("Save as template", `admin.manage`) and used under `projects.create`.
+/// `contentJson` is the whole content (fields, milestones, item templates,
+/// starter items), a versioned, Zod-validated document ENCRYPTED under the
+/// workspace key (manifest); `name` is plaintext.
+model ProjectTemplate {
+  id              String    @id @default(cuid())
+  tenantId        String
+  /// Plaintext, sanitised; unique in the workspace.
+  name            String
+  contentJson     String
+  contentVersion  Int       @default(1)
+  /// Fractional index within the workspace; `COLLATE "C"` in SQL.
+  sortKey         String
+  archivedAt      DateTime?
+  /// Who saved it (an actor stamp; no FK).
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, name])
+  @@index([tenantId, sortKey])
 }

@@ -19,9 +19,9 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import type { WorkConfigAffordances } from '@/lib/work-items/types';
 
-import { useLabels, useProjects, useTeams, useWorkItemTypes } from './settings-data';
+import { useLabels, useProjects, useProjectTemplates, useTeams, useWorkItemTypes } from './settings-data';
 
-const SECTIONS = ['teams', 'workItemTypes', 'labels', 'projects'] as const;
+const SECTIONS = ['teams', 'workItemTypes', 'labels', 'projects', 'projectTemplates'] as const;
 type SectionKey = (typeof SECTIONS)[number];
 
 const SECTION_PATH: Record<SectionKey, string> = {
@@ -29,6 +29,7 @@ const SECTION_PATH: Record<SectionKey, string> = {
     workItemTypes: '/settings/work-item-types',
     labels: '/settings/labels',
     projects: '/settings/projects',
+    projectTemplates: '/settings/project-templates',
 };
 
 export function SettingsOverview({ title, affordances }: { title: string; affordances: WorkConfigAffordances }) {
@@ -38,12 +39,15 @@ export function SettingsOverview({ title, affordances }: { title: string; afford
     const types = useWorkItemTypes();
     const labels = useLabels();
     const projects = useProjects();
+    // The list takes `projects.create`; a viewer without it sees no count.
+    const projectTemplates = useProjectTemplates(affordances.createProject);
 
     const counts: Record<SectionKey, number | undefined> = {
         teams: teams.data?.length,
         workItemTypes: types.data?.filter((x) => !x.archivedAt).length,
         labels: labels.data?.length,
         projects: projects.data?.filter((x) => !x.archivedAt).length,
+        projectTemplates: projectTemplates.data?.length,
     };
     const readOnly = !affordances.manageWorkConfig && !affordances.createProject;
     const hasTeam = (counts.teams ?? 0) > 0;

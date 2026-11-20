@@ -50,6 +50,7 @@ import {
 } from './custom-roles';
 import { lockTenantOwners } from './tenant-owner-lock';
 import { clearPersonValuesInTx } from './custom-field';
+import { WorkItemTemplateRepository } from '../repositories/TemplateRepository';
 
 // Safety cap on the two whole-tenant membership scans below. Both feed
 // surfaces that legitimately want every member (the admin roster, and the
@@ -589,6 +590,19 @@ export async function removeTenantMember(
                 details: `Cleared ${clearedPersonValues} person field value(s) before removing a member`,
                 detailsJson: { category: 'entity_lifecycle', entityName: 'CustomFieldValue', operation: 'deleted' },
                 metadata: { clearedCount: clearedPersonValues },
+            });
+        }
+
+        // Sub-phase 2.5c: item templates that would assign them stop doing so.
+        const clearedTemplates = await WorkItemTemplateRepository.clearAssignee(db, ctx, membership.userId);
+        if (clearedTemplates > 0) {
+            await logEvent(db, ctx, {
+                action: 'ITEM_TEMPLATES_CLEARED_ON_MEMBER_REMOVAL',
+                entityType: 'TenantMembership',
+                entityId: membership.id,
+                details: `Cleared the assignee of ${clearedTemplates} item template(s) before removing a member`,
+                detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItemTemplate', operation: 'updated', changedFields: ['assigneeId'] },
+                metadata: { clearedCount: clearedTemplates },
             });
         }
 

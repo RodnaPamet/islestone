@@ -105,6 +105,8 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
     // Sub-phase 2.5b: milestones.
     { model: 'WorkItem', fields: ['tenantId', 'milestoneId', 'stateCategory'], justification: "A milestone's items and its progress; the milestone filter." },
     { model: 'Milestone', fields: ['tenantId', 'projectId', 'sortKey'], justification: "A project's milestones, in order." },
+    { model: 'WorkItemTemplate', fields: ['tenantId', 'projectId', 'sortKey'], justification: "A project's item templates, in order." },
+    { model: 'ProjectTemplate', fields: ['tenantId', 'sortKey'], justification: "The workspace's project templates, in order." },
 ];
 
 /** Tenant models whose list queries are fully served by Layers A + B, with the reason. */
@@ -205,7 +207,7 @@ describe('schema-index-coverage — parser sanity', () => {
     it('parses the tenancy models, their indexes and their relation FK groups', () => {
         const membership = MODELS.find((m) => m.name === 'TenantMembership');
         expect(MODELS.map((m) => m.name).sort()).toEqual([
-            'Account', 'AuditLog', 'AuditOutbox', 'Comment', 'CustomField', 'CustomFieldOption', 'CustomFieldValue', 'Cycle', 'CycleSchedule', 'Label', 'Milestone', 'Notification', 'NotificationOutbox', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Project', 'ProjectKeyPrefix', 'ProjectKeySequence', 'SavedView', 'Team', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken', 'WorkItem', 'WorkItemKeyAlias', 'WorkItemLabel', 'WorkItemLink', 'WorkItemRelation', 'WorkItemTransition', 'WorkItemType', 'WorkItemWatcher', 'WorkflowState',
+            'Account', 'AuditLog', 'AuditOutbox', 'Comment', 'CustomField', 'CustomFieldOption', 'CustomFieldValue', 'Cycle', 'CycleSchedule', 'Label', 'Milestone', 'Notification', 'NotificationOutbox', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Project', 'ProjectKeyPrefix', 'ProjectKeySequence', 'ProjectTemplate', 'SavedView', 'Team', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken', 'WorkItem', 'WorkItemKeyAlias', 'WorkItemLabel', 'WorkItemLink', 'WorkItemRelation', 'WorkItemTemplate', 'WorkItemTemplateLabel', 'WorkItemTransition', 'WorkItemType', 'WorkItemWatcher', 'WorkflowState',
         ]);
         expect(membership?.fieldIdName).toBe('id');
         expect(membership?.blockIndexes).toContainEqual(['tenantId', 'status']);

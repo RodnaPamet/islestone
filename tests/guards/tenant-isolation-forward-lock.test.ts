@@ -63,6 +63,9 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     WorkItemTransition: 'tests/integration/work-tables-isolation.test.ts',
     // Sub-phase 2.5b.
     Milestone: 'tests/integration/work-tables-isolation.test.ts',
+    WorkItemTemplate: 'tests/integration/work-tables-isolation.test.ts',
+    WorkItemTemplateLabel: 'tests/integration/work-tables-isolation.test.ts',
+    ProjectTemplate: 'tests/integration/work-tables-isolation.test.ts',
 };
 
 /** Models proven only structurally, pending a two-tenant test. Empty, and should stay so. */

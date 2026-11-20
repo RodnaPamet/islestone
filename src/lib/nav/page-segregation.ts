@@ -76,6 +76,8 @@ export const SUBPAGES: readonly string[] = [
     '/settings/work-item-types',
     '/settings/labels',
     '/settings/projects',
+    // Sub-phase 2.5c.
+    '/settings/project-templates',
 ] as const;
 
 /**

@@ -961,6 +961,46 @@ export class WorkItemRepository {
         return result.count;
     }
 
+    // ── Templates (sub-phase 2.5c) ───────────────────────────────────
+
+    /**
+     * A project's open items for "Save as template": live, visible, not Done
+     * or Cancelled, in the project's order. `parentIds` null reads the
+     * top-level items, otherwise the sub-items of those parents.
+     */
+    static async openItemsForTemplate(
+        db: PrismaTx,
+        ctx: RequestContext,
+        v: ProjectVisibility,
+        projectId: string,
+        parentIds: readonly string[] | null,
+        take: number,
+    ) {
+        return db.workItem.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                projectId,
+                deletedAt: null,
+                stateCategory: { notIn: ['DONE', 'CANCELLED'] },
+                ...(parentIds === null ? { parentId: null } : { parentId: { in: [...parentIds] } }),
+                AND: [projectVisibilityWhere(v, { includeArchived: true })],
+            },
+            orderBy: [{ sortKey: 'asc' }, { id: 'asc' }],
+            take,
+            select: {
+                id: true,
+                parentId: true,
+                title: true,
+                description: true,
+                typeId: true,
+                priority: true,
+                dueDate: true,
+                milestoneId: true,
+                labels: { select: { labelId: true } },
+            },
+        });
+    }
+
     // ── Milestones (sub-phase 2.5b) ──────────────────────────────────
 
     /**

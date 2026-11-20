@@ -35,6 +35,7 @@ import type { WorkItemDetailData, WorkItemPriority } from '@/lib/work-items/type
 
 import { useWorkConfig } from './data/use-work-config';
 import { useWorkItemMutations } from './data/use-work-item-mutations';
+import { useItemTemplates } from './data/use-item-templates';
 import { AssigneePicker, CyclePicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker } from './pickers';
 
 export interface NewWorkItemInitial {
@@ -61,7 +62,12 @@ interface FormState {
     dueDate: string | null;
     cycleId: string | null;
     milestoneId: string | null;
+    /** The item template the form started from (2.5c), or none. */
+    templateId: string | null;
 }
+
+/** The fields a template fills; once chosen, only what the person then changes is sent (the server applies the rest). */
+const TEMPLATE_FIELDS = ['title', 'description', 'typeId', 'priority', 'assigneeId', 'labelIds', 'dueDate', 'milestoneId'] as const;
 
 export function NewWorkItemModal({
     open,
@@ -100,10 +106,13 @@ export function NewWorkItemModal({
             dueDate: null,
             cycleId: initial?.cycleId && config.cycleById.get(initial.cycleId)?.teamId === teamId ? initial.cycleId : null,
             milestoneId: initial?.milestoneId && config.milestoneById.get(initial.milestoneId)?.projectId === projectId ? initial.milestoneId : null,
+            templateId: null,
         };
     }, [config, initial, liveProjects]);
 
     const [form, setForm] = useState<FormState>(blank);
+    // The fields the person changed since a template filled the form.
+    const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
     const [error, setError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -115,6 +124,7 @@ export function NewWorkItemModal({
     useEffect(() => {
         if (open && !wasOpen.current) {
             setForm(blank);
+            setTouched(new Set());
             setError(null);
         }
         wasOpen.current = open;
@@ -128,7 +138,33 @@ export function NewWorkItemModal({
         else onOpenChange(false);
     };
 
-    const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
+    const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+        setForm((f) => ({ ...f, [key]: value }));
+        setTouched((prev) => (prev.has(key) ? prev : new Set([...prev, key])));
+    };
+    const { data: templates } = useItemTemplates(form.projectId || null);
+
+    /** Fill the form from a template (2.5c); the server applies its sub-items and field values. */
+    const applyTemplate = (templateId: string | null) => {
+        const tpl = templateId ? (templates ?? []).find((x) => x.id === templateId) : undefined;
+        setTouched(new Set());
+        if (!tpl) {
+            setForm((f) => ({ ...f, templateId: null }));
+            return;
+        }
+        const due = tpl.dueInDays !== null ? new Date(Date.now() + tpl.dueInDays * 86_400_000) : null;
+        setForm((f) => ({
+            ...f,
+            templateId: tpl.id,
+            title: tpl.title,
+            description: tpl.description ?? '',
+            typeId: tpl.typeId ?? f.typeId,
+            priority: tpl.priority,
+            assigneeId: tpl.assigneeId,
+            labelIds: tpl.labelIds,
+            dueDate: due ? toYMD(due) : null,
+        }));
+    };
 
     const changeProject = (projectId: string) => {
         const team = config.projectById.get(projectId)?.teamId ?? '';
@@ -141,6 +177,8 @@ export function NewWorkItemModal({
             cycleId: f.cycleId && config.cycleById.get(f.cycleId)?.teamId === team ? f.cycleId : null,
             // A milestone belongs to a project: another project clears it.
             milestoneId: f.milestoneId && config.milestoneById.get(f.milestoneId)?.projectId === projectId ? f.milestoneId : null,
+            // A template belongs to a project.
+            templateId: null,
             labelIds: f.labelIds.filter((id) => {
                 const label = config.labelById.get(id);
                 return !!label && (label.teamId === null || label.teamId === team);
@@ -156,7 +194,7 @@ export function NewWorkItemModal({
         }
         setSubmitting(true);
         setError(null);
-        const result = await mutations.create({
+        const full: Record<string, unknown> = {
             projectId: form.projectId,
             typeId: form.typeId,
             title: form.title.trim(),
@@ -169,7 +207,22 @@ export function NewWorkItemModal({
             ...(form.cycleId ? { cycleId: form.cycleId } : {}),
             ...(form.milestoneId ? { milestoneId: form.milestoneId } : {}),
             ...(initial?.parentId ? { parentId: initial.parentId } : {}),
-        });
+        };
+        // From a template, send it and only what the person changed: the
+        // server fills the rest (and skips what no longer fits, naming it).
+        const body: Record<string, unknown> = form.templateId
+            ? Object.fromEntries(
+                  Object.entries(full).filter(([k]) => !(TEMPLATE_FIELDS as readonly string[]).includes(k) || touched.has(k)),
+              )
+            : full;
+        if (form.templateId) {
+            body.templateId = form.templateId;
+            if (touched.has('dueDate') && !form.dueDate) body.dueDate = null;
+            if (touched.has('assigneeId') && !form.assigneeId) body.assigneeId = null;
+            if (touched.has('labelIds') && form.labelIds.length === 0) body.labelIds = [];
+            if (touched.has('description') && !form.description.trim()) body.description = null;
+        }
+        const result = await mutations.create(body);
         setSubmitting(false);
         if (result instanceof ApiClientError) {
             setError(result.reason ?? t('toast.failed'));
@@ -180,6 +233,7 @@ export function NewWorkItemModal({
     };
 
     const projectOptions = liveProjects.map((p) => ({ value: p.id, label: `${p.name} (${p.keyPrefix})` }));
+    const templateOptions = [{ value: '', label: t('new.noTemplate') }, ...(templates ?? []).map((x) => ({ value: x.id, label: x.name }))];
 
     return (
         <>
@@ -206,6 +260,18 @@ export function NewWorkItemModal({
                                         </Link>
                                     )}
                                 </p>
+                            )}
+                            {(templates ?? []).length > 0 && (
+                                <FormField label={t('fields.template')} description={form.templateId ? t('new.templateHint') : undefined}>
+                                    <Combobox
+                                        id="work-item-template-input"
+                                        selected={templateOptions.find((o) => o.value === (form.templateId ?? '')) ?? null}
+                                        setSelected={(o) => o && applyTemplate(o.value || null)}
+                                        options={templateOptions}
+                                        caret
+                                        hideSearch
+                                    />
+                                </FormField>
                             )}
                             <FormField label={t('fields.title')} required>
                                 <Input

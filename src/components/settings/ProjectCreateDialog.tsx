@@ -12,6 +12,11 @@
  * admin. Whether the viewer may create a project at all is the caller's
  * server-side answer: this dialog is opened only where it is offered.
  *
+ * Sub-phase 2.5c: a "Template" picker lists the workspace's live project
+ * templates (`GET /project-templates`, which takes the same key as the
+ * create); the server applies the chosen one in the create's transaction,
+ * and what it named that the workspace does not hold is shown after.
+ *
  * Written fresh for Islestone.
  */
 import Link from 'next/link';
@@ -25,7 +30,7 @@ import { useToast } from '@/components/ui/hooks';
 import { Input } from '@/components/ui/input';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 
-import { refusalText, type SettingsProject, useSettingsApi, useTeams } from './settings-data';
+import { refusalText, type SettingsProject, useProjectTemplates, useSettingsApi, useTeams } from './settings-data';
 import { SettingsFormModal } from './SettingsFormModal';
 
 export function ProjectCreateDialog({
@@ -47,6 +52,8 @@ export function ProjectCreateDialog({
     const [name, setName] = useState('');
     const [teamId, setTeamId] = useState('');
     const [keyPrefix, setKeyPrefix] = useState('');
+    const [templateId, setTemplateId] = useState('');
+    const { data: templates } = useProjectTemplates(open);
 
     // Each opening starts empty: reset on the closed-to-open transition only,
     // never while the person types.
@@ -57,6 +64,7 @@ export function ProjectCreateDialog({
             setName('');
             setTeamId('');
             setKeyPrefix('');
+            setTemplateId('');
         }
     }
 
@@ -65,17 +73,21 @@ export function ProjectCreateDialog({
     // after the dialog opened.
     const chosenTeamId = teamId || teams?.[0]?.id || '';
     const teamOptions: ComboboxOption[] = (teams ?? []).map((team) => ({ value: team.id, label: team.name }));
+    const templateOptions: ComboboxOption[] = [{ value: '', label: t('projects.noTemplate') }, ...(templates ?? []).map((x) => ({ value: x.id, label: x.name }))];
 
     const submit = async (): Promise<string | null> => {
         const value = name.trim();
         if (!value) return t('common.nameRequired');
         try {
-            const project = await send<SettingsProject>('POST', '/projects', {
+            const project = await send<SettingsProject & { fromTemplate?: { skipped: string[] } }>('POST', '/projects', {
                 teamId: chosenTeamId,
                 name: value,
                 keyPrefix: keyPrefix.trim().toUpperCase(),
+                ...(templateId ? { templateId } : {}),
             });
             toast.success(t('projects.created', { name: value }));
+            const skipped = project.fromTemplate?.skipped ?? [];
+            if (skipped.length > 0) toast.warning(t('projects.templateSkipped', { list: skipped.map((x) => x.replace(/^[a-zA-Z]+:/, '')).join(', ') }));
             await onCreated(project);
             return null;
         } catch (err) {
@@ -116,6 +128,18 @@ export function ProjectCreateDialog({
                     caret
                 />
             </FormField>
+            {(templates ?? []).length > 0 && (
+                <FormField label={t('projects.template')} description={t('projects.templateHint')}>
+                    <Combobox
+                        id="project-template-input"
+                        selected={templateOptions.find((o) => o.value === templateId) ?? null}
+                        setSelected={(o) => o && setTemplateId(o.value)}
+                        options={templateOptions}
+                        caret
+                        hideSearch
+                    />
+                </FormField>
+            )}
             <FormField label={t('projects.keyPrefix')} description={t('projects.keyPrefixHint')} required>
                 <Input
                     id="project-key-prefix-input"

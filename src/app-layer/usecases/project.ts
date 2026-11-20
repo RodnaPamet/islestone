@@ -27,6 +27,7 @@ import {
 import { visibleProjects } from '../policies/project-visibility';
 import { isValidKeyPrefix, normaliseKeyPrefix } from '../domain/work-item-key';
 import { ensureDefaultWorkItemTypes } from './work-item-type';
+import { applyProjectTemplateInTx } from './project-template';
 import type { RequestContext } from '../types';
 import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db-context';
@@ -63,7 +64,7 @@ export async function getProject(ctx: RequestContext, projectId: string) {
     });
 }
 
-export async function createProject(ctx: RequestContext, input: { teamId: string; name: string; keyPrefix: string }) {
+export async function createProject(ctx: RequestContext, input: { teamId: string; name: string; keyPrefix: string; templateId?: string }) {
     assertCanCreateProject(ctx);
     const name = sanitizePlainText(input.name).trim();
     const keyPrefix = checkedPrefix(input.keyPrefix);
@@ -72,15 +73,19 @@ export async function createProject(ctx: RequestContext, input: { teamId: string
         await assertPrefixFree(db, ctx, keyPrefix);
         await ensureDefaultWorkItemTypes(db, ctx);
         const project = await ProjectRepository.create(db, ctx, { teamId: input.teamId, name, keyPrefix });
+        // A project template (2.5c) is applied in this transaction: a failure
+        // part-way leaves no project. What it named and the workspace does not
+        // hold is reported in the response and in the PROJECT_CREATED entry.
+        const fromTemplate = input.templateId ? await applyProjectTemplateInTx(db, ctx, { id: project.id, teamId: input.teamId, keyPrefix }, input.templateId) : null;
         await logEvent(db, ctx, {
             action: 'PROJECT_CREATED',
             entityType: 'Project',
             entityId: project.id,
             details: `Created project ${name} (${keyPrefix})`,
             detailsJson: { category: 'entity_lifecycle', entityName: 'Project', operation: 'created', summary: 'PROJECT_CREATED' },
-            metadata: { teamId: input.teamId, keyPrefix },
+            metadata: { teamId: input.teamId, keyPrefix, ...(fromTemplate ? { projectTemplateId: fromTemplate.projectTemplateId, ...fromTemplate.counts, templateSkipped: fromTemplate.skipped } : {}) },
         });
-        return project;
+        return fromTemplate ? { ...project, fromTemplate: { counts: fromTemplate.counts, skipped: fromTemplate.skipped } } : project;
     });
 }
 

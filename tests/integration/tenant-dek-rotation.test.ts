@@ -244,8 +244,10 @@ describeFn('rotateTenantDek and the sweep (integration — real DB)', () => {
         );
         expect(sweep.perField.map((f) => `${f.model}.${f.field}`).sort()).toEqual([
             'Comment.body',
+            'ProjectTemplate.contentJson',
             'TenantSecuritySettings.auditStreamSecretEncrypted',
             'WorkItem.description',
+            'WorkItemTemplate.description',
         ]);
 
         const phases = progressEvents.map((p) => p.phase);
