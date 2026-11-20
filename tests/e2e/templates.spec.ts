@@ -31,7 +31,7 @@ test.describe('templates', () => {
         const manager = page.getByRole('dialog', { name: 'Item templates for Launchpad' });
         await manager.getByLabel('Template name').fill('Kick-off');
         await manager.getByLabel('Work item title').fill('Kick-off meeting');
-        await manager.getByLabel('Sub-items').fill('Book a room\nSend the agenda');
+        await manager.getByRole('textbox', { name: 'Sub-items' }).fill('Book a room\nSend the agenda');
         const createdTemplate = page.waitForResponse((r) => r.url().endsWith('/work-item-templates') && r.request().method() === 'POST');
         await manager.getByRole('button', { name: 'Create template' }).click();
         expect((await createdTemplate).status()).toBe(201);
