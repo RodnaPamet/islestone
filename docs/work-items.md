@@ -239,6 +239,33 @@ Migration `20261123120000_templates` (`COLLATE "C"` on both `sortKey`s, the CHEC
 - **Project create dialog** (the one dialog, decision 57): a Template picker of the workspace's live project templates; what the chosen template named and the workspace lacks is shown after the create.
 - **Settings → Projects:** "Save as template" per project (name, and whether to include open items), for a viewer offered `manageProjectTemplates`. **Settings → Project templates** (`/settings/project-templates`): what each holds, rename, archive, unarchive and delete (undo toast).
 
+## Repeats (2.5d)
+
+Built by [`docs/porting/maps/2.5.md`](porting/maps/2.5.md) under owner decisions 67 to 70 and 72 (`docs/HANDOFF.md`) and ADR 0006 ("Repeat"). Nothing was copied; inflect-compliance's cadence and scheduler and Kaneo's recurrence were read for patterns (`PROVENANCE.md`).
+
+### The table
+
+| Table | Holds | Notes |
+|---|---|---|
+| `WorkItemRecurrence` | The repeat on one item (`sourceWorkItemId`, one per item): `frequency` (daily, weekly, monthly, yearly), `interval` (1 to 99), `weekdays` (weekly only, 0 Sunday to 6 Saturday), `firstOn` (the item's due date when the repeat was set), `endsOn` or `maxOccurrences` (the item itself counted, 2 to 1000), `leadDays` (0 to 30, default 3), `nextOccurrenceOn` (stamped), `occurrenceCount`, `ownerUserId`, `heldAt` and `heldReason` | Goes with its item (cascade). CHECKs hold the ranges, the weekly-only weekdays, the end after the first date and a hold with its reason. "On hold", not "paused", in the schema: ADR 0006 keeps "Pause" for the kill switch, so the enum is `RecurrenceHold`. |
+
+`WorkItem.recurrenceId` and `occurrenceOn` mark a copy: one item per `(recurrenceId, occurrenceOn)` (a partial unique), and the link is `ON DELETE SET NULL ("recurrenceId")`, so stopping a repeat leaves its copies in place. Migration `20261126120000_repeats`, with its tests (`tests/integration/repeats.test.ts`).
+
+### The rule
+
+`src/app-layer/domain/recurrence.ts` (pure, property-tested) is the one home of the stepping. Occurrence 1 is `firstOn`, the item itself; later dates are every N days, every N weeks on the chosen weekdays (weeks from Monday; none chosen means the due date's weekday), or every N months or years on `firstOn`'s day of the month, clamped to a short month's last day and computed from `firstOn` each time (a series on 31 January lands on 28 or 29 February, then 31 March; 29 February lands on the 28th in common years). No time zone: due dates are date-only. A new or resumed repeat waits for the first occurrence at least its lead days away, so the job makes one occurrence a night per rule with nothing counted as missed.
+
+### Writes and who may make them
+
+- **Keys** (decision 72): `GET /work-items/:id/recurrence` (`work_items.view`) returns the repeat on the item and the series it is a copy in; `PUT` (`work_items.create`; the usecase also asserts `work_items.edit`) sets, changes, puts on hold (`onHold: true`) or resumes a repeat; `DELETE` (`work_items.edit`) stops it. The item needs a due date (409 `RECURRENCE_NEEDS_DUE_DATE`). Setting or resuming makes the caller the owner (decision 70); a hold keeps the owner. A request never makes an occurrence. Audited `RECURRENCE_SET`, `_UPDATED`, `_HELD`, `_RESUMED`, `_REMOVED`, and the job's `_HELD` and `_ENDED`.
+- **The job** is `work-item-recurrence` (`docs/jobs.md`), 00:30 in `NOTIFICATIONS_TZ`: as the owner, re-resolved before each copy, it claims the stamped date and makes the latest due occurrence through `createWorkItemInTx` (the create path's in-transaction core, with its options `recurrenceId`, `occurrenceOn` and `subItems`; `emitCreatedItemBells` rings its bells after the commit). The copy takes, from the item as it is then: title, description, type, priority, labels the item may still carry, the assignee if still an active member, custom-field values still valid, the milestone and the live sub-items; its due date is the occurrence, a start date keeps its distance from the due date, and it starts in the team's default state. Not taken: comments, watchers, relations, links, cycle. It goes through `templateToCreateInput`, the one projection 2.5c built, and what it skipped is named in its `WORK_ITEM_CREATED` entry with `recurrenceId` and `occurrenceOn`. An occurrence already made (before a hold) is not made again.
+- **Holds** (decision 70): the owner no longer an active member (`OWNER_NOT_ACTIVE`), without `work_items.create` or without sight of the project (`OWNER_NOT_PERMITTED`), the item deleted (`SOURCE_DELETED`), the project archived (`PROJECT_ARCHIVED`), the end reached (`ENDED`), or a person's hold (`HELD_BY_MEMBER`). The job writes a hold as the workspace system user, naming the owner; a copy is never made as the system user. Anyone allowed may resume a repeat and becomes its owner.
+
+### The views
+
+- **The detail** has a Repeat row (`RepeatControl`): what the repeat does, its next date or why it is on hold, and for a viewer who may create and edit work items Set repeat or Edit repeat (a dialog: frequency, every N, weekdays, end date or number of times, lead days), Put on hold, Resume, and Stop repeat through the undo toast. A copy says which item's series it is in and links to it.
+- **The list** marks an item that repeats ("Repeats") and a copy in a series ("In a series") beside its title.
+
 ## Settings (decision 55)
 
 A workspace admin configures work without the API on the Settings pages (`src/app/t/[tenantSlug]/(app)/settings/`, components in `src/components/settings/`), built on 2.2's routes with no new route or usecase:

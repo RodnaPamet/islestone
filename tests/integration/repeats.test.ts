@@ -2,7 +2,7 @@
  * Repeats against a real Postgres, as `app_user` (sub-phase 2.5d;
  * docs/porting/maps/2.5.md; owner decisions 67 to 70):
  *
- *   - what migration `20261124120000_repeats` adds: the CHECKs, the
+ *   - what migration `20261126120000_repeats` adds: the CHECKs, the
  *     occurrence unique, the rule link's ON DELETE SET NULL ("recurrenceId");
  *   - setting a repeat: a due date needed, the keys, the owner, the next date;
  *   - the job: a copy as the owner (never the system user) through the

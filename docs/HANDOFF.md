@@ -741,4 +741,17 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    - Not built: editing a project template's content in the browser (decision 71);
      custom-field values in the manager (API-only); a route that returns a project template's
      content.
-   Next: 2.5d repeats, by the same map.
+   **2.5d has landed** (its own pull request), per `docs/work-items.md`, "Repeats (2.5d)" and
+   `PROVENANCE.md`, "Repeats"; with it 2.5 is complete:
+   - Schema: `WorkItemRecurrence` (one per item; CHECKs; the hold enum is `RecurrenceHold`
+     because ADR 0006 bans "Pause" in the schema), `WorkItem.recurrenceId` / `occurrenceOn`
+     with the partial occurrence unique and `ON DELETE SET NULL ("recurrenceId")`. Migration
+     `20261126120000_repeats`.
+   - Domain: `src/app-layer/domain/recurrence.ts`, the one home of the date stepping
+     (property-tested).
+   - API: `GET`/`PUT`/`DELETE /work-items/:id/recurrence` (`work_items.view` /
+     `work_items.create` plus `work_items.edit` / `work_items.edit`).
+   - Job: `work-item-recurrence` at 00:30 in `NOTIFICATIONS_TZ`, as the re-resolved owner,
+     through `createWorkItemInTx` (the create core 2.6a extracted, with the repeat options) and `templateToCreateInput`;
+     holds written as the system user.
+   - UI: the detail's Repeat control, the list's series mark.
