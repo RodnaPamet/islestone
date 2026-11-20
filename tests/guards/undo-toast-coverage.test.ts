@@ -2,10 +2,11 @@
  * Destructive work-item writes go through the undo toast (sub-phase 2.3;
  * roadmap 2.3: "Destructive actions use the undo toast"):
  *
- *   1. In the work-item views (`src/components/work-items/**`), every DELETE
- *      request and every bulk delete is sent from inside a `triggerUndo(…)`
- *      or `removeWithUndo(…)` call, so nothing leaves the server until the
- *      undo window closes.
+ *   1. In the work-item views (`src/components/work-items/**`) and the
+ *      Settings pages (`src/components/settings/**`, decision 55), every
+ *      DELETE request and every bulk delete is sent from inside a
+ *      `triggerUndo(…)` or `removeWithUndo(…)` call, so nothing leaves the
+ *      server until the undo window closes.
  *   2. The files that call `useToastWithUndo` are exactly `SITE_CONTRACTS`
  *      (the curated list, cross-walked with git both ways): a new caller is
  *      listed with what it removes, and a listed file that is gone fails.
@@ -31,11 +32,15 @@ import { codeOf } from '../helpers/source-blocks';
 const SITE_CONTRACTS: Record<string, string> = {
     'src/components/work-items/data/use-work-item-mutations.ts': 'work item delete (detail, sheet, board card) and the list bulk delete',
     'src/components/work-items/data/use-work-item-collab.ts': 'comment delete, watcher, label, relation and link removal',
+    'src/components/settings/use-undo-delete.ts': 'Settings: team, workflow state and label delete (decision 55)',
 };
 
 const HOOK_FILE = 'src/components/ui/hooks/use-toast-with-undo.ts';
 const UNDO_CALLEES = new Set(['triggerUndo', 'removeWithUndo']);
-const DESTRUCTIVE = /apiSend\s*(?:<[^>]*>)?\s*\(\s*'DELETE'|\/bulk\/delete/g;
+/** A DELETE through `apiSend`, or through the Settings pages' `send` wrapper, or a bulk delete. */
+const DESTRUCTIVE = /(?:apiSend|(?<![\w.$])send)\s*(?:<[^>]*>)?\s*\(\s*'DELETE'|\/bulk\/delete/g;
+/** The folders whose deletes must leave through the undo toast. */
+const UNDO_ROOTS = ['src/components/work-items/', 'src/components/settings/'];
 
 function ownSources(root: string): Array<{ rel: string; code: string }> {
     const mirrorFile = path.join(root, 'ui-mirror.json');
@@ -67,7 +72,7 @@ function enclosingCallees(code: string, index: number): string[] {
 
 export function unguardedDeletes(root: string): string[] {
     return ownSources(root)
-        .filter(({ rel }) => rel.startsWith('src/components/work-items/'))
+        .filter(({ rel }) => UNDO_ROOTS.some((r) => rel.startsWith(r)))
         .flatMap(({ rel, code }) =>
             [...code.matchAll(DESTRUCTIVE)]
                 .filter((m) => !enclosingCallees(code, m.index ?? 0).some((c) => UNDO_CALLEES.has(c)))
@@ -115,6 +120,8 @@ describe('the detectors, against a planted repository', () => {
             'src/components/work-items/bare.ts': "export const del = () => apiSend('DELETE', url(x));\n",
             'src/components/work-items/bulk.ts': "void apiSend('POST', '/work-items/bulk/delete', body);\n",
             'src/components/work-items/prose.ts': "// apiSend('DELETE', x) in a comment\nexport const p = 1;\n",
+            'src/components/settings/bare.ts': "export const del = () => send('DELETE', '/teams/t1');\n",
+            'src/components/settings/ok.ts': "triggerUndo({ message: m, action: () => send('DELETE', path) });\n",
             'src/components/other/elsewhere.tsx': "const t = useToastWithUndo();\napiSend('DELETE', u);\n",
         };
         for (const [rel, content] of Object.entries(plant)) {
@@ -126,7 +133,11 @@ describe('the detectors, against a planted repository', () => {
     afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
     it('finds the deletes sent outside the undo toast, not the guarded ones or prose', () => {
-        expect(unguardedDeletes(root).sort()).toEqual(['src/components/work-items/bare.ts', 'src/components/work-items/bulk.ts']);
+        expect(unguardedDeletes(root).sort()).toEqual([
+            'src/components/settings/bare.ts',
+            'src/components/work-items/bare.ts',
+            'src/components/work-items/bulk.ts',
+        ]);
     });
 
     it('lists every caller of the hook, so an unlisted one fails the cross-walk', () => {

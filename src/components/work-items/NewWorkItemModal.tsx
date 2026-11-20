@@ -15,6 +15,7 @@
  * behaviour kept. The created row reaches every list through the shared
  * cache (`useWorkItemMutations().create`).
  */
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
@@ -27,7 +28,9 @@ import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { Textarea } from '@/components/ui/textarea';
 import { Combobox } from '@/components/ui/combobox';
+import { useMayOpenSettings } from '@/components/layout/nav-config';
 import { ApiClientError } from '@/lib/data/api-client';
+import { useTenantHref } from '@/lib/tenant-context-provider';
 import type { WorkItemDetailData, WorkItemPriority } from '@/lib/work-items/types';
 
 import { useWorkConfig } from './data/use-work-config';
@@ -69,6 +72,10 @@ export function NewWorkItemModal({
     const config = useWorkConfig();
     const mutations = useWorkItemMutations();
     const liveProjects = useMemo(() => config.projects.filter((p) => !p.archived), [config]);
+    // With no open project, a member who may open Settings is sent there
+    // (decision 55); the sidebar's own rule, never restated here.
+    const mayOpenSettings = useMayOpenSettings();
+    const tenantHref = useTenantHref();
 
     const blank = useMemo<FormState>(() => {
         const projectId = initial?.projectId ?? liveProjects[0]?.id ?? '';
@@ -176,7 +183,16 @@ export function NewWorkItemModal({
                 <Modal.Form onSubmit={submit}>
                     <Modal.Body>
                         <div className="space-y-default">
-                            {liveProjects.length === 0 && <p role="alert">{t('new.noProjects')}</p>}
+                            {liveProjects.length === 0 && (
+                                <p role="alert">
+                                    {t('new.noProjects')}{' '}
+                                    {mayOpenSettings && (
+                                        <Link href={tenantHref('/settings/projects')} className="text-content-emphasis underline">
+                                            {t('new.goSettings')}
+                                        </Link>
+                                    )}
+                                </p>
+                            )}
                             <FormField label={t('fields.title')} required>
                                 <Input
                                     id="work-item-title-input"
