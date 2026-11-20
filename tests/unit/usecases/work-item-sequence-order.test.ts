@@ -136,6 +136,13 @@ jest.mock('@/app-layer/repositories/ReviewRepository', () => ({
         pendingRowsOf: jest.fn(async () => []),
     },
 }));
+// Review defaults (2.8c): no type has default steps or requires review before Done.
+jest.mock('@/app-layer/repositories/TypeReviewStepRepository', () => ({
+    TypeReviewStepRepository: {
+        list: jest.fn(async () => []),
+        requiringReview: jest.fn(async () => new Set()),
+    },
+}));
 jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
     LIST_ORDERS: { manual: { column: 'sortKey', direction: 'asc', kind: 'string' } },
     CommentRepository: {

@@ -11,6 +11,7 @@
  *
  * Written fresh for Islestone.
  */
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useMemo } from 'react';
 
@@ -19,6 +20,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { useToast } from '@/components/ui/hooks';
 import { createColumns } from '@/components/ui/table';
 import type { BuiltInField, FieldRequirementValue } from '@/lib/work-items/field-sets';
+import { useTenantHref } from '@/lib/tenant-context-provider';
 import type { WorkConfigAffordances } from '@/lib/work-items/types';
 
 import { refusalText, typeFieldsPath, useSettingsApi, useTypeFields, useWorkItemTypes } from './settings-data';
@@ -38,6 +40,7 @@ export function WorkItemTypeFieldsSettings({ typeId, affordances }: { typeId: st
     const { data, error, isLoading } = useTypeFields(typeId);
     const { send, revalidate } = useSettingsApi();
     const canManage = affordances.manageWorkConfig;
+    const tenantHref = useTenantHref();
     const typeName = types?.find((ty) => ty.id === typeId)?.name ?? '';
 
     const columns = useMemo(() => {
@@ -84,6 +87,16 @@ export function WorkItemTypeFieldsSettings({ typeId, affordances }: { typeId: st
                 title: t('typeFields.title', { type: typeName }),
                 description: t('typeFields.description'),
                 back: { smart: true },
+                // The type's default review steps and its Done check (2.8c).
+                actions: (
+                    <Link
+                        id="type-review-steps-link"
+                        href={tenantHref(`/settings/work-item-types/${typeId}/review-steps`)}
+                        className="text-sm text-content-emphasis hover:underline"
+                    >
+                        {t('typeFields.reviewSteps')}
+                    </Link>
+                ),
             }}
             table={{
                 data: data?.fields ?? [],

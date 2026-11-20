@@ -108,6 +108,22 @@ describe('an optimistic write', () => {
     });
 });
 
+describe('a move the review holds (2.8c)', () => {
+    it('rolls back and shows the server sentence, without a retry', async () => {
+        const message = 'ISL-1 cannot move to Done until its review is complete: round 1 is planned and has not been sent for review. Cancelling is always allowed.';
+        const { calls } = installFetch({
+            'GET /work-items': { body: page([row(1)]) },
+            'POST /work-items/wi-1/state': { status: 409, body: { error: { code: 'CONFLICT', message, details: { reason: 'REVIEW_INCOMPLETE' } } } },
+        });
+        renderWorkspace(<Items />);
+        await screen.findByText('Item 1');
+        fireEvent.click(screen.getByRole('button', { name: 'Start ISL-1' }));
+        expect(await screen.findByText(message)).toBeInTheDocument();
+        await waitFor(() => expect(within(item('ISL-1')).getByText('Todo')).toBeInTheDocument());
+        expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+    });
+});
+
 describe('a 409 version conflict', () => {
     it('is retried once with the current version when the edited fields did not move', async () => {
         let attempts = 0;

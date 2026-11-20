@@ -192,13 +192,15 @@ model RecipientList {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  tenant      Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project     Project?                 @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  members     RecipientListMember[]
+  tenant          Tenant                           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project         Project?                         @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  members         RecipientListMember[]
   /// The project intakes that name this list (2.7e, decision 142).
-  intakes     ProjectIntake[]
+  intakes         ProjectIntake[]
   /// The review steps that name this list (2.8a, decision 154).
-  reviewSteps WorkItemReviewStepList[]
+  reviewSteps     WorkItemReviewStepList[]
+  /// The default review steps of types that name this list (2.8c, decision 159).
+  typeReviewSteps WorkItemTypeReviewStepReviewer[]
 
   @@unique([id, tenantId])
   @@index([tenantId, projectId, archivedAt])

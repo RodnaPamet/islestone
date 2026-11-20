@@ -153,3 +153,55 @@ model WorkItemReviewer {
   @@index([tenantId, userId, withdrawnAt])
   @@index([tenantId, workItemId])
 }
+
+/// A work item type's default review steps (sub-phase 2.8c; ADR 0009 §15;
+/// owner decision 159): per type across the workspace, set under
+/// `admin.manage`, copied onto an item's round 1 (PLANNED) by every create
+/// path and never opened by it. Copied, never linked: a change here changes
+/// no item. The whole set is replaced at once (`setTypeReviewSteps`), so
+/// `app_user` holds DELETE.
+model WorkItemTypeReviewStep {
+  id               String         @id @default(cuid())
+  tenantId         String
+  typeId           String
+  /// 1, 2, … in the type's order.
+  position         Int
+  /// Plaintext, sanitised, at most 120 characters (CHECK).
+  name             String
+  mode             ReviewStepMode @default(ALL)
+  /// 1..60 (CHECK).
+  dueInWorkingDays Int
+  createdAt        DateTime       @default(now())
+
+  tenant    Tenant                           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type      WorkItemType                     @relation(fields: [typeId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  reviewers WorkItemTypeReviewStepReviewer[]
+
+  @@unique([id, tenantId])
+  @@unique([typeId, position])
+  @@index([tenantId, typeId])
+}
+
+/// Whom a default step names: exactly one of a member (an ACTIVE member when
+/// written; the membership FK cascades, so a removed member leaves every
+/// default) or a workspace recipient list (a type spans projects, so never a
+/// project's list; lists are archived, never deleted).
+model WorkItemTypeReviewStepReviewer {
+  id              String   @id @default(cuid())
+  tenantId        String
+  stepId          String
+  userId          String?
+  recipientListId String?
+  createdAt       DateTime @default(now())
+
+  tenant Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  step   WorkItemTypeReviewStep @relation(fields: [stepId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  member TenantMembership?      @relation("TypeReviewStepMember", fields: [tenantId, userId], references: [tenantId, userId], onDelete: Cascade)
+  list   RecipientList?         @relation(fields: [recipientListId, tenantId], references: [id, tenantId], onDelete: NoAction)
+
+  @@unique([stepId, userId])
+  @@unique([stepId, recipientListId])
+  @@index([tenantId, stepId])
+  @@index([tenantId, userId])
+  @@index([tenantId, recipientListId])
+}

@@ -247,6 +247,30 @@ describe('the board', () => {
         expect(within(column('Done')).queryByText('Item 1')).toBeNull();
     });
 
+    it('rolls back a drop into Done that the review holds (2.8c), showing the server sentence, sent once', async () => {
+        const message = 'ISL-1 cannot move to Done until its review is complete: round 1 is open at the step "Legal". Cancelling is always allowed.';
+        const { calls } = installFetch({
+            'GET /work-items': columnsRoute([row(1)]),
+            'GET /users/assignable': { body: MEMBERS },
+            'POST /work-items/wi-1/move': { status: 409, body: { error: { code: 'CONFLICT', message, details: { reason: 'REVIEW_INCOMPLETE' } } } },
+        });
+        renderBoard();
+        await screen.findByText('Item 1');
+        const c = card('ISL-1', 'Item 1');
+        c.focus();
+        fireEvent.keyDown(c, { key: ' ' });
+        fireEvent.keyDown(card('ISL-1', 'Item 1'), { key: 'ArrowRight' });
+        fireEvent.keyDown(card('ISL-1', 'Item 1'), { key: 'ArrowRight' });
+        await act(async () => {
+            fireEvent.keyDown(card('ISL-1', 'Item 1'), { key: ' ' });
+        });
+        expect(await screen.findByText(message)).toBeInTheDocument();
+        await waitFor(() => expect(within(column('Todo')).getByText('Item 1')).toBeInTheDocument());
+        expect(within(column('Done')).queryByText('Item 1')).toBeNull();
+        // Not a version conflict: never retried.
+        expect(calls.filter((r) => r.method === 'POST')).toHaveLength(1);
+    });
+
     it('opens a card with Enter or a click, and a column "+" seeds its state', async () => {
         installFetch({ 'GET /work-items': columnsRoute([row(1)]), 'GET /users/assignable': { body: MEMBERS } });
         const { onOpen, onCreate } = renderBoard();

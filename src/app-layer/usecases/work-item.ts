@@ -71,6 +71,7 @@ import { todayInTz } from '../notifications/work-item-due';
 import { lockWorkItemGraph } from './work-item-graph-lock';
 import { recordMentionsInTx } from './mention';
 import { endOpenRoundsOnClose, withdrawNewAssigneeRows, type ReviewNoticeOut } from './review-engine';
+import { assertReviewAllowsDone, copiedReviewDefaultsMetadata, copyTypeReviewDefaultsInTx } from './review-defaults';
 import {
     assertProjectWritable,
     emitAssignedBells,
@@ -720,6 +721,8 @@ export async function createWorkItemInTx(
     const customFieldIds = await writeInitialCustomFieldValues(db, ctx, { id: row.id, projectId: project.id }, plan.customFields ?? {});
     const key = formatKey(project.keyPrefix, number);
     const creatorWatching = await watchIfAnswerShown(db, ctx, fieldSet.set, row.id);
+    // The type's default review steps, round 1 PLANNED (2.8c, decision 159).
+    const reviewDefaults = await copyTypeReviewDefaultsInTx(db, ctx, { id: row.id, typeId: type.id, projectId: project.id, assigneeId: row.assigneeId, stateCategory: state.category, key });
 
     await logEvent(db, ctx, {
         action: 'WORK_ITEM_CREATED',
@@ -739,6 +742,7 @@ export async function createWorkItemInTx(
             ...(fromTemplate ? { templateId: input.templateId, ...(fromTemplate.skipped.length ? { templateSkipped: fromTemplate.skipped } : {}) } : {}),
             ...(fieldSkipped.length ? { fieldSetSkipped: fieldSkipped } : {}),
             ...(creatorWatching ? { creatorWatching: true } : {}),
+            ...copiedReviewDefaultsMetadata(reviewDefaults),
             ...(opts.metadata ?? {}),
         },
     });
@@ -898,6 +902,8 @@ export async function insertTemplateItemInTx(
     if (description) await SearchVectorRepository.replaceForSource(db, ctx, { workItemId: row.id, commentId: null }, description);
     const key = formatKey(project.keyPrefix, number);
     const creatorWatching = await watchIfAnswerShown(db, ctx, loaded.set, row.id);
+    // The type's default review steps, round 1 PLANNED (2.8c, decision 159).
+    const reviewDefaults = await copyTypeReviewDefaultsInTx(db, ctx, { id: row.id, typeId: sub.typeId, projectId: project.id, assigneeId: null, stateCategory: state.category, key });
     await logEvent(db, ctx, {
         action: 'WORK_ITEM_CREATED',
         entityType: 'WorkItem',
@@ -913,6 +919,7 @@ export async function insertTemplateItemInTx(
             ...(sub.projectTemplateId ? { projectTemplateId: sub.projectTemplateId } : {}),
             ...(checked.skipped.length ? { fieldSetSkipped: checked.skipped } : {}),
             ...(creatorWatching ? { creatorWatching: true } : {}),
+            ...copiedReviewDefaultsMetadata(reviewDefaults),
         },
     });
     await emitAutomationEvent(ctx, {
@@ -1059,6 +1066,8 @@ export async function setWorkItemState(ctx: RequestContext, id: string, input: {
         if (!to) throw notFound('Workflow state not found');
         const err = checkWorkflowStateTransition(toStateRef(from!), toStateRef(to));
         if (err) throw badRequest(formatStateTransitionError(err), { reason: err.kind });
+        // The type may require its review to finish before Done (2.8c, decision 149).
+        await assertReviewAllowsDone(db, ctx, [{ item, fromCategory: from!.category, toCategory: to.category }]);
         const effects = stateTransitionEffects(from!.category, to.category, item);
         const count = await WorkItemRepository.updateVersioned(db, ctx, v, id, expectedVersion, {
             stateId: to.id,
@@ -1434,6 +1443,8 @@ export async function bulkSetWorkItemState(
             if (err) throw badRequest(bulkStateRefusalPrefix(item) + formatStateTransitionError(err), { reason: err.kind, workItemId: item.id });
             planned.push({ item, from: from!, to });
         }
+        // The type may require its review to finish before Done (2.8c, decision 149): all or nothing.
+        await assertReviewAllowsDone(db, ctx, planned.map((p) => ({ item: p.item, fromCategory: p.from.category, toCategory: p.to.category })));
         const now = new Date();
         for (const p of planned) {
             const effects = stateTransitionEffects(p.from.category, p.to.category, p.item, now);

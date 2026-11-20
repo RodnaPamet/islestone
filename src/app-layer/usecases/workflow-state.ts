@@ -22,6 +22,7 @@ import { assertCanManageWorkConfig, assertCanReadWorkConfig } from '../policies/
 import { keyBetween } from '../domain/fractional-index';
 import { isClosedCategory, stateTransitionEffects } from '../domain/workflow-state';
 import { endOpenRoundsInState } from './review-engine';
+import { assertReviewAllowsDoneInState } from './review-defaults';
 import type { RequestContext } from '../types';
 import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db-context';
@@ -205,6 +206,8 @@ async function moveItemsBetweenStates(
     from: { id: string; category: WorkflowStateCategory },
     to: { id: string; category: WorkflowStateCategory },
 ): Promise<number> {
+    // Their types may require their review to finish before Done (2.8c, decision 149).
+    await assertReviewAllowsDoneInState(db, ctx, from, to);
     const now = new Date();
     // A close withdraws the moved items' open review rounds (decision 149).
     if (isClosedCategory(to.category) && !isClosedCategory(from.category)) await endOpenRoundsInState(db, ctx, from.id, now);

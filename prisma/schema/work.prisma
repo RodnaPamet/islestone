@@ -149,25 +149,31 @@ model ProjectKeySequence {
 }
 
 /// A workspace-configured kind of work item (ADR 0002 §1). Types carry no
-/// behaviour. An archived type is refused for new items and kept on old ones.
+/// behaviour beyond their field set (2.4b-b) and their review defaults (2.8c).
+/// An archived type is refused for new items and kept on old ones.
 model WorkItemType {
-  id         String    @id @default(cuid())
-  tenantId   String
-  name       String
+  id                    String    @id @default(cuid())
+  tenantId              String
+  name                  String
   /// A key of the shared icon set, never a URL or markup.
-  icon       String?
+  icon                  String?
   /// A token name or `#RRGGBB`.
-  color      String?
+  color                 String?
   /// Fractional index; `COLLATE "C"` in SQL.
-  sortKey    String
-  archivedAt DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  sortKey               String
+  archivedAt            DateTime?
+  /// Review must finish before an item of this type moves to Done (2.8c;
+  /// ADR 0009 §14; owner decision 149). Cancelling is never held.
+  reviewRequiredForDone Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  tenant          Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant          Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   workItems       WorkItem[]
   templates       WorkItemTemplate[]
   fieldSetEntries WorkItemTypeField[]
+  /// Its default review steps (2.8c, decision 159).
+  reviewSteps     WorkItemTypeReviewStep[]
 
   @@unique([tenantId, name])
   @@unique([id, tenantId])

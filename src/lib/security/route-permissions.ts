@@ -503,6 +503,19 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'admin.manage',
         note: "Set a built-in field's rule for a type: types are workspace settings (decision 112).",
     },
+    // ── Default review steps per type (sub-phase 2.8c; owner decisions 149, 159, 160) ──
+    {
+        path: new RegExp(`^${T}\\/work-item-types\\/[^\\/]+\\/review-steps$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: "A type's default review steps and whether its review must finish before Done.",
+    },
+    {
+        path: new RegExp(`^${T}\\/work-item-types\\/[^\\/]+\\/review-steps$`),
+        methods: ['PUT'],
+        permission: 'admin.manage',
+        note: "Replace a type's default review steps and its Done check: types are workspace settings (decision 159).",
+    },
     {
         path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/type-fields$`),
         methods: ['GET'],

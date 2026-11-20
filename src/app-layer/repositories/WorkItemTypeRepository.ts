@@ -15,6 +15,8 @@ const typeSelect = {
     color: true,
     sortKey: true,
     archivedAt: true,
+    /** Review must finish before Done (2.8c, decision 149). */
+    reviewRequiredForDone: true,
 } satisfies Prisma.WorkItemTypeSelect;
 
 export class WorkItemTypeRepository {

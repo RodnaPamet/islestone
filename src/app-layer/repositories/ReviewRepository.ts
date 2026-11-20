@@ -107,6 +107,56 @@ export class ReviewRepository {
         await db.$queryRaw`SELECT "id" FROM "WorkItem" WHERE "id" = ${workItemId} AND "tenantId" = ${ctx.tenantId} FOR UPDATE`;
     }
 
+    /**
+     * Lock several items' rows, in id order (so two batches never deadlock):
+     * the Done check (2.8c) reads their rounds under the same lock every
+     * review write takes, so a round cannot be planned or reopened between
+     * the check and the move.
+     */
+    static async lockItems(db: PrismaTx, ctx: Ctx, workItemIds: readonly string[]): Promise<void> {
+        const ids = [...new Set(workItemIds)].sort();
+        if (ids.length === 0) return;
+        await db.$queryRaw`SELECT "id" FROM "WorkItem" WHERE "id" = ANY(${ids}::text[]) AND "tenantId" = ${ctx.tenantId} ORDER BY "id" FOR UPDATE`;
+    }
+
+    /**
+     * The rounds the Done check reads (2.8c, decision 149): every round of
+     * these items that has at least one step, with its OPEN step's name. A
+     * planned round with no steps left is no review, so it is not read.
+     */
+    static async doneCheckRounds(db: PrismaTx, ctx: Ctx, workItemIds: readonly string[]) {
+        const ids = [...new Set(workItemIds)];
+        if (ids.length === 0) return [];
+        const rows = await db.workItemReviewRound.findMany({
+            where: { tenantId: ctx.tenantId, workItemId: { in: ids }, steps: { some: {} } },
+            orderBy: [{ workItemId: 'asc' }, { number: 'desc' }],
+            take: ids.length * REVIEW_ROUNDS_TAKE,
+            select: {
+                workItemId: true,
+                number: true,
+                status: true,
+                _count: { select: { steps: true } },
+                steps: { where: { status: 'OPEN' }, select: { name: true }, take: 1 },
+            },
+        });
+        return rows.map((r) => ({ workItemId: r.workItemId, number: r.number, status: r.status, stepCount: r._count.steps, openStepName: r.steps[0]?.name ?? null }));
+    }
+
+    /**
+     * The items in one workflow state whose type requires review before Done
+     * (a state's delete moves them all; 2.8c), deleted ones included: a
+     * restore would bring one back into the target state.
+     */
+    static async itemsInStateRequiringReview(db: PrismaTx, ctx: Ctx, stateId: string) {
+        return db.workItem.findMany({
+            where: { tenantId: ctx.tenantId, stateId, type: { reviewRequiredForDone: true } },
+            orderBy: { id: 'asc' },
+            // A state's items whose type requires review: far above a real state's.
+            take: 10_000,
+            select: { id: true, number: true, project: { select: { keyPrefix: true } } },
+        });
+    }
+
     /** The item's PLANNED or OPEN round, with its steps, lists and reviewers. */
     static async liveRound(db: PrismaTx, ctx: Ctx, workItemId: string): Promise<ReviewRoundRow | null> {
         return db.workItemReviewRound.findFirst({

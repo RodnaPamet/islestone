@@ -44,6 +44,7 @@ import { visibleProjects } from '../policies/project-visibility';
 import { formatKey } from '../domain/work-item-key';
 import { checkWorkflowStateTransition, formatStateTransitionError, isClosedCategory, stateTransitionEffects } from '../domain/workflow-state';
 import { endOpenRoundsOnClose } from './review-engine';
+import { assertReviewAllowsDone } from './review-defaults';
 import { lockWorkItemGraph } from './work-item-graph-lock';
 import { afterStateCommit, applyStateAudit, assertParentAllowed, getWorkItem, sortKeyForPosition } from './work-item';
 import { assertProjectWritable, emitWatcherActivity, keyOf, loadWritableItem, throwWriteConflict } from './work-item-shared';
@@ -99,6 +100,8 @@ export async function moveWorkItemOnBoard(
             if (!to) throw notFound('Workflow state not found');
             const err = checkWorkflowStateTransition(from!, to);
             if (err) throw badRequest(formatStateTransitionError(err), { reason: err.kind });
+            // The type may require its review to finish before Done (2.8c, decision 149).
+            await assertReviewAllowsDone(db, ctx, [{ item, fromCategory: from!.category, toCategory: to.category }]);
             const count = await WorkItemRepository.updateVersioned(db, ctx, v, id, expectedVersion, {
                 stateId: to.id,
                 stateCategory: to.category,

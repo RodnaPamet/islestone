@@ -41,6 +41,8 @@ export interface SettingsType {
     id: string;
     name: string;
     archivedAt: string | null;
+    /** Review must finish before Done (2.8c, decision 149). */
+    reviewRequiredForDone?: boolean;
 }
 
 export interface SettingsLabel {

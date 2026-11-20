@@ -25,7 +25,7 @@ import { useId, useMemo, useState, type FormEvent } from 'react';
 import { Button } from '@inflect/ui/components/ui/button';
 import { formatDate, formatDateTime } from '@inflect/ui/lib/format-date';
 import { changedSinceSignedOff, REVIEW_LIMITS } from '@/app-layer/domain/review-steps';
-import { useUsableRecipientLists } from '@/components/recipient-lists/use-recipient-lists';
+import { useUsableRecipientLists, useWorkspaceRecipientLists } from '@/components/recipient-lists/use-recipient-lists';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
@@ -46,20 +46,28 @@ function useNameOf(): NameOf {
 
 // ─── The step editor ──────────────────────────────────────────────────────
 
-function StepEditorDialog({
+/**
+ * One review step, added or edited. On an item (`projectId`) it offers the
+ * workspace's lists and the project's; for a type's default steps
+ * (`projectId` null, Settings → a type → Review steps, 2.8c) only the
+ * workspace's, since a type spans every project.
+ */
+export function StepEditorDialog({
     projectId,
     initial,
     onClose,
     onSave,
 }: {
-    projectId: string;
+    projectId: string | null;
     initial: ReviewStepDraft | null;
     onClose: () => void;
     onSave: (draft: ReviewStepDraft) => Promise<ReviewWriteResult>;
 }) {
     const tEditor = useTranslations('workItems.review');
     const { members, isLoading: membersLoading } = useMembers();
-    const lists = useUsableRecipientLists(projectId);
+    const projectLists = useUsableRecipientLists(projectId);
+    const workspaceLists = useWorkspaceRecipientLists(projectId === null);
+    const lists = projectId ? projectLists : workspaceLists;
     const [name, setName] = useState(initial?.name ?? '');
     const [mode, setMode] = useState<ReviewStepModeValue>(initial?.mode ?? 'ALL');
     const [days, setDays] = useState(String(initial?.dueInWorkingDays ?? 3));
@@ -137,7 +145,7 @@ function StepEditorDialog({
                                 searchPlaceholder={tEditor('editor.searchMembers')}
                             />
                         </FormField>
-                        <FormField label={tEditor('editor.lists')} hint={tEditor('editor.listsHint')}>
+                        <FormField label={tEditor('editor.lists')} hint={projectId ? tEditor('editor.listsHint') : tEditor('editor.workspaceListsHint')}>
                             <Combobox
                                 id="review-step-lists"
                                 multiple
