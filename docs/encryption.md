@@ -77,6 +77,8 @@ as not sensitive, with its reason.
 TOTP secrets (`UserMfaEnrollment.secretEncrypted`) are encrypted by
 `src/lib/security/totp-crypto.ts`, which 1.4 brought.
 
+**Plaintext derivatives of encrypted fields** (sub-phase 2.7f, [ADR 0008](adr/0008-search-over-encrypted-fields.md) D1, owner decision 124). `SearchVector.lexemes` is a `tsvector` of `WorkItem.description` and `Comment.body`: their stemmed words with positions, enough to reconstruct most of the text, **stored readable** so that descriptions and comments can be searched. For these two fields, field encryption no longer keeps the words from a reader of the database, a dump or the off-host backups; it still keeps the exact text, punctuation and stop words out of them, and it still protects every other field in the manifest, none of which has a derivative. `tests/guards/encryption-manifest-coverage.test.ts` lists the column in `PLAINTEXT_DERIVATIVES`, a class of its own kept apart from `NOT_SENSITIVE`: each entry cites the ADR and its encrypted sources, and any new `Unsupported("tsvector")` column on a workspace table fails CI until it is classified there, which is an amendment to ADR 0008. The vectors are not encrypted, so the key rotations do not touch them, and a workspace export leaves them out (`docs/search.md`, "Stored vectors").
+
 **Deliberately not encrypted:** the audit trail (`AuditLog`,
 `OrgAuditLog`): encrypting a hashed field would break `entryHash`, and an
 investigation needs plaintext entries. Its free-text `details` holds

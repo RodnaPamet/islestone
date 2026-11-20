@@ -30,6 +30,7 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     'notification-digest',
     'notification-outbox-flush',
     'notification-purge',
+    'search-index-rebuild',
     'work-item-due-notification',
     'work-item-purge',
     'work-item-recurrence',

@@ -102,38 +102,12 @@ jobs:
     permissions:
       contents: read
     # The DB-backed suites (tests/integration) against a real Postgres, the
-    # image docker-compose.yml uses, reached through PgBouncer in transaction
-    # mode as the app reaches it. Credentials are throwaway CI values.
+    # image docker-compose.yml builds (deploy/postgres/Dockerfile, sub-phase
+    # 2.7f: built here from this pull request, so the Dockerfile is tested
+    # before it is published), reached through PgBouncer in transaction mode
+    # as the app reaches it (scripts/ci-postgres.sh). Credentials are
+    # throwaway CI values.
     services:
-      postgres:
-        image: pgvector/pgvector:0.8.7-pg17-trixie
-        env:
-          POSTGRES_USER: islestone
-          POSTGRES_PASSWORD: islestone_ci
-          POSTGRES_DB: islestone_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -h 127.0.0.1 -U islestone -d islestone_test"
-          --health-interval 5s --health-timeout 5s --health-retries 20
-      pgbouncer:
-        image: edoburu/pgbouncer:v1.26.1-p0
-        env:
-          DB_HOST: postgres
-          DB_PORT: '5432'
-          DB_USER: islestone
-          DB_PASSWORD: islestone_ci
-          DB_NAME: islestone_test
-          AUTH_TYPE: scram-sha-256
-          POOL_MODE: transaction
-          MAX_CLIENT_CONN: '200'
-          DEFAULT_POOL_SIZE: '20'
-          MAX_PREPARED_STATEMENTS: '100'
-        ports:
-          - 6432:5432
-        options: >-
-          --health-cmd "pg_isready -h 127.0.0.1 -p 5432"
-          --health-interval 5s --health-timeout 5s --health-retries 20
       # Sub-phase 1.6: the queue round trip (tests/integration/jobs-queue-roundtrip.test.ts)
       # runs against a real Redis, configured as docker-compose.yml's
       # (noeviction, a password).
@@ -162,13 +136,11 @@ jobs:
           cache: npm
       # `postinstall` runs `prisma generate`.
       - run: npm ci
-      # The same script docker-compose.yml mounts into the Postgres image:
-      # creates app_user and makes the login role a member of it. A service
-      # container starts before checkout, so it is run in the container here.
-      - name: Create the app_user role (prisma/init-roles.sh)
-        run: >-
-          docker exec -i -e POSTGRES_USER=islestone -e POSTGRES_DB=islestone_test
-          ${{ job.services.postgres.id }} bash -s < prisma/init-roles.sh
+      # Islestone's Postgres image, built from this pull request, with
+      # prisma/init-roles.sh run on its fresh volume (app_user, and the login
+      # role a member of it), and PgBouncer in front of it.
+      - name: Build and start Postgres and PgBouncer (scripts/ci-postgres.sh)
+        run: scripts/ci-postgres.sh islestone_test --pgbouncer
       # A service container takes no command line, so docker-compose.yml's
       # flags are set at run time: the policy BullMQ needs, then the
       # password REDIS_URL names (a throwaway CI value).
@@ -395,37 +367,10 @@ jobs:
       contents: read
     # The auth specs (sub-phase 1.4) register a workspace and sign in, so the
     # built app needs a migrated database, reached through PgBouncer as in
-    # production. The same services as the Integration job; throwaway values.
+    # production: Islestone's Postgres image built from this pull request
+    # (scripts/ci-postgres.sh, sub-phase 2.7f), as in the Integration job;
+    # throwaway values.
     services:
-      postgres:
-        image: pgvector/pgvector:0.8.7-pg17-trixie
-        env:
-          POSTGRES_USER: islestone
-          POSTGRES_PASSWORD: islestone_ci
-          POSTGRES_DB: islestone_e2e
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -h 127.0.0.1 -U islestone -d islestone_e2e"
-          --health-interval 5s --health-timeout 5s --health-retries 20
-      pgbouncer:
-        image: edoburu/pgbouncer:v1.26.1-p0
-        env:
-          DB_HOST: postgres
-          DB_PORT: '5432'
-          DB_USER: islestone
-          DB_PASSWORD: islestone_ci
-          DB_NAME: islestone_e2e
-          AUTH_TYPE: scram-sha-256
-          POOL_MODE: transaction
-          MAX_CLIENT_CONN: '200'
-          DEFAULT_POOL_SIZE: '20'
-          MAX_PREPARED_STATEMENTS: '100'
-        ports:
-          - 6432:5432
-        options: >-
-          --health-cmd "pg_isready -h 127.0.0.1 -p 5432"
-          --health-interval 5s --health-timeout 5s --health-retries 20
       # Sub-phase 1.6: `next start` (production) refuses to run without an
       # authenticated REDIS_URL and checks the eviction policy at boot.
       redis:
@@ -453,10 +398,8 @@ jobs:
         with:
           name: next-build
           path: .next
-      - name: Create the app_user role (prisma/init-roles.sh)
-        run: >-
-          docker exec -i -e POSTGRES_USER=islestone -e POSTGRES_DB=islestone_e2e
-          ${{ job.services.postgres.id }} bash -s < prisma/init-roles.sh
+      - name: Build and start Postgres and PgBouncer (scripts/ci-postgres.sh)
+        run: scripts/ci-postgres.sh islestone_e2e --pgbouncer
       # A service container takes no command line, so docker-compose.yml's
       # flags are set at run time: the policy BullMQ needs, then the
       # password REDIS_URL names (a throwaway CI value).

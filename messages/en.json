@@ -532,6 +532,8 @@
         "searchFailed": "Search failed. Try again in a moment.",
         "entityWorkItem": "Work items",
         "entityProject": "Projects",
+        "matchedInDescription": "In the description",
+        "matchedInComment": "In a comment",
         "commands": {
             "goToMyWork": "Go to My Work",
             "goToInbox": "Go to Inbox",

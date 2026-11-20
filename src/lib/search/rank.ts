@@ -28,6 +28,9 @@
  * the full-text index found but no band names (the words in another order)
  * scores the baseline only, below every substring hit.
  *
+ * A description or comment match (2.7f) scores `computeContentScore`, which
+ * stays below every title match.
+ *
  * Numbers are arbitrary but spaced so the bands are visually
  * obvious in test snapshots (a substring hit can't accidentally
  * outrank an exact hit even if the type baseline is high).
@@ -84,6 +87,17 @@ export function computeRankScore(query: string, input: RankInput): number {
         score += 10;
     }
     return score + TYPE_BASELINE[input.type];
+}
+
+/**
+ * A work item found only in its description or a comment (2.7f): below every
+ * title band and below a title word match (the baseline), above nothing a
+ * band names, ordered among themselves by the full-text rank (`ts_rank`,
+ * clamped to 0..1).
+ */
+export function computeContentScore(rank: number): number {
+    const r = Number.isFinite(rank) ? Math.min(Math.max(rank, 0), 1) : 0;
+    return TYPE_BASELINE.workItem - 0.5 + r * 0.4;
 }
 
 // ─── Sort + cap ────────────────────────────────────────────────────────

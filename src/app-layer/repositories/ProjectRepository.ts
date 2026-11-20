@@ -36,8 +36,8 @@ export interface ProjectSearchRow {
 export class ProjectRepository {
     /**
      * Live, visible, unarchived projects whose name holds the query
-     * (substring, `Project_search_name_trgm`) or all of its words (`simple`
-     * full text, `Project_search_name_fts`), or whose key prefix is the query
+     * (substring, `Project_search_name_trgm`) or all of its words (full text
+     * through `islestone_bg_en`, `Project_search_name_fts`), or whose key prefix is the query
      * (the unique `(tenantId, keyPrefix)`). Ordered so the best candidates
      * make the cut; bounded by `limit` (at most `SEARCH_ROW_CAP`). Raw SQL
      * because Prisma cannot order by a rank (sub-phase 2.7b, docs/search.md);
@@ -57,12 +57,12 @@ export class ProjectRepository {
              WHERE p."tenantId" = ${ctx.tenantId}
                AND ${projectVisibilitySql(v, { projectAlias: 'p', projectIdColumn: 'p."id"' })}
                AND (p."name" ILIKE ${containsPattern(query)}
-                    OR to_tsvector('simple', p."name") @@ plainto_tsquery('simple', ${query})
+                    OR to_tsvector('islestone_bg_en', p."name") @@ plainto_tsquery('islestone_bg_en', ${query})
                     OR p."keyPrefix" = upper(${query}))
              ORDER BY (p."keyPrefix" = upper(${query})) DESC,
                       (lower(p."name") = lower(${query})) DESC,
                       (p."name" ILIKE ${prefixPattern(query)}) DESC,
-                      ts_rank(to_tsvector('simple', p."name"), plainto_tsquery('simple', ${query})) DESC,
+                      ts_rank(to_tsvector('islestone_bg_en', p."name"), plainto_tsquery('islestone_bg_en', ${query})) DESC,
                       similarity(p."name", ${query}) DESC,
                       p."id" ASC
              LIMIT ${limit}`);

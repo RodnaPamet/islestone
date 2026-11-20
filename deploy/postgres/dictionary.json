@@ -1,0 +1,29 @@
+{
+    "$comment": "The Bulgarian dictionary Islestone's Postgres image carries (sub-phase 2.7f; ADR 0008 D2; ADR 0007 E10; owner decisions 126, 145, 146). tests/guards/postgres-dictionary-pinned.test.ts holds every file in tsearch_data/ to this record and this record to ADR 0007 E10. Changing a value here is an amendment to that ADR.",
+    "name": "bgOffice OOo-spell-bg",
+    "version": "4.3",
+    "homepage": "http://bgoffice.sourceforge.net/",
+    "archive": {
+        "url": "https://downloads.sourceforge.net/bgoffice/OOo-full-pack-bg-4.3.zip",
+        "sha512": "1c4acf0c8377c6ec3f0dd26c84a5232be88b1fecabcb08dfae4f45bf819c770427731cbf1b01d65d3a182cccc3d0bcaabf3ab85735221e2ff09fc47bd66341d7",
+        "corroboratedBy": "gentoo/gentoo 1d677101c0776fa2bf680550e2864f4f0a2e6ccd app-dicts/myspell-bg/Manifest"
+    },
+    "copyright": "Copyright (C) 2001-2010 Radostin Radnev <radnev@gmail.com>",
+    "upstreamLicence": "GPL-2.0-or-later OR LGPL-2.1-or-later OR MPL-1.1",
+    "licence": "MPL-2.0",
+    "licenceBasis": "Taken under MPL-1.1 and used under MPL-2.0 through MPL-1.1 section 6.2 (any subsequent version); owner decision 145.",
+    "adr": "docs/adr/0007-third-party-licence-exceptions.md",
+    "adrSection": "E10",
+    "sources": {
+        "OOo-full-pack-bg-4.3/bg_BG.dic": "c1d403ecf6588c3e23f9b57db2f905fda035e17c115d05736e1ce02ea17dacee",
+        "OOo-full-pack-bg-4.3/bg_BG.aff": "8c068e82c939f1bd138195de393c9dcc5e5401f8003fc1faf80f5e82da28ef3f"
+    },
+    "change": "Re-encoded only: CP1251 to UTF-8, CRLF to LF, and the affix file's SET line to UTF-8; renamed to bulgarian.dict and bulgarian.affix (deploy/postgres/convert-bgoffice.sh).",
+    "files": {
+        "bulgarian.dict": "44408b1ee50301e8f9a133b0ec92565bb8be49818c444d91821876d447f58906",
+        "bulgarian.affix": "cb6bfc56d6b1e70c812061086d7ec5ad6aaf6d35acd927a035f1cee0188ea477",
+        "Copyright_spell.txt": "38c847556f188de6c59242624f4fbae5e195a57b691f32239db84d123bfbe979",
+        "LICENSE-MPL-2.0.txt": "5eba353fe5076ac3432177f8ab1cf75e3afcd0584251e37c3bfead5f447d040e",
+        "README.md": null
+    }
+}

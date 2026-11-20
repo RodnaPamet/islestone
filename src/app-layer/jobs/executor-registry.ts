@@ -662,6 +662,23 @@ executorRegistry.register('notification-purge', async (payload) => {
     return makeResult('notification-purge', startedAt, startMs, r.tenants, r.tenants - r.failedTenants, r.failedTenants, { purged: r.purged });
 });
 
+executorRegistry.register('search-index-rebuild', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processSearchIndexRebuild } = await import('./search-index-rebuild');
+    const forwarded: NamesEveryField<typeof payload> = {
+        tenantId: payload.tenantId,
+        force: payload.force,
+        requestedByUserId: payload.requestedByUserId,
+    };
+    const r = await processSearchIndexRebuild(forwarded);
+    return makeResult('search-index-rebuild', startedAt, startMs, r.tenants, r.tenants - r.failedTenants, r.failedTenants, {
+        descriptions: r.descriptions,
+        comments: r.comments,
+        removed: r.removed,
+    });
+});
+
 executorRegistry.register('intake-purge', async (payload) => {
     const startedAt = new Date().toISOString();
     const startMs = performance.now();

@@ -27,25 +27,35 @@
  *     title read as one more candidate, so it passes the same visibility
  *     and ranks first (its key is an exact code match).
  *   - **The query is never logged** and is always a bind parameter.
- *   - **Not searched:** descriptions and comments (encrypted; 2.7f, ADR
- *     0008), intake requests, templates (decision 124).
+ *   - **Descriptions and comments** (sub-phase 2.7f, ADR 0008, decision
+ *     124): their stored vectors are matched (`SearchVectorRepository.
+ *     matchItems`, the same visibility and liveness), an item already found
+ *     by its title keeps its title hit, and the rest rank below every title
+ *     match (`computeContentScore`). The best `SNIPPET_HITS` of them carry a
+ *     snippet of the matched text, decrypted and read under the same
+ *     visibility in the same transaction; nothing is stored.
+ *   - **Not searched:** intake requests, templates, project-template content
+ *     and personal data (decision 124).
  */
 
 import { assertCanReadWorkConfig } from '../policies/work-config.policies';
 import { mayReadWorkItems } from '../policies/work-item.policies';
 import { visibleProjects, type ProjectVisibility } from '../policies/project-visibility';
 import { ProjectRepository, type ProjectSearchRow } from '../repositories/ProjectRepository';
+import { SearchVectorRepository, type SearchVectorMatch } from '../repositories/SearchVectorRepository';
 import { WorkItemRepository, type WorkItemSearchRow } from '../repositories/WorkItemRepository';
 import { formatKey, parseKey } from '../domain/work-item-key';
 import type { RequestContext } from '../types';
 import { runInTenantReadContext, type PrismaTx } from '@/lib/db-context';
 import { normaliseSearchQuery } from '@/lib/search/query';
-import { capPerType, computeRankScore, sortHits } from '@/lib/search/rank';
+import { capPerType, computeContentScore, computeRankScore, sortHits } from '@/lib/search/rank';
+import { buildSnippet } from '@/lib/search/snippet';
 import {
     DEFAULT_PER_TYPE_LIMIT,
     MAX_PER_TYPE_LIMIT,
     MIN_QUERY_LENGTH,
     SEARCH_TYPE_DEFAULTS,
+    SNIPPET_HITS,
     type SearchHit,
     type SearchResponse,
 } from '@/lib/search/types';
@@ -72,23 +82,72 @@ export async function searchWorkspace(
     if (query.length < MIN_QUERY_LENGTH) return emptyResponse(query, limit);
 
     const slug = ctx.tenantSlug ?? '';
-    const { items, projects } = await runInTenantReadContext(ctx, async (db) => {
+    return runInTenantReadContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const keyHitId = searchItems ? await keyHitIdFor(db, ctx, v, query) : null;
-        const [itemRows, projectRows] = await Promise.all([
+        const [items, projects, contentMatches] = await Promise.all([
             searchItems ? WorkItemRepository.searchTitles(db, ctx, v, query, { limit: dbLimit, keyHitId }) : Promise.resolve([]),
             ProjectRepository.searchNames(db, ctx, v, query, { limit: dbLimit }),
+            searchItems ? SearchVectorRepository.matchItems(db, ctx, v, query, dbLimit) : Promise.resolve([]),
         ]);
-        return { items: itemRows, projects: projectRows };
-    });
 
-    const hits: SearchHit[] = [
-        ...items.map((row) => workItemHit(row, query, slug)),
-        ...projects.map((row) => projectHit(row, query, slug)),
-    ];
-    // Rank, then cap: the strongest hits of each type survive.
-    const { kept, perTypeCounts, truncated } = capPerType(sortHits(hits), limit);
-    return { hits: kept, meta: { query, perTypeCounts, truncated, perTypeLimit: limit } };
+        const titled = new Set(items.map((row) => row.id));
+        const contentOnly = contentMatches.filter((m) => !titled.has(m.workItemId));
+        const contentRows = await contentItemRows(db, ctx, v, contentOnly);
+
+        const hits: SearchHit[] = [
+            ...items.map((row) => workItemHit(row, query, slug)),
+            ...contentRows.map(({ row, match }) => contentHit(row, match, slug)),
+            ...projects.map((row) => projectHit(row, query, slug)),
+        ];
+        // Rank, then cap: the strongest hits of each type survive.
+        const { kept, perTypeCounts, truncated } = capPerType(sortHits(hits), limit);
+        await attachSnippets(db, ctx, v, kept, contentOnly, query);
+        return { hits: kept, meta: { query, perTypeCounts, truncated, perTypeLimit: limit } };
+    });
+}
+
+/**
+ * The key and title of each content-only match, in the match's order. Read
+ * by id under the same visibility (`findSearchRows`); a row that vanished
+ * between the two reads is dropped.
+ */
+async function contentItemRows(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, matches: readonly SearchVectorMatch[]) {
+    if (matches.length === 0) return [];
+    const rows = new Map((await WorkItemRepository.findSearchRows(db, ctx, v, matches.map((m) => m.workItemId))).map((r) => [r.id, r] as const));
+    return matches.flatMap((match) => {
+        const row = rows.get(match.workItemId);
+        return row ? [{ row, match }] : [];
+    });
+}
+
+/**
+ * Snippets for the best `SNIPPET_HITS` description and comment hits that
+ * survived the cap: one decrypting read of each kind, under the caller's
+ * visibility. Every other hit keeps `snippet: null`.
+ */
+async function attachSnippets(
+    db: PrismaTx,
+    ctx: RequestContext,
+    v: ProjectVisibility,
+    hits: SearchHit[],
+    matches: readonly SearchVectorMatch[],
+    query: string,
+): Promise<void> {
+    const byItem = new Map(matches.map((m) => [m.workItemId, m] as const));
+    const wanted = hits.filter((h) => h.type === 'workItem' && (h.matchedIn === 'description' || h.matchedIn === 'comment')).slice(0, SNIPPET_HITS);
+    if (wanted.length === 0) return;
+    const descriptionItemIds = wanted.filter((h) => h.matchedIn === 'description').map((h) => h.id);
+    const commentIds = wanted.flatMap((h) => {
+        const commentId = byItem.get(h.id)?.commentId;
+        return h.matchedIn === 'comment' && commentId ? [commentId] : [];
+    });
+    const texts = await WorkItemRepository.searchSnippetSources(db, ctx, v, { descriptionItemIds, commentIds });
+    for (const hit of wanted) {
+        const commentId = byItem.get(hit.id)?.commentId ?? null;
+        const text = hit.matchedIn === 'description' ? texts.descriptions.get(hit.id) : commentId ? texts.comments.get(commentId) : undefined;
+        hit.snippet = text ? buildSnippet(text, query) : null;
+    }
 }
 
 /** The per-type cap: a positive integer, at most `MAX_PER_TYPE_LIMIT`. */
@@ -112,6 +171,12 @@ async function keyHitIdFor(db: PrismaTx, ctx: RequestContext, v: ProjectVisibili
     return (await WorkItemRepository.findAlias(db, ctx, prefix.projectId, parsed.number))?.workItemId ?? null;
 }
 
+/** `key` when the query is the code (a key, a prefix) or its start; `title` otherwise. */
+function titleSource(query: string, code: string): 'title' | 'key' {
+    const q = query.trim().toLowerCase();
+    return q !== '' && code.toLowerCase().startsWith(q) ? 'key' : 'title';
+}
+
 function workItemHit(row: WorkItemSearchRow, query: string, slug: string): SearchHit {
     const key = formatKey(row.keyPrefix, row.number);
     return {
@@ -123,6 +188,25 @@ function workItemHit(row: WorkItemSearchRow, query: string, slug: string): Searc
         href: `/t/${slug}/work-items/${encodeURIComponent(key)}`,
         score: computeRankScore(query, { type: 'workItem', title: row.title, code: key }),
         ...SEARCH_TYPE_DEFAULTS.workItem,
+        matchedIn: titleSource(query, key),
+        snippet: null,
+    };
+}
+
+/** A work item found in its description or a comment (2.7f); the snippet is attached after the cap. */
+function contentHit(row: WorkItemSearchRow, match: SearchVectorMatch, slug: string): SearchHit {
+    const key = formatKey(row.keyPrefix, row.number);
+    return {
+        type: 'workItem',
+        id: row.id,
+        title: row.title,
+        subtitle: key,
+        badge: null,
+        href: `/t/${slug}/work-items/${encodeURIComponent(key)}`,
+        score: computeContentScore(match.rank),
+        ...SEARCH_TYPE_DEFAULTS.workItem,
+        matchedIn: match.commentId ? 'comment' : 'description',
+        snippet: null,
     };
 }
 
@@ -136,6 +220,8 @@ function projectHit(row: ProjectSearchRow, query: string, slug: string): SearchH
         href: `/t/${slug}/projects/${encodeURIComponent(row.keyPrefix)}`,
         score: computeRankScore(query, { type: 'project', title: row.name, code: row.keyPrefix }),
         ...SEARCH_TYPE_DEFAULTS.project,
+        matchedIn: titleSource(query, row.keyPrefix),
+        snippet: null,
     };
 }
 

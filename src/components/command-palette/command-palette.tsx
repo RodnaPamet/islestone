@@ -641,6 +641,7 @@ function EntityGroup({
     items: EntitySearchResult[];
     onSelect: (href: string) => void;
 }) {
+    const tEntity = useTranslations('commandPalette');
     return (
         <Command.Group
             heading={heading}
@@ -674,7 +675,17 @@ function EntityGroup({
                         aria-hidden="true"
                         className="size-4 shrink-0 text-content-muted"
                     />
-                    <span className="min-w-0 flex-1 break-words">{r.primary}</span>
+                    <span className="min-w-0 flex-1 break-words">
+                        {r.primary}
+                        {r.matchedIn && (
+                            // Where it matched (2.7f): the title did not, so say so,
+                            // with a window of the text when the server sent one.
+                            <span className="block text-xs text-content-muted" data-testid="command-palette-result-match">
+                                {r.matchedIn === 'comment' ? tEntity('matchedInComment') : tEntity('matchedInDescription')}
+                                {r.snippet ? `: ${r.snippet}` : ''}
+                            </span>
+                        )}
+                    </span>
                     {r.secondary && (
                         <span className="shrink-0 text-xs text-content-muted">
                             {r.secondary}

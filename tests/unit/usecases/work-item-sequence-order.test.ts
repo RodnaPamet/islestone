@@ -110,6 +110,12 @@ jest.mock('@/app-layer/repositories/LabelRepository', () => ({ LabelRepository: 
 // The field set (2.4b-b): no entries, no project fields.
 jest.mock('@/app-layer/repositories/FieldSetRepository', () => ({ FieldSetRepository: { listForTypesInProject: jest.fn(async () => fieldSetRows) } }));
 jest.mock('@/app-layer/repositories/CustomFieldRepository', () => ({ CustomFieldRepository: { listFields: jest.fn(async () => []) } }));
+// Search vectors (2.7f): written in the transaction; their placement is held
+// by tests/integration/search-vectors.test.ts (a rolled-back write leaves none).
+jest.mock('@/app-layer/repositories/SearchVectorRepository', () => ({
+    SEARCH_MATCH_CAP: 1000,
+    SearchVectorRepository: { replaceForSource: jest.fn(async () => undefined), removeForSource: jest.fn(async () => undefined) },
+}));
 // Mentions (2.7d): nobody recorded before; adds and removes succeed.
 jest.mock('@/app-layer/repositories/MentionRepository', () => ({
     MentionRepository: {

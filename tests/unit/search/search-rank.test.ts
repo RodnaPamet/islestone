@@ -83,6 +83,8 @@ function hit(id: string, type: SearchHit['type'], score: number): SearchHit {
         score,
         iconKey: type === 'workItem' ? 'work-item' : 'project',
         category: 'X',
+        matchedIn: 'title',
+        snippet: null,
     };
 }
 

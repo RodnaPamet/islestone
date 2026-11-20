@@ -287,6 +287,7 @@ describe('the schema speaks ADR 0006', () => {
             'RecipientList',
             'RecipientListMember',
             'SavedView',
+            'SearchVector',
             'Team',
             'Tenant',
             'TenantCustomRole',

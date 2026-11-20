@@ -1,6 +1,6 @@
 # 0007 — Third-party licence exceptions
 
-Status: Accepted (owner decisions, 2026-11-18 and 2026-11-19)
+Status: Accepted (owner decisions, 2026-11-18 and 2026-11-19; E10, owner decision 145, 2026-11-20)
 
 ## Context
 
@@ -146,6 +146,36 @@ Options were: add `FSL-1.1-Apache-2.0` to `ALLOWED_LICENCES`; exempt `sentry` al
 
 **Decision: add `FSL-1.1-Apache-2.0` to `ALLOWED_LICENCES`.** Owner decision, 2026-11-19 (HANDOFF row 32); the owner accepts it for the Sentry SDK. `@sentry/nextjs` is pinned to 11.11.0: inflect-compliance's 11.12.0 was under 14 days old on the day of install. The SDK is initialised only when `SENTRY_DSN` is set, server-side only, with its data collection pinned off (`tests/guards/sentry-privacy-posture-pinned.test.ts`).
 
+### E10 — The bgOffice Bulgarian dictionary, MPL-1.1 used as MPL-2.0 (sub-phase 2.7f)
+
+ADR 0008 D2 (owner decision 126) stems Bulgarian with a Hunspell dictionary installed in Islestone's own Postgres image. It is data, not an npm package: the licence gate (`scripts/licence-gate.mjs`) never sees it, so this entry, a guard and the image build hold it instead.
+
+**Verified** on 2026-11-20:
+
+- The source is bgOffice's OOo-spell-bg 4.3, in `https://downloads.sourceforge.net/bgoffice/OOo-full-pack-bg-4.3.zip` (files dated 2010-06-17). The archive's SHA512 is `1c4acf0c8377c6ec3f0dd26c84a5232be88b1fecabcb08dfae4f45bf819c770427731cbf1b01d65d3a182cccc3d0bcaabf3ab85735221e2ff09fc47bd66341d7`, equal to the value Gentoo's `app-dicts/myspell-bg/Manifest` records (gentoo/gentoo at `1d677101c0776fa2bf680550e2864f4f0a2e6ccd`).
+- The files taken are `OOo-full-pack-bg-4.3/bg_BG.dic` (sha256 `c1d403ecf6588c3e23f9b57db2f905fda035e17c115d05736e1ce02ea17dacee`) and `OOo-full-pack-bg-4.3/bg_BG.aff` (sha256 `8c068e82c939f1bd138195de393c9dcc5e5401f8003fc1faf80f5e82da28ef3f`).
+- Their licence is `OOo-full-pack-bg-4.3/Copyright_spell`, verbatim (its line breaks reflowed; the file itself is `deploy/postgres/tsearch_data/Copyright_spell.txt`):
+
+  > OOo-spell-bg part of bgOffice
+  > Copyright (C) 2001-2010 Radostin Radnev <radnev@gmail.com>
+  >
+  > This program comes with ABSOLUTELY NO WARRANTY. This is free software, and you are welcome to redistribute it under certain conditions. This package is distributed under the terms of either GNU General Public License Version 2 or later, or GNU Lesser General Public License Version 2.1 or later, or the Mozilla Public License Version 1.1. For details read file GPL-2.0.txt, LGPL-2.1.txt and MPL-1.1.txt.
+
+  In SPDX, `GPL-2.0-or-later OR LGPL-2.1-or-later OR MPL-1.1`. None of the three is on `ALLOWED_LICENCES`.
+- MPL-1.1 section 6.2 (the `MPL-1.1.txt` the archive ships): "You may also choose to use such Covered Code under the terms of any subsequent version of the License published by Netscape." MPL-2.0, which is on `ALLOWED_LICENCES`, is that subsequent version, published by the Mozilla Foundation as the licence's steward.
+- The LibreOffice dictionaries repository's copy (`bg_BG/`, at `c0865a85eb67dc377f2cf8e8fe2c4fa9e53f0dcb`) ships only the GPL-2.0 text and a word list five entries off 4.3's; it is not used.
+- PostgreSQL's `ispell` template reads the files once they are UTF-8, and the 17 fixtures of migration `20261207120000_search_configuration` stem as expected (`книгите` → `книга`, `срокът` → `срок`, `работихме` → `работя`). The loaded dictionary costs about 9.3 MB per database backend that uses it, first use about 100 ms.
+
+Options were: A, take it under MPL-1.1 and use it under MPL-2.0 through section 6.2; B, take it under LGPL-2.1-or-later and exempt it as E1 exempts libvips; C, admit MPL-1.1 itself; D, the LibreOffice copy (GPL-2.0 on its face); E, Russian stemming as a stand-in (it does not strip Bulgarian articles: `задачата` → `задачат`); F, Cyrillic words indexed as typed.
+
+**Decision: A.** Owner decision 145, 2026-11-20 (relayed). It admits this one file set and nothing else:
+
+- The two files are used under MPL-2.0. They are modified only by re-encoding: Windows-1251 to UTF-8, CRLF to LF, the affix file's `SET microsoft-cp1251` to `SET UTF-8`, and renamed to `bulgarian.dict` and `bulgarian.affix`. No word, flag or rule is changed. `deploy/postgres/convert-bgoffice.sh` reproduces the conversion from the archive and checks every hash.
+- The converted files are MPL-2.0 files, published with their source (they are their own source form) and a statement of the change: `deploy/postgres/tsearch_data/` in the repository (`README.md`, `Copyright_spell.txt`, `LICENSE-MPL-2.0.txt`), and the same three files in the image under `/usr/share/doc/islestone-postgres/bgoffice-bulgarian/`.
+- The results' hashes are pinned: `bulgarian.dict` sha256 `44408b1ee50301e8f9a133b0ec92565bb8be49818c444d91821876d447f58906`, `bulgarian.affix` sha256 `cb6bfc56d6b1e70c812061086d7ec5ad6aaf6d35acd927a035f1cee0188ea477`.
+- `ALLOWED_LICENCES` is not widened. Three things hold the file set to this entry instead: `deploy/postgres/dictionary.json` records the source, the licence and every hash; `tests/guards/postgres-dictionary-pinned.test.ts` fails when a file in `deploy/postgres/tsearch_data/` differs from that record, when a file is added or removed, or when the record's hashes, archive digest or licence differ from this entry; and `deploy/postgres/Dockerfile` checks the two hashes with `sha256sum -c` before it installs them. Any other dictionary, version or conversion is an amendment to this entry.
+- `PROVENANCE.md` lists it and `NOTICE` carries its copyright line and licence.
+
 ## Consequences
 
 - The state of the gate: `ALLOWED_LICENCES` holds roadmap 0.3's list plus `0BSD` (E2b), `Unlicense` (E6), `BlueOak-1.0.0` (E7), `MIT-0` (E8) and `FSL-1.1-Apache-2.0` (E9). `scripts/licence-exemptions.json` holds 18 entries: 17 cite this ADR (the 14 sharp packages, E1a; `caniuse-lite`, E3a; `@visx/vendor` at two versions, E6 and E7; `elkjs`, E7) and one cites ADR 0001 (`@inflect/ui`, the BUSL-1.1 mirror). There is no `tslib` entry (E2b).
@@ -153,6 +183,7 @@ Options were: add `FSL-1.1-Apache-2.0` to `ALLOWED_LICENCES`; exempt `sentry` al
 - The LGPL entries are pinned to versions, so a `next` or `sharp` upgrade that moves them fails the gate until a person re-reads the new versions.
 - The `caniuse-lite` entry is bound to its declared licence. A licence change fails the gate; a version change does not.
 - Sub-phase 1.8 inherits the EPL-2.0 notice for `elkjs` (E7) and two obligations from E1a: the LGPL notice in the image, with a `NOTICE` entry in the same change, and a replaceable library.
+- E10 admits one data file set, bgOffice's Bulgarian dictionary used under MPL-2.0, outside the npm gate; a guard and the Postgres image's build hold its hashes and this record together.
 - Widening `ALLOWED_LICENCES` stays an amendment to this ADR, never a change made to get a build through.
 
 ## What would change this decision

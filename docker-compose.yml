@@ -1,5 +1,5 @@
-# Local development stack: PostgreSQL (with pgvector), PgBouncer in front of
-# it in transaction mode, and Redis.
+# Local development stack: PostgreSQL (with pgvector and the Bulgarian
+# dictionary), PgBouncer in front of it in transaction mode, and Redis.
 #
 #   docker compose up -d
 #
@@ -15,8 +15,15 @@
 name: islestone
 
 services:
+  # Islestone's Postgres image (sub-phase 2.7f): the pinned pgvector image
+  # plus the Bulgarian dictionary the `islestone_bg_en` text-search
+  # configuration reads (deploy/postgres/Dockerfile). Built here; production
+  # pulls the published ghcr.io/rodnapamet/islestone-postgres. A volume made
+  # by the stock image keeps working: `docker compose up -d --build postgres`
+  # recreates the container on it.
   postgres:
-    image: pgvector/pgvector:0.8.7-pg17-trixie
+    build: ./deploy/postgres
+    image: islestone-postgres:local
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-islestone}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-islestone_dev}

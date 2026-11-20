@@ -25,6 +25,8 @@ function hit(id: string, type: SearchHitType): SearchHit {
         score: 0,
         iconKey: 'work-item',
         category: 'X',
+        matchedIn: 'title',
+        snippet: null,
     };
 }
 

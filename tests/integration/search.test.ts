@@ -14,7 +14,9 @@
  *   - `GET /api/t/<slug>/search`: 200, a bounded `limit` (400 past it), and a
  *     403 with an `AUTHZ_DENIED` row for a caller without `projects.view`.
  *
- * No new table, so nothing joins `ISOLATION_TESTED`.
+ * No new table, so nothing joins `ISOLATION_TESTED`. Since 2.7f the full-text
+ * indexes are built with `islestone_bg_en` (tests/integration/search-vectors.test.ts
+ * covers the configuration and the stored vectors).
  */
 import { NextRequest } from 'next/server';
 import { PrismaClient, type Prisma } from '@prisma/client';
@@ -119,7 +121,7 @@ describeFn('workspace search (2.7b)', () => {
             expect(i.indexdef).toMatch(/USING gin \("tenantId", /);
             expect(i.indexdef).toMatch(/WHERE \("deletedAt" IS NULL\)$/);
         }
-        expect(idx.find((i) => i.indexname === 'WorkItem_search_title_fts')!.indexdef).toContain("to_tsvector('simple'::regconfig, title)");
+        expect(idx.find((i) => i.indexname === 'WorkItem_search_title_fts')!.indexdef).toContain("to_tsvector('islestone_bg_en'::regconfig, title)");
         expect(idx.find((i) => i.indexname === 'WorkItem_search_title_trgm')!.indexdef).toContain('title gin_trgm_ops');
     });
 
@@ -165,7 +167,13 @@ describeFn('workspace search (2.7b)', () => {
         expect(r[0]).toBe('100% done');
         expect(r).not.toContain('1000 done');
         expect(titles(await searchWorkspace(ctxA(), '100_'), 'workItem')).not.toContain('1000 done');
-        const list = await listWorkItems(ctxA(), { q: '100%' });
+        // The list's substring arm escapes too. Since 2.7f its full-text arm
+        // also finds "100 done" for `100%` (punctuation is not a word), so the
+        // wildcard is shown with `0%`: as a wildcard it would match every title
+        // holding a 0; escaped it matches "100% done" only, and `0` is no word
+        // of any title.
+        expect((await listWorkItems(ctxA(), { q: '100%' })).items.map((i) => i.title)).not.toContain('1000 done');
+        const list = await listWorkItems(ctxA(), { q: '0%' });
         expect(list.items.map((i) => i.title)).toEqual(['100% done']);
     });
 

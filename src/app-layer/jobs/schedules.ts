@@ -212,6 +212,13 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         description: 'Delete notifications marked Done more than 90 days ago and read ones more than 180 days ago; unread ones are kept (owner decision 135). Counts-only audit entry per workspace.',
         defaultPayload: {},
     },
+    {
+        name: 'search-index-rebuild',
+        pattern: '40 2 * * *',    // 02:40 in NOTIFICATIONS_TZ, a quiet hour, before the 03:10 purge
+        tz: env.NOTIFICATIONS_TZ,
+        description: 'Write the search vector of every description and live comment whose vector is missing or older than SEARCH_VECTOR_REVISION, in each live workspace, as its system user (ADR 0008; the backfill on first deploy and the rebuild after a configuration or dictionary change). Bounded pages; counts-only audit entry per workspace.',
+        defaultPayload: {},
+    },
 ];
 
 /**

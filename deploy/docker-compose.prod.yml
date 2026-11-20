@@ -131,9 +131,17 @@ x-pinned: &pinned
   com.centurylinklabs.watchtower.scope: islestone
 
 services:
-  # ── PostgreSQL (pgvector) ─────────────────────────────────────────────
+  # ── PostgreSQL (pgvector, the Bulgarian dictionary) ───────────────────
+  # Islestone's own image (sub-phase 2.7f, owner decision 146): the pinned
+  # pgvector image plus the dictionary of the `islestone_bg_en` text-search
+  # configuration (deploy/postgres/Dockerfile), published by release.yml under
+  # an immutable version tag. Moving an existing database onto it is the
+  # one-time step in docs/deployment.md, "The Postgres image" (decision 147).
+  # POSTGRES-IMAGE-DIGEST-PENDING: the tag is named alone until its first
+  # publish exists; then this line becomes `<tag>@sha256:<index digest>` and
+  # the marker goes (tests/guards/postgres-image-pinning.test.ts).
   postgres:
-    image: pgvector/pgvector:0.8.7-pg17-trixie
+    image: ghcr.io/rodnapamet/islestone-postgres:17-0.8.7-bg4.3-r1
     container_name: islestone-postgres
     restart: unless-stopped
     logging: *default-logging

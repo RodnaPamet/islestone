@@ -82,6 +82,7 @@ model Tenant {
   notificationSettings TenantNotificationSettings?
   notificationPrefs    NotificationPreference[]
   mentions             Mention[]
+  searchVectors        SearchVector[]
   recipientLists       RecipientList[]
   recipientListMembers RecipientListMember[]
 

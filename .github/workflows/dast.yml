@@ -42,17 +42,6 @@ jobs:
       security-events: write
       issues: write
     services:
-      postgres:
-        image: pgvector/pgvector:0.8.7-pg17-trixie
-        env:
-          POSTGRES_USER: islestone
-          POSTGRES_PASSWORD: islestone_ci
-          POSTGRES_DB: islestone_dast
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -h 127.0.0.1 -U islestone -d islestone_dast"
-          --health-interval 5s --health-timeout 5s --health-retries 20
       redis:
         image: redis:7.4.12-alpine3.22
         ports:
@@ -75,10 +64,10 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - name: Create the app_user role (prisma/init-roles.sh)
-        run: >-
-          docker exec -i -e POSTGRES_USER=islestone -e POSTGRES_DB=islestone_dast
-          ${{ job.services.postgres.id }} bash -s < prisma/init-roles.sh
+      # Islestone's Postgres image (sub-phase 2.7f), built from this commit,
+      # with prisma/init-roles.sh run on its fresh volume.
+      - name: Build and start Postgres (scripts/ci-postgres.sh)
+        run: scripts/ci-postgres.sh islestone_dast
       - name: Configure Redis (noeviction, password)
         run: |
           docker exec ${{ job.services.redis.id }} redis-cli CONFIG SET maxmemory-policy noeviction

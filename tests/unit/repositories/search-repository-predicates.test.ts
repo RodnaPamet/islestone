@@ -10,6 +10,7 @@
 import type { Prisma } from '@prisma/client';
 
 import { ProjectRepository } from '@/app-layer/repositories/ProjectRepository';
+import { SEARCH_MATCH_CAP, SearchVectorRepository } from '@/app-layer/repositories/SearchVectorRepository';
 import { WorkItemRepository } from '@/app-layer/repositories/WorkItemRepository';
 import { projectVisibilitySql, type ProjectVisibility } from '@/app-layer/policies/project-visibility';
 import type { PrismaTx } from '@/lib/db-context';
@@ -28,6 +29,10 @@ function recorder() {
         $queryRaw: jest.fn(async (sql: Prisma.Sql) => {
             sent.push(sql);
             return [];
+        }),
+        $executeRaw: jest.fn(async (sql: Prisma.Sql) => {
+            sent.push(sql);
+            return 0;
         }),
     } as unknown as PrismaTx;
     return { db, sent };
@@ -58,7 +63,7 @@ describe('WorkItemRepository.searchTitles', () => {
         await WorkItemRepository.searchTitles(db, ctx, ALL, 'login', { limit: 15 });
         const where = text(sent[0]!).split(' WHERE ')[1]!.split(' ORDER BY ')[0]!;
         expect(where).toMatch(/w\."title" ILIKE \$\d+/);
-        expect(where).toMatch(/to_tsvector\('simple', w\."title"\) @@ plainto_tsquery\('simple', \$\d+\)/);
+        expect(where).toMatch(/to_tsvector\('islestone_bg_en', w\."title"\) @@ plainto_tsquery\('islestone_bg_en', \$\d+\)/);
         expect(sent[0]!.values).toContain('%login%');
     });
 
@@ -96,10 +101,81 @@ describe('ProjectRepository.searchNames', () => {
         expect(where).toContain('p."tenantId" = $1');
         expect(where).toContain('p."deletedAt" IS NULL AND p."archivedAt" IS NULL');
         expect(where).toMatch(/p\."id" = ANY\(\$\d+::text\[\]\)/);
-        expect(where).toMatch(/to_tsvector\('simple', p\."name"\) @@ plainto_tsquery\('simple', \$\d+\)/);
+        expect(where).toMatch(/to_tsvector\('islestone_bg_en', p\."name"\) @@ plainto_tsquery\('islestone_bg_en', \$\d+\)/);
         expect(sql).toMatch(/LIMIT \$\d+$/);
         expect(sent[0]!.sql).not.toContain('OR 1=1');
         expect(sent[0]!.values).toContainEqual(['granted-1']);
+    });
+});
+
+describe('SearchVectorRepository.matchItems (2.7f)', () => {
+    it('carries the workspace, both deletedAts, the visibility fragment and the configuration in its own WHERE', async () => {
+        const { db, sent } = recorder();
+        await SearchVectorRepository.matchItems(db, ctx, GUEST, QUERY, 20);
+        expect(sent).toHaveLength(1);
+        const sql = text(sent[0]!);
+        const where = sql.split(' WHERE ')[1]!.split(' ORDER BY ')[0]!;
+        expect(where).toContain('s."tenantId" = $');
+        expect(where).toContain(`s."configName" = 'islestone_bg_en'`);
+        expect(where).toContain('w."deletedAt" IS NULL');
+        expect(where).toContain('(s."commentId" IS NULL OR c."deletedAt" IS NULL)');
+        expect(where).toContain('p."deletedAt" IS NULL AND p."archivedAt" IS NULL');
+        expect(where).toMatch(/w\."projectId" = ANY\(\$\d+::text\[\]\)/);
+        // Every join stays in the workspace.
+        expect(sql).toContain('w."tenantId" = s."tenantId"');
+        expect(sql).toContain('p."tenantId" = w."tenantId"');
+        expect(sql).toContain('c."tenantId" = s."tenantId"');
+        expect(sent[0]!.values).toContain('tenant-1');
+        expect(sent[0]!.values).toContainEqual(['granted-1']);
+    });
+
+    it('names the configuration as a literal and the query only as a parameter, and is bounded', async () => {
+        const { db, sent } = recorder();
+        await SearchVectorRepository.matchItems(db, ctx, ALL, QUERY, 1_000_000);
+        const sql = text(sent[0]!);
+        expect(sql).toMatch(/websearch_to_tsquery\('islestone_bg_en', \$\d+\)/);
+        expect(sent[0]!.sql).not.toContain('OR 1=1');
+        expect(sent[0]!.values).toContain(QUERY);
+        expect(sql).toMatch(/LIMIT \$\d+$/);
+        expect(sent[0]!.values.at(-1)).toBe(SEARCH_MATCH_CAP);
+    });
+});
+
+describe('WorkItemRepository.titleFullTextIds (2.7f, the list\'s q)', () => {
+    it('carries the workspace, deletedAt and visibility, spells the indexed expression, and is bounded', async () => {
+        const { db, sent } = recorder();
+        await WorkItemRepository.titleFullTextIds(db, ctx, GUEST, QUERY, 1_000_000);
+        const sql = text(sent[0]!);
+        const where = sql.split(' WHERE ')[1]!.split(' ORDER BY ')[0]!;
+        expect(where).toContain('w."tenantId" = $1');
+        expect(where).toContain('w."deletedAt" IS NULL');
+        expect(where).toContain('p."deletedAt" IS NULL AND p."archivedAt" IS NULL');
+        expect(where).toMatch(/w\."projectId" = ANY\(\$\d+::text\[\]\)/);
+        expect(where).toMatch(/to_tsvector\('islestone_bg_en', w\."title"\) @@ websearch_to_tsquery\('islestone_bg_en', \$\d+\)/);
+        expect(sent[0]!.sql).not.toContain('OR 1=1');
+        expect(sent[0]!.values.at(-1)).toBe(SEARCH_MATCH_CAP);
+    });
+});
+
+describe('SearchVectorRepository writes (2.7f)', () => {
+    it('vectorises the text as a bind parameter through islestone_bg_en, without mention tokens', async () => {
+        const { db, sent } = recorder();
+        await SearchVectorRepository.replaceForSource(db, ctx, { workItemId: 'w1', commentId: null }, `Ask <@user-1> about ${QUERY}`);
+        const sql = text(sent[0]!);
+        expect(sql).toMatch(/to_tsvector\('islestone_bg_en', \$\d+\)/);
+        expect(sql).toContain('ON CONFLICT ("tenantId", "workItemId") WHERE "commentId" IS NULL');
+        expect(sent[0]!.sql).not.toContain('OR 1=1');
+        expect(sent[0]!.values).toContain(`Ask   about ${QUERY}`);
+        expect(sent[0]!.values.join(' ')).not.toContain('user-1');
+        expect(sent[0]!.values).toContain('tenant-1');
+    });
+
+    it('a comment row conflicts on its own unique; an empty text removes the row instead', async () => {
+        const { db, sent } = recorder();
+        await SearchVectorRepository.replaceForSource(db, ctx, { workItemId: 'w1', commentId: 'c1' }, 'Body');
+        expect(text(sent[0]!)).toContain('ON CONFLICT ("tenantId", "commentId") WHERE "commentId" IS NOT NULL');
+        await SearchVectorRepository.replaceForSource(db, ctx, { workItemId: 'w1', commentId: 'c1' }, '<@user-1>');
+        expect(text(sent[1]!)).toMatch(/^ DELETE FROM "SearchVector" WHERE "tenantId" = \$1 AND "workItemId" = \$2 AND "commentId" = \$3$/);
     });
 });
 

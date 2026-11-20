@@ -208,6 +208,16 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'and OWNER-only per the role model (src/lib/permissions.ts).',
     },
 
+    // ── Search index rebuild (sub-phase 2.7f) ────────────────────────
+    {
+        path: new RegExp(`^${T}\\/admin\\/search-index\\/rebuild$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note:
+            'Forces a rebuild of this workspace\'s search vectors (ADR 0008), ' +
+            'audited and run by the worker as the caller (OWNER + ADMIN).',
+    },
+
     // ── Work items and their configuration (sub-phases 2.1–2.2) ─────
     // Every route under work-items, teams, projects, work-item-types and
     // labels; a specific path sits above its one-segment catch-all.
