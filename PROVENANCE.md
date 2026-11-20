@@ -2020,6 +2020,17 @@ Built by [`docs/porting/maps/2.6.md`](docs/porting/maps/2.6.md) under owner deci
 | `src/components/intake/*`, `src/components/settings/IntakeSettings.tsx`, `IntakeFormBuilder.tsx`, the intake pages under `src/app/t/[tenantSlug]/(app)/`, `src/lib/server/intake-pages.server.ts`, the navigation | inflect-compliance `src/app/t/[tenantSlug]/(app)/incidents/NewIncidentModal.tsx` (`useForm` + `zodResolver`); circle's study §4.8 (the split view) | PATTERN | Pattern only, no code copied. |
 | `tests/integration/intake.test.ts`, `intake-api.test.ts`, `intake-tables-isolation.test.ts`, `intake-sql-constructs.test.ts`, `tests/unit/intake/form-definition.test.ts`, `tests/unit/domain/intake.test.ts`, `tests/unit/usecases/intake-accept-sequence-order.test.ts`, `tests/rendered/intake.test.tsx`, `tests/e2e/intake.spec.ts` | — | Islestone-owned | Written fresh. |
 
+## Intake: public forms (sub-phase 2.6b)
+
+Built by [`docs/porting/maps/2.6.md`](docs/porting/maps/2.6.md) under owner decisions 86, 88, 89 and 98. **Nothing was copied.** inflect-compliance has no public form, proof-of-work or trap field; two of its anonymous surfaces were read for their discipline, pattern only, at `5528464fc54a8681956f3b9ce23ca9c075f0420e` (BUSL-1.1).
+
+| File | Source | Action | Changes |
+|---|---|---|---|
+| `src/app-layer/usecases/intake-public.ts` (`resolvePublicIntakeForm`: one narrow pre-tenant read, one answer for every closed case) | inflect-compliance `src/lib/trust-center/gated.ts`, `src/app/api/trust/[slug]/access-request/route.ts` | PATTERN | Pattern only, no code copied: a slug or link resolved under a named bypass to a narrow row, then everything in the resolved tenant's context; here a random public id, the system user as the actor, and the caps counted in the database. |
+| `src/lib/intake/public/http.ts` (the `Sec-Fetch-Site: cross-site` refusal) | inflect-compliance `src/lib/security/admin-session-guard.ts` | PATTERN | Pattern only, no code copied: the header check, applied to two anonymous POSTs. |
+| `src/lib/intake/public/form-token.ts`, `src/lib/intake/pow.ts`, `src/lib/intake/public/capped-body.ts`, `src/lib/intake/public-switch.ts`, `src/lib/intake/reference.ts`; the public routes under `src/app/api/intake/`; the `/f/` pages; `src/components/intake/public/*`; `src/app-layer/notifications/email/intake-requester.tsx`; migrations `20261126120000_email_type_intake` and `20261126120100_intake_public`; the 2.6b changes to `guard.ts`, `middleware.ts`, `rls-middleware.ts`, `pii-middleware.ts`, `rate-limit.ts`, `IntakeRepository.ts`, `intake-request.ts`, `intake-form.ts`, `IntakeFormRenderer.tsx`, `IntakeFormBuilder.tsx`, `IntakeSettings.tsx`, `IntakeView.tsx` | — | Islestone-owned | Written fresh. |
+| `tests/integration/intake-public.test.ts`, `tests/unit/intake/public-bot-defence.test.ts`, `public-request-schema.test.ts`, `public-edge.test.ts`, `tests/guards/public-intake-boundary.test.ts`, `tests/rendered/intake-public.test.tsx` | — | Islestone-owned | Written fresh. |
+
 ## Adopted
 
 | Component | Source (repository and path) | Commit | Licence | What was taken | Changes |

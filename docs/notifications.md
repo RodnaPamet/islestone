@@ -151,6 +151,21 @@ workspace (the admin action).
 The job `notification-outbox-flush` runs it every ten minutes (see
 `docs/jobs.md`).
 
+### Outsiders as recipients (2.6b)
+
+A public intake form's requester is not a member, so the digest
+dispatcher's membership resolution does not apply. Four email types are
+written for them, each from inside the transaction that decides it, with the
+decrypted address passed to `enqueueEmail`: `INTAKE_CONFIRM_ADDRESS` (when
+they ask for updates; deduplicated per address and form a day, so one form
+cannot be used to mail an address repeatedly), and, only after they confirm
+their address, `INTAKE_ACCEPTED`, `INTAKE_DECLINED` (never for spam) and
+`INTAKE_MERGED` (deduplicated per request). Each names the form and the
+request's short reference, never the text the requester typed, and links
+nowhere into the app (the confirmation page is outside it). The workspace's
+email switch applies as for every other email. See `docs/intake.md`,
+"Public forms (2.6b)".
+
 ### Sender address
 
 The `From` header is the workspace's `defaultFromEmail`, and when the

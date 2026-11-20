@@ -229,6 +229,12 @@ docker logs --tail 200 islestone-app      # likewise islestone-worker, islestone
 docker inspect -f '{{.State.Health.Status}}' islestone-app
 ```
 
+Public intake forms (sub-phase 2.6b) are closed in production until an
+operator sets `INTAKE_PUBLIC_FORMS=1` in `.env.prod` and applies. Open them
+only once the release that added them runs on both `islestone-app` and
+`islestone-worker` (the worker sends the requester's emails), and empty the
+value to close them again; closed, every public form answers 404.
+
 Never `cat` or copy `.env.prod`; to see which names it holds:
 `sudo grep -oE '^[A-Z_]+=' /opt/islestone/.env.prod`.
 

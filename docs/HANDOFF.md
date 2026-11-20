@@ -113,6 +113,8 @@ porting maps now record them (next step 2); the last column says where.
 
 Rows 62 to 75 are sub-phase 2.5's decisions. Rows 85 to 99 are sub-phase 2.6's (`docs/porting/maps/2.6.md`, questions 1 to 13, then the public perimeter and the member-email rule). Rows 76 to 84 are the ideas the owner adopted from the Procore audit, all of its top ten but #8 (event triggers for delegate agents and a search skill), which 6.3 and a search skill already plan. None changes an ADR yet: each sub-phase lists the amendments it needs and its proposed words as open questions, decided when it starts.
 
+Sub-phase 2.6b (public intake forms) applies decisions 86, 88, 89 and 98 as follows. The deployment switch of decision 86 is `INTAKE_PUBLIC_FORMS` (`1` open, `0` closed, unset closed in production), set in `.env.prod` by the operator once the release runs on both images. Decision 98's bypass reason `public-intake-resolve` and two of its three machine-caller entries (`/api/intake/forms`, `/api/intake/confirm`) are live with their contracts; the third, `/api/intake/email`, arrives with 2.6c. The outsider email types (`INTAKE_CONFIRM_ADDRESS`, `INTAKE_ACCEPTED`, `INTAKE_DECLINED`, `INTAKE_MERGED`) are added in a migration of their own; their writers ship in the same release but cannot run until the switch is opened. Blocked senders move to 2.6c. As built: `docs/intake.md`, "Public forms (2.6b)".
+
 `LICENSE`'s Change Date, 2030-11-18, follows the BUSL four-year rule from today; it was
 not asked separately.
 
