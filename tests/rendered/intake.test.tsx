@@ -79,7 +79,7 @@ beforeEach(() => {
 
 describe('the form renderer', () => {
     it('refuses at the field for the server\'s reasons, sends the answers, and has no axe violations', async () => {
-        const onSubmit = jest.fn(async () => null);
+        const onSubmit = jest.fn(async (_input: unknown) => null as string | null);
         const { container } = renderWorkspace(<IntakeFormRenderer definition={DEFINITION} formKey="f-bugs" onSubmit={onSubmit} />);
         expect(screen.getByText('Tell us what broke.')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Send request' }));
