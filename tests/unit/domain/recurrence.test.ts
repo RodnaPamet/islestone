@@ -124,6 +124,26 @@ describe('named cases', () => {
         expect(dayKey(nextOccurrenceFrom(rr, fromDayKey('2026-11-01'))!.on)).toBe('2026-11-09');
         expect(dayKey(nextOccurrenceFrom(rr, fromDayKey('2026-11-16'))!.on)).toBe('2026-11-16');
         expect(nextOccurrenceFrom(r({ maxOccurrences: 2 }), fromDayKey('2026-03-01'))).toBeNull();
+        // With lead days, it starts where the make day is today or later.
+        expect(dayKey(nextOccurrenceFrom(r({ firstOn: fromDayKey('2026-11-01') }), fromDayKey('2026-11-05'), 3)!.on)).toBe('2026-11-08');
+    });
+
+    it('a repeat set today, run nightly, makes one occurrence a night with nothing skipped (steady state)', () => {
+        fc.assert(
+            fc.property(rule, fc.integer({ min: 0, max: 30 }), fc.integer({ min: 0, max: 400 }), (rr, lead, offset) => {
+                let today = addDays(rr.firstOn, offset);
+                let next = nextOccurrenceFrom(rr, today, lead)!;
+                for (let night = 0; night < 60; night++) {
+                    const p = planDue(rr, next, today, lead);
+                    if (p) {
+                        expect(p.skipped).toBe(0);
+                        expect(p.make).toEqual(next);
+                        next = p.following!;
+                    }
+                    today = addDays(today, 1);
+                }
+            }),
+        );
     });
 });
 

@@ -981,6 +981,17 @@ export class WorkItemRepository {
         });
     }
 
+    /**
+     * Is there already an item for this occurrence (a copy made before a
+     * hold and a resume)? Deleted ones count: the occurrence unique covers
+     * them, and a deleted copy is not made again.
+     */
+    static async occurrenceExists(db: PrismaTx, ctx: RequestContext, recurrenceId: string, occurrenceOn: Date): Promise<boolean> {
+        // Deliberately not narrowed by `deletedAt` or visibility: the unique index is not.
+        const hit = await db.workItem.findFirst({ where: { tenantId: ctx.tenantId, recurrenceId, occurrenceOn }, select: { id: true } });
+        return hit !== null;
+    }
+
     // ── Templates (sub-phase 2.5c) ───────────────────────────────────
 
     /**

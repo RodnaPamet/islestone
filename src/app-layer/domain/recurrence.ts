@@ -151,9 +151,16 @@ export function withinEnd(rule: RecurrenceRule, occ: Occurrence): boolean {
     return true;
 }
 
-/** The next occurrence a rule set or resumed on `today` waits for: after `firstOn`, not before today; `null` when the rule has ended. */
-export function nextOccurrenceFrom(rule: RecurrenceRule, today: Date): Occurrence | null {
-    const after = today.getTime() > rule.firstOn.getTime() ? addDays(today, -1) : rule.firstOn;
+/**
+ * The next occurrence a rule set or resumed on `today` waits for: after
+ * `firstOn`, and at least `leadDays` away, so its make day (due date minus
+ * lead days) is today or later and nothing is counted as missed. A run makes
+ * one occurrence per rule, so a repeat starts there rather than with copies
+ * already inside the lead window. `null` when the rule has ended.
+ */
+export function nextOccurrenceFrom(rule: RecurrenceRule, today: Date, leadDays = 0): Occurrence | null {
+    const earliest = addDays(today, leadDays);
+    const after = earliest.getTime() > rule.firstOn.getTime() ? addDays(earliest, -1) : rule.firstOn;
     const next = firstOccurrenceAfter(rule, after);
     return withinEnd(rule, next) ? next : null;
 }

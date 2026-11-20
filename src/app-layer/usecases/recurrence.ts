@@ -10,7 +10,8 @@
  *   `work-item-recurrence` job makes each copy as them, re-resolved
  *   (`recurrence-run.ts`). The request never makes an occurrence; it stamps
  *   the next one, after the first date and not before today (in
- *   `NOTIFICATIONS_TZ`), so resuming skips what fell due while on hold.
+ *   `NOTIFICATIONS_TZ`) plus its lead days, so resuming skips what fell due
+ *   while on hold and a run never counts a fresh repeat's dates as missed.
  * - Stopping a repeat deletes the rule; its earlier items stay (the item's
  *   link is `ON DELETE SET NULL ("recurrenceId")`).
  *
@@ -100,7 +101,7 @@ export async function setWorkItemRecurrence(ctx: RequestContext, itemId: string,
         const existing = await RecurrenceRepository.getBySource(db, ctx, item.id);
         const hold = input.onHold === true;
         const now = new Date();
-        const next = nextOccurrenceFrom(rule, today);
+        const next = nextOccurrenceFrom(rule, today, input.leadDays);
         const data = {
             frequency: rule.frequency,
             interval: rule.interval,

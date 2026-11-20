@@ -175,6 +175,8 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
             'NotificationType',
             'OrgAuditAction',
             'OrgRole',
+            'RecurrenceFrequency',
+            'RecurrenceHold',
             'Role',
             'SavedViewVisibility',
             'ViewLayout',

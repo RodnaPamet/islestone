@@ -92,6 +92,8 @@ async function makeOccurrenceInTx(db: PrismaTx, owner: RequestContext, rule: Rec
         at: new Date(),
     });
     if (claimed === 0) return { kind: 'none' };
+    // Made already (before a hold and a resume): the claim moved the rule on; make nothing.
+    if (await WorkItemRepository.occurrenceExists(db, owner, rule.id, plan.make.on)) return { kind: 'none' };
 
     // The source as it is now, projected like a template (decision 69).
     const sourceRow = (await WorkItemRepository.getById(db, owner, v, found.id))!;
@@ -111,7 +113,7 @@ async function makeOccurrenceInTx(db: PrismaTx, owner: RequestContext, rule: Rec
         subItems: subRows.slice(0, TEMPLATE_LIMITS.subItems).map((s) => ({ title: s.title })),
     };
     const occurrenceOn = dayKey(plan.make.on);
-    const projected = templateToCreateInput(itemSource, { dueDate: occurrenceOn }, await templateUseContextInTx(db, owner, found, peopleNamedBy(itemSource)));
+    const projected = templateToCreateInput(itemSource, { dueDate: occurrenceOn }, await templateUseContextInTx(db, owner, { id: found.projectId, teamId: found.teamId }, peopleNamedBy(itemSource)));
     // A start date keeps its distance from the due date.
     const startDate =
         source.startDate && source.dueDate
