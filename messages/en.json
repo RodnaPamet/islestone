@@ -1099,7 +1099,9 @@
             "archivedToast": "Project {name} archived",
             "unarchivedToast": "Project {name} unarchived",
             "resource": "project",
-            "resourcePlural": "projects"
+            "resourcePlural": "projects",
+            "fields": "Fields",
+            "fieldsOf": "Fields of {name}"
         }
     },
     "views": {
