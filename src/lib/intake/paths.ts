@@ -23,3 +23,12 @@ export function projectIntakePath(keyPrefix: string): string {
 export function intakeFormPath(formId: string): string {
     return `/forms/${encodeURIComponent(formId)}`;
 }
+
+/**
+ * A public form's page (sub-phase 2.6b), at the site root, outside `/t/`:
+ * the link carries the form's random public id and nothing about the
+ * workspace.
+ */
+export function publicIntakeFormPath(publicId: string): string {
+    return `/f/${encodeURIComponent(publicId)}`;
+}

@@ -36,6 +36,8 @@ export const CreateIntakeFormSchema = z
         /** Validated by `IntakeFormDefinitionSchema` in the usecase, after sanitising. */
         definition: z.unknown(),
         published: z.boolean().optional(),
+        /** `PUBLIC` (anyone with the link, 2.6b) only while public forms are open on the deployment. */
+        access: z.enum(['MEMBERS', 'PUBLIC']).optional(),
     })
     .strict();
 
@@ -45,9 +47,13 @@ export const UpdateIntakeFormSchema = z
         definition: z.unknown().optional(),
         published: z.boolean().optional(),
         archived: z.boolean().optional(),
+        access: z.enum(['MEMBERS', 'PUBLIC']).optional(),
     })
     .strict()
-    .refine((b) => b.name !== undefined || b.definition !== undefined || b.published !== undefined || b.archived !== undefined, 'Give something to change.');
+    .refine(
+        (b) => b.name !== undefined || b.definition !== undefined || b.published !== undefined || b.archived !== undefined || b.access !== undefined,
+        'Give something to change.',
+    );
 
 export const SetProjectIntakeSchema = z
     .object({

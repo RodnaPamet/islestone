@@ -13,6 +13,7 @@ import { useState } from 'react';
 
 import { Button } from '@inflect/ui/components/ui/button';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { intakeReference } from '@/lib/intake/reference';
 import type { IntakeRequestRow, OpenIntakeForm } from '@/lib/intake/types';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 
@@ -33,7 +34,7 @@ export function IntakeFormPage({ form }: { form: OpenIntakeForm }) {
             {sent ? (
                 <div role="status" className="space-y-default" data-testid="intake-sent">
                     <p className="text-content-emphasis">{form.definition.confirmation || t('sent')}</p>
-                    <p className="text-sm text-content-muted">{t('reference', { reference: sent.id.slice(-8).toUpperCase() })}</p>
+                    <p className="text-sm text-content-muted">{t('reference', { reference: intakeReference(sent.id) })}</p>
                     <div className="flex gap-tight">
                         <Button variant="secondary" text={t('another')} onClick={() => setSent(null)} />
                         <Link className="self-center text-sm underline" href={tenantHref('/forms')}>

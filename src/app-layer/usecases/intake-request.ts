@@ -17,9 +17,12 @@
  *   sanitised before it is stored; the body, the answers and both remarks are
  *   encrypted by the manifest. Audit entries name ids, the channel and codes,
  *   never a title, text or answer.
- * - A new request rings the project's notify list after the commit; nothing
- *   is sent to the requester in 2.6a beyond their being made a watcher of the
- *   item their request becomes (outsiders' email notices are 2.6b).
+ * - A new request rings the project's notify list after the commit. A member
+ *   who sent one is made a watcher of the item it becomes. A public form's
+ *   requester who confirmed their address (2.6b, owner decision 89) is
+ *   emailed "accepted", "declined" (never for spam) or "merged", from inside
+ *   the deciding transaction (`enqueueRequesterNotices`); the email names the
+ *   form and the reference, never the request's own text.
  *
  * Written fresh for Islestone.
  */
@@ -60,6 +63,7 @@ import {
     type TriageAction,
 } from '../domain/intake';
 import { formatKey } from '../domain/work-item-key';
+import { enqueueEmail } from '../notifications/enqueue';
 import { createIntakeNotifications } from '../notifications/intake';
 import { dayKeyInTz } from '../notifications/work-item-due';
 import { formIsOpen } from './intake-form';
@@ -69,7 +73,14 @@ import type { RequestContext } from '../types';
 import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db-context';
 import { AppError, ConflictError, badRequest, notFound } from '@/lib/errors/types';
-import { compactAnswers, compileIntakeRequestSchema, readDefinition, type IntakeAnswer } from '@/lib/intake/form-definition';
+import {
+    compactAnswers,
+    compileIntakeRequestSchema,
+    readDefinition,
+    type IntakeAnswer,
+    type IntakeFormDefinition,
+} from '@/lib/intake/form-definition';
+import { intakeReference } from '@/lib/intake/reference';
 import type { IntakeRequestDetail, IntakeRequestPage, IntakeRequestRow, IntakeView } from '@/lib/intake/types';
 import { logger } from '@/lib/observability/logger';
 import { permissionsForMembership } from '@/lib/permissions';
@@ -125,13 +136,13 @@ function triagePreconditionRequired(): AppError {
     return new AppError('Send the version you read in an If-Match header: a decision on a request must name it.', 'PRECONDITION_REQUIRED', 428);
 }
 
-function cleanTitle(raw: string): string {
+export function cleanTitle(raw: string): string {
     const title = sanitizePlainText(raw).replace(/[\u0000-\u001f\u007f‪-‮⁦-⁩]/g, ' ').replace(/\s+/g, ' ').trim();
     if (!title) throw badRequest('A request needs a title.');
     return title.slice(0, 200);
 }
 
-function cleanText(raw: string | null | undefined): string | null {
+export function cleanText(raw: string | null | undefined): string | null {
     if (raw === undefined || raw === null) return null;
     const text = sanitizePlainText(raw).trim();
     return text.length > 0 ? text : null;
@@ -159,14 +170,7 @@ export async function sendIntakeRequest(ctx: RequestContext, formId: string, raw
             const issue = parsed.error.issues[0];
             throw badRequest(issue?.message ?? 'The request is not valid.', { issues: parsed.error.issues.map((i) => ({ path: i.path, message: i.message })) });
         }
-        const answers = compactAnswers(definition, parsed.data.answers as Partial<Record<string, IntakeAnswer>>);
-        const stored: StoredAnswer[] = definition.fields
-            .filter((f) => answers[f.id] !== undefined)
-            .map((f) => {
-                const v0 = answers[f.id]!;
-                const value = typeof v0 === 'string' ? sanitizePlainText(v0).trim() : Array.isArray(v0) ? v0.map((x) => sanitizePlainText(x)) : v0;
-                return { fieldId: f.id, label: f.label, kind: f.kind, customFieldId: f.customFieldId ?? null, value };
-            });
+        const stored = storedAnswersOf(definition, parsed.data.answers as Partial<Record<string, IntakeAnswer>>);
 
         const row = await IntakeRepository.createRequest(db, ctx, {
             projectId: project.id,
@@ -196,8 +200,24 @@ export async function sendIntakeRequest(ctx: RequestContext, formId: string, raw
         });
         return { row, keyPrefix: project.keyPrefix };
     });
-    await notifyReceived(ctx, created.row, created.keyPrefix);
+    await notifyIntakeReceived(ctx, created.row, created.keyPrefix);
     return toRow(created.row);
+}
+
+/**
+ * A request's answers as stored: a snapshot of each answered field (so a
+ * later edit of the form never changes what an old request shows), every
+ * text sanitised. Shared by the internal and the public send.
+ */
+export function storedAnswersOf(definition: IntakeFormDefinition, raw: Partial<Record<string, IntakeAnswer>>): StoredAnswer[] {
+    const answers = compactAnswers(definition, raw);
+    return definition.fields
+        .filter((f) => answers[f.id] !== undefined)
+        .map((f) => {
+            const v0 = answers[f.id]!;
+            const value = typeof v0 === 'string' ? sanitizePlainText(v0).trim() : Array.isArray(v0) ? v0.map((x) => sanitizePlainText(x)) : v0;
+            return { fieldId: f.id, label: f.label, kind: f.kind, customFieldId: f.customFieldId ?? null, value };
+        });
 }
 
 /** Of `userIds`, the ACTIVE members whose permissions hold `intake.view` now. */
@@ -207,7 +227,7 @@ export async function intakeReaders(db: PrismaTx, ctx: RequestContext, userIds: 
 }
 
 /** After the commit: a bell to each member on the notify list who may read intake, never the sender. */
-async function notifyReceived(ctx: RequestContext, row: IntakeRequestListRow, keyPrefix: string): Promise<void> {
+export async function notifyIntakeReceived(ctx: RequestContext, row: IntakeRequestListRow, keyPrefix: string): Promise<void> {
     if (!ctx.tenantSlug) return;
     const tenantSlug = ctx.tenantSlug;
     try {
@@ -299,6 +319,9 @@ async function detailOf(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility,
         workItemKey: keyFor(r.workItemId),
         mergedIntoWorkItemKey: keyFor(r.mergedIntoWorkItemId),
         mergedRequestCount: await IntakeRepository.countMergedInto(db, ctx, r.id),
+        requesterName: r.requesterName,
+        requesterEmail: r.requesterEmail,
+        requesterUpdates: r.updatesConfirmedAt ? 'CONFIRMED' : r.updatesRequested ? 'ASKED' : 'NONE',
     };
 }
 
@@ -366,6 +389,45 @@ async function auditTriage(
         detailsJson: { category: 'status_change', entityName: 'IntakeRequest', fromStatus: r.status, toStatus, ...(reason ? { reason } : {}) },
         metadata: { projectId: r.projectId, channel: r.channel, ...metadata },
     });
+}
+
+/** The reason a declined request names in its email (spam is never sent). */
+const DECLINE_REASON_LABEL: Record<Exclude<IntakeDeclineReason, 'SPAM'>, string> = {
+    NOT_PLANNED: 'Not planned',
+    OUT_OF_SCOPE: 'Out of scope',
+    OTHER: 'Other',
+};
+
+/**
+ * Inside a decision's transaction: email each of `ids` that is a public
+ * request whose requester asked for updates and confirmed their address
+ * (2.6b, owner decision 89). One outbox row per request (its id is the
+ * dedupe entity); the workspace's email switch is honoured by `enqueueEmail`.
+ * The email names the form and the reference, never the request's text.
+ */
+export async function enqueueRequesterNotices(
+    db: PrismaTx,
+    ctx: RequestContext,
+    ids: readonly string[],
+    notice: { kind: 'ACCEPTED' | 'MERGED' } | { kind: 'DECLINED'; reason: Exclude<IntakeDeclineReason, 'SPAM'>; explanation: string | null },
+): Promise<number> {
+    const rows = await IntakeRepository.listConfirmedRequesters(db, ctx, ids);
+    let sent = 0;
+    for (const row of rows) {
+        if (!row.requesterEmail) continue;
+        const base = { tenantId: ctx.tenantId, toEmail: row.requesterEmail, entityId: row.id };
+        const payload = { formName: row.form?.name ?? 'a form', reference: intakeReference(row.id) };
+        const queued =
+            notice.kind === 'DECLINED'
+                ? await enqueueEmail(db, {
+                      ...base,
+                      type: 'INTAKE_DECLINED',
+                      payload: { ...payload, reasonLabel: DECLINE_REASON_LABEL[notice.reason], explanation: notice.explanation },
+                  })
+                : await enqueueEmail(db, { ...base, type: notice.kind === 'ACCEPTED' ? 'INTAKE_ACCEPTED' : 'INTAKE_MERGED', payload });
+        if (queued) sent++;
+    }
+    return sent;
 }
 
 async function afterDecision(ctx: RequestContext, r: IntakeRequestDetailRow, status: 'ACCEPTED' | 'DECLINED' | 'MERGED', extra: { workItemId?: string | null; declineReason?: string | null }) {
@@ -451,6 +513,8 @@ export async function acceptIntakeRequest(ctx: RequestContext, id: string, input
 
         await claim(db, ctx, r, 'accept', { decidedAt: new Date(), decidedByUserId: ctx.userId, workItemId: created.id, snoozedUntil: null, snoozedByUserId: null });
         const merged = await IntakeRepository.listMergedInto(db, ctx, r.id);
+        // A public requester who confirmed, and those merged into this request, are told (2.6b).
+        await enqueueRequesterNotices(db, ctx, [r.id, ...merged.map((m) => m.id)], { kind: 'ACCEPTED' });
         const requesters = [r.requesterUserId, ...merged.map((m) => m.requesterUserId)].filter((x): x is string => !!x);
         const active = requesters.length > 0 ? await MembershipRepository.listActiveUserIds(db, ctx, requesters) : new Set<string>();
         for (const userId of active) {
@@ -491,6 +555,11 @@ export async function declineIntakeRequest(ctx: RequestContext, id: string, inpu
             snoozedUntil: null,
             snoozedByUserId: null,
         });
+        const explanation = input.reason === 'SPAM' ? null : cleanText(input.explanation);
+        if (input.reason !== 'SPAM') {
+            // A confirmed public requester is told, with the explanation (2.6b); spam sends nothing.
+            await enqueueRequesterNotices(db, ctx, [r.id], { kind: 'DECLINED', reason: input.reason, explanation });
+        }
         await auditTriage(db, ctx, r, 'decline', { declineReason: input.reason }, input.reason);
         const after = (await IntakeRepository.getRequest(db, ctx, v, id))!;
         return { after, detail: await detailOf(db, ctx, v, after) };
@@ -534,6 +603,8 @@ export async function mergeIntakeRequest(ctx: RequestContext, id: string, input:
             patch.mergedIntoRequestId = target.id;
         }
         await claim(db, ctx, r, 'merge', patch);
+        // A confirmed public requester is told their request is handled with another (2.6b).
+        await enqueueRequesterNotices(db, ctx, [r.id], { kind: 'MERGED' });
         // Requests merged into this one now follow its target.
         await IntakeRepository.repointMerged(db, ctx, r.id, patch.mergedIntoWorkItemId ? { workItemId: patch.mergedIntoWorkItemId } : { requestId: patch.mergedIntoRequestId! });
         await auditTriage(db, ctx, r, 'merge', {

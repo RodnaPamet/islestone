@@ -138,6 +138,14 @@ export const env = createEnv({
          * `isPublicSignupOpen` (src/lib/auth/public-signup.ts).
          */
         AUTH_PUBLIC_SIGNUP: z.enum(['0', '1']).optional(),
+        /**
+         * Public intake forms (sub-phase 2.6b, owner decision 86): "1" opens
+         * them, "0" closes them. Unset, they are closed in production and
+         * open otherwise. Closed, every public form, its submit and its
+         * confirmation link answer one 404. Read through `isPublicIntakeOpen`
+         * (src/lib/intake/public-switch.ts).
+         */
+        INTAKE_PUBLIC_FORMS: z.enum(['0', '1']).optional(),
         /** Platform-operator key (and its predecessor during a rotation). */
         PLATFORM_ADMIN_API_KEY: z.string().min(32).optional(),
         PLATFORM_ADMIN_API_KEY_PREVIOUS: z.string().min(32).optional(),
@@ -398,6 +406,7 @@ export const env = createEnv({
         AUTH_REQUIRE_EMAIL_VERIFICATION: process.env.AUTH_REQUIRE_EMAIL_VERIFICATION,
         AUTH_CREDENTIALS_UI_HIDDEN: process.env.AUTH_CREDENTIALS_UI_HIDDEN,
         AUTH_PUBLIC_SIGNUP: process.env.AUTH_PUBLIC_SIGNUP,
+        INTAKE_PUBLIC_FORMS: process.env.INTAKE_PUBLIC_FORMS,
         PLATFORM_ADMIN_API_KEY: process.env.PLATFORM_ADMIN_API_KEY,
         PLATFORM_ADMIN_API_KEY_PREVIOUS: process.env.PLATFORM_ADMIN_API_KEY_PREVIOUS,
         RATE_LIMIT_MODE: process.env.RATE_LIMIT_MODE,

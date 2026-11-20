@@ -101,6 +101,15 @@ export type RlsBypassReason =
     | 'webhook-ingest'
     /** Scheduled sweep that iterates every tenant by design. */
     | 'cross-tenant-sweep'
+    /**
+     * A public intake form's link (`IntakeForm.publicId`) or a requester's
+     * confirmation link (`IntakeRequest.confirmTokenHash`), resolved to its
+     * workspace before any workspace is known (sub-phase 2.6b, owner
+     * decision 98). One narrow indexed read; everything after it runs in
+     * `runInTenantContext` for the workspace it found. Its only sites are
+     * `src/app-layer/usecases/intake-public.ts`.
+     */
+    | 'public-intake-resolve'
     /** Seed scripts (prisma/seed.ts and friends). */
     | 'seed'
     /** One-off admin / maintenance script. */
@@ -163,6 +172,7 @@ const KNOWN_REASONS: ReadonlySet<RlsBypassReason> = new Set<RlsBypassReason>([
     'auth-credentials',
     'webhook-ingest',
     'cross-tenant-sweep',
+    'public-intake-resolve',
     'seed',
     'admin-script',
     'test',

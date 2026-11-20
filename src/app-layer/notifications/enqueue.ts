@@ -2,7 +2,7 @@
  * Enqueue an email into the NotificationOutbox.
  *
  * Copied from inflect-compliance `src/app-layer/notifications/enqueue.ts` at
- * 5528464fc54a8681956f3b9ce23ca9c075f0420e, over Islestone's two email types
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e, over Islestone's email types
  * and the react-email templates (rendering is async, awaited before the
  * insert). The first caller of `WORK_ITEM_ASSIGNED` is sub-phase 2.2.
  *
@@ -19,9 +19,13 @@ import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
 import {
     buildDueDigestEmail,
+    buildIntakeRequesterEmail,
     buildWorkItemAssignedEmail,
     type DueDigestPayload,
     type EmailTemplateResult,
+    type IntakeConfirmAddressPayload,
+    type IntakeDeclinedPayload,
+    type IntakeRequesterPayload,
     type WorkItemAssignedPayload,
 } from './templates';
 
@@ -33,6 +37,11 @@ import {
 export interface EmailPayloadByType {
     WORK_ITEM_ASSIGNED: WorkItemAssignedPayload;
     DUE_DIGEST: DueDigestPayload;
+    /** Sub-phase 2.6b: a public form's requester (outsiders; owner decision 89). */
+    INTAKE_CONFIRM_ADDRESS: IntakeConfirmAddressPayload;
+    INTAKE_ACCEPTED: IntakeRequesterPayload;
+    INTAKE_DECLINED: IntakeDeclinedPayload;
+    INTAKE_MERGED: IntakeRequesterPayload;
 }
 
 type EmailPayloadMap = { [K in EmailNotificationType]: EmailPayloadByType[K] };
@@ -167,6 +176,14 @@ async function buildEmailContent(input: EnqueueEmailInput): Promise<EmailTemplat
             return buildWorkItemAssignedEmail(input.payload);
         case 'DUE_DIGEST':
             return buildDueDigestEmail(input.payload);
+        case 'INTAKE_CONFIRM_ADDRESS':
+            return buildIntakeRequesterEmail('CONFIRM', input.payload);
+        case 'INTAKE_ACCEPTED':
+            return buildIntakeRequesterEmail('ACCEPTED', input.payload);
+        case 'INTAKE_DECLINED':
+            return buildIntakeRequesterEmail('DECLINED', input.payload);
+        case 'INTAKE_MERGED':
+            return buildIntakeRequesterEmail('MERGED', input.payload);
         default: {
             const unhandled: never = input;
             throw new Error(`Unknown notification type: ${(unhandled as { type: string }).type}`);

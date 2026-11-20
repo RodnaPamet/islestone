@@ -35,7 +35,26 @@ export const INTAKE_LIMITS = {
     multiSelectValues: 20,
     url: 500,
     numberAbs: 1e9,
+    /** A public form's requester (2.6b). */
+    requesterName: 100,
+    requesterEmail: 254,
 } as const;
+
+/**
+ * Whether a public form asks for the requester's name or address (2.6b):
+ * not at all, optionally, or as a required field. Members' forms ignore it
+ * (the requester is the member).
+ */
+export const INTAKE_REQUESTER_ASKS = ['OFF', 'OPTIONAL', 'REQUIRED'] as const;
+export type IntakeRequesterAsk = (typeof INTAKE_REQUESTER_ASKS)[number];
+
+export const IntakeRequesterRulesSchema = z
+    .object({
+        name: z.enum(INTAKE_REQUESTER_ASKS).default('OFF'),
+        email: z.enum(INTAKE_REQUESTER_ASKS).default('OFF'),
+    })
+    .strict();
+export type IntakeRequesterRules = z.infer<typeof IntakeRequesterRulesSchema>;
 
 /** Which custom-field type a field kind may fill on accept (`null`: none). */
 export const FIELD_KIND_FILLS: Record<IntakeFieldKind, 'TEXT' | 'SELECT' | 'MULTI_SELECT' | 'DATE' | 'NUMBER' | 'URL' | 'CHECKBOX' | null> = {
@@ -88,6 +107,8 @@ export const IntakeFormDefinitionSchema = z
         intro: z.string().max(INTAKE_LIMITS.intro).default(''),
         confirmation: z.string().max(INTAKE_LIMITS.confirmation).default(''),
         fields: z.array(IntakeFormFieldSchema).max(INTAKE_LIMITS.fields),
+        /** A public form's requester rules (2.6b); absent in a 2.6a definition. */
+        requester: IntakeRequesterRulesSchema.default({ name: 'OFF', email: 'OFF' }),
     })
     .strict()
     .superRefine((d, ctx) => {
@@ -101,7 +122,7 @@ export const IntakeFormDefinitionSchema = z
 
 export type IntakeFormDefinition = z.infer<typeof IntakeFormDefinitionSchema>;
 
-export const EMPTY_DEFINITION: IntakeFormDefinition = { intro: '', confirmation: '', fields: [] };
+export const EMPTY_DEFINITION: IntakeFormDefinition = { intro: '', confirmation: '', fields: [], requester: { name: 'OFF', email: 'OFF' } };
 
 /** A stored definition read back; an unreadable one reads as empty (never thrown at a page). */
 export function readDefinition(raw: unknown): IntakeFormDefinition {
@@ -196,6 +217,47 @@ export function compileIntakeRequestSchema(definition: IntakeFormDefinition) {
 }
 
 export type IntakeRequestInput = { title: string; body?: string; answers: Partial<IntakeAnswers> };
+
+/** A trimmed text the requester rule asks for, absent when blank and not required. */
+function requesterText(ask: IntakeRequesterAsk, inner: z.ZodString, requiredMessage: string): z.ZodType<string | undefined> {
+    const value = inner.trim();
+    if (ask === 'REQUIRED') return z.string().trim().min(1, requiredMessage).pipe(value);
+    return z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? undefined : v), value.optional()) as z.ZodType<string | undefined>;
+}
+
+/**
+ * The schema of one request sent through a PUBLIC form (2.6b): the members'
+ * request (`compileIntakeRequestSchema`) plus the requester's name and
+ * address as the form's requester rules ask, and the opt-in to email updates
+ * (only with an address). A field the rules turn off is refused if sent.
+ * Shared by the public page (react-hook-form) and the public submit.
+ */
+export function compilePublicIntakeRequestSchema(definition: IntakeFormDefinition) {
+    const base = compileIntakeRequestSchema(definition);
+    const rules = definition.requester;
+    const extra: Record<string, z.ZodTypeAny> = {};
+    if (rules.name !== 'OFF') extra.requesterName = requesterText(rules.name, z.string().max(INTAKE_LIMITS.requesterName), 'Give your name.');
+    if (rules.email !== 'OFF') {
+        extra.requesterEmail = requesterText(
+            rules.email,
+            z.string().max(INTAKE_LIMITS.requesterEmail).email('Give an email address.'),
+            'Give your email address.',
+        );
+        extra.wantsUpdates = z.boolean().default(false);
+    }
+    return base.extend(extra).superRefine((v, ctx) => {
+        const r = v as { requesterEmail?: string; wantsUpdates?: boolean };
+        if (r.wantsUpdates && !r.requesterEmail) {
+            ctx.addIssue({ code: 'custom', path: ['requesterEmail'], message: 'Give an email address to get updates.' });
+        }
+    });
+}
+
+export type PublicIntakeRequestInput = IntakeRequestInput & {
+    requesterName?: string;
+    requesterEmail?: string;
+    wantsUpdates?: boolean;
+};
 
 /** The answers with the absent ones dropped, in the definition's order. */
 export function compactAnswers(definition: IntakeFormDefinition, answers: Partial<Record<string, IntakeAnswer | undefined>>): IntakeAnswers {

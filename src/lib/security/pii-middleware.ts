@@ -110,7 +110,7 @@ interface PiiFieldSpec {
  * by design, which is why `User` and `Account` need the global sweep.
  */
 export const PII_ENCRYPTED_COLUMNS: Record<string, readonly string[]> = {};
-export const PII_TENANT_SCOPED_MODELS: readonly string[] = ['NotificationOutbox'];
+export const PII_TENANT_SCOPED_MODELS: readonly string[] = ['NotificationOutbox', 'IntakeRequest'];
 export const PII_GLOBAL_MODELS: readonly string[] = ['User', 'Account'];
 
 const PII_FIELD_MAP: Record<string, PiiFieldSpec[]> = {
@@ -136,6 +136,14 @@ const PII_FIELD_MAP: Record<string, PiiFieldSpec[]> = {
     // address, and its `dedupeKey` carries `hashForLookup` of the address.
     NotificationOutbox: [
         { plain: 'toEmail', encrypted: 'toEmail', mapped: true },
+    ],
+    // A public intake form's requester (sub-phase 2.6b, owner decision 96):
+    // the name and the address, encrypted in place; the address is matched
+    // through its lookup hash (an address confirmed once on a form, the
+    // outbox's dedupe), never by the ciphertext.
+    IntakeRequest: [
+        { plain: 'requesterName', encrypted: 'requesterName', mapped: true },
+        { plain: 'requesterEmail', encrypted: 'requesterEmail', hash: 'requesterEmailHash', mapped: true },
     ],
     // 8.3's `UserIdentityLink` joins here, with its rotation-list entry.
 };

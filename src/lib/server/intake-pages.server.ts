@@ -14,6 +14,7 @@ import { intakeAffordances, mayReadIntake } from '@/app-layer/policies/intake.po
 import { getOpenIntakeForm, listOpenIntakeForms } from '@/app-layer/usecases/intake-form';
 import { getWorkItemViewConfig } from '@/app-layer/usecases/work-item-views';
 import { isAppError } from '@/lib/errors/types';
+import { isPublicIntakeOpen } from '@/lib/intake/public-switch';
 import type { IntakeAffordances, OpenIntakeForm } from '@/lib/intake/types';
 import { settingsPageAccess } from '@/lib/server/settings-pages.server';
 import type { WorkItemViewConfig } from '@/lib/work-items/types';
@@ -55,8 +56,12 @@ export async function formPageContext(tenantSlug: string, formId: string): Promi
     });
 }
 
-/** Settings → Intake: the Settings page's own gate (`mayOpenSettings`), then the intake writes it offers. */
-export async function intakeSettingsAccess(tenantSlug: string): Promise<{ affordances: IntakeAffordances }> {
+/**
+ * Settings → Intake: the Settings page's own gate (`mayOpenSettings`), then
+ * the intake writes it offers, and whether public forms are open on this
+ * deployment (2.6b), which decides whether a form may be made public.
+ */
+export async function intakeSettingsAccess(tenantSlug: string): Promise<{ affordances: IntakeAffordances; publicForms: boolean }> {
     await settingsPageAccess(tenantSlug);
-    return or404(async () => ({ affordances: intakeAffordances(await getTenantCtx({ tenantSlug })) }));
+    return or404(async () => ({ affordances: intakeAffordances(await getTenantCtx({ tenantSlug })), publicForms: isPublicIntakeOpen() }));
 }

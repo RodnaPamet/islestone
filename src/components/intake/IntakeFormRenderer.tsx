@@ -8,13 +8,20 @@
  * input for the reason the server would refuse it. The builder's preview
  * renders the same component with `preview` (no send).
  *
+ * Given `requester` (sub-phase 2.6b), it is a PUBLIC form: the schema is
+ * `compilePublicIntakeRequestSchema`, it asks for the requester's name and
+ * address as the rules say, offers "Email me about this request" beside an
+ * address, and carries the trap field a person never sees or fills (off
+ * screen, out of the tab order, labelled "Leave this field empty" for a
+ * screen reader). The trap's value goes to `onSubmit` beside the request.
+ *
  * Written fresh for Islestone, in the react-hook-form pattern of
  * inflect-compliance's `NewIncidentModal.tsx` at
  * 5528464fc54a8681956f3b9ce23ca9c075f0420e (pattern only).
  */
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { Controller, useForm, type Resolver } from 'react-hook-form';
 
 import { Button } from '@inflect/ui/components/ui/button';
@@ -27,13 +34,15 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
     compileIntakeRequestSchema,
+    compilePublicIntakeRequestSchema,
     INTAKE_LIMITS,
     type IntakeFormDefinition,
     type IntakeFormField,
-    type IntakeRequestInput,
+    type IntakeRequesterRules,
+    type PublicIntakeRequestInput,
 } from '@/lib/intake/form-definition';
 
-type Values = { title: string; body: string; answers: Record<string, unknown> };
+type Values = { title: string; body: string; answers: Record<string, unknown>; requesterName?: string; requesterEmail?: string; wantsUpdates?: boolean };
 
 function emptyAnswer(f: IntakeFormField): unknown {
     if (f.kind === 'MULTI_SELECT') return [];
@@ -46,20 +55,34 @@ export function IntakeFormRenderer({
     formKey,
     onSubmit,
     preview = false,
+    requester,
 }: {
     definition: IntakeFormDefinition;
     /** A stable prefix for the controls' ids (the form's id). */
     formKey: string;
-    /** Answers the server's refusal, or `null` when the request was sent. */
-    onSubmit?: (input: IntakeRequestInput) => Promise<string | null>;
+    /** Answers the server's refusal, or `null` when the request was sent. `website` is the public form's trap. */
+    onSubmit?: (input: PublicIntakeRequestInput, extra: { website: string }) => Promise<string | null>;
     preview?: boolean;
+    /** A public form's requester rules (2.6b): makes this the public form. */
+    requester?: IntakeRequesterRules;
 }) {
     const t = useTranslations('intake.form');
-    const schema = useMemo(() => compileIntakeRequestSchema(definition), [definition]);
-    const defaults = useMemo<Values>(
-        () => ({ title: '', body: '', answers: Object.fromEntries(definition.fields.map((f) => [f.id, emptyAnswer(f)])) }),
-        [definition],
+    const isPublic = requester !== undefined;
+    const schema = useMemo(
+        () => (isPublic ? compilePublicIntakeRequestSchema({ ...definition, requester }) : compileIntakeRequestSchema(definition)),
+        [definition, isPublic, requester],
     );
+    const defaults = useMemo<Values>(
+        () => ({
+            title: '',
+            body: '',
+            answers: Object.fromEntries(definition.fields.map((f) => [f.id, emptyAnswer(f)])),
+            ...(requester && requester.name !== 'OFF' ? { requesterName: '' } : {}),
+            ...(requester && requester.email !== 'OFF' ? { requesterEmail: '', wantsUpdates: false } : {}),
+        }),
+        [definition, requester],
+    );
+
     const {
         register,
         handleSubmit,
@@ -69,13 +92,19 @@ export function IntakeFormRenderer({
     } = useForm<Values>({ resolver: zodResolver(schema) as unknown as Resolver<Values>, defaultValues: defaults });
     const [refusal, setRefusal] = useState<string | null>(null);
 
-    const submit = handleSubmit(async (values) => {
-        if (preview || !onSubmit) return;
-        setRefusal(null);
-        const result = await onSubmit(values as unknown as IntakeRequestInput);
-        if (result) setRefusal(result);
-        else reset(defaults);
-    });
+    const submit = (event: FormEvent<HTMLElement>) => {
+        // The trap is outside react-hook-form (the schema is strict): read it from the submitted form.
+        const form = event.currentTarget;
+        const trap = form instanceof HTMLFormElement ? form.elements.namedItem('website') : null;
+        const website = trap instanceof HTMLInputElement ? trap.value : '';
+        return handleSubmit(async (values) => {
+            if (preview || !onSubmit) return;
+            setRefusal(null);
+            const result = await onSubmit(values as unknown as PublicIntakeRequestInput, { website });
+            if (result) setRefusal(result);
+            else reset(defaults);
+        })(event);
+    };
 
     const id = (suffix: string) => `intake-${formKey}-${suffix}`;
     const answerError = (fieldId: string) => (errors.answers as Record<string, { message?: string }> | undefined)?.[fieldId]?.message;
@@ -221,6 +250,38 @@ export function IntakeFormRenderer({
                         );
                 }
             })}
+            {requester && requester.name !== 'OFF' && (
+                <FormField label={t('requesterName')} required={requester.name === 'REQUIRED'} error={errors.requesterName?.message}>
+                    <Input id={id('requester-name')} autoComplete="name" maxLength={INTAKE_LIMITS.requesterName} {...register('requesterName')} />
+                </FormField>
+            )}
+            {requester && requester.email !== 'OFF' && (
+                <>
+                    <FormField label={t('requesterEmail')} required={requester.email === 'REQUIRED'} error={errors.requesterEmail?.message}>
+                        <Input id={id('requester-email')} type="email" autoComplete="email" maxLength={INTAKE_LIMITS.requesterEmail} {...register('requesterEmail')} />
+                    </FormField>
+                    <div className="flex items-center gap-tight">
+                        <Controller
+                            control={control}
+                            name="wantsUpdates"
+                            render={({ field }) => (
+                                <Checkbox id={id('wants-updates')} checked={field.value === true} onCheckedChange={(v) => field.onChange(v === true)} />
+                            )}
+                        />
+                        <label htmlFor={id('wants-updates')} className="text-sm text-content-default">
+                            {t('wantsUpdates')}
+                        </label>
+                    </div>
+                    <p className="text-xs text-content-muted">{t('wantsUpdatesHint')}</p>
+                </>
+            )}
+            {isPublic && !preview && (
+                // The trap: off screen and out of the tab order, so a person never fills it.
+                <div style={{ position: 'absolute', left: '-10000px', top: 'auto', width: '1px', height: '1px', overflow: 'hidden' }}>
+                    <label htmlFor={id('website')}>{t('trap')}</label>
+                    <input id={id('website')} type="text" name="website" tabIndex={-1} autoComplete="off" defaultValue="" />
+                </div>
+            )}
             {refusal && (
                 <p role="alert" className="text-sm text-content-error">
                     {refusal}

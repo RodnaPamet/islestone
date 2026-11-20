@@ -7,7 +7,7 @@
  *
  * Written fresh for Islestone.
  */
-import type { IntakeChannel, IntakeDeclineReason, IntakeRequestStatus, Prisma } from '@prisma/client';
+import type { IntakeChannel, IntakeDeclineReason, IntakeFormAccess, IntakeRequestStatus, Prisma } from '@prisma/client';
 
 import type { PrismaTx } from '@/lib/db-context';
 import { buildKeysetWhere, keysetOrderBy, type CursorPayload, type KeysetOrder } from '@/lib/pagination';
@@ -81,6 +81,11 @@ export const intakeRequestDetailSelect = {
     decidedByUserId: true,
     declineExplanation: true,
     internalRemark: true,
+    /** A public request's requester (2.6b), decrypted by the PII extension. */
+    requesterName: true,
+    requesterEmail: true,
+    updatesRequested: true,
+    updatesConfirmedAt: true,
     form: { select: { name: true, definitionJson: true, definitionVersion: true } },
 } satisfies Prisma.IntakeRequestSelect;
 
@@ -185,7 +190,15 @@ export class IntakeRepository {
     static async createForm(
         db: PrismaTx,
         ctx: Ctx,
-        data: { projectId: string; name: string; publicId: string; definitionJson: Prisma.InputJsonValue; createdByUserId: string; publishedAt: Date | null },
+        data: {
+            projectId: string;
+            name: string;
+            publicId: string;
+            definitionJson: Prisma.InputJsonValue;
+            createdByUserId: string;
+            publishedAt: Date | null;
+            access?: IntakeFormAccess;
+        },
     ) {
         return db.intakeForm.create({ data: { tenantId: ctx.tenantId, access: 'MEMBERS', ...data }, select: intakeFormSelect });
     }
@@ -196,7 +209,14 @@ export class IntakeRepository {
         ctx: Ctx,
         id: string,
         version: number,
-        data: { name?: string; definitionJson?: Prisma.InputJsonValue; bumpDefinition?: boolean; publishedAt?: Date | null; archivedAt?: Date | null },
+        data: {
+            name?: string;
+            definitionJson?: Prisma.InputJsonValue;
+            bumpDefinition?: boolean;
+            publishedAt?: Date | null;
+            archivedAt?: Date | null;
+            access?: IntakeFormAccess;
+        },
     ): Promise<number> {
         const { bumpDefinition, ...rest } = data;
         const r = await db.intakeForm.updateMany({
@@ -220,9 +240,103 @@ export class IntakeRepository {
             body: string | null;
             answersJson: string | null;
             requesterUserId: string | null;
+            /** A public request's requester (2.6b); the PII extension encrypts both and hashes the address. */
+            requesterName?: string | null;
+            requesterEmail?: string | null;
+            updatesRequested?: boolean;
+            updatesConfirmedAt?: Date | null;
+            confirmTokenHash?: string | null;
+            formTokenNonce?: string | null;
         },
     ) {
         return db.intakeRequest.create({ data: { tenantId: ctx.tenantId, ...data }, select: intakeRequestListSelect });
+    }
+
+    // ─── Public forms (2.6b) ────────────────────────────────────────────
+
+    /**
+     * Lock a form's row for the rest of the transaction, so two public
+     * submits count its daily cap one after the other (`FOR UPDATE`).
+     */
+    static async lockForm(db: PrismaTx, ctx: Ctx, formId: string): Promise<boolean> {
+        const rows = await db.$queryRaw<{ id: string }[]>`
+            SELECT "id" FROM "IntakeForm" WHERE "id" = ${formId} AND "tenantId" = ${ctx.tenantId} FOR UPDATE`;
+        return rows.length === 1;
+    }
+
+    /** Requests a form took since `since` (its daily cap, decision 88). */
+    static async countFormRequestsSince(db: PrismaTx, ctx: Ctx, formId: string, since: Date): Promise<number> {
+        return db.intakeRequest.count({ where: { tenantId: ctx.tenantId, formId, createdAt: { gte: since } } });
+    }
+
+    /** Requests of one channel the workspace took since `since` (the workspace's daily cap on public requests). */
+    static async countChannelSince(db: PrismaTx, ctx: Ctx, channel: IntakeChannel, since: Date): Promise<number> {
+        return db.intakeRequest.count({ where: { tenantId: ctx.tenantId, channel, createdAt: { gte: since } } });
+    }
+
+    /** Whether an address already confirmed updates on this form (an address is confirmed once per form). */
+    static async addressConfirmedOnForm(db: PrismaTx, ctx: Ctx, formId: string, emailHash: string): Promise<boolean> {
+        const row = await db.intakeRequest.findFirst({
+            where: { tenantId: ctx.tenantId, formId, requesterEmailHash: emailHash, updatesConfirmedAt: { not: null } },
+            select: { id: true },
+        });
+        return row !== null;
+    }
+
+    /** The request a confirmation token names, in this workspace (its token hash is global and unique). */
+    static async getByConfirmToken(db: PrismaTx, ctx: Ctx, tokenHash: string) {
+        return db.intakeRequest.findFirst({
+            where: { tenantId: ctx.tenantId, confirmTokenHash: tokenHash },
+            select: { id: true, formId: true, requesterEmailHash: true, updatesConfirmedAt: true, createdAt: true },
+        });
+    }
+
+    /**
+     * Confirm an address on a form: every request of the workspace sent
+     * through `formId` from that address with updates asked for and not yet
+     * confirmed, the one whose link was used included. Each spends its link.
+     * Returns the ids confirmed.
+     */
+    static async confirmAddressOnForm(db: PrismaTx, ctx: Ctx, formId: string, emailHash: string, at: Date): Promise<string[]> {
+        const rows = await db.intakeRequest.findMany({
+            where: { tenantId: ctx.tenantId, formId, requesterEmailHash: emailHash, updatesRequested: true, updatesConfirmedAt: null },
+            orderBy: { id: 'asc' },
+            take: INTAKE_JOB_BATCH,
+            select: { id: true },
+        });
+        if (rows.length === 0) return [];
+        const ids = rows.map((r) => r.id);
+        await db.intakeRequest.updateMany({
+            where: { tenantId: ctx.tenantId, id: { in: ids }, updatesConfirmedAt: null },
+            data: { updatesConfirmedAt: at, confirmTokenHash: null },
+        });
+        return ids;
+    }
+
+    /** Of `ids`, the decided ones, with what a late notice needs (an address confirmed after the decision). */
+    static async listDecidedForNotice(db: PrismaTx, ctx: Ctx, ids: readonly string[]) {
+        if (ids.length === 0) return [];
+        return db.intakeRequest.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: [...ids] }, status: { in: ['ACCEPTED', 'DECLINED', 'MERGED'] } },
+            orderBy: { id: 'asc' },
+            take: INTAKE_JOB_BATCH,
+            select: { id: true, status: true, declineReason: true, declineExplanation: true },
+        });
+    }
+
+    /**
+     * The public requests that should hear about a decision: `ids` that asked
+     * for updates and confirmed their address, with the address (decrypted)
+     * and the form's name.
+     */
+    static async listConfirmedRequesters(db: PrismaTx, ctx: Ctx, ids: readonly string[]) {
+        if (ids.length === 0) return [];
+        return db.intakeRequest.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: [...ids] }, channel: 'PUBLIC_FORM', updatesRequested: true, updatesConfirmedAt: { not: null } },
+            orderBy: { id: 'asc' },
+            take: INTAKE_JOB_BATCH,
+            select: { id: true, requesterEmail: true, form: { select: { name: true } } },
+        });
     }
 
     static async listRequests(
