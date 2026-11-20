@@ -605,11 +605,16 @@
             "resourcePlural": "work items"
         },
         "myWork": {
-            "description": "Your work items: assigned to you, waiting on you, created by you, watched by you, and due soon.",
+            "description": "Your work items: to review, assigned to you, waiting on you, created by you, watched by you, and due soon.",
             "count": "{count}",
             "countMore": "{count}+",
             "closedHidden": "Done and cancelled items are hidden; choose a category in the filters to show them.",
             "sections": {
+                "toReview": {
+                    "title": "To review",
+                    "description": "Open review steps that still ask you to sign off or return.",
+                    "empty": "No open review step asks you, among the items that match these filters."
+                },
                 "assigned": {
                     "title": "Assigned to me",
                     "empty": "Nothing assigned to you matches these filters."
@@ -678,7 +683,8 @@
             "type": "Type",
             "cycle": "Cycle",
             "milestone": "Milestone",
-            "waitingOn": "Waiting on"
+            "waitingOn": "Waiting on",
+            "review": "Review"
         },
         "fields": {
             "title": "Title",
@@ -747,7 +753,8 @@
             "milestone": "Milestone",
             "noMilestone": "No milestone",
             "waitingOn": "Waiting on",
-            "waitingOnNobody": "Waiting on nobody"
+            "waitingOnNobody": "Waiting on nobody",
+            "reviewer": "Reviewer"
         },
         "bulk": {
             "setState": "Set state",
@@ -1164,6 +1171,141 @@
             "doneState": "Done state",
             "cancel": "Cancel",
             "confirm": "Mark as answer"
+        },
+        "review": {
+            "title": "Review steps",
+            "loadFailed": "The review steps could not be loaded. Try again.",
+            "failed": "That did not work. Try again.",
+            "none": "No review steps yet.",
+            "noSteps": "This round has no review steps yet.",
+            "addStep": "Add review step",
+            "send": "Send for review",
+            "withdraw": "Withdraw the round",
+            "earlierRounds": "Earlier rounds",
+            "stepsOfRound": "Review steps of round {number}",
+            "roundHeading": "Round {number}: {status}",
+            "roundEnded": "Round {number}: {status} on {date}",
+            "roundEndedBy": "Round {number}: {status} by {name} on {date}",
+            "roundStatus": {
+                "PLANNED": "planned, not sent yet",
+                "OPEN": "open",
+                "COMPLETED": "Signed off",
+                "RETURNED": "Returned",
+                "WITHDRAWN": "Withdrawn"
+            },
+            "afterRound": {
+                "RETURNED": "Round {number} was Returned. Revise the work, then send round {next} for review.",
+                "WITHDRAWN": "Round {number} was withdrawn. Round {next} waits to be sent."
+            },
+            "stepStatus": {
+                "PENDING": "Not open yet",
+                "OPEN": "Open",
+                "COMPLETED": "Signed off",
+                "RETURNED": "Returned",
+                "SKIPPED": "Skipped",
+                "WITHDRAWN": "Withdrawn"
+            },
+            "mode": {
+                "ALL": "All must sign off",
+                "ANY": "Any one signs off"
+            },
+            "outcome": {
+                "SIGNED_OFF": "Signed off",
+                "RETURNED": "Returned"
+            },
+            "withdrawn": {
+                "MEMBER_REMOVED": "Withdrawn: left the workspace",
+                "STEP_ENDED": "Withdrawn: the step ended",
+                "REMOVED_BY_PERSON": "Withdrawn: removed from the step",
+                "BECAME_ASSIGNEE": "Withdrawn: became the assignee",
+                "NOT_ELIGIBLE": "Withdrawn: can no longer be asked"
+            },
+            "skipped": {
+                "PERSON_SKIPPED": "Skipped by {name}.",
+                "NO_REVIEWERS_LEFT": "Closed by {name}: nobody was left to ask."
+            },
+            "dueOn": "Due {date}",
+            "dueIn": "Due {days} working day(s) after it opens",
+            "noReviewersLeft": "Nobody is left to ask at this step. Add a reviewer, close the step or withdraw the round.",
+            "listsNamed": "Recipient lists: {lists}",
+            "archivedList": "{name} (archived)",
+            "reviewersOf": "Reviewers of {step}",
+            "via": "via {list}",
+            "aList": "a recipient list",
+            "pending": "Pending",
+            "notAskedYet": "Asked when the step opens",
+            "nobodyYet": "Nobody is named yet.",
+            "changedSinceSignedOff": "Changed since signed off",
+            "youResponded": "You responded: {outcome}. You can change it while the step is open.",
+            "signOff": "Sign off",
+            "signOffStep": "Sign off {step}",
+            "return": "Return",
+            "returnStep": "Return {step}",
+            "addReviewer": "Add a reviewer",
+            "addReviewerTo": "Add a reviewer to {step}",
+            "remove": "Remove",
+            "removeReviewer": "Remove {name} from {step}",
+            "edit": "Edit",
+            "editStep": "Edit the review step {step}",
+            "moveUp": "Move up",
+            "moveStepUp": "Move {step} up",
+            "moveDown": "Move down",
+            "moveStepDown": "Move {step} down",
+            "removeStep": "Remove the review step {step}",
+            "skip": "Skip step",
+            "skipStep": "Skip the review step {step}",
+            "closeStep": "Close step",
+            "closeStepNamed": "Close the review step {step}",
+            "cancel": "Cancel",
+            "undo": "Undo",
+            "reviewerRemoved": "Removed {name} from {step}.",
+            "stepRemoved": "Removed the review step {name}.",
+            "workspaceList": "{name} (workspace)",
+            "waitingOnReviewers": "The reviewers of {step}: {names}",
+            "waitingOnHint": "While a round is open, the item waits on its reviewers.",
+            "editor": {
+                "addTitle": "New review step",
+                "editTitle": "Edit review step",
+                "description": "Name the people to ask, members or recipient lists, and whether all of them or any one must sign off. A list's people are asked when the step opens.",
+                "name": "Name",
+                "mode": "Who must sign off",
+                "days": "Due in working days",
+                "daysHint": "Counted Monday to Friday from the day the step opens.",
+                "members": "Reviewers",
+                "nobodyNamed": "No member named",
+                "searchMembers": "Search members…",
+                "lists": "Recipient lists",
+                "listsHint": "The workspace's lists and this project's.",
+                "noLists": "No recipient list",
+                "searchLists": "Search recipient lists…",
+                "save": "Save step",
+                "nameRequired": "Give the review step a name.",
+                "daysInvalid": "Due in working days is a whole number from 1 to {max}.",
+                "nobody": "Name at least one reviewer or recipient list."
+            },
+            "respond": {
+                "signOffTitle": "Sign off {step}",
+                "returnTitle": "Return {step}",
+                "signOffDescription": "Sign off this review step. You can add a remark.",
+                "returnDescription": "Return the work to its assignee. Say why: it ends this round, and a new round with the same steps waits to be sent.",
+                "textSignOff": "Remark (optional)",
+                "textReturn": "Why it is returned",
+                "textRequired": "Say why you are returning it.",
+                "changing": "Your response now: {outcome}. This changes it.",
+                "signOff": "Sign off",
+                "return": "Return"
+            },
+            "summary": {
+                "planned": "Planned",
+                "open": "{step}: {count} pending",
+                "openNoStep": "Open",
+                "signedOff": "Signed off",
+                "returned": "Returned",
+                "withdrawn": "Withdrawn",
+                "cardMark": "Review: {state}",
+                "dueOn": "due {date}",
+                "openShort": "Open"
+            }
         }
     },
     "settings": {

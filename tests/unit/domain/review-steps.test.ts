@@ -1,11 +1,20 @@
 /**
  * The rules of a review step (sub-phase 2.8a; ADR 0009; owner decisions 156
  * and 162): property tests over random reviewer sets and responses, and the
- * round's next move.
+ * round's next move; and (2.8b) the summary the list and the board show and
+ * "changed since signed off" (decision 163).
  */
 import fc from 'fast-check';
 
-import { afterStepEnds, evaluateStep, nextPendingStep, type ReviewerState } from '@/app-layer/domain/review-steps';
+import {
+    afterStepEnds,
+    changedSinceSignedOff,
+    evaluateStep,
+    nextPendingStep,
+    reviewSummaryOf,
+    type ReviewerState,
+    type ReviewSummaryRound,
+} from '@/app-layer/domain/review-steps';
 
 const reviewer = fc.record({
     outcome: fc.constantFrom<ReviewerState['outcome']>(null, 'SIGNED_OFF', 'RETURNED'),
@@ -96,5 +105,59 @@ describe('nextPendingStep and afterStepEnds', () => {
         expect(afterStepEnds('RETURNED', { id: 'n' })).toEqual({ kind: 'ROUND_RETURNED' });
         expect(afterStepEnds('COMPLETED', { id: 'n' })).toEqual({ kind: 'OPEN_NEXT', stepId: 'n' });
         expect(afterStepEnds('SKIPPED', null)).toEqual({ kind: 'ROUND_COMPLETED' });
+    });
+});
+
+// ─── 2.8b: the review at a glance, and "changed since signed off" ─────────
+
+describe('reviewSummaryOf', () => {
+    const round = (number: number, status: ReviewSummaryRound['status'], over: Partial<ReviewSummaryRound> = {}): ReviewSummaryRound => ({
+        number,
+        status,
+        stepCount: 2,
+        steps: [],
+        ...over,
+    });
+
+    it('is nothing for an item with no round, or a planned round with no steps left', () => {
+        expect(reviewSummaryOf([])).toBeNull();
+        expect(reviewSummaryOf([round(1, 'PLANNED', { stepCount: 0 })])).toBeNull();
+    });
+
+    it('names the open step, its due day and how many it waits on while a round is open', () => {
+        expect(reviewSummaryOf([round(2, 'OPEN', { steps: [{ name: 'Legal', dueOn: '2026-11-25', pendingCount: 2 }] }), round(1, 'RETURNED')])).toEqual({
+            state: 'open',
+            roundNumber: 2,
+            step: { name: 'Legal', dueOn: '2026-11-25', pendingCount: 2 },
+        });
+    });
+
+    it('says how the last ended round ended while the next one waits to be sent', () => {
+        expect(reviewSummaryOf([round(2, 'PLANNED'), round(1, 'RETURNED')])).toEqual({ state: 'returned', roundNumber: 1, step: null });
+        expect(reviewSummaryOf([round(2, 'PLANNED'), round(1, 'WITHDRAWN')])).toEqual({ state: 'withdrawn', roundNumber: 1, step: null });
+        expect(reviewSummaryOf([round(1, 'PLANNED')])).toEqual({ state: 'planned', roundNumber: 1, step: null });
+    });
+
+    it('reads an ended newest round as it ended', () => {
+        expect(reviewSummaryOf([round(3, 'COMPLETED'), round(2, 'RETURNED')])).toEqual({ state: 'signedOff', roundNumber: 3, step: null });
+        expect(reviewSummaryOf([round(1, 'WITHDRAWN')])).toEqual({ state: 'withdrawn', roundNumber: 1, step: null });
+        // A planned round after a completed one is a new review being planned.
+        expect(reviewSummaryOf([round(4, 'PLANNED'), round(3, 'COMPLETED')])).toEqual({ state: 'signedOff', roundNumber: 3, step: null });
+    });
+});
+
+describe('changedSinceSignedOff (decision 163)', () => {
+    const signed = { outcome: 'SIGNED_OFF' as const, itemVersionAt: 4, withdrawnAt: null };
+
+    it('marks a sign-off given at an earlier version while its round is open', () => {
+        expect(changedSinceSignedOff(signed, 'OPEN', 5)).toBe(true);
+        expect(changedSinceSignedOff(signed, 'OPEN', 4)).toBe(false);
+    });
+
+    it('never marks a Return, a pending or withdrawn reviewer, or an ended round', () => {
+        expect(changedSinceSignedOff({ ...signed, outcome: 'RETURNED' }, 'OPEN', 9)).toBe(false);
+        expect(changedSinceSignedOff({ outcome: null, itemVersionAt: null, withdrawnAt: null }, 'OPEN', 9)).toBe(false);
+        expect(changedSinceSignedOff({ ...signed, withdrawnAt: '2026-11-20T10:00:00.000Z' }, 'OPEN', 9)).toBe(false);
+        for (const status of ['COMPLETED', 'RETURNED', 'WITHDRAWN', 'PLANNED'] as const) expect(changedSinceSignedOff(signed, status, 9)).toBe(false);
     });
 });

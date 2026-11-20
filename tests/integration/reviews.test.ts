@@ -219,6 +219,12 @@ describeFn('review steps', () => {
         it('lists the item under reviewerId=me for a pending reviewer only', async () => {
             const forMax = await listWorkItems(max, { reviewerId: 'me' });
             expect(forMax.items.map((i) => i.id)).toContain(itemId);
+            // The row says where the review stands (2.8b): the open step and how many it waits on.
+            expect(forMax.items.find((i) => i.id === itemId)!.review).toMatchObject({
+                state: 'open',
+                roundNumber: 1,
+                step: { name: 'Peer review', pendingCount: 2, dueOn: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) },
+            });
             const forRae = await listWorkItems(rae, { reviewerId: 'me' });
             expect(forRae.items.map((i) => i.id)).not.toContain(itemId);
         });
@@ -291,6 +297,9 @@ describeFn('review steps', () => {
             expect(await bells(mia.userId, 'WORK_ITEM_REVIEW_RETURNED', itemId)).toBe(1);
             expect(await bells(owner.userId, 'WORK_ITEM_REVIEW_RETURNED', itemId)).toBe(1);
             expect(await bells(rae.userId, 'WORK_ITEM_REVIEW_RETURNED', itemId)).toBe(0);
+            // The row says the last ended round was Returned while round 2 waits to be sent (2.8b).
+            const rows = await listWorkItems(owner, { projectId });
+            expect(rows.items.find((i) => i.id === itemId)!.review).toEqual({ state: 'returned', roundNumber: 1, step: null });
             // A person may set waiting on again once the round has ended.
             await setWorkItemWaitingOn(owner, itemId, { userId: max.userId });
         });
@@ -321,8 +330,11 @@ describeFn('review steps', () => {
             expect(done.waitingOnReviewerIds).toEqual([]);
             expect((await prisma.workItem.findUniqueOrThrow({ where: { id: itemId } })).waitingOnUserId).toBe(mia.userId);
             expect(await bells(mia.userId, 'WORK_ITEM_REVIEW_COMPLETED', itemId)).toBe(1);
-            // Nothing live: a send needs a new plan.
+            // Nothing live: a send needs a new plan, which a person may make (2.8b: editSteps with no live round).
             await expect(sendWorkItemReview(owner, itemId)).rejects.toMatchObject({ status: 409 });
+            expect(done.viewer).toMatchObject({ editSteps: true, send: false, withdraw: false, skip: false, respondStepId: null });
+            const rows = await listWorkItems(owner, { projectId });
+            expect(rows.items.find((i) => i.id === itemId)!.review).toEqual({ state: 'signedOff', roundNumber: 3, step: null });
         });
 
         describe('H2: an ended round is never rewritten', () => {

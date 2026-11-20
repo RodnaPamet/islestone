@@ -72,6 +72,7 @@ const ROW = {
     createdAt: new Date(),
     updatedAt: new Date(),
     labels: [],
+    reviewRounds: [],
 };
 const STATES: Record<string, object> = {
     's-todo': { id: 's-todo', teamId: 't1', name: 'Todo', category: 'UNSTARTED', archivedAt: null, isDefault: true },

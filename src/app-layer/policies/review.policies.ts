@@ -50,7 +50,10 @@ export function mayRespondToReview(ctx: RequestContext, item: { assigneeId: stri
 
 /** What the item's review section offers the viewer: the buttons, from the rules the usecases assert. */
 export interface ReviewAffordances {
-    /** Edit the planned round's steps, or an open round's steps not yet opened. */
+    /**
+     * Edit the planned round's steps, or an open round's steps not yet opened;
+     * with no live round (none yet, or the last one ended), plan a new one.
+     */
     editSteps: boolean;
     /** "Send for review". */
     send: boolean;
@@ -74,9 +77,11 @@ export function reviewAffordances(
 ): ReviewAffordances {
     const writable = !item.projectArchived;
     const edit = writable && mayEditWorkItems(ctx);
-    const live = round && (round.status === 'PLANNED' || round.status === 'OPEN');
     return {
-        editSteps: edit && (!round || Boolean(live)),
+        // `PUT …/review/steps` plans a new round when none is live (2.8b): after
+        // a completed round, or one withdrawn when the item closed, a person
+        // may ask for review again.
+        editSteps: edit,
         send: edit && !item.closed && round?.status === 'PLANNED' && round.stepCount > 0,
         withdraw: edit && round?.status === 'OPEN',
         skip: writable && round?.status === 'OPEN' && reviewStandingBasis(ctx, item, round) !== null,

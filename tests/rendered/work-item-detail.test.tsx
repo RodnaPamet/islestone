@@ -263,3 +263,47 @@ describe('mentions and key links (2.7d)', () => {
         expect(box).toHaveValue('@');
     });
 });
+
+describe('the review section on the detail (2.8b)', () => {
+    const reviewStep = {
+        id: 'st-peer',
+        position: 1,
+        name: 'Peer review',
+        mode: 'ALL',
+        dueInWorkingDays: 2,
+        status: 'OPEN',
+        openedAt: '2026-11-20T09:00:00.000Z',
+        dueOn: '2026-11-24',
+        endedAt: null,
+        skippedByUserId: null,
+        skipReason: null,
+        lists: [],
+        reviewers: [{ userId: 'u-bob', viaRecipientListId: null, outcome: null, respondedAt: null, responseText: null, itemVersionAt: null, withdrawnAt: null, withdrawnReason: null }],
+        pendingUserIds: ['u-bob'],
+        noReviewersLeft: false,
+    };
+    const openReview = {
+        workItemId: 'wi-1',
+        itemVersion: 2,
+        rounds: [{ id: 'r-1', number: 1, status: 'OPEN', version: 2, startedAt: null, startedByUserId: 'u-ada', endedAt: null, endedByUserId: null, endReason: null, steps: [reviewStep] }],
+        waitingOnReviewerIds: ['u-bob'],
+        viewer: { editSteps: true, send: false, withdraw: true, skip: true, respondStepId: null },
+    };
+
+    it.each(['page', 'sheet'] as const)('on the %s: the Overview shows the round, and waiting on names its reviewers, read-only', async (variant) => {
+        routes({ 'GET /work-items/wi-1/review': { body: openReview } });
+        renderDetail(variant);
+        expect(await screen.findByRole('heading', { level: 2, name: 'Review steps' })).toBeInTheDocument();
+        expect(await screen.findByText('The reviewers of Peer review: Bob Builder')).toBeInTheDocument();
+        // While a round is open a person does not set waiting on by hand (decision 153).
+        expect(document.getElementById('waiting-on-wi-1')).toBeNull();
+    });
+
+    it('shows the waiting-on picker again when no round is open', async () => {
+        routes({ 'GET /work-items/wi-1/review': { body: { ...openReview, rounds: [], waitingOnReviewerIds: [] } } });
+        renderDetail('page');
+        expect(await screen.findByText('No review steps yet.')).toBeInTheDocument();
+        expect(screen.queryByText(/The reviewers of/)).toBeNull();
+        expect(document.getElementById('waiting-on-wi-1')).not.toBeNull();
+    });
+});

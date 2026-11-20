@@ -4,7 +4,7 @@
  * keeps its place where the client cannot tell, and is not added past the
  * loaded pages; the list's query string is stable for equal filters.
  */
-import { compareRows, listQueryString, rowBelongs } from '@/components/work-items/data/list-filters';
+import { compareRows, filtersByReviewer, listQueryString, rowBelongs } from '@/components/work-items/data/list-filters';
 import { placeRow, removeRowFromPages } from '@/components/work-items/data/work-item-cache';
 import type { WorkItemPage, WorkItemRow } from '@/lib/work-items/types';
 
@@ -52,6 +52,16 @@ describe('rowBelongs', () => {
         expect(rowBelongs({ labelId: 'l1' }, row('a', { labelIds: ['l1'] }))).toBe('yes');
         expect(rowBelongs({ q: 'x' }, row('a'))).toBe('unknown');
         expect(rowBelongs({ q: 'x', stateId: 'done' }, row('a'))).toBe('no');
+    });
+
+    it('never decides a reviewer filter: reviewer rows are not on the row (2.8b)', () => {
+        expect(rowBelongs({ reviewerId: 'me' }, row('a'))).toBe('unknown');
+        expect(rowBelongs({ reviewerId: 'u1' }, row('a'))).toBe('unknown');
+        expect(rowBelongs({ reviewerId: 'me', stateId: 'done' }, row('a'))).toBe('no');
+        expect(filtersByReviewer({ reviewerId: 'me' })).toBe(true);
+        expect(filtersByReviewer({ reviewerId: ' ' })).toBe(false);
+        expect(filtersByReviewer({ assigneeId: 'u1' })).toBe(false);
+        expect(listQueryString({ reviewerId: 'me', assigneeId: 'u1' })).toBe('assigneeId=u1&reviewerId=me');
     });
 });
 

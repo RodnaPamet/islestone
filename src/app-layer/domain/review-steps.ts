@@ -90,3 +90,87 @@ export function afterStepEnds(
     if (next) return { kind: 'OPEN_NEXT', stepId: next.id };
     return { kind: 'ROUND_COMPLETED' };
 }
+
+// ─── The item's review at a glance (sub-phase 2.8b) ───────────────────────
+
+export type ReviewRoundStatusValue = 'PLANNED' | 'OPEN' | 'COMPLETED' | 'RETURNED' | 'WITHDRAWN';
+
+/**
+ * Where an item's review stands, as the list column and the board card show
+ * it (sub-phase 2.8b): read from its newest round and, when that one is a
+ * round planned after another ended, from the one before it.
+ *
+ *   - `open`: a round is open; `step` names its open step, when its due day
+ *     falls and how many reviewers it still waits on.
+ *   - `signedOff`: the newest round completed.
+ *   - `returned`: the newest ended round was returned (a new round is planned
+ *     after it, waiting to be sent: decision 155).
+ *   - `withdrawn`: the newest ended round was withdrawn (by a person, or by
+ *     the item closing or being deleted).
+ *   - `planned`: steps are planned and no round has been sent yet.
+ */
+export type ReviewSummaryState = 'planned' | 'open' | 'signedOff' | 'returned' | 'withdrawn';
+
+export interface ReviewSummary {
+    state: ReviewSummaryState;
+    /** The number of the round the state is about (the open, completed, returned or withdrawn one). */
+    roundNumber: number;
+    /** The open step, while a round is open. */
+    step: { name: string; dueOn: string | null; pendingCount: number } | null;
+}
+
+/** One round as the summary reads it: newest first, its OPEN step (at most one) with its pending reviewers. */
+export interface ReviewSummaryRound {
+    number: number;
+    status: ReviewRoundStatusValue;
+    /** Every step of the round, whatever its status. */
+    stepCount: number;
+    /** Its OPEN step, if any (at most one). */
+    steps: ReadonlyArray<{ name: string; dueOn: string | null; pendingCount: number }>;
+}
+
+/** The summary of an item's newest rounds (newest first), or null when it has none. */
+export function reviewSummaryOf(rounds: readonly ReviewSummaryRound[]): ReviewSummary | null {
+    const [latest, previous] = rounds;
+    if (!latest) return null;
+    const ended = (r: ReviewSummaryRound): ReviewSummary | null => {
+        if (r.status === 'COMPLETED') return { state: 'signedOff', roundNumber: r.number, step: null };
+        if (r.status === 'RETURNED') return { state: 'returned', roundNumber: r.number, step: null };
+        if (r.status === 'WITHDRAWN') return { state: 'withdrawn', roundNumber: r.number, step: null };
+        return null;
+    };
+    if (latest.status === 'OPEN') {
+        const step = latest.steps[0];
+        return { state: 'open', roundNumber: latest.number, step: step ? { name: step.name, dueOn: step.dueOn, pendingCount: step.pendingCount } : null };
+    }
+    if (latest.status === 'PLANNED') {
+        // A round planned after another ended says how that one ended.
+        const before = previous ? ended(previous) : null;
+        if (before) return before;
+        // A planned round with no steps left is no review at all.
+        return latest.stepCount > 0 ? { state: 'planned', roundNumber: latest.number, step: null } : null;
+    }
+    return ended(latest);
+}
+
+/**
+ * "Changed since signed off" (decision 163): the item stays editable during a
+ * round, and a sign-off records the item's version. While its round is OPEN,
+ * a sign-off made at an earlier version than the item's now was given on
+ * work that has changed since. An ended round is not marked: ending it
+ * names the assignee as waiting on (decision 152), which is itself a write
+ * of the item, so the version no longer says whether the work changed.
+ */
+export function changedSinceSignedOff(
+    reviewer: { outcome: ReviewOutcomeValue | null; itemVersionAt: number | null; withdrawnAt?: string | Date | null },
+    roundStatus: ReviewRoundStatusValue,
+    itemVersion: number,
+): boolean {
+    return (
+        roundStatus === 'OPEN' &&
+        reviewer.outcome === 'SIGNED_OFF' &&
+        !reviewer.withdrawnAt &&
+        reviewer.itemVersionAt !== null &&
+        reviewer.itemVersionAt < itemVersion
+    );
+}

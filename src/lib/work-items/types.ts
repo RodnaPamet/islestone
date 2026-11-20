@@ -11,6 +11,8 @@
  */
 import type { CustomFieldType, WorkflowStateCategory, WorkItemPriority } from '@prisma/client';
 
+import type { ReviewOutcomeValue, ReviewRoundStatusValue, ReviewStepModeValue, ReviewSummary } from '@/app-layer/domain/review-steps';
+
 import type { CustomFieldValueData } from './custom-fields';
 import type { FieldSetEntry } from './field-sets';
 
@@ -45,6 +47,8 @@ export interface WorkItemRow {
     occurrenceOn?: string | null;
     /** A repeat is set on this item (2.5d). */
     repeats?: boolean;
+    /** Where the item's review stands (2.8b, `reviewSummaryOf`): the list column and the card's mark. */
+    review?: ReviewSummary | null;
     sortKey: string;
     startDate: string | null;
     dueDate: string | null;
@@ -408,4 +412,78 @@ export interface RecurrenceData {
 export interface WorkItemSeriesData {
     rule: RecurrenceData | null;
     occurrenceOf: { id: string; key: string; occurrenceOn: string | null } | null;
+}
+
+// ─── Review steps (sub-phase 2.8a's API; read by 2.8b's detail) ───────────
+
+export type { ReviewOutcomeValue, ReviewRoundStatusValue, ReviewStepModeValue, ReviewSummary };
+
+export type ReviewStepStatusValue = 'PENDING' | 'OPEN' | 'COMPLETED' | 'RETURNED' | 'SKIPPED' | 'WITHDRAWN';
+
+/** One reviewer row of a step, as `GET /work-items/:id/review` returns it. */
+export interface ReviewerData {
+    userId: string;
+    /** The recipient list the person was asked through (decision 154), or null when named directly. */
+    viaRecipientListId: string | null;
+    outcome: ReviewOutcomeValue | null;
+    respondedAt: string | null;
+    /** Decrypted for readers of the item (decision 157). */
+    responseText: string | null;
+    /** The item's version when they responded (decision 163). */
+    itemVersionAt: number | null;
+    withdrawnAt: string | null;
+    withdrawnReason: string | null;
+}
+
+export interface ReviewStepData {
+    id: string;
+    position: number;
+    name: string;
+    mode: ReviewStepModeValue;
+    dueInWorkingDays: number;
+    status: ReviewStepStatusValue;
+    openedAt: string | null;
+    /** `YYYY-MM-DD`, set once when the step opens (decision 151). */
+    dueOn: string | null;
+    endedAt: string | null;
+    skippedByUserId: string | null;
+    skipReason: string | null;
+    lists: Array<{ id: string; name: string; archived: boolean }>;
+    reviewers: ReviewerData[];
+    pendingUserIds: string[];
+    /** Open with nobody still asked: flagged, never completed. */
+    noReviewersLeft: boolean;
+}
+
+export interface ReviewRoundData {
+    id: string;
+    number: number;
+    status: ReviewRoundStatusValue;
+    version: number;
+    startedAt: string | null;
+    startedByUserId: string | null;
+    endedAt: string | null;
+    endedByUserId: string | null;
+    endReason: string | null;
+    steps: ReviewStepData[];
+}
+
+/** What the review section offers the viewer, decided on the server (`reviewAffordances`). */
+export interface ReviewViewerAffordances {
+    editSteps: boolean;
+    send: boolean;
+    withdraw: boolean;
+    skip: boolean;
+    respondStepId: string | null;
+}
+
+/** `GET /work-items/:id/review`, and the answer of every review write. */
+export interface WorkItemReviewData {
+    workItemId: string;
+    itemVersion: number;
+    /** Newest first; the live round, when there is one, is first. */
+    rounds: ReviewRoundData[];
+    /** While a round is open, the open step's pending reviewers (decision 152). */
+    waitingOnReviewerIds: string[];
+    viewer: ReviewViewerAffordances;
 }
