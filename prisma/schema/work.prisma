@@ -87,9 +87,11 @@ model Project {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  team      Team       @relation(fields: [teamId, tenantId], references: [id, tenantId])
-  workItems WorkItem[]
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  team         Team          @relation(fields: [teamId, tenantId], references: [id, tenantId])
+  workItems    WorkItem[]
+  customFields CustomField[]
+  savedViews   SavedView[]
 
   @@unique([id, tenantId])
   /// Target of WorkItem's composite FK: an item's team is its project's team.
@@ -177,6 +179,10 @@ model WorkItem {
   /// Denormalised; held by the composite FK to `WorkflowState`.
   stateCategory   WorkflowStateCategory
   priority        WorkItemPriority      @default(NONE)
+  /// The priority's place in the "urgent first" sort: URGENT 1 … LOW 4, NONE
+  /// 5. Written only by the `work_item_priority_rank` trigger (sub-phase 2.4);
+  /// Postgres orders the enum by declaration (NONE first).
+  priorityRank    Int                   @default(5)
   /// The one accountable person (ADR 0003): a member, FK to
   /// `TenantMembership(tenantId, userId)`, ON DELETE RESTRICT.
   assigneeId      String?
@@ -211,12 +217,13 @@ model WorkItem {
   parent    WorkItem?         @relation("WorkItemParent", fields: [parentId, projectId, tenantId], references: [id, projectId, tenantId], onDelete: NoAction, onUpdate: NoAction)
   subItems  WorkItem[]        @relation("WorkItemParent")
 
-  relationsFrom WorkItemRelation[] @relation("WorkItemRelationFrom")
-  relationsTo   WorkItemRelation[] @relation("WorkItemRelationTo")
-  labels        WorkItemLabel[]
-  comments      Comment[]
-  watchers      WorkItemWatcher[]
-  links         WorkItemLink[]
+  relationsFrom     WorkItemRelation[] @relation("WorkItemRelationFrom")
+  relationsTo       WorkItemRelation[] @relation("WorkItemRelationTo")
+  labels            WorkItemLabel[]
+  comments          Comment[]
+  watchers          WorkItemWatcher[]
+  links             WorkItemLink[]
+  customFieldValues CustomFieldValue[]
 
   @@unique([tenantId, projectId, number])
   @@unique([id, tenantId])
@@ -230,6 +237,10 @@ model WorkItem {
   @@index([tenantId, parentId, sortKey])
   @@index([tenantId, createdByUserId, createdAt])
   @@index([tenantId, projectId, updatedAt, id])
+  // The list sorts of sub-phase 2.4 (docs/pagination.md).
+  @@index([tenantId, projectId, createdAt, id])
+  @@index([tenantId, projectId, dueDate, id])
+  @@index([tenantId, projectId, priorityRank, id])
   @@index([tenantId, stateCategory, dueDate])
   @@index([tenantId, typeId])
   /// Deleting or merging a state finds its items across projects.
@@ -377,4 +388,143 @@ model WorkItemLink {
 
   @@index([tenantId, workItemId])
   @@index([tenantId, createdByUserId])
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Custom fields and saved views (sub-phase 2.4)
+//
+//  ADR 0002 §7 and ADR 0006; docs/porting/maps/2.4.md. Migration
+//  `20261120120000_saved_views_and_custom_fields` holds what Prisma cannot
+//  declare, each with a catalogue test
+//  (tests/integration/custom-field-sql-constructs.test.ts): `COLLATE "C"` on
+//  both `sortKey`s, the one-column CHECK and the text cap on
+//  `CustomFieldValue`, its two partial uniques, the priority-rank trigger,
+//  row-level security and the grants.
+// ─────────────────────────────────────────────────────────────────
+
+/// A typed field a project defines ("Field" in the UI). The type never
+/// changes (the value rows' composite FK holds it); a field is archived,
+/// never deleted, and an archived field keeps its values.
+model CustomField {
+  id         String          @id @default(cuid())
+  tenantId   String
+  projectId  String
+  name       String
+  type       CustomFieldType
+  /// Fractional index within the project; `COLLATE "C"` in SQL.
+  sortKey    String
+  archivedAt DateTime?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  tenant  Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project Project             @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  options CustomFieldOption[]
+  values  CustomFieldValue[]
+
+  @@unique([id, tenantId])
+  /// Target of the value's composite FK: a value carries its field's type and
+  /// project, so neither can disagree with the field.
+  @@unique([id, type, projectId, tenantId])
+  @@unique([tenantId, projectId, name])
+  @@index([tenantId, projectId, sortKey])
+}
+
+/// One choice of a SELECT or MULTI_SELECT field. An archived option stays
+/// valid on the items that hold it and in filters; it cannot be newly picked.
+/// A value holding it refuses its delete (FK NO ACTION).
+model CustomFieldOption {
+  id         String    @id @default(cuid())
+  tenantId   String
+  fieldId    String
+  name       String
+  /// A token name or `#RRGGBB`.
+  color      String?
+  /// Fractional index within the field; `COLLATE "C"` in SQL.
+  sortKey    String
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  tenant Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  field  CustomField        @relation(fields: [fieldId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  values CustomFieldValue[]
+
+  @@unique([id, tenantId])
+  /// Target of the value's option FK: an option of another field cannot be stored.
+  @@unique([id, fieldId, tenantId])
+  @@unique([tenantId, fieldId, name])
+  @@index([tenantId, fieldId, sortKey])
+}
+
+/// One value of one field on one item, in the column of the field's type
+/// (ADR 0002 §7): a CHECK requires exactly that column. A MULTI_SELECT holds
+/// one row per chosen option; a CHECKBOX stores only `true` (unchecked is no
+/// row). TEXT and URL values are PLAINTEXT, because they are filtered and
+/// sorted (ADR 0002 §7, "Consequences"), and capped at 500 characters.
+///
+/// `projectId` is the item's and the field's: both composite FKs carry it, so
+/// a value can never sit on another project's item, and an item cannot change
+/// project while it holds values (`ON UPDATE NO ACTION`): a move deletes them.
+model CustomFieldValue {
+  id          String          @id @default(cuid())
+  tenantId    String
+  projectId   String
+  workItemId  String
+  fieldId     String
+  fieldType   CustomFieldType
+  textValue   String?
+  numberValue Decimal?        @db.Decimal(15, 6)
+  dateValue   DateTime?       @db.Date
+  boolValue   Boolean?
+  optionId    String?
+  /// A PERSON value: a member, FK to `TenantMembership(tenantId, userId)`,
+  /// NO ACTION on delete (removing the member clears it first, as the assignee).
+  userId      String?
+  createdAt   DateTime        @default(now())
+
+  tenant   Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workItem WorkItem           @relation(fields: [workItemId, projectId, tenantId], references: [id, projectId, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  field    CustomField        @relation(fields: [fieldId, fieldType, projectId, tenantId], references: [id, type, projectId, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  option   CustomFieldOption? @relation(fields: [optionId, fieldId, tenantId], references: [id, fieldId, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  member   TenantMembership?  @relation("CustomFieldValuePerson", fields: [tenantId, userId], references: [tenantId, userId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([tenantId, workItemId])
+  @@index([tenantId, projectId])
+  @@index([tenantId, optionId])
+  @@index([tenantId, userId])
+  // Filters and sorts by a field (ADR 0002 §13: `[tenantId, fieldId, <value column>]`).
+  @@index([tenantId, fieldId, textValue])
+  @@index([tenantId, fieldId, numberValue])
+  @@index([tenantId, fieldId, dateValue])
+  @@index([tenantId, fieldId, boolValue])
+  @@index([tenantId, fieldId, optionId])
+  @@index([tenantId, fieldId, userId])
+}
+
+/// A saved scope, filters, grouping, sorting, layout and visible columns
+/// ("View" in the UI, ADR 0006). PERSONAL: its creator's alone. SHARED: every
+/// member who sees its scope. `projectId` NULL is the workspace's Work items
+/// page. `configJson` is validated on every write
+/// (`SavedViewConfigSchema`, `src/lib/schemas/saved-view.ts`).
+model SavedView {
+  id              String              @id @default(cuid())
+  tenantId        String
+  name            String
+  visibility      SavedViewVisibility
+  projectId       String?
+  layout          ViewLayout          @default(LIST)
+  configJson      Json
+  createdByUserId String
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project   Project? @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  createdBy User     @relation("SavedViewCreator", fields: [createdByUserId], references: [id])
+
+  @@unique([id, tenantId])
+  @@index([tenantId, createdByUserId, projectId])
+  @@index([tenantId, visibility, projectId])
+  @@index([tenantId, projectId])
 }
