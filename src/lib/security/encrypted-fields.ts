@@ -97,6 +97,10 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // A follow-up email's text (sub-phase 2.6c, decision 96), sanitised before
     // it is stored.
     IntakeFollowUp: ['body'],
+    // A reviewer's response text (sub-phase 2.8a, owner decision 157):
+    // required to Return, sanitised before it is stored, never searched and
+    // never mentions. Its write-once trigger admits the rotations' re-wrap.
+    WorkItemReviewer: ['responseText'],
 } as const;
 
 /** Set of model names with at least one encrypted field. Fast-path check. */

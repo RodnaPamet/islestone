@@ -56,6 +56,8 @@ function membershipDb(membership: { role: string; status?: string }, owners = 2)
         workItem: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
         customFieldValue: { findMany: jest.fn().mockResolvedValue([]) },
         workItemTemplate: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        // Sub-phase 2.8a: the member's reviewer rows still asked are withdrawn first.
+        workItemReviewer: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
         tenantMembership: {
             findFirst: jest.fn().mockResolvedValue(row),
             count: jest.fn().mockResolvedValue(owners),

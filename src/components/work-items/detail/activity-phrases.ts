@@ -38,6 +38,16 @@ export const ACTIVITY_PHRASE = {
     WORK_ITEM_ANSWER_CLEARED: 'activity.answerCleared',
     WORK_ITEM_MENTIONED: 'activity.mentioned',
     WORK_ITEM_MENTIONS_REMOVED: 'activity.mentionsRemoved',
+    // Review steps (2.8a).
+    WORK_ITEM_REVIEW_STEPS_CHANGED: 'activity.reviewStepsChanged',
+    WORK_ITEM_REVIEW_ROUND_STARTED: 'activity.reviewRoundStarted',
+    WORK_ITEM_REVIEW_STEP_OPENED: 'activity.reviewStepOpened',
+    WORK_ITEM_REVIEW_RESPONDED: 'activity.reviewResponded',
+    WORK_ITEM_REVIEW_RESPONSE_CHANGED: 'activity.reviewResponseChanged',
+    WORK_ITEM_REVIEW_STEP_SKIPPED: 'activity.reviewStepSkipped',
+    WORK_ITEM_REVIEW_ROUND_ENDED: 'activity.reviewRoundEnded',
+    WORK_ITEM_REVIEWERS_CHANGED: 'activity.reviewersChanged',
+    WORK_ITEM_REVIEWER_WITHDRAWN: 'activity.reviewerWithdrawn',
 } as const;
 
 /**
@@ -53,6 +63,12 @@ export const NOT_ITEM_ACTIVITY: ReadonlySet<string> = new Set([
     'WORK_ITEM_WATCH_UPDATE',
     'WORK_ITEM_WAITING_ON',
     'WORK_ITEM_TYPE_FIELD_SET',
+    // Review steps (2.8a): notification kinds, and member removal's counts-only entry.
+    'WORK_ITEM_REVIEW_REQUESTED',
+    'WORK_ITEM_REVIEW_DUE',
+    'WORK_ITEM_REVIEW_RETURNED',
+    'WORK_ITEM_REVIEW_COMPLETED',
+    'WORK_ITEM_REVIEWERS_WITHDRAWN_ON_MEMBER_REMOVAL',
 ]);
 
 export function activityPhraseKey(action: string | undefined): string {

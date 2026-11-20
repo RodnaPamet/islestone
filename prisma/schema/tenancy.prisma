@@ -77,14 +77,19 @@ model Tenant {
   auditLogs        AuditLog[]
   auditOutbox      AuditOutbox[]
 
-  notifications        Notification[]
-  notificationOutbox   NotificationOutbox[]
-  notificationSettings TenantNotificationSettings?
-  notificationPrefs    NotificationPreference[]
-  mentions             Mention[]
-  searchVectors        SearchVector[]
-  recipientLists       RecipientList[]
-  recipientListMembers RecipientListMember[]
+  notifications           Notification[]
+  notificationOutbox      NotificationOutbox[]
+  notificationSettings    TenantNotificationSettings?
+  notificationPrefs       NotificationPreference[]
+  mentions                Mention[]
+  searchVectors           SearchVector[]
+  recipientLists          RecipientList[]
+  recipientListMembers    RecipientListMember[]
+  // Sub-phase 2.8a: review steps (ADR 0009).
+  workItemReviewRounds    WorkItemReviewRound[]
+  workItemReviewSteps     WorkItemReviewStep[]
+  workItemReviewStepLists WorkItemReviewStepList[]
+  workItemReviewers       WorkItemReviewer[]
 
   teams                  Team[]
   workflowStates         WorkflowState[]
@@ -225,4 +230,6 @@ model User {
   createdWorkItemLinks     WorkItemLink[]     @relation("WorkItemLinkCreator")
   comments                 Comment[]          @relation("CommentAuthor")
   createdSavedViews        SavedView[]        @relation("SavedViewCreator")
+  /// The review steps this person was asked to respond to (2.8a).
+  reviewerRows             WorkItemReviewer[] @relation("WorkItemReviewerUser")
 }

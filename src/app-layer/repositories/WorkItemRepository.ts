@@ -93,6 +93,12 @@ export interface WorkItemFilters {
     milestoneId?: string;
     /** `me`: the items the CALLER watches, read from the request context, never a user id from the client. */
     watching?: 'me';
+    /**
+     * Member user ids (comma-joinable), or `me` for the caller (2.8a,
+     * decision 152): items whose open review step still asks that person, read
+     * from the reviewer rows (the item waits on them while its round is open).
+     */
+    reviewerId?: string;
     /** `overdue`, `next7d` (today to seven days on) or `soon` (overdue or due within `DUE_SOON_DAYS`); open items only. */
     due?: DueFilter;
     /** Title text; an exact key hit is passed as `keyHit`. */
@@ -383,6 +389,19 @@ export class WorkItemRepository {
             if (none && ids.length > 0) and.push({ OR: [{ milestoneId: null }, { milestoneId: { in: ids } }] });
             else if (none) and.push({ milestoneId: null });
             else and.push({ milestoneId: { in: ids } });
+        }
+        if (filters.reviewerId) {
+            const people = [
+                ...new Set(
+                    filters.reviewerId
+                        .split(',')
+                        .map((m) => m.trim())
+                        .filter(Boolean)
+                        .map((m) => (m === 'me' ? ctx.userId : m)),
+                ),
+            ];
+            // An OPEN step is only ever in an OPEN round (the engine ends steps before rounds).
+            and.push({ reviewers: { some: { tenantId: ctx.tenantId, userId: { in: people }, outcome: null, withdrawnAt: null, step: { status: 'OPEN' } } } });
         }
         if (filters.watching !== undefined) {
             if (filters.watching !== 'me') throw badRequest('Invalid watching filter. Must be: me.');

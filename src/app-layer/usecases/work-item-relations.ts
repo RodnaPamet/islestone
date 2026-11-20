@@ -31,6 +31,7 @@ import { assertCanEditWorkItems, assertCanReadWorkItems } from '../policies/work
 import { visibleProjects } from '../policies/project-visibility';
 import { formatKey } from '../domain/work-item-key';
 import { stateTransitionEffects } from '../domain/workflow-state';
+import { endOpenRoundsOnClose } from './review-engine';
 import { lockWorkItemGraph } from './work-item-graph-lock';
 import { afterStateCommit, applyStateAudit } from './work-item';
 import { keyOf, loadVisibleItem, loadWritableItem } from './work-item-shared';
@@ -142,6 +143,8 @@ async function markDuplicateCancelled(
     if (!to) throw new ConflictError('The team has no live CANCELLED state.', { reason: 'NO_CANCELLED_STATE' });
     const effects = stateTransitionEffects(from!.category, to.category, item);
     await WorkItemRepository.updateVersioned(db, ctx, v, item.id, undefined, { stateId: to.id, stateCategory: to.category, ...effects });
+    // A close withdraws an open review round (decision 149).
+    await endOpenRoundsOnClose(db, ctx, [item.id], 'ITEM_CLOSED');
     await applyStateAudit(db, ctx, item, from!, to);
     return { item, from: from!, to };
 }

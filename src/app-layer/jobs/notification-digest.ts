@@ -59,7 +59,18 @@ export const DIGEST_WINDOW_MS = MS_PER_DAY;
 const TENANT_SWEEP_TAKE = 100_000;
 
 /** The notification types whose bell rows are about a work item. */
-const WORK_ITEM_TYPES: ReadonlySet<NotificationType> = new Set<NotificationType>(['WORK_ITEM_ASSIGNED', 'WORK_ITEM_WAITING_ON', 'WORK_ITEM_MENTIONED', 'WORK_ITEM_WATCH_UPDATE', 'WORK_ITEM_DUE']);
+const WORK_ITEM_TYPES: ReadonlySet<NotificationType> = new Set<NotificationType>([
+    'WORK_ITEM_ASSIGNED',
+    'WORK_ITEM_WAITING_ON',
+    'WORK_ITEM_MENTIONED',
+    'WORK_ITEM_WATCH_UPDATE',
+    'WORK_ITEM_DUE',
+    // Sub-phase 2.8a.
+    'WORK_ITEM_REVIEW_REQUESTED',
+    'WORK_ITEM_REVIEW_DUE',
+    'WORK_ITEM_REVIEW_RETURNED',
+    'WORK_ITEM_REVIEW_COMPLETED',
+]);
 /** The intake types, read only by a member who holds `intake.view`. */
 const INTAKE_TYPES: ReadonlySet<NotificationType> = new Set<NotificationType>(['INTAKE_REQUEST_RECEIVED', 'INTAKE_REQUEST_WOKEN']);
 

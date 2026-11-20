@@ -70,6 +70,10 @@ const NO_DELETE_TABLES: readonly string[] = [
     // Sub-phase 2.7e: recipient lists are archived and restored, never
     // deleted (owner decision 141).
     'RecipientList',
+    // Sub-phase 2.8a: a review's record keeps who was asked; a round and a
+    // reviewer are ended or withdrawn, never deleted (ADR 0009).
+    'WorkItemReviewRound',
+    'WorkItemReviewer',
 ];
 
 describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
@@ -322,6 +326,10 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             'WorkItemLink',
             'WorkItemRecurrence',
             'WorkItemRelation',
+            'WorkItemReviewRound',
+            'WorkItemReviewStep',
+            'WorkItemReviewStepList',
+            'WorkItemReviewer',
             'WorkItemTemplate',
             'WorkItemTemplateLabel',
             'WorkItemTransition',

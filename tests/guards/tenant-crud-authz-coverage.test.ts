@@ -80,6 +80,15 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${W}/[workItemId]/waiting-on/route.ts`]: { PUT: 'work_items.edit' },
     // Sub-phase 2.4b-c (owner decisions 113 to 116: the answer under `work_items.edit`, the Question type under `admin.manage`).
     [`${W}/[workItemId]/answer/route.ts`]: { PUT: 'work_items.edit', DELETE: 'work_items.edit' },
+    // Sub-phase 2.8a (owner decisions 150, 158 and 160: no new domain; responding under the read key).
+    [`${W}/[workItemId]/review/route.ts`]: { GET: 'work_items.view' },
+    [`${W}/[workItemId]/review/steps/route.ts`]: { PUT: 'work_items.edit' },
+    [`${W}/[workItemId]/review/send/route.ts`]: { POST: 'work_items.edit' },
+    [`${W}/[workItemId]/review/withdraw/route.ts`]: { POST: 'work_items.edit' },
+    [`${W}/[workItemId]/review/steps/[stepId]/respond/route.ts`]: { POST: 'work_items.view' },
+    [`${W}/[workItemId]/review/steps/[stepId]/skip/route.ts`]: { POST: 'work_items.edit' },
+    [`${W}/[workItemId]/review/steps/[stepId]/reviewers/route.ts`]: { POST: 'work_items.edit' },
+    [`${W}/[workItemId]/review/steps/[stepId]/reviewers/[userId]/route.ts`]: { DELETE: 'work_items.edit' },
     [`${T}/work-item-types/question-preset/route.ts`]: { POST: 'admin.manage' },
     // Sub-phase 2.5c (owner decisions 71 and 72).
     [`${T}/projects/[projectId]/work-item-templates/route.ts`]: { GET: 'projects.view', POST: 'projects.edit' },

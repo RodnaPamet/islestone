@@ -305,6 +305,10 @@ describe('the schema speaks ADR 0006', () => {
             'WorkItemLink',
             'WorkItemRecurrence',
             'WorkItemRelation',
+            'WorkItemReviewRound',
+            'WorkItemReviewStep',
+            'WorkItemReviewStepList',
+            'WorkItemReviewer',
             'WorkItemTemplate',
             'WorkItemTemplateLabel',
             'WorkItemTransition',
@@ -313,7 +317,7 @@ describe('the schema speaks ADR 0006', () => {
             'WorkItemWatcher',
             'WorkflowState',
         ]);
-        expect(ids.filter((i) => i.kind === 'enum').length).toBe(27);
+        expect(ids.filter((i) => i.kind === 'enum').length).toBe(31);
         expect(ids).toEqual(expect.arrayContaining([{ kind: 'value', name: 'MEMBER', where: 'Role.MEMBER' }]));
     });
 });

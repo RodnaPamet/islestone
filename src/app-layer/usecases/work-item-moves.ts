@@ -42,7 +42,8 @@ import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import { assertCanCreateWorkItem, assertCanEditWorkItems } from '../policies/work-item.policies';
 import { visibleProjects } from '../policies/project-visibility';
 import { formatKey } from '../domain/work-item-key';
-import { checkWorkflowStateTransition, formatStateTransitionError, stateTransitionEffects } from '../domain/workflow-state';
+import { checkWorkflowStateTransition, formatStateTransitionError, isClosedCategory, stateTransitionEffects } from '../domain/workflow-state';
+import { endOpenRoundsOnClose } from './review-engine';
 import { lockWorkItemGraph } from './work-item-graph-lock';
 import { afterStateCommit, applyStateAudit, assertParentAllowed, getWorkItem, sortKeyForPosition } from './work-item';
 import { assertProjectWritable, emitWatcherActivity, keyOf, loadWritableItem, throwWriteConflict } from './work-item-shared';
@@ -104,6 +105,8 @@ export async function moveWorkItemOnBoard(
                 ...stateTransitionEffects(from!.category, to.category, item),
             });
             if (count === 0) await throwWriteConflict(db, ctx, v, id);
+            // A close withdraws an open review round (decision 149).
+            if (isClosedCategory(to.category)) await endOpenRoundsOnClose(db, ctx, [id], 'ITEM_CLOSED');
             await applyStateAudit(db, ctx, item, from!, to);
             change = { item, from: from!, to };
         }

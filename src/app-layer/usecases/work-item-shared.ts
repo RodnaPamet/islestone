@@ -17,6 +17,7 @@ import type { WorkflowStateCategory } from '@prisma/client';
 
 import { createAssignmentNotification } from '../notifications/assignment';
 import { createMentionNotifications } from '../notifications/mention';
+import { createReviewNotifications } from '../notifications/review';
 import { createWatcherNotifications, type WatcherActivityKind } from '../notifications/watcher';
 import { createWorkItemDueNotification } from '../notifications/work-item-due';
 import { enqueueEmail } from '../notifications/enqueue';
@@ -31,6 +32,7 @@ import {
 import type { ProjectVisibility } from '../policies/project-visibility';
 import { formatKey } from '../domain/work-item-key';
 import type { RequestContext } from '../types';
+import type { ReviewNoticeOut } from './review-engine';
 import { env } from '@/env';
 import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db-context';
@@ -494,4 +496,73 @@ export async function emitMentionBells(
             error: err instanceof Error ? err.message : String(err),
         });
     }
+}
+
+/**
+ * The review bells and emails (sub-phase 2.8a; owner decision 161), after the
+ * commit, from the notices the review engine returned
+ * (`src/app-layer/usecases/review-engine.ts`). In one short transaction, per
+ * notice: the bell rows (`createReviewNotifications`, which asks each
+ * person's preference), then for a request or a return the email to each
+ * person whose preference for the type is IMMEDIATE (the default). Nobody is
+ * told of their own act. Each names who, which item and which step; never the
+ * response text (decision 157).
+ */
+export async function emitReviewNotices(ctx: RequestContext, notices: readonly ReviewNoticeOut[]): Promise<string[]> {
+    const reached = new Set<string>();
+    if (notices.length === 0 || !ctx.tenantSlug) return [];
+    const tenantSlug = ctx.tenantSlug;
+    try {
+        await runInTenantContext(ctx, async (db) => {
+            const people = [...new Set(notices.flatMap((n) => [...n.userIds, ...(n.actorUserId ? [n.actorUserId] : [])]))];
+            const byId = new Map((await MembershipRepository.contactsOf(db, people)).map((c) => [c.id, c]));
+            for (const n of notices) {
+                // Nobody is told of their own act: the actor named, else the caller.
+                const recipients = [...new Set(n.userIds)].filter((id) => id !== (n.actorUserId ?? ctx.userId));
+                if (recipients.length === 0) continue;
+                const linkPath = tenantWorkItemPath(tenantSlug, n.item.id);
+                const actorName = n.actorUserId ? byId.get(n.actorUserId)?.name ?? undefined : undefined;
+                const notice =
+                    n.notice.kind === 'requested'
+                        ? { ...n.notice, requestedByName: actorName }
+                        : n.notice.kind === 'returned'
+                          ? { ...n.notice, byName: actorName }
+                          : n.notice;
+                // guardrail-allow: n+1 — one batch write per notice; a write path has at most a few notices.
+                await createReviewNotifications(db, recipients, { tenantId: ctx.tenantId, workItemId: n.item.id, workItemKey: n.item.key, workItemTitle: n.item.title, linkUrl: linkPath }, notice);
+                for (const r of recipients) reached.add(r);
+                const emailType = n.notice.kind === 'requested' ? 'WORK_ITEM_REVIEW_REQUESTED' : n.notice.kind === 'returned' ? 'WORK_ITEM_REVIEW_RETURNED' : null;
+                if (!emailType || !('stepName' in n.notice)) continue;
+                const deliveries = await memberDeliveries(db, ctx.tenantId, emailType, recipients);
+                for (const userId of recipients) {
+                    if (deliveries.get(userId)?.email !== 'IMMEDIATE') continue;
+                    const recipient = byId.get(userId);
+                    if (!recipient?.email) continue;
+                    // An outbox row per person; `enqueueEmail` is a write.
+                    await enqueueEmail(db, {
+                        tenantId: ctx.tenantId,
+                        type: emailType,
+                        toEmail: recipient.email,
+                        entityId: `${n.item.id}:${n.notice.stepId}`,
+                        requestId: ctx.requestId,
+                        payload: {
+                            recipientName: recipient.name || recipient.email,
+                            actorName,
+                            stepName: n.notice.stepName,
+                            workItemTitle: n.item.title,
+                            workItemKey: n.item.key,
+                            linkPath,
+                        },
+                    });
+                }
+            }
+        });
+    } catch (err) {
+        logger.warn('failed to create review notifications', {
+            component: 'notifications',
+            workItemIds: [...new Set(notices.map((n) => n.item.id))],
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+    return [...reached];
 }

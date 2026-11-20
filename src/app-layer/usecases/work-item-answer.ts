@@ -34,6 +34,7 @@ import { CommentRepository, WorkItemRepository } from '../repositories/WorkItemR
 import { TeamRepository } from '../repositories/TeamRepository';
 import { planAnswerMark } from '../domain/work-item-answer';
 import { checkWorkflowStateTransition, formatStateTransitionError, stateTransitionEffects } from '../domain/workflow-state';
+import { endOpenRoundsOnClose } from './review-engine';
 import { assertFieldWrite } from './field-set';
 import { afterStateCommit, applyStateAudit, getWorkItem } from './work-item';
 import { emitWatcherActivity, keyOf, loadWritableItem, throwWriteConflict } from './work-item-shared';
@@ -78,6 +79,8 @@ export async function markWorkItemAnswer(
                 : {};
         const count = await WorkItemRepository.updateVersioned(db, ctx, v, id, expectedVersion, { answerCommentId: comment.id, ...move });
         if (count === 0) await throwWriteConflict(db, ctx, v, id);
+        // A close withdraws an open review round (decision 149).
+        if (plan.kind === 'move') await endOpenRoundsOnClose(db, ctx, [id], 'ITEM_CLOSED');
         await logEvent(db, ctx, {
             action: 'WORK_ITEM_ANSWER_MARKED',
             entityType: 'WorkItem',

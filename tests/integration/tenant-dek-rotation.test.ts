@@ -254,6 +254,8 @@ describeFn('rotateTenantDek and the sweep (integration — real DB)', () => {
             'ProjectTemplate.contentJson',
             'TenantSecuritySettings.auditStreamSecretEncrypted',
             'WorkItem.description',
+            // Sub-phase 2.8a: a reviewer's response text (its trigger admits the re-wrap).
+            'WorkItemReviewer.responseText',
             'WorkItemTemplate.description',
         ]);
 

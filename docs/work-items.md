@@ -411,6 +411,56 @@ Built by [`docs/porting/maps/2.7.md`](porting/maps/2.7.md), part 6, under owner 
 - Settings → Intake picks the one list a project's intake also rings (decision 142; `docs/intake.md`).
 - Copy is `recipientLists.*`, `settings.intake.recipientList*`, `settings.sections.recipientLists` and `workItems.detail.addRecipientList`.
 
+## Reviews (2.8a)
+
+Built by [`docs/porting/maps/2.8.md`](porting/maps/2.8.md) under owner decisions 148 to 165 (`docs/HANDOFF.md`) and [ADR 0009](adr/0009-review-steps.md). 2.8a is the backend: the tables, the lifecycle, the routes, the notifications and the reminders. The item detail's "Review steps" section and My Work's "To review" are 2.8b; default steps per type and the per-type Done check are 2.8c. Written fresh; four inflect-compliance patterns are recorded in `PROVENANCE.md` as pattern only.
+
+### The words (decision 148)
+
+A **Round** holds ordered **Review steps**; each step asks **Reviewers** (members, or recipient lists resolved when it opens), all of them or any one, due a number of working days after it opens; a reviewer responds **Signed off** or **Returned**. My Work's section is "To review". "Review" alone stays the proposal page's word (6.2). ADR 0006 has the rows.
+
+### The model
+
+Migration `20261208120600_reviews` (the enum values in `20261208120000` to `20261208120500`, each alone), `prisma/schema/reviews.prisma`:
+
+- `WorkItemReviewRound` (`number` per item, `status` `PLANNED` `OPEN` `COMPLETED` `RETURNED` `WITHDRAWN`, who sent it and when, how it ended, `version`). At most one `PLANNED` or `OPEN` round per item (a partial unique). `app_user` holds no DELETE.
+- `WorkItemReviewStep` (`position`, `name` sanitised and at most 120, `mode` `ALL` or `ANY`, `dueInWorkingDays` 1 to 60, `status` `PENDING` `OPEN` `COMPLETED` `RETURNED` `SKIPPED` `WITHDRAWN`, `openedAt`, date-only `dueOn`, the skip's who and why). At most one `OPEN` step per round.
+- `WorkItemReviewStepList`: the recipient lists a step names (the list FK is RESTRICT: lists are never deleted).
+- `WorkItemReviewer`: one row per person per step (`userId` an FK to `User`, so a departed reviewer's response outlives their membership; `viaRecipientListId` for "via Legal"), the response (`outcome`, `respondedAt`, `responseText` ENCRYPTED and sanitised, `itemVersionAt`) and the withdrawal (`withdrawnAt`, `withdrawnReason` `MEMBER_REMOVED` `STEP_ENDED` `REMOVED_BY_PERSON` `BECAME_ASSIGNEE` `NOT_ELIGIBLE`). `app_user` holds no DELETE: a person is withdrawn, never removed.
+- CHECKs on every code column and on the response (a Return has text, decision 157; a response and a withdrawal are never both set).
+- **The record is never rewritten** (ADR 0009 §3 and §4; decision 162). Triggers refuse any change to an ended round, to any step, step list or reviewer row of one, to an ended step and its reviewers' responses, to a step's name, mode, days or position once it has opened, a response taken back, a withdrawn row changed, and a direct delete of anything but a step not yet opened. The one admitted change is the key rotations' re-wrap of `responseText` (one ciphertext for another, every other column unchanged); the item's purge and the workspace's delete cascade past them (`pg_trigger_depth() > 1`).
+- RLS, grants and the two-tenant test `tests/integration/reviews.test.ts`.
+
+### The lifecycle
+
+The usecases are `src/app-layer/usecases/review.ts`; the in-transaction core, shared with the other paths, is `review-engine.ts`; the pure rules are `src/app-layer/domain/review-steps.ts` (`evaluateStep`, `nextPendingStep`, `afterStepEnds`) and `working-days.ts` (`addWorkingDays`), both property-tested. Every write locks the item's row first (`ReviewRepository.lockItem`), so responses, skips, edits, sends and a waiting-on write serialise.
+
+1. **Planned.** `PUT …/review/steps` replaces the steps not yet opened: every step of the planned round (one is created when the item has none) or the steps after the open one. Each step names at least one member or list; a member must be an ACTIVE member with `work_items.view` who sees the project (400 `REVIEWER_NOT_ELIGIBLE`), never the item's assignee (400 `REVIEWER_IS_ASSIGNEE`, decision 158); a list must be live and the workspace's or the item's project's. `If-Match` names the round's version once there is one (428 without, 409 stale).
+2. **Send** (decision 155). `POST …/review/send` opens the planned round's first step. Refused for a closed item (`ITEM_CLOSED`), a round with no steps (`NO_STEPS`), or any step nobody can be asked at now (409 `NO_REVIEWERS`): zero is never complete.
+3. **A step opens.** Its lists are resolved through `resolveListRecipients` (decision 154; `may: work_items.view`, the item's project) and their people become reviewer rows beside the named members, each person once; the assignee and anyone who may no longer be asked are dropped (named members withdrawn `BECAME_ASSIGNEE` or `NOT_ELIGIBLE`) and named in the audit entry. `dueOn` is today in `NOTIFICATIONS_TZ` plus the step's working days, Monday to Friday (decision 151), stored once. A step that opens after another completes with nobody to ask opens flagged ("no reviewers left") and its owners are told; it never completes.
+4. **A response** (`POST …/review/steps/:stepId/respond { outcome, text? }`). Only the named reviewer, acting as a person (`assertActingAsPerson`: an API key is 403 `NOT_A_PERSON`), never the item's assignee; any other caller is a 403 audited `AUTHZ_DENIED` (`REVIEWER_NOT_NAMED`, `REVIEWER_IS_ASSIGNEE`). A Return needs text (400 `RETURN_NEEDS_TEXT`). The row is claimed with one conditional `updateMany` (409 `REVIEW_RESPONSE_TAKEN` on a lost race); a step that is no longer open is 409 `REVIEW_STEP_NOT_OPEN`. The response records the item's `version` (decision 163: the item stays editable; 2.8b shows "changed since signed off"). **A reviewer may change their response while the step is open** (decision 162), audited `WORK_ITEM_REVIEW_RESPONSE_CHANGED`; from the step's end it is frozen.
+5. **The step is decided** (`evaluateStep`). An "all" step completes when every reviewer still asked has signed off and at least one has; one Return returns it at once and withdraws the others still pending (decision 156). An "any" step is decided by its first response. A completed (or skipped) step opens the next one, or completes the round.
+6. **A Return** ends the round `RETURNED`; its other steps end `WITHDRAWN` and nothing in it is rewritten. A new round (`number + 1`, `PLANNED`) is planned at once with the same steps: names, modes, working days, named members (not those removed, withdrawn by a person or made the assignee) and live lists, never the resolved people. It waits until a person sends it.
+7. **Skip** (`POST …/review/steps/:stepId/skip`, decision 150): an open or pending step of the open round, by the item's assignee, whoever sent the round, or an admin (`admin.manage`); anyone else is a 403 audited. An open step nobody is left to answer closes with reason `NO_REVIEWERS_LEFT` ("closing a step whose reviewers left"); otherwise `PERSON_SKIPPED`. Never a response.
+8. **Reviewers added and removed.** `POST …/review/steps/:stepId/reviewers { userId }` adds a person to a step that has not ended (`work_items.edit`; asked at once on an open step); `DELETE …/reviewers/:userId` withdraws a pending reviewer (`REMOVED_BY_PERSON`), on an open step only with the standing of decision 150, since it can complete the step. A withdrawn person is not added back to the same step (409).
+9. **Withdraw** (`POST …/review/withdraw`, `work_items.edit`): the open round ends `WITHDRAWN` (`WITHDRAWN_BY_PERSON`), its record unchanged, and a planned round with the same steps follows.
+10. **Closing and deleting** (decision 149). Every state path into `DONE` or `CANCELLED` (single, bulk, the board move, a duplicate mark, a state's delete, the answer) ends an open round `WITHDRAWN` (`ITEM_CLOSED`) in the same transaction (`endOpenRoundsOnClose`, `endOpenRoundsInState`; `tests/guards/review-close-paths.test.ts` pins the paths), and a delete does (`ITEM_DELETED`). A planned round stays planned; a reopen or a restore does not reopen anything. The Done check a type may require ships in 2.8c.
+11. **Member removal** withdraws the member's pending rows (`MEMBER_REMOVED`) before the membership goes, audited `WORK_ITEM_REVIEWERS_WITHDRAWN_ON_MEMBER_REMOVAL`, and decides each open step again: a step left with nobody stays open, flagged, and its owners are told.
+12. **An assignee change** (decision 158) that makes a pending reviewer the assignee withdraws their rows (`BECAME_ASSIGNEE`), audited `WORK_ITEM_REVIEWER_WITHDRAWN`, and decides the step again.
+13. **A move to another project** keeps the rounds; a reviewer who cannot see the new project stays asked until 8.4 (a known limit, ADR 0009).
+
+### Waiting on (decisions 152 and 153)
+
+`WorkItem.waitingOnUserId` stays one person. Sending a round clears it (audited `WORK_ITEM_WAITING_ON_CHANGED`, `summary: review_round_opened`): while a round is open the item waits on the open step's pending reviewers, read from their rows (`waitingOnReviewerIds` in the review response; `GET /work-items?reviewerId=me` lists the items whose open step still asks the caller, any user id or `me`). A round that completes or is returned names the assignee (an ACTIVE member, the item open); a withdrawn round sets nothing. Setting waiting on by hand while a round is open is 409 `REVIEW_ROUND_OPEN`, and 6.3's agent-session reference will follow the same rule.
+
+### Keys (decision 160)
+
+No new domain: `GET …/review` and the respond route take `work_items.view`; every other review route takes `work_items.edit`; each has a literal `requirePermission` and a `route-permissions.ts` rule (`tests/guards/tenant-crud-authz-coverage.test.ts`). The usecases assert the rest from `src/app-layer/policies/review.policies.ts` (`reviewStandingBasis`, `isOwnWork`, `mayRespondToReview`), and `GET …/review` returns `viewer` (`reviewAffordances`) for the detail; a component never restates a rule. `tests/integration/review-api.test.ts` drives every review route as each role.
+
+### Audit and Activity
+
+`WORK_ITEM_REVIEW_STEPS_CHANGED`, `_ROUND_STARTED`, `_STEP_OPENED`, `_RESPONDED`, `_RESPONSE_CHANGED`, `_STEP_SKIPPED`, `_ROUND_ENDED`, `WORK_ITEM_REVIEWERS_CHANGED` and `WORK_ITEM_REVIEWER_WITHDRAWN` on the item (each in its Activity), ids and outcomes only, never a step's text or a response's. Only `respondToReviewStep` writes a response (`tests/guards/review-response-seam.test.ts`).
+
 ## Settings (decision 55)
 
 A workspace admin configures work without the API on the Settings pages (`src/app/t/[tenantSlug]/(app)/settings/`, components in `src/components/settings/`), built on 2.2's routes with no new route or usecase:

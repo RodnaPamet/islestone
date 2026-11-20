@@ -37,6 +37,10 @@ export const PREFERENCE_TYPES = [
     'WORK_ITEM_ASSIGNED',
     'WORK_ITEM_WAITING_ON',
     'WORK_ITEM_MENTIONED',
+    'WORK_ITEM_REVIEW_REQUESTED',
+    'WORK_ITEM_REVIEW_RETURNED',
+    'WORK_ITEM_REVIEW_COMPLETED',
+    'WORK_ITEM_REVIEW_DUE',
     'WORK_ITEM_WATCH_UPDATE',
     'WORK_ITEM_DUE',
     'INTAKE_REQUEST_RECEIVED',
@@ -51,11 +55,17 @@ export function isPreferenceType(type: string): type is PreferenceType {
 
 /**
  * The types immediate email is offered for (decision 132: assigned, mentioned
- * and waiting on; mentions since 2.7d). The CHECK
- * `NotificationPreference_immediate_types` (migration
- * `20261205120200_mentions`) holds the same list.
+ * and waiting on; mentions since 2.7d; review requested and returned since
+ * 2.8a, decision 161). The CHECK `NotificationPreference_immediate_types`
+ * (migration `20261208120600_reviews`) holds the same list.
  */
-export const IMMEDIATE_EMAIL_TYPES = ['WORK_ITEM_ASSIGNED', 'WORK_ITEM_WAITING_ON', 'WORK_ITEM_MENTIONED'] as const satisfies readonly PreferenceType[];
+export const IMMEDIATE_EMAIL_TYPES = [
+    'WORK_ITEM_ASSIGNED',
+    'WORK_ITEM_WAITING_ON',
+    'WORK_ITEM_MENTIONED',
+    'WORK_ITEM_REVIEW_REQUESTED',
+    'WORK_ITEM_REVIEW_RETURNED',
+] as const satisfies readonly PreferenceType[];
 
 export function offersImmediateEmail(type: NotificationType): boolean {
     return (IMMEDIATE_EMAIL_TYPES as readonly string[]).includes(type);
@@ -89,6 +99,12 @@ export const PREFERENCE_DEFAULTS: Record<NotificationType, PreferenceChoice> = {
     WORK_ITEM_ASSIGNED: { inApp: true, email: 'IMMEDIATE' },
     WORK_ITEM_WAITING_ON: { inApp: true, email: 'IMMEDIATE' },
     WORK_ITEM_MENTIONED: { inApp: true, email: 'IMMEDIATE' },
+    // Sub-phase 2.8a (decision 161): a request and a return at once, the
+    // reminders in the digest, a completion in the bell only.
+    WORK_ITEM_REVIEW_REQUESTED: { inApp: true, email: 'IMMEDIATE' },
+    WORK_ITEM_REVIEW_RETURNED: { inApp: true, email: 'IMMEDIATE' },
+    WORK_ITEM_REVIEW_COMPLETED: { inApp: true, email: 'OFF' },
+    WORK_ITEM_REVIEW_DUE: { inApp: true, email: 'DAILY' },
     WORK_ITEM_WATCH_UPDATE: { inApp: true, email: 'DAILY' },
     WORK_ITEM_DUE: { inApp: true, email: 'DAILY' },
     INTAKE_REQUEST_RECEIVED: { inApp: true, email: 'OFF' },

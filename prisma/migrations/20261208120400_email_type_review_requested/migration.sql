@@ -1,0 +1,11 @@
+-- Sub-phase 2.8a: review steps (docs/porting/maps/2.8.md; ADR 0009; owner
+-- decision 161). A bare ADD VALUE, alone in its migration
+-- (tests/guards/migration-enum-isolation.test.ts).
+--
+-- Its writer ships in the same release and is reachable at once. While
+-- Watchtower rolls the images, a worker still on the previous image cannot
+-- read an outbox row of this type: its drain fails that tick and the next
+-- tick on the new image sends the row (each row is claimed before its send).
+--
+-- A review requested of you, mailed at once when your preference says so.
+ALTER TYPE "EmailNotificationType" ADD VALUE 'WORK_ITEM_REVIEW_REQUESTED';

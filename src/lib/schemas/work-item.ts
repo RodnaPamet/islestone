@@ -170,6 +170,8 @@ export const WorkItemQuerySchema = z.object({
     waitingOnId: z.string().max(2000).optional(),
     /** Only `me`: the caller's watched items, resolved from the request context. */
     watching: z.enum(['me']).optional(),
+    /** Member user ids (comma-joinable) or `me`: items whose open review step still asks them (2.8a). */
+    reviewerId: z.string().max(2000).optional(),
     due: z.enum(DUE_FILTERS).optional(),
     q: z.string().max(200).optional(),
     includeArchived: z.enum(['true', 'false', '1', '0']).optional(),
