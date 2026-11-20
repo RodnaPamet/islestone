@@ -73,13 +73,17 @@ jobs:
           node-version-file: .nvmrc
       # Pinned here rather than in package.json: semantic-release runs only in
       # this job, and its tree has no business in the lockfile the app ships.
+      # The preset stays on 9.x: semantic-release 25's release-notes-generator
+      # 14 bundles conventional-changelog-writer 8, and preset 10 needs writer
+      # 9 ("Missing helper"), which failed every release until 2026-11-20.
+      # Move the two together (tests/unit/deploy/release-tooling.test.ts).
       - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >-
           npx --yes
           -p semantic-release@25.0.9
-          -p conventional-changelog-conventionalcommits@10.4.1
+          -p conventional-changelog-conventionalcommits@9.3.1
           semantic-release
       - name: Read the version this commit carries
         id: tag
