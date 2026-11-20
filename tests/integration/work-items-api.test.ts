@@ -204,6 +204,8 @@ const CALLS: Call[] = [
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/milestones/[milestoneId]/route.ts', method: 'PATCH', path: (i) => `/projects/${i.project}/milestones/${i.milestone}`, params: (i) => P(i, { projectId: i.project, milestoneId: i.milestone }), body: () => ({ dueDate: '2040-03-01' }), write: true, key: 'projects.edit' },
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/milestones/[milestoneId]/route.ts', method: 'DELETE', path: (i) => `/projects/${i.project}/milestones/none`, params: (i) => P(i, { projectId: i.project, milestoneId: 'none' }), write: true, key: 'projects.edit' },
     { file: 'src/app/api/t/[tenantSlug]/teams/[teamId]/cycle-schedule/route.ts', method: 'PUT', path: (i) => `/teams/${i.team}/cycle-schedule`, params: (i) => P(i, { teamId: i.team }), body: () => ({ enabled: false, lengthWeeks: 2, firstStartsOn: '2040-02-06', upcomingCount: 2, rollover: 'NEXT_CYCLE' }), write: true, key: 'cycles.manage' },
+    // Sub-phase 2.6a: a project's intake (its other routes are driven in intake-api.test.ts).
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/intake/route.ts', method: 'PUT', path: (i) => `/projects/${i.project}/intake`, params: (i) => P(i, { projectId: i.project }), body: () => ({ enabled: false }), write: true, key: 'intake.manage' },
 ];
 
 function request(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): NextRequest {

@@ -89,6 +89,11 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // Both are sanitised before they are stored.
     WorkItemTemplate: ['description'],
     ProjectTemplate: ['contentJson'],
+    // Intake requests (sub-phase 2.6a, owner decision 96): the request's text,
+    // the form's answers (JSON text, each answer sanitised) and both notes.
+    // Never searched; sanitised before they are stored. The title stays
+    // plaintext, like a work item's.
+    IntakeRequest: ['body', 'answersJson', 'declineExplanation', 'internalRemark'],
 } as const;
 
 /** Set of model names with at least one encrypted field. Fast-path check. */

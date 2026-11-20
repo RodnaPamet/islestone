@@ -1,6 +1,6 @@
 # 0006 — Vocabulary
 
-Status: Proposed — awaiting owner sign-off (2026-11-18 drafted). The role names, their order, the fallback role and the public sign-up switch were decided by the owner on 2026-11-18, the sync and collaboration words ADR 0005 added on 2026-11-19, and the planning words of sub-phase 2.5 (Milestone, Cycle schedule, Burn-up, Repeat, Transition) on 2026-11-20; the other open questions await sign-off.
+Status: Proposed — awaiting owner sign-off (2026-11-18 drafted). The role names, their order, the fallback role and the public sign-up switch were decided by the owner on 2026-11-18, the sync and collaboration words ADR 0005 added on 2026-11-19, and the planning words of sub-phase 2.5 (Milestone, Cycle schedule, Burn-up, Repeat, Transition) on 2026-11-20, and the intake words of sub-phase 2.6 on 2026-11-20; the other open questions await sign-off.
 
 ## Context
 
@@ -109,6 +109,15 @@ Rows for Phase 2 concepts are fixed by this ADR once signed. Rows for later phas
 | View | A saved scope, filters, grouping, sorting, layout and visible columns. Personal or shared. | `SavedView` | View | Filter (a filter is one part of a view), Perspective, Report |
 | Intake | The stage before the backlog. Requests from forms, email and integrations wait there for triage. | No model: a stage | Intake | Inbox (reserved for notifications), Triage (as a noun for the stage; "triage" is the verb), Queue |
 | Intake request | One entry in intake. A person accepts it (it becomes a work item), declines it, merges it into a duplicate or snoozes it. | `IntakeRequest` | Request | Ticket, Issue, Submission, Suggestion |
+| Intake form | A form that creates intake requests in one project: for signed-in people, or, from roadmap 2.6b, anyone with its link (decided 2026-11-20). | `IntakeForm`; enum `IntakeFormAccess` | Form | Survey, Questionnaire, Submission form |
+| Form field | One input of an intake form; it may fill one of the project's custom fields when the request is accepted (decided 2026-11-20). | No model: an entry in `IntakeForm.definitionJson` | Form field | Question (2.4b's work item type), Field (alone: a custom field's label), Property, Attribute |
+| Requester | The person an intake request came from, a member or not (decided 2026-11-20). | `IntakeRequest.requesterUserId` (later `requesterName`, `requesterEmail`) | Requester; "From" | Reporter, Submitter, Customer |
+| Intake channel | How a request arrived: an internal form, a public form or email (decided 2026-11-20). | enum `IntakeChannel`: `INTERNAL_FORM`, `PUBLIC_FORM`, `EMAIL` | Form, Public form, Email | Origin (as a model or enum) |
+| Decline reason | Why a person declined a request: not planned, out of scope, spam or other (decided 2026-11-20). | enum `IntakeDeclineReason` | Reason | Rejection reason, Close reason |
+| Notify list | The members a project's new intake requests notify (decided 2026-11-20). | `IntakeNotifyMember` | Notify list | Watchers (an item's watchers), Subscribers, Triagers |
+| Intake email address | A project's address for requests by email, a random token at the intake domain (decided 2026-11-20; roadmap 2.6c). | `ProjectIntake.emailToken` | Intake email address | Inbox address |
+| Follow-up | A later email from the requester on a pending request (decided 2026-11-20; roadmap 2.6c). | `IntakeFollowUp` | Follow-up | Reply (as a model), Message |
+| Blocked sender | An email address, kept only as its lookup hash, whose requests a workspace or project drops (decided 2026-11-20; roadmap 2.6b and 2.6c). | `IntakeBlockedSender` | Blocked senders | Blacklist, Banned sender |
 | Notification | A record that something needs a member's attention. | `Notification` | Shown in the Inbox | Alert, Message |
 | Inbox | A member's list of notifications. | No model: a view over `Notification` | Inbox | Intake, Feed |
 | My Work | A member's page of items assigned, created, watched and due soon. | No model | My Work | Home, Dashboard |
@@ -215,6 +224,10 @@ Because "member" is also the concept "anyone with a membership", text about perm
 ### Planning words of sub-phase 2.5 — decided
 
 **Decided. Owner decision, 2026-11-20 (relayed to the porting session by its coordinator; `docs/porting/maps/2.5.md`, open questions 1 and 13).** The roadmap's "`Module` or milestone" is a **Milestone**, one model per project, as the table already said. The table gains four rows: Cycle schedule, Burn-up, Repeat and Transition. A milestone's date is `dueDate`, shown as "Due date", because "Target" is banned for goals and the schema guard refuses it everywhere.
+
+### Intake words of sub-phase 2.6 — decided
+
+**Decided. Owner decision, 2026-11-20 (relayed to the porting session by its coordinator; `docs/porting/maps/2.6.md`, open questions 7 and 10; `docs/HANDOFF.md` decisions 91 and 94).** The triage page and its sidebar entry are called **Intake**, one entry is a **Request**, and "triage" stays a verb; the notification list of roadmap 2.7 stays **Inbox**. The "Views, intake and inbox" table gains the rows Intake form, Form field, Requester, Intake channel, Decline reason, Notify list, Intake email address, Follow-up and Blocked sender. "Accept" and "Decline" are intake's verbs: the Proposal row bans them as synonyms of Approve and Reject for proposals only. A request's states are the enum `IntakeRequestStatus` (`PENDING`, `SNOOZED`, `ACCEPTED`, `DECLINED`, `MERGED`), shown as New, Snoozed, Accepted, Declined and Merged. A form field is not called "Question", because roadmap 2.4b plans a Question work item type.
 
 ### How Islestone avoids inflect-compliance's two-vocabulary state
 

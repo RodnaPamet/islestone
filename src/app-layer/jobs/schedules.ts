@@ -10,6 +10,8 @@
  *   - notification-outbox-flush: every 10 min (drain the email outbox)
  *   - audit-outbox-flush:        every 5 min (replay queued audit entries onto the chain)
  *   - cycle-rollover:            00:10 in NOTIFICATIONS_TZ (close ended cycles; 2.5a)
+ *   - intake-snooze-wake:        08:00 in NOTIFICATIONS_TZ (snoozed requests come back; 2.6a)
+ *   - intake-purge:              02:50 UTC (decided requests past retention; 2.6a)
  *
  * The two key rotations (`key-rotation`, `tenant-dek-rotation`) are started by
  * an operator through their admin routes and have no schedule.
@@ -168,6 +170,22 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         // purge and the 08:00 reminders.
         tz: env.NOTIFICATIONS_TZ,
         description: 'Close ended cycles, move their unfinished items to the next cycle (or out of cycles), and keep each enabled cycle schedule filled. Idempotent: a cycle closes once.',
+        defaultPayload: {},
+    },
+    {
+        name: 'intake-snooze-wake',
+        pattern: '5 8 * * *',     // 08:05 in NOTIFICATIONS_TZ
+        // The reader's morning, beside the 08:00 due reminders but not on
+        // the same minute (owner decision 90: back at 08:00 that day).
+        tz: env.NOTIFICATIONS_TZ,
+        description: 'Snoozed intake requests whose day has come go back to new, and whoever snoozed each is rung. Idempotent: the wake is conditional.',
+        defaultPayload: {},
+    },
+    {
+        name: 'intake-purge',
+        pattern: '50 2 * * *',    // 02:50 UTC
+        // After the 02:30 work-item purge, off the hour.
+        description: 'Hard-delete intake requests decided more than 90 days ago, spam after 7 (owner decision 90). Counts-only audit entry per batch.',
         defaultPayload: {},
     },
 ];

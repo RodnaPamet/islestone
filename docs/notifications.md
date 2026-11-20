@@ -40,13 +40,14 @@ in identifiers), and the settings' BCC column is `bccMailbox`, inflect's
 
 ## The bell
 
-Three writers, all in `src/app-layer/notifications/`:
+Four writers, all in `src/app-layer/notifications/`:
 
 | Writer | Type | Dedupe key |
 |---|---|---|
 | `createAssignmentNotification` (`assignment.ts`) | `WORK_ITEM_ASSIGNED` | `tenant:TYPE:item:user:YYYY-MM-DD` |
 | `createWatcherNotifications` (`watcher.ts`) | `WORK_ITEM_WATCH_UPDATE` | per watcher, item, kind, discriminator and day |
 | `createWorkItemDueNotification(s)` (`work-item-due.ts`, 2.2) | `WORK_ITEM_DUE` | `tenant:WORK_ITEM_DUE:window:item:user:YYYY-MM-DD` (the run day in `NOTIFICATIONS_TZ`) |
+| `createIntakeNotifications` (`intake.ts`, 2.6a) | `INTAKE_REQUEST_RECEIVED` (the project's notify list, never the sender), `INTAKE_REQUEST_WOKEN` (whoever snoozed it) | `tenant:TYPE:request:user` (WOKEN also per wake day); recipients re-checked for `intake.view` ([docs/intake.md](intake.md)) |
 
 Each one, in order:
 

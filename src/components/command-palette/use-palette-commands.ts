@@ -38,6 +38,7 @@
 import {
     Bell,
     CalendarClock,
+    ClipboardList,
     Folder,
     LayoutList,
     LogOut,
@@ -163,6 +164,15 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 icon: CalendarClock,
                 href: href(NAV_PATHS.cycles),
                 keywords: ['burn-up', 'rollover'],
+            },
+            {
+                id: 'nav:forms',
+                group: 'Navigation',
+                label: t('goToForms'),
+                matchLabel: 'Forms',
+                icon: ClipboardList,
+                href: href(NAV_PATHS.forms),
+                keywords: ['request', 'intake'],
             },
             {
                 id: 'nav:views',

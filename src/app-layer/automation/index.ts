@@ -36,6 +36,19 @@ export interface WorkItemCreatedData {
     parentId: string | null;
 }
 
+/**
+ * An intake request arrived or was decided (sub-phase 2.6a; 5.1 defines the
+ * contract "for … intake"). Ids and codes only: never a title, text or name.
+ */
+export interface IntakeRequestEventData {
+    projectId: string;
+    channel: 'INTERNAL_FORM' | 'PUBLIC_FORM' | 'EMAIL';
+    status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'MERGED';
+    formId: string | null;
+    workItemId: string | null;
+    declineReason: string | null;
+}
+
 export interface WorkItemStateChangedData {
     key: string;
     fromStateId: string;
@@ -62,6 +75,14 @@ export type AutomationEventInput =
           actorUserId: string;
           stableKey: string;
           data: WorkItemStateChangedData;
+      }
+    | {
+          event: 'INTAKE_REQUEST_RECEIVED' | 'INTAKE_REQUEST_DECIDED';
+          entityType: 'IntakeRequest';
+          entityId: string;
+          actorUserId: string;
+          stableKey: string;
+          data: IntakeRequestEventData;
       };
 
 /** A no-op that logs at debug until sub-phase 5.1 (the rule engine). */

@@ -86,6 +86,10 @@ enum NotificationType {
   WORK_ITEM_ASSIGNED
   WORK_ITEM_WATCH_UPDATE
   WORK_ITEM_DUE
+  /// Sub-phase 2.6a: a new intake request, to the project's notify list.
+  INTAKE_REQUEST_RECEIVED
+  /// Sub-phase 2.6a: a snoozed request came back, to whoever snoozed it.
+  INTAKE_REQUEST_WOKEN
 }
 
 /// The kind of an outbound email in `NotificationOutbox` (sub-phase 1.6).
@@ -162,4 +166,38 @@ enum SavedViewVisibility {
 enum CycleRollover {
   NEXT_CYCLE
   NO_CYCLE
+}
+
+/// How an intake request arrived (sub-phase 2.6; ADR 0006 "Intake channel").
+/// PUBLIC_FORM and EMAIL are declared now and written from 2.6b and 2.6c, so
+/// no later release adds a value a running container cannot read.
+enum IntakeChannel {
+  INTERNAL_FORM
+  PUBLIC_FORM
+  EMAIL
+}
+
+/// Who may send a request through an intake form (ADR 0006 "Intake form").
+/// PUBLIC is refused by the usecases until 2.6b.
+enum IntakeFormAccess {
+  MEMBERS
+  PUBLIC
+}
+
+/// Where an intake request stands (ADR 0006, decided 2026-11-20): shown as
+/// New, Snoozed, Accepted, Declined and Merged.
+enum IntakeRequestStatus {
+  PENDING
+  SNOOZED
+  ACCEPTED
+  DECLINED
+  MERGED
+}
+
+/// Why a person declined an intake request (ADR 0006 "Decline reason").
+enum IntakeDeclineReason {
+  NOT_PLANNED
+  OUT_OF_SCOPE
+  SPAM
+  OTHER
 }

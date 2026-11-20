@@ -609,6 +609,86 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'admin.manage',
         note: 'Rename, archive or delete a project template.',
     },
+
+    // ── Intake (sub-phase 2.6a; owner decision 92: the intake domain) ──
+    {
+        path: new RegExp(`^${T}\\/intake\\/requests$`),
+        methods: ['GET'],
+        permission: 'intake.view',
+        note: 'One page of intake requests (they hold outsiders\' personal data from 2.6b).',
+    },
+    {
+        path: new RegExp(`^${T}\\/intake\\/requests\\/count$`),
+        methods: ['GET'],
+        permission: 'intake.view',
+        note: 'New requests per visible project (the sidebar count).',
+    },
+    {
+        path: new RegExp(`^${T}\\/intake\\/requests\\/[^\\/]+$`),
+        methods: ['GET'],
+        permission: 'intake.view',
+        note: 'Read one intake request.',
+    },
+    {
+        path: new RegExp(`^${T}\\/intake\\/requests\\/[^\\/]+$`),
+        methods: ['PATCH'],
+        permission: 'intake.triage',
+        note: "Change a new or snoozed request's title or text.",
+    },
+    {
+        path: new RegExp(`^${T}\\/intake\\/requests\\/[^\\/]+\\/(accept|decline|merge|snooze|move|reopen)$`),
+        methods: ['POST'],
+        permission: 'intake.triage',
+        note: 'Triage a request; accepting also needs work_items.create, asserted by the usecase.',
+    },
+    {
+        path: new RegExp(`^${T}\\/intake\\/forms$`),
+        methods: ['GET'],
+        permission: 'intake.view',
+        note: 'The intake forms of the visible projects.',
+    },
+    {
+        path: new RegExp(`^${T}\\/intake\\/forms$`),
+        methods: ['POST'],
+        permission: 'intake.manage',
+        note: 'Create an intake form (Owners and Admins).',
+    },
+    {
+        path: new RegExp(`^${T}\\/intake\\/forms\\/[^\\/]+$`),
+        methods: ['GET'],
+        permission: 'intake.view',
+        note: 'Read one intake form.',
+    },
+    {
+        path: new RegExp(`^${T}\\/intake\\/forms\\/[^\\/]+$`),
+        methods: ['PATCH'],
+        permission: 'intake.manage',
+        note: 'Rename, redefine, publish, unpublish, archive or restore an intake form.',
+    },
+    {
+        path: new RegExp(`^${T}\\/intake\\/forms\\/[^\\/]+\\/requests$`),
+        methods: ['POST'],
+        permission: 'projects.view',
+        note: 'Send a request through an open internal form: anyone who sees its project.',
+    },
+    {
+        path: new RegExp(`^${T}\\/intake\\/open-forms$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: 'The forms a member may send a request through now.',
+    },
+    {
+        path: new RegExp(`^${T}\\/intake\\/projects$`),
+        methods: ['GET'],
+        permission: 'intake.manage',
+        note: "Every visible project's intake and notify list, for Settings.",
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/intake$`),
+        methods: ['PUT'],
+        permission: 'intake.manage',
+        note: "Turn a project's intake on or off and set its notify list.",
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────

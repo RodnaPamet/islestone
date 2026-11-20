@@ -1,0 +1,298 @@
+'use client';
+
+/**
+ * The triage dialogs of the Intake page (sub-phase 2.6a; owner decision 90):
+ * accept (the item's type, state, priority, assignee and project, read from
+ * the server's view configuration), decline (a reason, an explanation for
+ * the requester and an internal remark), merge (into a work item by its key,
+ * or into another open request), snooze (until a date after today) and move.
+ * Each sends the version the person read; the server's refusal is shown in
+ * the dialog.
+ *
+ * Written fresh for Islestone.
+ */
+import { useTranslations } from 'next-intl';
+import { useMemo, useState } from 'react';
+
+import { Combobox } from '@/components/ui/combobox';
+import { DatePicker } from '@/components/ui/date-picker/date-picker';
+import { parseYMD, toYMD } from '@/components/ui/date-picker/date-utils';
+import { FormField } from '@/components/ui/form-field';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { SettingsFormModal } from '@/components/settings/SettingsFormModal';
+import { useWorkConfig } from '@/components/work-items/data/use-work-config';
+import { AssigneePicker, PriorityPicker, StatePicker, TypePicker } from '@/components/work-items/pickers';
+import { apiGet } from '@/lib/data/api-client';
+import { INTAKE_DECLINE_REASONS, type IntakeDeclineReason, type IntakeRequestDetail, type IntakeRequestRow } from '@/lib/intake/types';
+import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import type { WorkItemPriority } from '@/lib/work-items/types';
+
+import { intakeRefusal, useIntakeApi } from './data/intake-data';
+
+export type IntakeDialogKind = 'accept' | 'decline' | 'merge' | 'snooze' | 'move';
+
+interface DialogProps {
+    request: IntakeRequestDetail;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    onDone: (next: IntakeRequestDetail) => void;
+}
+
+function AcceptDialog({ request, open, onOpenChange, onDone }: DialogProps) {
+    const tAccept = useTranslations('intake.accept');
+    const config = useWorkConfig();
+    const { send } = useIntakeApi();
+    const liveProjects = useMemo(() => config.projects.filter((p) => !p.archived), [config]);
+    const [projectId, setProjectId] = useState(request.projectId);
+    const teamId = config.projectById.get(projectId)?.teamId ?? '';
+    const openStates = config.statesOfTeam(teamId).filter((s) => s.category === 'BACKLOG' || s.category === 'UNSTARTED');
+    const [typeId, setTypeId] = useState(config.types[0]?.id ?? '');
+    const [stateId, setStateId] = useState('');
+    const [priority, setPriority] = useState<WorkItemPriority>('NONE');
+    const [assigneeId, setAssigneeId] = useState<string | null>(null);
+    const projectOptions = liveProjects.map((p) => ({ value: p.id, label: `${p.name} (${p.keyPrefix})` }));
+    const stateValue = openStates.some((s) => s.id === stateId) ? stateId : (openStates.find((s) => s.isDefault) ?? openStates[0])?.id ?? '';
+
+    return (
+        <SettingsFormModal
+            open={open}
+            onOpenChange={onOpenChange}
+            title={tAccept('title')}
+            description={tAccept('description', { title: request.title })}
+            submitLabel={tAccept('submit')}
+            submitDisabled={!typeId}
+            onSubmit={async () => {
+                try {
+                    const next = await send<IntakeRequestDetail>(
+                        'POST',
+                        `/intake/requests/${encodeURIComponent(request.id)}/accept`,
+                        {
+                            typeId,
+                            priority,
+                            ...(projectId !== request.projectId ? { projectId } : {}),
+                            ...(stateValue ? { stateId: stateValue } : {}),
+                            ...(assigneeId ? { assigneeId } : {}),
+                        },
+                        request.version,
+                    );
+                    onDone(next);
+                    return null;
+                } catch (err) {
+                    return intakeRefusal(err, tAccept('failed'));
+                }
+            }}
+        >
+            <FormField label={tAccept('project')}>
+                <Combobox
+                    id="intake-accept-project"
+                    selected={projectOptions.find((o) => o.value === projectId) ?? null}
+                    setSelected={(o) => o && setProjectId(o.value)}
+                    options={projectOptions}
+                    caret
+                />
+            </FormField>
+            <FormField label={tAccept('type')}>
+                <TypePicker id="intake-accept-type" value={typeId} onChange={setTypeId} />
+            </FormField>
+            <FormField label={tAccept('state')} description={tAccept('stateHint')}>
+                <StatePicker id="intake-accept-state" teamId={teamId} value={stateValue} onChange={setStateId} />
+            </FormField>
+            <FormField label={tAccept('priority')}>
+                <PriorityPicker id="intake-accept-priority" value={priority} onChange={setPriority} />
+            </FormField>
+            <FormField label={tAccept('assignee')}>
+                <AssigneePicker id="intake-accept-assignee" value={assigneeId} onChange={setAssigneeId} />
+            </FormField>
+        </SettingsFormModal>
+    );
+}
+
+function DeclineDialog({ request, open, onOpenChange, onDone }: DialogProps) {
+    const tDecline = useTranslations('intake.decline');
+    const tReason = useTranslations('intake.reason');
+    const { send } = useIntakeApi();
+    const [reason, setReason] = useState<IntakeDeclineReason>('NOT_PLANNED');
+    const [explanation, setExplanation] = useState('');
+    const [remark, setRemark] = useState('');
+    const options = INTAKE_DECLINE_REASONS.map((r) => ({ value: r, label: tReason(r) }));
+    return (
+        <SettingsFormModal
+            open={open}
+            onOpenChange={onOpenChange}
+            title={tDecline('title')}
+            description={tDecline('description', { title: request.title })}
+            submitLabel={tDecline('submit')}
+            onSubmit={async () => {
+                try {
+                    const next = await send<IntakeRequestDetail>(
+                        'POST',
+                        `/intake/requests/${encodeURIComponent(request.id)}/decline`,
+                        { reason, explanation: explanation.trim() || null, remark: remark.trim() || null },
+                        request.version,
+                    );
+                    onDone(next);
+                    return null;
+                } catch (err) {
+                    return intakeRefusal(err, tDecline('failed'));
+                }
+            }}
+        >
+            <FormField label={tDecline('reason')}>
+                <Combobox
+                    id="intake-decline-reason"
+                    selected={options.find((o) => o.value === reason) ?? null}
+                    setSelected={(o) => o && setReason(o.value as IntakeDeclineReason)}
+                    options={options}
+                    caret
+                />
+            </FormField>
+            {reason !== 'SPAM' && (
+                <FormField label={tDecline('explanation')} description={tDecline('explanationHint')}>
+                    <Textarea id="intake-decline-explanation" rows={3} maxLength={2000} value={explanation} onChange={(e) => setExplanation(e.target.value)} />
+                </FormField>
+            )}
+            <FormField label={tDecline('remark')} description={tDecline('remarkHint')}>
+                <Textarea id="intake-decline-remark" rows={2} maxLength={2000} value={remark} onChange={(e) => setRemark(e.target.value)} />
+            </FormField>
+        </SettingsFormModal>
+    );
+}
+
+function MergeDialog({ request, open, onOpenChange, onDone, openRequests }: DialogProps & { openRequests: IntakeRequestRow[] }) {
+    const tMerge = useTranslations('intake.merge');
+    const { send } = useIntakeApi();
+    const apiUrl = useTenantApiUrl();
+    const [key, setKey] = useState('');
+    const [targetRequestId, setTargetRequestId] = useState<string | null>(null);
+    const requestOptions = openRequests.filter((r) => r.id !== request.id).map((r) => ({ value: r.id, label: r.title }));
+    return (
+        <SettingsFormModal
+            open={open}
+            onOpenChange={onOpenChange}
+            title={tMerge('title')}
+            description={tMerge('description', { title: request.title })}
+            submitLabel={tMerge('submit')}
+            submitDisabled={!key.trim() && !targetRequestId}
+            onSubmit={async () => {
+                try {
+                    let body: { workItemId: string } | { requestId: string };
+                    if (key.trim()) {
+                        const item = await apiGet<{ item?: { id: string }; id?: string }>(apiUrl(`/work-items/by-key/${encodeURIComponent(key.trim())}`));
+                        const id = item.item?.id ?? item.id;
+                        if (!id) return tMerge('notFound');
+                        body = { workItemId: id };
+                    } else {
+                        body = { requestId: targetRequestId! };
+                    }
+                    const next = await send<IntakeRequestDetail>('POST', `/intake/requests/${encodeURIComponent(request.id)}/merge`, body, request.version);
+                    onDone(next);
+                    return null;
+                } catch (err) {
+                    return intakeRefusal(err, tMerge('failed'));
+                }
+            }}
+        >
+            <FormField label={tMerge('key')} description={tMerge('keyHint')}>
+                <Input id="intake-merge-key" value={key} onChange={(e) => setKey(e.target.value)} placeholder={tMerge('keyPlaceholder')} />
+            </FormField>
+            {requestOptions.length > 0 && (
+                <FormField label={tMerge('request')}>
+                    <Combobox
+                        id="intake-merge-request"
+                        selected={requestOptions.find((o) => o.value === targetRequestId) ?? null}
+                        setSelected={(o) => setTargetRequestId(o?.value ?? null)}
+                        options={requestOptions}
+                        caret
+                    />
+                </FormField>
+            )}
+        </SettingsFormModal>
+    );
+}
+
+function SnoozeDialog({ request, open, onOpenChange, onDone }: DialogProps) {
+    const tSnooze = useTranslations('intake.snooze');
+    const { send } = useIntakeApi();
+    const tomorrow = useMemo(() => {
+        const d = new Date();
+        d.setDate(d.getDate() + 1);
+        return toYMD(d) ?? '';
+    }, []);
+    const [until, setUntil] = useState<string>(tomorrow);
+    return (
+        <SettingsFormModal
+            open={open}
+            onOpenChange={onOpenChange}
+            title={tSnooze('title')}
+            description={tSnooze('description', { title: request.title })}
+            submitLabel={tSnooze('submit')}
+            submitDisabled={!until}
+            onSubmit={async () => {
+                try {
+                    const next = await send<IntakeRequestDetail>('POST', `/intake/requests/${encodeURIComponent(request.id)}/snooze`, { until }, request.version);
+                    onDone(next);
+                    return null;
+                } catch (err) {
+                    return intakeRefusal(err, tSnooze('failed'));
+                }
+            }}
+        >
+            <FormField label={tSnooze('until')}>
+                <DatePicker id="intake-snooze-until" value={parseYMD(until)} onChange={(d) => setUntil(toYMD(d) ?? '')} />
+            </FormField>
+        </SettingsFormModal>
+    );
+}
+
+function MoveDialog({ request, open, onOpenChange, onDone }: DialogProps) {
+    const tMove = useTranslations('intake.move');
+    const config = useWorkConfig();
+    const { send } = useIntakeApi();
+    const options = config.projects.filter((p) => !p.archived && p.id !== request.projectId).map((p) => ({ value: p.id, label: `${p.name} (${p.keyPrefix})` }));
+    const [projectId, setProjectId] = useState<string | null>(null);
+    return (
+        <SettingsFormModal
+            open={open}
+            onOpenChange={onOpenChange}
+            title={tMove('title')}
+            description={tMove('description', { title: request.title })}
+            submitLabel={tMove('submit')}
+            submitDisabled={!projectId}
+            onSubmit={async () => {
+                try {
+                    const next = await send<IntakeRequestDetail>('POST', `/intake/requests/${encodeURIComponent(request.id)}/move`, { projectId }, request.version);
+                    onDone(next);
+                    return null;
+                } catch (err) {
+                    return intakeRefusal(err, tMove('failed'));
+                }
+            }}
+        >
+            <FormField label={tMove('project')}>
+                <Combobox
+                    id="intake-move-project"
+                    selected={options.find((o) => o.value === projectId) ?? null}
+                    setSelected={(o) => setProjectId(o?.value ?? null)}
+                    options={options}
+                    caret
+                />
+            </FormField>
+        </SettingsFormModal>
+    );
+}
+
+export function IntakeDialog({ kind, openRequests, ...props }: DialogProps & { kind: IntakeDialogKind; openRequests: IntakeRequestRow[] }) {
+    switch (kind) {
+        case 'accept':
+            return <AcceptDialog {...props} />;
+        case 'decline':
+            return <DeclineDialog {...props} />;
+        case 'merge':
+            return <MergeDialog {...props} openRequests={openRequests} />;
+        case 'snooze':
+            return <SnoozeDialog {...props} />;
+        case 'move':
+            return <MoveDialog {...props} />;
+    }
+}

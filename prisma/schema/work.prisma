@@ -89,13 +89,17 @@ model Project {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  team              Team               @relation(fields: [teamId, tenantId], references: [id, tenantId])
+  tenant            Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  team              Team                 @relation(fields: [teamId, tenantId], references: [id, tenantId])
   workItems         WorkItem[]
   customFields      CustomField[]
   savedViews        SavedView[]
   milestones        Milestone[]
   workItemTemplates WorkItemTemplate[]
+  intake            ProjectIntake?
+  intakeNotify      IntakeNotifyMember[]
+  intakeForms       IntakeForm[]
+  intakeRequests    IntakeRequest[]
 
   @@unique([id, tenantId])
   /// Target of WorkItem's composite FK: an item's team is its project's team.

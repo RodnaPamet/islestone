@@ -107,10 +107,20 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
     { model: 'Milestone', fields: ['tenantId', 'projectId', 'sortKey'], justification: "A project's milestones, in order." },
     { model: 'WorkItemTemplate', fields: ['tenantId', 'projectId', 'sortKey'], justification: "A project's item templates, in order." },
     { model: 'ProjectTemplate', fields: ['tenantId', 'sortKey'], justification: "The workspace's project templates, in order." },
+    // Sub-phase 2.6a: intake.
+    { model: 'IntakeRequest', fields: ['tenantId', 'projectId', 'status', 'createdAt'], justification: "A project's Intake list by status, newest first." },
+    { model: 'IntakeRequest', fields: ['tenantId', 'status', 'createdAt'], justification: 'The workspace Intake list by status, newest first.' },
+    { model: 'IntakeRequest', fields: ['tenantId', 'status', 'snoozedUntil'], justification: 'The wake job: snoozed requests whose day has come.' },
+    { model: 'IntakeRequest', fields: ['tenantId', 'status', 'decidedAt'], justification: 'The purge job: decided requests past retention.' },
+    { model: 'IntakeRequest', fields: ['tenantId', 'mergedIntoRequestId'], justification: 'The requests merged into a request.' },
+    { model: 'IntakeForm', fields: ['tenantId', 'projectId', 'archivedAt'], justification: "A project's live forms." },
 ];
 
 /** Tenant models whose list queries are fully served by Layers A + B, with the reason. */
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // Sub-phase 2.6a. Small per-project sets, filtered by tenantId and projectId.
+    ProjectIntake: 'One row per project; read by a list of project ids under [tenantId, projectId].',
+    IntakeNotifyMember: "A project's notify list, read under [tenantId, projectId].",
     // Sub-phase 1.4. Every list is a small per-workspace set read whole (or
     // capped), filtered by tenantId and at most a status or an equality.
     TenantMembership:
@@ -207,7 +217,7 @@ describe('schema-index-coverage — parser sanity', () => {
     it('parses the tenancy models, their indexes and their relation FK groups', () => {
         const membership = MODELS.find((m) => m.name === 'TenantMembership');
         expect(MODELS.map((m) => m.name).sort()).toEqual([
-            'Account', 'AuditLog', 'AuditOutbox', 'Comment', 'CustomField', 'CustomFieldOption', 'CustomFieldValue', 'Cycle', 'CycleSchedule', 'Label', 'Milestone', 'Notification', 'NotificationOutbox', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Project', 'ProjectKeyPrefix', 'ProjectKeySequence', 'ProjectTemplate', 'SavedView', 'Team', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken', 'WorkItem', 'WorkItemKeyAlias', 'WorkItemLabel', 'WorkItemLink', 'WorkItemRelation', 'WorkItemTemplate', 'WorkItemTemplateLabel', 'WorkItemTransition', 'WorkItemType', 'WorkItemWatcher', 'WorkflowState',
+            'Account', 'AuditLog', 'AuditOutbox', 'Comment', 'CustomField', 'CustomFieldOption', 'CustomFieldValue', 'Cycle', 'CycleSchedule', 'IntakeForm', 'IntakeNotifyMember', 'IntakeRequest', 'Label', 'Milestone', 'Notification', 'NotificationOutbox', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Project', 'ProjectIntake', 'ProjectKeyPrefix', 'ProjectKeySequence', 'ProjectTemplate', 'SavedView', 'Team', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken', 'WorkItem', 'WorkItemKeyAlias', 'WorkItemLabel', 'WorkItemLink', 'WorkItemRelation', 'WorkItemTemplate', 'WorkItemTemplateLabel', 'WorkItemTransition', 'WorkItemType', 'WorkItemWatcher', 'WorkflowState',
         ]);
         expect(membership?.fieldIdName).toBe('id');
         expect(membership?.blockIndexes).toContainEqual(['tenantId', 'status']);

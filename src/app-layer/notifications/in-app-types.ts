@@ -3,7 +3,7 @@
  * notification-settings API.
  *
  * A type is listed ONLY when its emitter asks `isInAppTypeEnabled` before it
- * writes (`assignment.ts`, `watcher.ts`, `work-item-due.ts`), so the API never offers a mute that
+ * writes (`assignment.ts`, `watcher.ts`, `work-item-due.ts`, `intake.ts`), so the API never offers a mute that
  * changes nothing. A new in-app emitter must do both — check the mute list and
  * add its type here — or its type is not listed;
  * `tests/unit/notifications/in-app-types.test.ts` holds the two together.
@@ -24,6 +24,7 @@ import { ASSIGNMENT_COPY } from './assignment';
 import type { AssignmentNotificationKind } from './assignment';
 import { WATCHER_NOTIFICATION_TITLE, WATCHER_NOTIFICATION_TYPE } from './watcher';
 import { WORK_ITEM_DUE_NOTIFICATION_TITLE, WORK_ITEM_DUE_NOTIFICATION_TYPE } from './work-item-due';
+import { INTAKE_NOTIFICATION_COPY, type IntakeNotificationType } from './intake';
 
 export interface InAppNotificationTypeEntry {
     type: NotificationType;
@@ -39,5 +40,9 @@ export function listInAppNotificationTypes(): InAppNotificationTypeEntry[] {
         ...assignment,
         { type: WATCHER_NOTIFICATION_TYPE, title: WATCHER_NOTIFICATION_TITLE },
         { type: WORK_ITEM_DUE_NOTIFICATION_TYPE, title: WORK_ITEM_DUE_NOTIFICATION_TITLE },
+        ...(Object.keys(INTAKE_NOTIFICATION_COPY) as IntakeNotificationType[]).map((type) => ({
+            type,
+            title: INTAKE_NOTIFICATION_COPY[type].title,
+        })),
     ];
 }

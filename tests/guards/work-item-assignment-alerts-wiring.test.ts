@@ -52,10 +52,30 @@ describe('2. the bell writer', () => {
 describe('3. the work-item usecases wire it', () => {
     const src = read('src/app-layer/usecases/work-item.ts');
 
-    it.each(['createWorkItem', 'assignWorkItem', 'bulkAssignWorkItems'])('%s: the email inside the transaction, the bell after it', (name) => {
+    it.each(['assignWorkItem', 'bulkAssignWorkItems'])('%s: the email inside the transaction, the bell after it', (name) => {
         const body = functionBodyOf(src, name);
         expect(emittedAfterCommit(body, 'emitAssignedBells')).toEqual({ called: true, insideTransaction: false });
         expect(emittedAfterCommit(body, 'enqueueAssignedEmail')).toEqual({ called: true, insideTransaction: true });
+    });
+
+    // Sub-phase 2.6a: the create's in-transaction core is `createWorkItemInTx`
+    // (shared with the intake accept). It takes the caller's transaction
+    // client, so the email it enqueues commits with the item, and it rings no
+    // bell; `createWorkItem` runs it inside its transaction and rings after.
+    it('createWorkItem: the core (with the email) inside the transaction, the bell after it', () => {
+        const body = functionBodyOf(src, 'createWorkItem');
+        expect(emittedAfterCommit(body, 'createWorkItemInTx')).toEqual({ called: true, insideTransaction: true });
+        expect(emittedAfterCommit(body, 'emitAssignedBells')).toEqual({ called: true, insideTransaction: false });
+        const core = functionBodyOf(src, 'createWorkItemInTx');
+        expect(core).toMatch(/\benqueueAssignedEmail\s*\(\s*db\b/);
+        expect(core).not.toMatch(/\bemitAssignedBells\s*\(/);
+        expect(core).not.toMatch(/\brunInTenantContext\s*\(/);
+    });
+
+    it('the intake accept: the create core inside its transaction, the bells after it', () => {
+        const body = functionBodyOf(read('src/app-layer/usecases/intake-request.ts'), 'acceptIntakeRequest');
+        expect(emittedAfterCommit(body, 'createWorkItemInTx')).toEqual({ called: true, insideTransaction: true });
+        expect(emittedAfterCommit(body, 'emitCreatedItemBells')).toEqual({ called: true, insideTransaction: false });
     });
 
     it('the detector tells a bell inside the transaction from one after it (planted)', () => {
