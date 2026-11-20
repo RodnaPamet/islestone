@@ -9,6 +9,8 @@
  * Pure; written fresh for Islestone.
  */
 
+import sanitizeHtml from 'sanitize-html';
+
 const NAMED: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—', hellip: '…', copy: '©' };
 
 export function decodeEntities(s: string): string {
@@ -21,36 +23,28 @@ export function decodeEntities(s: string): string {
     });
 }
 
-/** Apply `step` until the string stops changing, so a pattern removed once cannot re-form from what it left. */
-function untilStable(s: string, step: (v: string) => string): string {
-    for (let i = 0; i < 50; i++) {
-        const next = step(s);
-        if (next === s) return s;
-        s = next;
-    }
-    return s;
-}
-
+/**
+ * HTML mail to plain text. Block structure becomes line breaks first; then
+ * `sanitize-html` (the library the plain-text sanitiser is built on) removes
+ * every tag and comment and drops the contents of script, style, head and
+ * title, so no tag is removed by a regular expression here. Its output is
+ * entity-encoded text, decoded last; the stored body is sanitised again
+ * (`cleanText`).
+ */
 export function htmlToText(html: string): string {
-    let s = untilStable(html, (v) =>
-        v
-            .replace(/<!--[\s\S]*?-->/g, '')
-            .replace(/<(script|style|head|title)\b[\s\S]*?<\/\1\s*>/gi, '')
-            // A quoted reply in HTML mail is a blockquote, or Gmail's quote block.
-            .replace(/<blockquote\b[\s\S]*?<\/blockquote\s*>/gi, '\n'),
-    );
-    s = s
+    const blocks = html
+        // A quoted reply in HTML mail is a blockquote, or Gmail's quote block.
+        .replace(/<blockquote\b[\s\S]*?<\/blockquote\s*>/gi, '\n')
         .replace(/<br\s*\/?>/gi, '\n')
         .replace(/<li\b[^>]*>/gi, '\n- ')
         .replace(/<\/(p|div|tr|h[1-6]|table|ul|ol|section|article|header|footer)\s*>/gi, '\n')
         .replace(/<(p|div|tr|h[1-6]|table|ul|ol)\b[^>]*>/gi, '\n');
-    // Every remaining tag, then any unterminated fragment (an opening "<" with
-    // no ">"), until none re-forms: the result holds no markup before the
-    // entities are decoded. Decoded "&lt;" is the sender's own text, and the
-    // stored body is sanitised again (`cleanText`).
-    s = untilStable(s, (v) => v.replace(/<[^<>]*>/g, '').replace(/<[^<>]*$/g, ''));
-    s = decodeEntities(s);
-    return s
+    const stripped = sanitizeHtml(blocks, {
+        allowedTags: [],
+        allowedAttributes: {},
+        nonTextTags: ['script', 'style', 'head', 'title', 'noscript', 'textarea', 'option'],
+    });
+    return decodeEntities(stripped)
         .split('\n')
         .map((l) => l.replace(/[ \t\u00a0]+/g, ' ').trim())
         .join('\n')
