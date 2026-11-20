@@ -1984,6 +1984,18 @@ Built by [`docs/porting/maps/2.5.md`](docs/porting/maps/2.5.md) under owner deci
 | `src/components/milestones/*`; `src/app/t/[tenantSlug]/(app)/projects/[projectKey]/milestones/**`; `src/lib/server/milestone-pages.server.ts`; the 2.5b changes to `WorkItemsView.tsx`, `WorkItemDetail.tsx`, `NewWorkItemModal.tsx`, `pickers.tsx`, `board/*`, `filter-defs.ts`, `use-work-item-columns.tsx`, `data/*`, `list-sorts.ts`, `saved-view.ts`, the navigation | — | Islestone-owned | Written fresh. |
 | `tests/integration/milestones.test.ts`, `tests/rendered/milestones.test.tsx`, `tests/unit/work-items/saved-view-config-keys.test.ts`, `tests/e2e/milestones.spec.ts` | — | Islestone-owned | Written fresh. |
 
+## Templates (sub-phase 2.5c)
+
+Built by [`docs/porting/maps/2.5.md`](docs/porting/maps/2.5.md) under owner decisions 71 to 73. **Nothing was copied.** inflect-compliance has no work-item or project templates (its templates are compliance catalogues). Its "one projection from template to task" was read for the pattern, pattern only: `src/app-layer/usecases/control/task-from-template.ts` at `5528464fc54a8681956f3b9ce23ca9c075f0420e` (BUSL-1.1), whose lesson (one function, after four call sites drifted, and the item records where it came from) is `templateToCreateInput` and the `templateId` on `WORK_ITEM_CREATED`. Its `src/lib/processes/create-map-from-template.ts` (two round trips, no transaction) was read as the anti-pattern: a project template is applied in one transaction.
+
+| File | Source | Action | Changes |
+|---|---|---|---|
+| `src/app-layer/domain/work-item-template.ts` (`templateToCreateInput`) | inflect-compliance `src/app-layer/usecases/control/task-from-template.ts` | PATTERN | Pattern only, no code copied: one pure projection from a template to a create input, used by every caller. |
+| `prisma/schema/work.prisma` (`WorkItemTemplate`, `WorkItemTemplateLabel`, `ProjectTemplate`), `prisma/schema/tenancy.prisma`, migration `20261123120000_templates`; `src/lib/security/encrypted-fields.ts` (two entries) | ADR 0006 ("Template"), the 2.5 map | Islestone-owned | Written fresh. |
+| `src/app-layer/repositories/TemplateRepository.ts`; `src/app-layer/usecases/work-item-template.ts`, `project-template.ts`; `src/app-layer/policies/template.policies.ts`; `src/lib/schemas/template.ts`; the routes under `src/app/api/t/[tenantSlug]/projects/[projectId]/work-item-templates/` and `project-templates/`; the 2.5c changes to `work-item.ts`, `project.ts`, `custom-field.ts`, `tenant-admin.ts`, `WorkItemRepository.ts` | — | Islestone-owned | Written fresh. |
+| `src/components/work-items/templates/*`; `src/components/work-items/data/use-item-templates.ts`; `src/components/settings/ProjectTemplatesSettings.tsx`; `src/app/t/[tenantSlug]/(app)/settings/project-templates/page.tsx`; the 2.5c changes to `NewWorkItemModal.tsx`, `ProjectCreateDialog.tsx`, `ProjectsSettings.tsx`, `SettingsOverview.tsx`, `settings-data.ts`, the project page and the navigation | — | Islestone-owned | Written fresh. |
+| `tests/integration/templates.test.ts`, `tests/unit/domain/work-item-template.test.ts`, `tests/rendered/templates.test.tsx`, `tests/e2e/templates.spec.ts` | — | Islestone-owned | Written fresh. |
+
 ## Adopted
 
 | Component | Source (repository and path) | Commit | Licence | What was taken | Changes |

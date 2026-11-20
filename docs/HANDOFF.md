@@ -708,4 +708,22 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      picker, the Milestone column, filter and lanes (drops on a one-project board only).
    - Also fixed: the saved-view schema refused the cycle filter and lanes (2.5a), so a view
      saved with either was a 400; it now takes both, and the milestone ones.
-   Next: 2.5c templates, 2.5d repeats, each by the same map.
+   **2.5c has landed** (its own pull request), per `docs/work-items.md`, "Templates (2.5c)"
+   and `PROVENANCE.md`, "Templates":
+   - Schema: `WorkItemTemplate` (per project; `description` encrypted), `WorkItemTemplateLabel`,
+     `ProjectTemplate` (per workspace; the whole content encrypted as one versioned document).
+     Migration `20261123120000_templates`.
+   - API: `/projects/:id/work-item-templates` (`projects.view` / `projects.edit`),
+     `/project-templates` (`projects.create` lists; `admin.manage` saves from a project,
+     renames, archives, deletes), `templateId` on `POST /work-items` (through the one
+     projection, `templateToCreateInput`; sub-items made in the transaction; the template
+     recorded) and on `POST /projects` (applied in the create's transaction: fields,
+     milestones dated from today, item templates, starter items; types and labels by name,
+     misses reported). Member removal clears template assignees.
+   - UI: the create dialog's Template picker, the project page's item-templates manager, the
+     project create dialog's Template picker, "Save as template" in Settings → Projects,
+     Settings → Project templates.
+   - Not built: editing a project template's content in the browser (decision 71);
+     custom-field values in the manager (API-only); a route that returns a project template's
+     content.
+   Next: 2.5d repeats, by the same map.
