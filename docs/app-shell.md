@@ -90,7 +90,13 @@ above the workspace provider, so the shell registers the member's answer
 The shells carry layout, not content: columns, filters, data fetching,
 mutations and modals stay in the page. `ListPageShell` clamps the table to the
 viewport so the header, filters and pagination stay put and only the rows
-scroll; on a phone the page scrolls. `PageHeader` reads the page's class:
+scroll; on a phone the page scrolls. The clamp rests on the document lock in
+`src/app/globals.css`: at md and up `html` and `body` are the viewport's
+height with overflow hidden (released for print), so the shell's `md:h-full`
+holds and the window never scrolls (`tests/unit/document-lock.test.ts`).
+Until 2.7e it was missing, the shell grew to its content, and a project page
+whose header wrapped pushed the board below the fold, where a pointer drag
+lost its drop. `PageHeader` reads the page's class:
 on a main page its H1 is kept for screen readers but hidden.
 
 ## The command palette and shortcuts

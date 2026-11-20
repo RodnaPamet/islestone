@@ -295,6 +295,31 @@ body {
 }
 
 /*
+ * The document lock (copied from inflect-compliance `src/app/globals.css` at
+ * 5528464fc54a8681956f3b9ce23ca9c075f0420e, "List-page-shell document lock").
+ * At md+ (≥768px) the document is locked to the viewport's height with
+ * overflow hidden, so the shell's `md:h-full` (AppShellFrame) holds and
+ * whatever overflows scrolls in its own container: `<main>`, a list page's
+ * table body, the board. Without it the shell grew to its content and the
+ * window scrolled, so a page whose header wrapped pushed the board below the
+ * fold. Below md the document scrolls naturally; print releases the lock.
+ */
+@media (min-width: 768px) {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+}
+@media print {
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+  }
+}
+
+/*
  * Recipes the shared UI names in its class lists (map section 6.4). Each sits
  * in a layer on purpose: an unlayered rule beats every Tailwind utility at
  * equal specificity whatever the source order, so a `className` utility on a
