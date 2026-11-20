@@ -158,7 +158,7 @@ export function CyclesView({
                                 <h3 className="text-sm font-medium text-content-muted">{t('upcoming')}</h3>
                                 <ul>
                                     {upcoming.map((c) => (
-                                        <CycleRow key={c.id} cycle={c} canDelete={affordances.manageCycles} onDelete={writes.remove} />
+                                        <CycleRow key={c.id} cycle={c} canDelete={affordances.manageCycles} onDelete={(c) => writes.remove(c, cycles)} />
                                     ))}
                                 </ul>
                             </div>

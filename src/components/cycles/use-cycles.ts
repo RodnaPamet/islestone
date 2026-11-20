@@ -56,13 +56,14 @@ export function useCycleWrites() {
     );
 
     const remove = useCallback(
-        (cycle: CycleData) => {
+        (cycle: CycleData, shown?: CycleData[]) => {
             let before: CycleData[] | undefined;
             void mutate<CycleData[]>(
                 apiUrl(CYCLE_PATHS.list),
                 (current) => {
-                    before = current;
-                    return current?.filter((c) => c.id !== cycle.id);
+                    // Before the first read the page shows the server's list (`shown`).
+                    before = current ?? shown;
+                    return before?.filter((c) => c.id !== cycle.id);
                 },
                 { revalidate: false },
             );
