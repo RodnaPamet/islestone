@@ -23,7 +23,7 @@
  * are the source's `TaskCommentRepository`, `TaskWatcherRepository` and
  * `TaskLinkRepository`, renamed (ADR 0006: no aliases).
  */
-import type { CustomFieldType, Prisma, WorkflowStateCategory, WorkItemPriority } from '@prisma/client';
+import { Prisma, type CustomFieldType, type WorkflowStateCategory, type WorkItemPriority } from '@prisma/client';
 
 import type { PrismaTx } from '@/lib/db-context';
 import { badRequest } from '@/lib/errors/types';
@@ -42,11 +42,17 @@ import {
 } from '@/lib/pagination';
 import { CUSTOM_FIELD_LIMITS, CUSTOM_FIELD_TYPE_SPECS } from '@/lib/work-items/custom-fields';
 import { DEFAULT_SORT_DIRECTION, type ListSort, type SortDirection } from '@/lib/work-items/list-sorts';
+import { SEARCH_ROW_CAP, containsPattern, escapeLike, prefixPattern } from '@/lib/search/query';
 import type { CustomFieldCondition } from '../domain/custom-field';
 import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
 import { DUE_FILTERS, DUE_SOON_DAYS, type DueFilter } from '../domain/work-item-due';
 import { OPEN_CATEGORY_FILTER, WORKFLOW_STATE_CATEGORIES } from '../domain/workflow-state';
-import { JOB_PROJECT_VISIBILITY_WHERE, projectVisibilityWhere, type ProjectVisibility } from '../policies/project-visibility';
+import {
+    JOB_PROJECT_VISIBILITY_WHERE,
+    projectVisibilitySql,
+    projectVisibilityWhere,
+    type ProjectVisibility,
+} from '../policies/project-visibility';
 import type { RequestContext } from '../types';
 
 const PRIORITIES: readonly WorkItemPriority[] = ['NONE', 'URGENT', 'HIGH', 'MEDIUM', 'LOW'];
@@ -94,6 +100,14 @@ export interface WorkItemFilters {
     includeArchived?: boolean;
     /** Custom-field conditions (2.4), each already parsed against its field's type. */
     customFields?: ReadonlyArray<{ field: { id: string; type: CustomFieldType }; condition: CustomFieldCondition }>;
+}
+
+/** One search candidate (`WorkItemRepository.searchTitles`). */
+export interface WorkItemSearchRow {
+    id: string;
+    title: string;
+    number: number;
+    keyPrefix: string;
 }
 
 /** A `q` that parsed as a key and resolved to a project and number. */
@@ -383,7 +397,11 @@ export class WorkItemRepository {
         for (const { field, condition } of filters.customFields ?? []) and.push(customFieldWhere(ctx, field, condition));
 
         if (filters.q) {
-            const or: Prisma.WorkItemWhereInput[] = [{ title: { contains: filters.q, mode: 'insensitive' } }];
+            // `title ILIKE '%q%'`, served by `WorkItem_search_title_trgm` (2.7b,
+            // docs/search.md) under this where's `deletedAt: null`. Prisma
+            // passes `contains` into the pattern unescaped, so a typed `%` or
+            // `_` was a wildcard; `escapeLike` makes it match itself.
+            const or: Prisma.WorkItemWhereInput[] = [{ title: { contains: escapeLike(filters.q), mode: 'insensitive' } }];
             if (keyHit) or.push({ projectId: keyHit.projectId, number: keyHit.number });
             and.push({ OR: or });
         }
@@ -1138,6 +1156,51 @@ export class WorkItemRepository {
             take: ids.length,
             select: { id: true, number: true, title: true, project: { select: { keyPrefix: true } } },
         });
+    }
+
+    // ── Search (sub-phase 2.7b, docs/search.md) ─────────────────────
+
+    /**
+     * Live, visible items of unarchived projects whose title holds the
+     * query (substring, `WorkItem_search_title_trgm`) or all of its words
+     * (`simple` full text, `WorkItem_search_title_fts`), plus the item a
+     * typed key resolved to (`keyHitId`). Ordered so the best candidates make
+     * the cut: the key hit, an exact title, a title prefix, the full-text
+     * rank, the trigram similarity, then the id; the usecase ranks the rows
+     * it gets (`computeRankScore`). Bounded by `limit` (at most
+     * {@link SEARCH_ROW_CAP}).
+     *
+     * Raw SQL because Prisma cannot order by a rank; the soft-delete
+     * predicate and the visibility fragment (`projectVisibilitySql`) are in
+     * this method's own `WHERE`, as every `WorkItem` read's are
+     * (tests/unit/repositories/search-repository-predicates.test.ts). The
+     * query is a bind parameter, never interpolated.
+     */
+    static async searchTitles(
+        db: PrismaTx,
+        ctx: RequestContext,
+        v: ProjectVisibility,
+        query: string,
+        opts: { limit: number; keyHitId?: string | null },
+    ): Promise<WorkItemSearchRow[]> {
+        const limit = Math.min(Math.max(1, Math.floor(opts.limit)), SEARCH_ROW_CAP);
+        const keyHit = opts.keyHitId ? Prisma.sql` OR w."id" = ${opts.keyHitId}` : Prisma.empty;
+        const keyFirst = opts.keyHitId ? Prisma.sql`(w."id" = ${opts.keyHitId}) DESC, ` : Prisma.empty;
+        return db.$queryRaw<WorkItemSearchRow[]>(Prisma.sql`
+            SELECT w."id", w."title", w."number", p."keyPrefix"
+              FROM "WorkItem" w
+              JOIN "Project" p ON p."id" = w."projectId" AND p."tenantId" = w."tenantId"
+             WHERE w."tenantId" = ${ctx.tenantId}
+               AND w."deletedAt" IS NULL
+               AND ${projectVisibilitySql(v, { projectAlias: 'p', projectIdColumn: 'w."projectId"' })}
+               AND (w."title" ILIKE ${containsPattern(query)}
+                    OR to_tsvector('simple', w."title") @@ plainto_tsquery('simple', ${query})${keyHit})
+             ORDER BY ${keyFirst}(lower(w."title") = lower(${query})) DESC,
+                      (w."title" ILIKE ${prefixPattern(query)}) DESC,
+                      ts_rank(to_tsvector('simple', w."title"), plainto_tsquery('simple', ${query})) DESC,
+                      similarity(w."title", ${query}) DESC,
+                      w."id" ASC
+             LIMIT ${limit}`);
     }
 
     // ── Keys ─────────────────────────────────────────────────────────

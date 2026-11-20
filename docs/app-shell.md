@@ -98,8 +98,9 @@ on a main page its H1 is kept for screen readers but hidden.
 `mod+k` (Ctrl+K, ⌘K) opens the palette; the sidebar's search row does too. It
 lists the navigation (from `NAV_PATHS`) and the safe actions (toggle theme,
 sign out; ask the assistant once 6.4 registers it), filters them as you type,
-and lists the registered shortcuts. Entity search (work items, projects) is
-switched off until 2.7 ships `GET /api/t/<slug>/search`.
+and lists the registered shortcuts. Entity search lists work items (by title
+and key) and projects (by name and key prefix) from `GET /api/t/<slug>/search`
+since 2.7b (`ENTITY_SEARCH_AVAILABLE`; [`docs/search.md`](search.md)).
 
 Every shortcut is registered through `useKeyboardShortcut` with a
 `description`; the registry owns the one `keydown` listener, ignores keys

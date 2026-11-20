@@ -19,7 +19,7 @@
  *
  * Written fresh for Islestone.
  */
-import type { Prisma, Role } from '@prisma/client';
+import { Prisma, type Role } from '@prisma/client';
 
 import type { PrismaTx } from '@/lib/db-context';
 
@@ -68,6 +68,26 @@ export function projectVisibilityWhere(v: ProjectVisibility, opts: VisibilityOpt
     const where: Prisma.WorkItemWhereInput = { project: projectRowVisibilityWhere({ kind: 'ALL' }, opts) };
     if (v.kind === 'GRANTED') where.projectId = { in: [...v.projectIds] };
     return where;
+}
+
+/**
+ * The SQL form of {@link projectVisibilityWhere}, for the one raw read that
+ * needs it: search (sub-phase 2.7b), whose ranking Prisma cannot express.
+ * The caller names the project's alias and the column holding the project
+ * id (`p`, `w."projectId"`); the fragment is ANDed into its `WHERE`: the project is live and unarchived (search never offers an archived
+ * project's items), and for GRANTED visibility its id is one of the grant.
+ * An empty grant matches nothing (`= ANY('{}')` is false).
+ */
+export function projectVisibilitySql(v: ProjectVisibility, opts: { projectAlias: string; projectIdColumn: string }): Prisma.Sql {
+    // Both are identifiers the caller writes in code, never input; refuse
+    // anything that is not one, so the fragment cannot carry SQL.
+    if (!/^[a-z_]+$/.test(opts.projectAlias) || !/^[a-z_]+\."[A-Za-z]+"$/.test(opts.projectIdColumn)) {
+        throw new Error('projectVisibilitySql: an alias and a column reference only');
+    }
+    const p = Prisma.raw(opts.projectAlias);
+    const live = Prisma.sql`${p}."deletedAt" IS NULL AND ${p}."archivedAt" IS NULL`;
+    if (v.kind === 'ALL') return live;
+    return Prisma.sql`${live} AND ${Prisma.raw(opts.projectIdColumn)} = ANY(${[...v.projectIds]}::text[])`;
 }
 
 /**

@@ -242,6 +242,14 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note: 'Key lookup (current prefix, retired prefix, alias).',
     },
     {
+        path: new RegExp(`^${T}\\/search$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note:
+            'Workspace search (2.7b): work-item titles and keys, project names. ' +
+            'Project visibility narrows both reads; work items are skipped without work_items.view.',
+    },
+    {
         path: new RegExp(`^${T}\\/users\\/assignable$`),
         methods: ['GET'],
         permission: 'work_items.view',

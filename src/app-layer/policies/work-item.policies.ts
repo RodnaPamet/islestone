@@ -53,9 +53,17 @@ function granularWorkItemsDenied(
  * same information through a different door.
  */
 export function assertCanReadWorkItems(ctx: RequestContext) {
-    if (!ctx.permissions.canRead || granularWorkItemsDenied(ctx, 'view')) {
+    if (!mayReadWorkItems(ctx)) {
         throw forbidden('You do not have permission to view work items.');
     }
+}
+
+/**
+ * The predicate {@link assertCanReadWorkItems} asserts, for a surface that
+ * skips work items rather than refusing (search, sub-phase 2.7b).
+ */
+export function mayReadWorkItems(ctx: RequestContext): boolean {
+    return ctx.permissions.canRead && !granularWorkItemsDenied(ctx, 'view');
 }
 
 /** OWNER, ADMIN and MEMBER can create work items. */

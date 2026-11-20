@@ -850,3 +850,22 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    - UI: "Mark as answer" on comments (asked of `commentAffordances`), the Done-state dialog, the
      pinned answer with "Clear answer" (undo toast), "Add the Question type" in Settings → Work
      item types, "Add a Question template" in a project's item-templates manager.
+   2.4b-c merged as #54. **2.7a (My Work's "Waiting on me" and the waiting-on due reminder, decision
+   137) is built** as PR #55, no migration. **2.7b (search over titles and keys) is built** on
+   branch `wt/p27b`, on top of 2.7a, per `docs/search.md` and `PROVENANCE.md`, "Search over
+   titles and keys":
+   - Schema: no model; migration `20261203120000_search_titles` creates `pg_trgm` and
+     `btree_gin` (trusted contrib extensions in the pgvector image, created by the migrating
+     superuser) and four tenant-leading, live-only GIN indexes: trigram and `simple` full text
+     over `WorkItem.title` and `Project.name`. The drift check passes, residue unchanged.
+   - API: `GET /api/t/:slug/search?q=&limit=` (`projects.view`, a route rule; work items
+     skipped without `work_items.view`; `limit` at most 25, more is a 400); usecase, ranking and
+     route copied from inflect-compliance and cut to work items and projects; a typed key
+     (current or retired prefix, or a move's alias) ranks first; visibility and `deletedAt` in
+     the raw reads' own `WHERE`. The map named `work_items.view` for the route; it was built on
+     `projects.view` as instructed, with the per-domain skip keeping work items behind their key.
+   - The list's `q` filter is served by the trigram index, and `%` and `_` now match themselves
+     (Prisma's `contains` passed them through as wildcards).
+   - UI: the command palette's entity search is on; its placeholder names work items and
+     projects.
+   2.7c (the Inbox, preferences and digests) is next; 2.7f replaces the two `simple` indexes.

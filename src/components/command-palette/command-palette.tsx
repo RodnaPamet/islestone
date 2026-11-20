@@ -15,8 +15,8 @@
  *
  * It renders a search input, the navigation and action commands
  * (`use-palette-commands.ts`), the member's recent items, entity search
- * results (work items and projects, once sub-phase 2.7 ships the search
- * endpoint) and a "Keyboard shortcuts" group seeded from the shared
+ * results (work items by title and key, projects by name and key prefix,
+ * from `GET /api/t/<slug>/search` since sub-phase 2.7b) and a "Keyboard shortcuts" group seeded from the shared
  * registry.
  *
  * Adding a group is declarative: feed `Command.Group` with an array

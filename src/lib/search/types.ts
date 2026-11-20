@@ -9,11 +9,9 @@
  * Rewritten for Islestone from inflect-compliance `src/lib/search/types.ts`
  * at 5528464fc54a8681956f3b9ce23ca9c075f0420e (sub-phase 1.7): the hit types
  * are Islestone's (work items and projects, ADR 0006); the shapes and the
- * tunables are kept. The endpoint, `GET /api/t/<slug>/search`, arrives with
- * sub-phase 2.7, which may extend the union, under ADR 0002's search rule
- * (S1: titles, keys and unencrypted fields). Until then the palette's entity
- * search is switched off (`ENTITY_SEARCH_AVAILABLE` in
- * `src/components/command-palette/use-entity-search.ts`).
+ * tunables are kept. The endpoint, `GET /api/t/<slug>/search`, shipped with
+ * sub-phase 2.7b: work-item titles and keys and project names (ADR 0008 D1
+ * item 1, docs/search.md); 2.7f adds descriptions and comments.
  *
  * This contract is not a permission-evaluation surface: hits carry no
  * "you can/cannot edit this"; that lives on the detail page.
@@ -111,6 +109,12 @@ export interface SearchResponse {
  * the query plan still uses an index.
  */
 export const DEFAULT_PER_TYPE_LIMIT = 5;
+
+/**
+ * The most hits per type one call may ask for (`limit`): the bounded page
+ * size. Above it a member should use the list pages, whose `q` filter pages.
+ */
+export const MAX_PER_TYPE_LIMIT = 25;
 
 /**
  * Minimum query length the API accepts. Below this, we return an

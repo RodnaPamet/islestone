@@ -11,11 +11,10 @@
  * One call to the workspace search API, `GET /api/t/<slug>/search?q=`, which
  * owns ranking, per-type caps and the result shape (`@/lib/search/types`).
  *
- * INERT UNTIL SUB-PHASE 2.7. The endpoint does not exist yet, so
- * `ENTITY_SEARCH_AVAILABLE` is false and the hook reports `unavailable`
- * without fetching: without the gate every keystroke would call a route that
- * answers 404 and the palette would say "Search failed". 2.7 ships the route
- * and flips the constant.
+ * ON SINCE SUB-PHASE 2.7b, which shipped the route (work-item titles and
+ * keys, project names; docs/search.md). `ENTITY_SEARCH_AVAILABLE` stays as
+ * the switch: set false, the hook reports `unavailable` without fetching and
+ * the palette hides its entity surface.
  *
  * Characteristics:
  *   - Debounces input (≈180 ms).
@@ -63,10 +62,10 @@ export interface EntitySearchState {
 // ─── Tunables ─────────────────────────────────────────────────────────
 
 /**
- * Whether the workspace search endpoint exists. False until sub-phase 2.7
- * ships `GET /api/t/<slug>/search`; see the file header.
+ * Whether the palette offers entity search: true since sub-phase 2.7b
+ * shipped `GET /api/t/<slug>/search`; see the file header.
  */
-export const ENTITY_SEARCH_AVAILABLE = false;
+export const ENTITY_SEARCH_AVAILABLE = true;
 
 const DEBOUNCE_MS = 180;
 const MIN_QUERY_LENGTH = 2;
