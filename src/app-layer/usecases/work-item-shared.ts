@@ -86,7 +86,8 @@ export function customFieldsOf(values: WorkItemListRow['customFieldValues'] | un
 
 /** The list and response shape of a work item. */
 export function toWorkItemDto(row: WorkItemListRow) {
-    const { project, labels, startDate, dueDate, customFieldValues, ...rest } = row;
+    const { project, labels, startDate, dueDate, customFieldValues, priorityRank: _rank, ...rest } = row;
+    void _rank;
     return {
         ...rest,
         key: formatKey(project.keyPrefix, row.number),

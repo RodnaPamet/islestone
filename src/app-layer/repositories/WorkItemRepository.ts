@@ -170,6 +170,8 @@ export const workItemListSelect = {
     stateId: true,
     stateCategory: true,
     priority: true,
+    /** The priority sort's cursor reads it (2.4); `toWorkItemDto` drops it. */
+    priorityRank: true,
     assigneeId: true,
     createdByUserId: true,
     parentId: true,
