@@ -166,7 +166,8 @@ export async function runRecurrenceRule(sys: RequestContext, rule: RecurrenceRow
     let outcome: RuleOutcome;
     if (!owner) outcome = { kind: 'hold', reason: 'OWNER_NOT_ACTIVE' };
     else if (!mayCreateWorkItems(owner)) outcome = { kind: 'hold', reason: 'OWNER_NOT_PERMITTED' };
-    else outcome = await runInTenantContext(owner, (db) => makeOccurrenceInTx(db, owner, rule, today));
+    // The copy's sub-items (up to 50) are made in the claim's transaction.
+    else outcome = await runInTenantContext(owner, (db) => makeOccurrenceInTx(db, owner, rule, today), { timeout: 20_000 });
     if (outcome.kind === 'hold') await holdRule(sys, rule, outcome.reason);
     if (outcome.kind === 'created') await emitCreatedItemBells(outcome.owner, outcome.item);
     return outcome;

@@ -597,7 +597,8 @@ export async function emitCreatedItemBells(ctx: RequestContext, result: WorkItem
 
 export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemInput): Promise<WorkItemDto & { templateSkipped?: string[] }> {
     assertCanCreateWorkItem(ctx);
-    const result = await runInTenantContext(ctx, (db) => createWorkItemInTx(db, ctx, input));
+    // A template's sub-items (up to 50) are made in the same transaction.
+    const result = await runInTenantContext(ctx, (db) => createWorkItemInTx(db, ctx, input), input.templateId ? { timeout: 20_000 } : undefined);
     // After the commit: the due reminder and the assignment bell.
     await emitDueBell(ctx, { ...result, dueDate: parseDateOnly(result.dueDate) });
     if (result.assigneeId) {
