@@ -22,7 +22,7 @@ jest.mock('next/navigation', () => ({
 import { stateColumns } from '@/components/work-items/board/board-model';
 import { WorkItemBoard } from '@/components/work-items/board/WorkItemBoard';
 
-import { CONFIG, detail, installFetch, MEMBERS, page, PROJECT, renderWorkspace, row, TEAM, type Recorded } from '../helpers/work-items-harness';
+import { CONFIG, deferred, detail, installFetch, MEMBERS, page, PROJECT, renderWorkspace, row, TEAM, type Recorded } from '../helpers/work-items-harness';
 
 const columns = stateColumns(CONFIG.states.filter((s) => s.teamId === TEAM));
 
@@ -95,6 +95,78 @@ describe('the board', () => {
         expect(move?.body).toEqual({ stateId: 'st-progress' });
         expect(move?.ifMatch).toBe('"1"');
         expect(card('ISL-1', 'Item 1')).toHaveFocus();
+    });
+
+    // Issue #41: a card dropped into a column whose first read is still in
+    // flight must land in that column, whichever of the read and the move
+    // answers first, and in no other column.
+    describe('a drop into a column that is still loading', () => {
+        /**
+         * Todo answers at once; In progress answers only when the test says,
+         * and with what the server held when its read began (before the move).
+         * Reads that start after the move answer see the moved row.
+         */
+        function slowColumn() {
+            const moved = row(1, { stateId: 'st-progress', stateCategory: 'STARTED', sortKey: 'a0', version: 2 });
+            let committed = false;
+            const firstProgressRead = deferred<void>();
+            let progressReads = 0;
+            const move = deferred<void>();
+            const { calls } = installFetch({
+                'GET /work-items': async (req) => {
+                    const state = req.search.get('stateId');
+                    const rows = committed ? [moved, row(2)] : [row(1), row(2)];
+                    const answer = { body: page(rows.filter((r) => r.stateId === state)) };
+                    if (state === 'st-progress' && progressReads++ === 0) await firstProgressRead.promise;
+                    return answer;
+                },
+                'GET /users/assignable': { body: MEMBERS },
+                'POST /work-items/wi-1/move': async () => {
+                    await move.promise;
+                    committed = true;
+                    return { body: detail(moved) };
+                },
+            });
+            return { calls, firstProgressRead, move };
+        }
+
+        async function dropIntoInProgress(calls: Recorded[]) {
+            await screen.findByText('Item 1');
+            // In progress's first read is still in flight.
+            expect(screen.getByRole('list', { name: 'In progress' })).toBeEmptyDOMElement();
+            expect(calls.some((r) => r.method === 'GET' && r.search.get('stateId') === 'st-progress')).toBe(true);
+            const c = card('ISL-1', 'Item 1');
+            c.focus();
+            fireEvent.keyDown(c, { key: ' ' });
+            fireEvent.keyDown(card('ISL-1', 'Item 1'), { key: 'ArrowRight' });
+            await act(async () => {
+                fireEvent.keyDown(card('ISL-1', 'Item 1'), { key: ' ' });
+            });
+        }
+
+        async function expectOnlyInProgress() {
+            await waitFor(() => expect(within(column('In progress')).getByText('Item 1')).toBeInTheDocument());
+            expect(screen.getAllByText('Item 1')).toHaveLength(1);
+            expect(within(column('Todo')).queryByText('Item 1')).toBeNull();
+        }
+
+        it('lands when the column read answers before the move', async () => {
+            const env = slowColumn();
+            renderBoard();
+            await dropIntoInProgress(env.calls);
+            await act(async () => env.firstProgressRead.resolve());
+            await act(async () => env.move.resolve());
+            await expectOnlyInProgress();
+        });
+
+        it('lands when the move answers before the column read', async () => {
+            const env = slowColumn();
+            renderBoard();
+            await dropIntoInProgress(env.calls);
+            await act(async () => env.move.resolve());
+            await act(async () => env.firstProgressRead.resolve());
+            await expectOnlyInProgress();
+        });
     });
 
     it('reorders within a column, sending the neighbour the card lands beside', async () => {
