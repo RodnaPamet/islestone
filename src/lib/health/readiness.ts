@@ -1,11 +1,14 @@
 /**
  * Readiness: "should this replica receive traffic?" (`/api/readyz`).
  *
- * Checks the two dependencies every request path needs: PostgreSQL (through
+ * Checks the dependencies every request path needs: PostgreSQL (through
  * the app's own client, so the probe uses the connection the app uses:
  * PgBouncer in production) and Redis (the job queue, the worker heartbeat
  * and, with `RATE_LIMIT_MODE=memory`, nothing else; with Upstash, the rate
- * limits are a separate REST store and are not checked here).
+ * limits are a separate REST store and are not checked here), and since
+ * 2.7f the database's `islestone_bg_en` text-search configuration (ADR 0008
+ * D2: a database without the Bulgarian dictionary is not ready, never a
+ * search that silently stops stemming).
  *
  * Shape and rules ported from inflect-compliance `src/app/api/readyz/route.ts`
  * at 5528464fc54a8681956f3b9ce23ca9c075f0420e (pattern; Islestone has no
@@ -33,7 +36,7 @@ export const CHECK_TIMEOUT_MS = 2000;
 export type CheckStatus = 'ok' | 'error' | 'skipped';
 
 /** The closed set of error strings a check may report. */
-export type CheckError = 'timeout' | 'connection_failed' | 'ping_failed' | 'unexpected_reply' | 'not_configured';
+export type CheckError = 'timeout' | 'connection_failed' | 'ping_failed' | 'unexpected_reply' | 'not_configured' | 'search_configuration';
 
 export interface CheckResult {
     readonly status: CheckStatus;
@@ -46,6 +49,12 @@ export interface ReadinessDeps {
     readonly queryDatabase: () => Promise<unknown>;
     /** Pings Redis and returns its reply; `null` when REDIS_URL is unset. */
     readonly pingRedis: (() => Promise<string>) | null;
+    /**
+     * Runs the `islestone_bg_en` fixtures (`checkSearchConfiguration`, 2.7f):
+     * `true` when the configuration and its Bulgarian dictionary stem as
+     * pinned. Never skipped: search has no degraded mode (ADR 0008 D2).
+     */
+    readonly checkSearch: () => Promise<boolean>;
     /** NODE_ENV is production. */
     readonly production: boolean;
     /** The build being served (BUILD_SHA), or `dev`. */
@@ -57,7 +66,7 @@ export interface ReadinessDeps {
 export interface ReadinessReport {
     readonly status: 'ready' | 'not_ready';
     readonly version: string;
-    readonly checks: { readonly database: CheckResult; readonly redis: CheckResult };
+    readonly checks: { readonly database: CheckResult; readonly redis: CheckResult; readonly search: CheckResult };
     readonly failed: readonly string[];
     readonly latencyMs: number;
 }
@@ -105,12 +114,27 @@ async function checkRedis(deps: ReadinessDeps, ms: number): Promise<CheckResult>
     }
 }
 
-/** Run both checks in parallel. `skipped` counts as ready; `error` does not. */
+/**
+ * The full-text configuration (2.7f): `search_configuration` when the
+ * configuration or its dictionary is missing or does not stem as pinned, a
+ * connection failure included (the database check names that one).
+ */
+async function checkSearch(deps: ReadinessDeps, ms: number): Promise<CheckResult> {
+    const start = Date.now();
+    try {
+        const ok = await withTimeout(deps.checkSearch(), ms);
+        return ok ? { status: 'ok', latencyMs: Date.now() - start } : { status: 'error', latencyMs: Date.now() - start, error: 'search_configuration' };
+    } catch (err) {
+        return { status: 'error', latencyMs: Date.now() - start, error: err === TIMEOUT ? 'timeout' : 'search_configuration' };
+    }
+}
+
+/** Run the checks in parallel. `skipped` counts as ready; `error` does not. */
 export async function checkReadiness(deps: ReadinessDeps): Promise<ReadinessReport> {
     const start = Date.now();
     const ms = deps.timeoutMs ?? CHECK_TIMEOUT_MS;
-    const [database, redis] = await Promise.all([checkDatabase(deps, ms), checkRedis(deps, ms)]);
-    const checks = { database, redis };
+    const [database, redis, search] = await Promise.all([checkDatabase(deps, ms), checkRedis(deps, ms), checkSearch(deps, ms)]);
+    const checks = { database, redis, search };
     const failed = Object.entries(checks)
         .filter(([, result]) => result.status === 'error')
         .map(([name]) => name);

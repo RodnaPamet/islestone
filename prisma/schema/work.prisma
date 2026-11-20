@@ -278,6 +278,7 @@ model WorkItem {
   customFieldValues CustomFieldValue[]
   notifications     Notification[]
   mentions          Mention[]
+  searchVectors     SearchVector[]
 
   @@unique([tenantId, projectId, number])
   @@unique([id, tenantId])
@@ -406,19 +407,52 @@ model Comment {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  workItem WorkItem   @relation(fields: [workItemId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  author   User       @relation("CommentAuthor", fields: [authorUserId], references: [id])
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workItem      WorkItem       @relation(fields: [workItemId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  author        User           @relation("CommentAuthor", fields: [authorUserId], references: [id])
   /// The item that marks this comment as its answer (2.4b-c); at most one,
   /// and only the comment's own item (the FK names the item's id).
-  answerOf WorkItem[] @relation("WorkItemAnswer")
+  answerOf      WorkItem[]     @relation("WorkItemAnswer")
   /// The people this comment mentions (2.7d).
-  mentions Mention[]
+  mentions      Mention[]
+  /// Its search vector (2.7f), removed when it is deleted.
+  searchVectors SearchVector[]
 
   /// Target of the answer link: another item's comment cannot be stored.
   @@unique([id, workItemId, tenantId])
   @@index([tenantId, workItemId, createdAt])
   @@index([tenantId, authorUserId])
+}
+
+/// The full-text search vector of one encrypted text (sub-phase 2.7f, ADR
+/// 0008 D1, owner decision 124): a work item's description (`commentId` NULL)
+/// or one live comment's body. `lexemes` is a PLAINTEXT derivative of those
+/// encrypted fields: the stemmed words of the text with their positions,
+/// readable in the database, its dumps and its backups by decision 124. Built
+/// with `configName` (`islestone_bg_en`, CHECKed) at `revision`; the
+/// `search-index-rebuild` job rewrites older revisions. One row per source
+/// (two partial uniques in the migration, with the tenant-leading GIN index
+/// over `lexemes`, partial on `configName`, which Prisma cannot declare). Written only by `SearchVectorRepository`, in the
+/// transaction that writes the text; the item, the comment and the workspace
+/// cascade.
+model SearchVector {
+  id         String                  @id @default(cuid())
+  tenantId   String
+  workItemId String
+  commentId  String?
+  lexemes    Unsupported("tsvector")
+  configName String
+  revision   Int
+  updatedAt  DateTime                @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workItem WorkItem @relation(fields: [workItemId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  comment  Comment? @relation(fields: [commentId, workItemId, tenantId], references: [id, workItemId, tenantId], onDelete: Cascade)
+
+  @@index([tenantId, workItemId])
+  @@index([tenantId, commentId])
+  /// The rebuild's page: rows built at an older revision.
+  @@index([tenantId, revision])
 }
 
 /// A person mentioned in a comment or in a work item's description (sub-phase

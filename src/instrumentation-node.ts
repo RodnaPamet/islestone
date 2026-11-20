@@ -109,6 +109,19 @@ async function refuseUnsafeProductionStart(env: ServerEnv): Promise<void> {
         process.exit(1);
     }
 
+    // ── Sub-phase 2.7f: the full-text configuration must stem as pinned ──
+    // ADR 0008 D2 (decision 126): search has no degraded mode. A database
+    // without Islestone's Postgres image (the Bulgarian dictionary) or not
+    // migrated to `islestone_bg_en` refuses the start; nothing falls back to
+    // `simple` or `english`. `/api/readyz` asks the same on every probe.
+    const { checkSearchConfiguration, searchConfigurationRefusal } = await import('@/lib/search/configuration-check');
+    const { prisma } = await import('@/lib/prisma');
+    const search = await checkSearchConfiguration((query) => prisma.$queryRaw(query));
+    if (!search.ok) {
+        console.error('[startup] FATAL: ' + searchConfigurationRefusal(search));
+        process.exit(1);
+    }
+
     // ── GAP-13: Redis is required in production (sub-phase 1.6) ──
     // Defence in depth alongside the schema rule in `src/env.ts`: the schema
     // catches a missing or unauthenticated REDIS_URL at module load, this

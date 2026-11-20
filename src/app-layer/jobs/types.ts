@@ -268,6 +268,18 @@ export interface NotificationPurgePayload {
     tenantId?: string;
 }
 
+/**
+ * Search vectors (sub-phase 2.7f, ADR 0008): nightly, the sources whose vector
+ * is missing or older than `SEARCH_VECTOR_REVISION` in every live workspace;
+ * on demand (an admin's request) every source of one workspace (`force`), run
+ * as the admin who asked, re-resolved when it runs (`requestedByUserId`).
+ */
+export interface SearchIndexRebuildPayload {
+    tenantId?: string;
+    force?: boolean;
+    requestedByUserId?: string;
+}
+
 /** Daily rebalance of projects whose sort keys passed the length bound (ADR 0002 §5). */
 export interface WorkItemSortKeyRebalancePayload {
     tenantId?: string;
@@ -312,6 +324,7 @@ export interface JobPayloadMap {
     'work-item-recurrence': WorkItemRecurrencePayload;
     'notification-digest': NotificationDigestPayload;
     'notification-purge': NotificationPurgePayload;
+    'search-index-rebuild': SearchIndexRebuildPayload;
 }
 
 /** Union of all valid job names */
@@ -428,6 +441,14 @@ export const JOB_DEFAULTS: Record<JobName, {
     },
     'notification-purge': {
         // Two attempts: a retry deletes only what is still past its window.
+        attempts: 2,
+        backoff: { type: 'fixed', delay: 300_000 },
+        removeOnComplete: 30,
+        removeOnFail: 100,
+    },
+    'search-index-rebuild': {
+        // Two attempts: a retry rewrites only what is still missing or old
+        // (a forced run rewrites every row again, which changes nothing).
         attempts: 2,
         backoff: { type: 'fixed', delay: 300_000 },
         removeOnComplete: 30,

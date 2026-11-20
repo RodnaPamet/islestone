@@ -29,6 +29,7 @@ import { commentDeleteBasis, isMarkedAnswer, mayEditComment } from '../policies/
 import { LabelRepository } from '../repositories/LabelRepository';
 import { MembershipRepository } from '../repositories/MembershipRepository';
 import { MentionRepository } from '../repositories/MentionRepository';
+import { SearchVectorRepository } from '../repositories/SearchVectorRepository';
 import {
     CommentRepository,
     WorkItemLinkRepository,
@@ -106,6 +107,8 @@ export async function addComment(ctx: RequestContext, workItemId: string, input:
     const { comment, item, mentioned, mentions } = await runInTenantContext(ctx, async (db) => {
         const item = await loadWritableItem(db, ctx, await visibleProjects(ctx, db), workItemId);
         const created = await CommentRepository.create(db, ctx, workItemId, body);
+        // Its search vector (2.7f, ADR 0008), in this transaction.
+        await SearchVectorRepository.replaceForSource(db, ctx, { workItemId, commentId: created.id }, body);
         await logEvent(db, ctx, {
             action: 'COMMENT_ADDED',
             entityType: 'Comment',
@@ -162,6 +165,7 @@ export async function editComment(ctx: RequestContext, workItemId: string, comme
         }
         if (isMarkedAnswer(comment, item)) throw answerLocked('edit');
         await CommentRepository.edit(db, ctx, commentId, body);
+        await SearchVectorRepository.replaceForSource(db, ctx, { workItemId, commentId }, body);
         await logEvent(db, ctx, {
             action: 'COMMENT_EDITED',
             entityType: 'Comment',
@@ -191,6 +195,8 @@ export async function deleteComment(ctx: RequestContext, workItemId: string, com
         }
         if (isMarkedAnswer(comment, item)) throw answerLocked('delete');
         await CommentRepository.softDelete(db, ctx, commentId);
+        // A deleted comment is never found (2.7f): its vector goes in this transaction.
+        await SearchVectorRepository.removeForSource(db, ctx, { workItemId, commentId });
         // A deleted comment mentions nobody (2.7d); its text stays until the purge.
         await MentionRepository.removeForComment(db, ctx, workItemId, commentId);
         // An admin removing someone else's comment is moderation, and the

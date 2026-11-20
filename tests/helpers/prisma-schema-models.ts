@@ -52,6 +52,11 @@ export interface SchemaField {
     /** True if the declared type carried a trailing `?`. */
     isOptional: boolean;
     /**
+     * For `Unsupported("…")` fields only: the native type named inside it
+     * (`tsvector`, sub-phase 2.7f); `type` is then `Unsupported`.
+     */
+    unsupportedType?: string;
+    /**
      * The PHYSICAL column, i.e. the field's `@map("…")` target when it has one
      * and its own name otherwise.
      *
@@ -294,6 +299,11 @@ function parseModelBody(name: string, body: string): SchemaModel {
         if (isList) typeToken = typeToken.slice(0, -2);
         const isOptional = typeToken.endsWith('?');
         if (isOptional) typeToken = typeToken.slice(0, -1);
+        // `Unsupported("tsvector")`: a native type Prisma cannot model
+        // (2.7f's `SearchVector.lexemes`). Kept, as type `Unsupported`, so a
+        // guard can classify it (encryption-manifest-coverage).
+        const unsupported = /^Unsupported\("([^"]+)"\)$/.exec(typeToken);
+        if (unsupported) typeToken = 'Unsupported';
         // The type token must itself be an identifier — otherwise the
         // "line" is not a field declaration.
         if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(typeToken)) continue;
@@ -307,6 +317,7 @@ function parseModelBody(name: string, body: string): SchemaModel {
             type: typeToken,
             isList,
             isOptional,
+            ...(unsupported ? { unsupportedType: unsupported[1] } : {}),
             dbColumn: mapMatch ? mapMatch[1] : fieldName,
         });
 

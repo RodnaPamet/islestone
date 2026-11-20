@@ -36,6 +36,7 @@ import { LabelRepository } from '../repositories/LabelRepository';
 import { MembershipRepository } from '../repositories/MembershipRepository';
 import { MentionRepository } from '../repositories/MentionRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
+import { SEARCH_MATCH_CAP, SearchVectorRepository } from '../repositories/SearchVectorRepository';
 import { TeamRepository } from '../repositories/TeamRepository';
 import { WorkItemTypeRepository } from '../repositories/WorkItemTypeRepository';
 import {
@@ -112,6 +113,7 @@ import { assertMilestoneOfProject } from './milestone';
 import { loadUsableTemplate, peopleNamedBy, templateSource, templateUseContextInTx } from './work-item-template';
 import { templateToCreateInput, type TemplateOverrides, type TemplateProjection } from '../domain/work-item-template';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { normaliseSearchQuery } from '@/lib/search/query';
 import { isClosedCategory, requirementOf, type FieldKey, type FieldValues, type ResolvedFieldSet } from '@/lib/work-items/field-sets';
 import { isTenantSystemUserId } from '@/lib/tenant-system-user';
 import { assertFieldWrite, checkCreate, checkTypeChange, checkWrite, loadFieldSet, loadFieldSets, type LoadedFieldSet } from './field-set';
@@ -229,6 +231,21 @@ function sortCursorOf(raw: string | undefined, spec: SortSpec): SortCursor | und
     }
 }
 
+/**
+ * The live, visible items whose title (stemmed), description or a live
+ * comment matches `q` in full text (2.7f), each at most `SEARCH_MATCH_CAP`;
+ * the list keeps its own sort.
+ */
+async function fullTextMatchIdsFor(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, q: string): Promise<string[]> {
+    const query = normaliseSearchQuery(q);
+    if (!query) return [];
+    const [titles, content] = await Promise.all([
+        WorkItemRepository.titleFullTextIds(db, ctx, v, query, SEARCH_MATCH_CAP),
+        SearchVectorRepository.matchItems(db, ctx, v, query, SEARCH_MATCH_CAP),
+    ]);
+    return [...new Set([...titles, ...content.map((m) => m.workItemId)])];
+}
+
 /** Resolve a `q` that parses as a key to its project and number (any prefix the project had). */
 async function keyHitFor(db: PrismaTx, ctx: RequestContext, q: string | undefined): Promise<KeyHit | null> {
     const parsed = q ? parseKey(q) : null;
@@ -270,6 +287,9 @@ export async function listWorkItems(ctx: RequestContext, query: ListWorkItemsQue
         const today = todayInTz(new Date(), notificationsTz());
         const { conditions, sortField } = await resolveListCustomFields(db, ctx, rawConditions ?? {}, sortFieldId);
         const listFilters: WorkItemFilters = { ...filters, customFields: conditions };
+        // `q` also matches stemmed titles, descriptions and comments (2.7f,
+        // ADR 0008): the ids are the usecase's, never the request's.
+        listFilters.fullTextMatchIds = filters.q ? await fullTextMatchIdsFor(db, ctx, v, filters.q) : undefined;
         // An empty parameter is no filter; a resolved empty list matches nothing.
         if (filters.cycleId) listFilters.cycleId = await resolveCycleFilter(db, ctx, filters.cycleId);
         else delete listFilters.cycleId;
@@ -692,6 +712,8 @@ export async function createWorkItemInTx(
         cancelledAt: effects.cancelledAt ?? null,
     });
     if (labelIds.length > 0) await LabelRepository.attach(db, ctx, row.id, labelIds);
+    // The description's search vector (2.7f, ADR 0008), in this transaction.
+    if (description) await SearchVectorRepository.replaceForSource(db, ctx, { workItemId: row.id, commentId: null }, description);
     const customFieldIds = await writeInitialCustomFieldValues(db, ctx, { id: row.id, projectId: project.id }, plan.customFields ?? {});
     const key = formatKey(project.keyPrefix, number);
     const creatorWatching = await watchIfAnswerShown(db, ctx, fieldSet.set, row.id);
@@ -846,13 +868,14 @@ export async function insertTemplateItemInTx(
     const sortKey = await sortKeyForPosition(db, ctx, project.id, undefined);
     const effects = stateTransitionEffects('BACKLOG', state.category, {}, new Date());
     const title = sanitizePlainText(sub.title).trim();
+    const description = sub.description ? sanitizePlainText(sub.description) : null;
     const row = await WorkItemRepository.create(db, ctx, {
         projectId: project.id,
         teamId: project.teamId,
         number,
         typeId: sub.typeId,
         title,
-        description: sub.description ? sanitizePlainText(sub.description) : null,
+        description,
         stateId: state.id,
         stateCategory: state.category,
         priority: sub.priority ?? 'NONE',
@@ -868,6 +891,8 @@ export async function insertTemplateItemInTx(
         cancelledAt: effects.cancelledAt ?? null,
     });
     if (sub.labelIds && sub.labelIds.length > 0) await LabelRepository.attach(db, ctx, row.id, [...sub.labelIds]);
+    // The description's search vector (2.7f, ADR 0008), in the caller's transaction.
+    if (description) await SearchVectorRepository.replaceForSource(db, ctx, { workItemId: row.id, commentId: null }, description);
     const key = formatKey(project.keyPrefix, number);
     const creatorWatching = await watchIfAnswerShown(db, ctx, loaded.set, row.id);
     await logEvent(db, ctx, {
@@ -970,6 +995,10 @@ export async function updateWorkItem(ctx: RequestContext, id: string, input: Upd
         }
         const count = await WorkItemRepository.updateVersioned(db, ctx, v, id, expectedVersion, patch);
         if (count === 0) await throwWriteConflict(db, ctx, v, id);
+        // A description edit replaces its search vector (2.7f); cleared, it is removed.
+        if (patch.description !== undefined) {
+            await SearchVectorRepository.replaceForSource(db, ctx, { workItemId: id, commentId: null }, patch.description);
+        }
         await logEvent(db, ctx, {
             action: 'WORK_ITEM_UPDATED',
             entityType: 'WorkItem',

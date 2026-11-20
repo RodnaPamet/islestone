@@ -10,7 +10,9 @@
 #      and `worker`), scans them, and pushes each to GHCR as `:sha-<short>`,
 #      `:<version>` when step 1 made one, and `:latest`, in that order: the
 #      immutable names first, so the moving tag never names an image that has
-#      no immutable name to roll back to.
+#      no immutable name to roll back to. Before them it publishes Islestone's
+#      Postgres image (deploy/postgres/Dockerfile, sub-phase 2.7f) under its
+#      version tag when that tag is not yet in GHCR; a tag is never moved.
 #
 # Watchtower on the VM follows `:latest` (deploy/docker-compose.prod.yml), so
 # a push here reaches production within its poll interval. There is no
@@ -44,6 +46,10 @@ concurrency:
 env:
   APP_IMAGE: ghcr.io/rodnapamet/islestone
   WORKER_IMAGE: ghcr.io/rodnapamet/islestone-worker
+  # Islestone's Postgres image (sub-phase 2.7f, owner decision 146): pushed
+  # once per version tag (deploy/postgres/Dockerfile's
+  # `org.opencontainers.image.version`), never rebuilt under a tag that exists.
+  POSTGRES_IMAGE: ghcr.io/rodnapamet/islestone-postgres
 
 jobs:
   version:
@@ -166,6 +172,60 @@ jobs:
           vuln-type: os,library
           exit-code: '0'
           timeout: 15m
+      # ── Islestone's Postgres image (sub-phase 2.7f, decision 146) ──────
+      # Its tag is the Dockerfile's version label; a tag already in GHCR is
+      # left alone (production pins it, by digest once published), so only a
+      # bumped tag builds and pushes. Pushed before the app images move, so
+      # the database image a migration needs exists first.
+      - name: Read the Postgres image tag and whether it is published
+        id: postgres
+        run: |
+          set -euo pipefail
+          tag="$(sed -n 's/.*org\.opencontainers\.image\.version="\([^"]*\)".*/\1/p' deploy/postgres/Dockerfile)"
+          if [ -z "$tag" ]; then echo "::error::deploy/postgres/Dockerfile names no version label"; exit 1; fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          if docker manifest inspect "${POSTGRES_IMAGE}:${tag}" > /dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "${POSTGRES_IMAGE}:${tag} is already published; not rebuilt."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build the Postgres image (load locally, no push)
+        if: steps.postgres.outputs.publish == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: deploy/postgres
+          file: deploy/postgres/Dockerfile
+          push: false
+          load: true
+          tags: islestone-postgres:publish-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+      - name: Trivy scan of the Postgres image (CRITICAL, HIGH)
+        if: steps.postgres.outputs.publish == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: islestone-postgres:publish-${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          vuln-type: os,library
+          exit-code: '0'
+          timeout: 15m
+      - name: Push the Postgres image to GHCR
+        if: steps.postgres.outputs.publish == 'true'
+        env:
+          TAG: ${{ steps.postgres.outputs.tag }}
+        run: |
+          set -euo pipefail
+          docker tag "islestone-postgres:publish-${GITHUB_SHA}" "${POSTGRES_IMAGE}:${TAG}"
+          docker push "${POSTGRES_IMAGE}:${TAG}"
+          digest="$(docker buildx imagetools inspect "${POSTGRES_IMAGE}:${TAG}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          {
+            echo "### Postgres image published"
+            echo "- \`${POSTGRES_IMAGE}:${TAG}@${digest}\`: pin this in deploy/docker-compose.prod.yml (tests/guards/postgres-image-pinning.test.ts)"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Push the scanned images to GHCR
         env:
           SHA: ${{ github.sha }}

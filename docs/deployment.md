@@ -19,7 +19,7 @@ The stack (`deploy/docker-compose.prod.yml`, the canonical file):
 
 | Service | Container | Image | Memory | Role |
 |---|---|---|---|---|
-| `postgres` | `islestone-postgres` | `pgvector/pgvector:0.8.7-pg17-trixie` | 1536 MB | The database. Runs `prisma/init-roles.sh` and `deploy/postgres/init-runtime-role.sh` on a fresh volume |
+| `postgres` | `islestone-postgres` | `ghcr.io/rodnapamet/islestone-postgres` (pgvector 0.8.7 on PostgreSQL 17, plus the Bulgarian dictionary; "The Postgres image" below) | 1536 MB | The database. Runs `prisma/init-roles.sh` and `deploy/postgres/init-runtime-role.sh` on a fresh volume |
 | `pgbouncer` | `islestone-pgbouncer` | `edoburu/pgbouncer:v1.26.1-p0` | 128 MB | Transaction pooling; knows only the runtime role |
 | `redis` | `islestone-redis` | `redis:7.4.12-alpine3.22` | 512 MB | BullMQ and the worker heartbeat; password, `noeviction` |
 | `migrate` | `islestone-migrate` | `ghcr.io/rodnapamet/islestone-worker` | 512 MB | One-shot `prisma migrate deploy`, as the superuser, direct |
@@ -109,12 +109,89 @@ which `/api/readyz` returns as `version`. Build locally with
 `npm run start` serves the standalone build the way the image does
 (`scripts/start-standalone.mjs`), and the Playwright suite runs against it.
 
+### The Postgres image
+
+Sub-phase 2.7f (ADR 0008 D2; owner decisions 145 to 147; `docs/search.md`).
+The database runs Islestone's own image, `ghcr.io/rodnapamet/islestone-postgres`,
+built from `deploy/postgres/Dockerfile`: `pgvector/pgvector:0.8.7-pg17-trixie`
+by its index digest, plus the bgOffice Bulgarian dictionary
+(`bulgarian.dict`, `bulgarian.affix`, MPL-2.0, ADR 0007 E10) in
+`$SHAREDIR/tsearch_data`, which the `islestone_bg_en` text-search
+configuration reads. Nothing else differs from the stock image: the same
+PostgreSQL 17, pgvector, entrypoint, user and data directory, so moving a
+database onto it is a container recreation on the same volume, with no dump
+and no restore.
+
+- **Published** by `release.yml` under the Dockerfile's version tag
+  (`org.opencontainers.image.version`, today `17-0.8.7-bg4.3-r1`) when that tag
+  is not yet in GHCR; a published tag is never rebuilt or moved. Change
+  anything in `deploy/postgres/` and bump the tag (the Dockerfile's comment and
+  label, and the compose file's line), or the release keeps the old image.
+- **Pinned** in `deploy/docker-compose.prod.yml`. Until a tag's first publish
+  exists its digest is unknown, so the line names the tag alone and the file
+  carries the `POSTGRES-IMAGE-DIGEST-PENDING` marker; once the release has
+  published it, the run's summary prints `<tag>@sha256:<digest>`, and a
+  follow-up pull request puts that on the line and removes the marker
+  (`tests/guards/postgres-image-pinning.test.ts` accepts exactly those two
+  states). Watchtower never rolls the database (`enable=false`).
+- **Fail closed.** Migration `20261207120000_search_configuration` refuses to
+  run on a server without the dictionary ("the Bulgarian dictionary could not
+  be loaded … This server is not running Islestone's Postgres image"), and the
+  app and the worker refuse to start in production when the configuration
+  does not stem as pinned; `/api/readyz` reports it as `search`.
+- **Memory.** The dictionary is loaded into each backend that uses it, about
+  9.3 MB (measured); PgBouncer's pool of 20 bounds that near 190 MB of the
+  1536 MB limit. No limit changed.
+- **Logs.** The stored vectors and every search query are plaintext words
+  (ADR 0008 D1). The application never logs them; the database keeps
+  PostgreSQL's defaults, which keep bind parameters out of its own log:
+  `log_statement = none` and `log_parameter_max_length_on_error = 0`. Do not
+  raise either on this server.
+
+**The one-time move (owner decision 147).** The release that carries 2.7f
+publishes the image and new `:latest` app and worker images in one run, and
+Watchtower would run the new `migrate` against the old database. To keep the
+migration from failing, an operator does this once, around that merge:
+
+1. Before the merge, pin the running build: set `ISLESTONE_IMAGE_TAG` in
+   `.env.prod` to the `sha-<short>` tag the app runs now, and apply
+   (`deploy/apply.sh`, then `CONFIRM=1`). Watchtower then has nothing to roll.
+2. Merge, and wait for the release run to publish
+   `ghcr.io/rodnapamet/islestone-postgres:<tag>` and the new app images.
+3. Apply the repository's compose file (`CONFIRM=1 deploy/apply.sh`): it pulls
+   the new database image and recreates `islestone-postgres` on the same
+   `pgdata` volume (a restart of a few seconds), and the old `migrate`
+   finds nothing to do.
+4. Unpin: remove `ISLESTONE_IMAGE_TAG` (or set it to the new `sha-` tag) and
+   apply again. The new `migrate` runs the configuration and vector
+   migrations; the app and the worker start after it; the nightly
+   `search-index-rebuild` (02:40) backfills every description and comment, or
+   an admin starts it at once (`POST /api/t/<slug>/admin/search-index/rebuild`).
+5. Check: `docker exec islestone-postgres sh -c 'ls "$(pg_config --sharedir)/tsearch_data/bulgarian.dict"'`
+   and `/api/readyz` (`search: ok`).
+
+If the new `migrate` ran before step 3 anyway, it failed closed on
+`20261207120000_search_configuration` before changing anything, and Prisma
+recorded the failure, so later runs stop at it. After step 3, mark it rolled
+back and run it again:
+
+```bash
+cd /opt/islestone
+C="docker compose -p islestone --env-file .env.prod -f docker-compose.prod.yml"
+$C run --rm migrate node_modules/.bin/prisma migrate resolve --rolled-back 20261207120000_search_configuration
+$C up -d migrate
+```
+
+A new cluster (a lost volume) starts on the image directly; nothing extra.
+
 ## Health
 
 - **`/api/livez`** — the process answers HTTP. Checks nothing, on purpose: a
   database outage must not make every replica look dead.
 - **`/api/readyz`** — 200 `{"status":"ready"}` when PostgreSQL (through the
-  app's own client, so through PgBouncer) and Redis both answer; 503
+  app's own client, so through PgBouncer) and Redis both answer and the
+  database's `islestone_bg_en` configuration stems its fixtures as pinned
+  (`search`, sub-phase 2.7f); 503
   `{"status":"not_ready","failed":[…]}` otherwise. Each check times out after
   two seconds; error strings come from a closed set and never carry a
   driver's message (`src/lib/health/readiness.ts`). In production an unset
@@ -496,6 +573,14 @@ $C up -d
 The roles (`app_user`, `islestone_app`) live in the cluster, not in the
 database, so they survive the drop; a new cluster (a lost volume) gets them
 from the init scripts on its first start, before the restore.
+
+A dump restores only into Islestone's Postgres image (since 2.7f): the title
+and project-name indexes and the stored vectors depend on the
+`islestone_bg_en` configuration and its Bulgarian dictionary, which the stock
+pgvector image lacks, so `pg_restore` fails creating them there. The drill
+restores into the running `islestone-postgres`, which is that image. The
+dump holds the search vectors: the stemmed words of every description and
+comment, readable (ADR 0008 D1, decision 124).
 
 ### Restore drills
 

@@ -14,6 +14,7 @@ jest.mock('@/lib/redis', () => ({ getRedis: () => redisClient }));
 
 import * as livez from '@/app/api/livez/route';
 import * as readyz from '@/app/api/readyz/route';
+import { SEARCH_CONFIGURATION_FIXTURES } from '@/lib/search/configuration';
 import { checkReadiness, type ReadinessDeps } from '@/lib/health/readiness';
 
 describe('/api/livez', () => {
@@ -27,10 +28,27 @@ describe('/api/livez', () => {
     });
 });
 
+/** The fixture read of `checkSearchConfiguration` (2.7f) names `tsvector_to_array`. */
+const isFixtureRead = (query: unknown) => String((query as { sql?: string }).sql ?? '').includes('tsvector_to_array');
+const STEMMED = SEARCH_CONFIGURATION_FIXTURES.map(([input, got]) => ({ input, got }));
+
+/** `SELECT 1` answers `ping`; the fixture read answers the stems as pinned, or `stems`. */
+function database(ping: unknown, stems: unknown = STEMMED) {
+    queryRaw.mockImplementation(async (query: unknown) => {
+        if (isFixtureRead(query)) {
+            if (stems instanceof Error) throw stems;
+            return stems;
+        }
+        if (ping instanceof Error) throw ping;
+        return ping;
+    });
+}
+
 describe('/api/readyz', () => {
     const saved = { NODE_ENV: process.env.NODE_ENV, BUILD_SHA: process.env.BUILD_SHA };
     beforeEach(() => {
         queryRaw.mockReset();
+        database([]);
         redisClient = { ping: jest.fn().mockResolvedValue('PONG') };
         delete process.env.BUILD_SHA;
     });
@@ -41,7 +59,7 @@ describe('/api/readyz', () => {
     });
 
     it('is 200 and ready when the database and Redis answer, never cached', async () => {
-        queryRaw.mockResolvedValue([{ '?column?': 1 }]);
+        database([{ '?column?': 1 }]);
         const res = await readyz.GET();
         expect(res.status).toBe(200);
         expect(res.headers.get('cache-control')).toBe('no-store');
@@ -51,33 +69,55 @@ describe('/api/readyz', () => {
             status: 'ready',
             version: 'dev',
             failed: [],
-            checks: { database: { status: 'ok' }, redis: { status: 'ok' } },
+            checks: { database: { status: 'ok' }, redis: { status: 'ok' }, search: { status: 'ok' } },
         });
-        expect(queryRaw).toHaveBeenCalledTimes(1);
+        // `SELECT 1`, then the islestone_bg_en fixtures (2.7f).
+        expect(queryRaw).toHaveBeenCalledTimes(2);
         expect(redisClient?.ping).toHaveBeenCalledTimes(1);
     });
 
     it('reports the build it serves from BUILD_SHA', async () => {
-        queryRaw.mockResolvedValue([]);
+        database([]);
         process.env.BUILD_SHA = '0123abcd';
         await expect((await readyz.GET()).json()).resolves.toMatchObject({ version: '0123abcd' });
     });
 
     it('is 503 naming the database when the query fails, without the driver text', async () => {
-        queryRaw.mockRejectedValue(new Error('connect ECONNREFUSED 10.0.0.5:6432 user islestone_app'));
+        const refused = new Error('connect ECONNREFUSED 10.0.0.5:6432 user islestone_app');
+        database(refused, refused);
         const res = await readyz.GET();
         expect(res.status).toBe(503);
         const text = await res.text();
         expect(JSON.parse(text)).toMatchObject({
             status: 'not_ready',
-            failed: ['database'],
+            failed: ['database', 'search'],
             checks: { database: { status: 'error', error: 'connection_failed' }, redis: { status: 'ok' } },
         });
         expect(text).not.toMatch(/ECONNREFUSED|10\.0\.0\.5|islestone_app/);
     });
 
+    it('is 503 naming the search configuration when the Bulgarian dictionary is missing (2.7f)', async () => {
+        database([], new Error('text search configuration "islestone_bg_en" does not exist'));
+        const res = await readyz.GET();
+        expect(res.status).toBe(503);
+        const text = await res.text();
+        expect(JSON.parse(text)).toMatchObject({
+            status: 'not_ready',
+            failed: ['search'],
+            checks: { database: { status: 'ok' }, search: { status: 'error', error: 'search_configuration' } },
+        });
+        expect(text).not.toMatch(/does not exist/);
+    });
+
+    it('is 503 when the dictionary stems otherwise than pinned, never a silent fallback (2.7f)', async () => {
+        database([], STEMMED.map((r) => (r.input === 'задачата' ? { ...r, got: 'задачата' } : r)));
+        const res = await readyz.GET();
+        expect(res.status).toBe(503);
+        await expect(res.json()).resolves.toMatchObject({ failed: ['search'], checks: { search: { error: 'search_configuration' } } });
+    });
+
     it('is 503 naming Redis when the ping fails', async () => {
-        queryRaw.mockResolvedValue([]);
+        database([]);
         redisClient = { ping: jest.fn().mockRejectedValue(new Error('NOAUTH')) };
         const res = await readyz.GET();
         expect(res.status).toBe(503);
@@ -88,7 +128,7 @@ describe('/api/readyz', () => {
     });
 
     it('reports Redis as an error in production when REDIS_URL is unset (no client)', async () => {
-        queryRaw.mockResolvedValue([]);
+        database([]);
         redisClient = null;
         (process.env as Record<string, string>).NODE_ENV = 'production';
         try {
@@ -103,7 +143,7 @@ describe('/api/readyz', () => {
     });
 
     it('skips Redis outside production when REDIS_URL is unset, and stays ready', async () => {
-        queryRaw.mockResolvedValue([]);
+        database([]);
         redisClient = null;
         const res = await readyz.GET();
         expect(res.status).toBe(200);
@@ -115,6 +155,7 @@ describe('checkReadiness', () => {
     const base: ReadinessDeps = {
         queryDatabase: async () => 1,
         pingRedis: async () => 'PONG',
+        checkSearch: async () => true,
         production: true,
         version: 'v',
         timeoutMs: 50,

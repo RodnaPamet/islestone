@@ -1,6 +1,6 @@
 # 0008 — Search over encrypted fields
 
-Status: Accepted (owner decisions 124 to 126, 2026-11-20): a plaintext full-text index over work-item descriptions and comment bodies (D1, option C), Bulgarian and English stemming through one custom text-search configuration (D2, revised by the owner), the token key moot (D3)
+Status: Accepted (owner decisions 124 to 126 and 145 to 147, 2026-11-20): a plaintext full-text index over work-item descriptions and comment bodies (D1, option C), Bulgarian and English stemming through one custom text-search configuration (D2, revised by the owner; the dictionary, its licence, the image and the rollout decided in 145 to 147), the token key moot (D3)
 
 ## Context
 
@@ -96,6 +96,15 @@ What it costs, recorded for 2.7f to measure:
 - **Licence.** The dictionary is third-party data shipped in an image. 2.7f verifies its licence at the commit it takes, pins it, and records it in `PROVENANCE.md` and `NOTICE`. If the licence is not one ADR 0007 admits, 2.7f stops and asks the owner.
 - **Memory.** Postgres loads an `ispell` dictionary into each backend on first use; 2.7f measures the per-backend cost against the database's `mem_limit` and PgBouncer's pool size.
 - **Fit.** Postgres's `ispell` template reads Hunspell affix files with limits; 2.7f proves the stems on the fixture list before pinning, and stops and reports if the chosen dictionary cannot be read.
+
+#### The dictionary, the image and the rollout (owner decisions 145 to 147)
+
+2.7f measured the costs above and put three decisions to the owner, who took them on 2026-11-20:
+
+- **145, the dictionary and its licence.** The bgOffice Bulgarian spelling dictionary, OOo-spell-bg 4.3, is offered under "GPL-2.0-or-later OR LGPL-2.1-or-later OR MPL-1.1"; none of the three is on ADR 0007's allowlist. Islestone takes it under MPL-1.1 and uses it under MPL-2.0 through MPL-1.1 §6.2, re-encoded to UTF-8 and changed in no other way. ADR 0007 E10 records the source, the archive's SHA512, the files' hashes and the licence; `deploy/postgres/dictionary.json`, `tests/guards/postgres-dictionary-pinned.test.ts` and the image build hold the files to it.
+- **146, the image.** `ghcr.io/rodnapamet/islestone-postgres`, a new public GHCR package, built from `deploy/postgres/Dockerfile` (`FROM pgvector/pgvector:0.8.7-pg17-trixie` by its index digest, plus the two dictionary files checked by hash) and published by the release workflow under an immutable version tag. Production's compose file pins it; the local `docker-compose.yml` builds it; CI's Integration, E2E and DAST jobs build and run it as steps.
+- **147, the rollout.** A one-time operator step (`docs/deployment.md`, "The Postgres image"): recreate the `postgres` container on the same volume onto the new image with `deploy/apply.sh` before the configuration migration reaches it. The data directory is unchanged; a migration that runs first fails closed.
+- **Measured.** The fixtures stem as expected; the loaded dictionary costs about 9.3 MB per backend that uses it (about 100 ms the first time). With PgBouncer's pool of 20, that is about 190 MB of the database's 1536 MB `mem_limit` in the worst case, and no change to either.
 
 ### D3. The token key
 

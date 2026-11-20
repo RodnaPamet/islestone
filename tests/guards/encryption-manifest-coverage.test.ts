@@ -53,6 +53,9 @@
  *   - Seeded from the current schema so this lands GREEN with zero
  *     behaviour change; it bites only on NEW unclassified columns.
  */
+import fs from 'node:fs';
+import path from 'node:path';
+
 import { parseSchemaModels } from '../helpers/prisma-schema-models';
 import { TENANT_SCOPED_MODELS } from '@/lib/db/rls-middleware';
 import { ENCRYPTED_FIELDS } from '@/lib/security/encrypted-fields';
@@ -71,6 +74,9 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    // ── Search vectors (sub-phase 2.7f) ────────────────────────────────
+    'SearchVector.commentId':
+        'A pointer to the comment whose vector the row is (a cuid, FK-checked); the vector itself is the classified plaintext derivative SearchVector.lexemes.',
     // ── Recipient lists (sub-phase 2.7e) ───────────────────────────────
     'RecipientList.description':
         'Workspace configuration (what a named set of people is for), shown wherever the list is offered, sanitised on write (recipient-list.ts); like a custom role\'s description, not business content.',
@@ -96,6 +102,43 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
     'TenantCustomRole.description':
         'Workspace configuration shown wherever the role is listed, sanitised on write (custom-roles.ts); not business content.',
 };
+
+/**
+ * Deliberate PLAINTEXT DERIVATIVES of encrypted fields (sub-phase 2.7f, ADR
+ * 0008 D1, owner decision 124): columns that hold, readably, what an encrypted
+ * field says (a search vector is the text's stemmed words with positions).
+ * Kept apart from `NOT_SENSITIVE`, whose columns hold nothing sensitive: these
+ * hold something sensitive ON PURPOSE, by an owner decision the entry cites.
+ *
+ * Every non-`String` native column this scan cannot otherwise read (an
+ * `Unsupported("tsvector")`, ADR 0008: "every `Unsupported("tsvector")` column
+ * must be listed") on a tenant-scoped model must be here, naming its ADR and
+ * its encrypted sources; a new one fails CI until somebody decides it.
+ */
+const PLAINTEXT_DERIVATIVES: Readonly<Record<string, { adr: string; decision: string; sources: readonly string[] }>> = {
+    'SearchVector.lexemes': {
+        adr: 'docs/adr/0008-search-over-encrypted-fields.md',
+        decision: 'Owner decision 124 (ADR 0008 D1, option C): the stemmed words of descriptions and comments, with positions, are readable in the database, its dumps and its backups, so they can be searched.',
+        sources: ['WorkItem.description', 'Comment.body'],
+    },
+};
+
+/** The native types a plaintext derivative may be declared as. */
+const DERIVATIVE_NATIVE_TYPES = /^(tsvector)$/i;
+
+/** Every `Unsupported("tsvector")`-shaped column on a tenant-scoped model. */
+function derivativeShapedColumns(): { key: string; nativeType: string }[] {
+    const out: { key: string; nativeType: string }[] = [];
+    for (const m of parseSchemaModels()) {
+        if (!TENANT_SCOPED_MODELS.has(m.name)) continue;
+        for (const f of m.fields) {
+            if (f.type === 'Unsupported' && f.unsupportedType && DERIVATIVE_NATIVE_TYPES.test(f.unsupportedType)) {
+                out.push({ key: `${m.name}.${f.name}`, nativeType: f.unsupportedType });
+            }
+        }
+    }
+    return out;
+}
 
 /** `Model.field` → true if the field is in the encryption manifest. */
 function isEncrypted(model: string, field: string): boolean {
@@ -188,6 +231,48 @@ describe('encryption-manifest coverage — no sensitive column ships plaintext b
     });
 });
 
+describe('encryption-manifest coverage — plaintext derivatives of encrypted fields (ADR 0008)', () => {
+    const columns = derivativeShapedColumns();
+
+    it('finds the search vector (sanity — the Unsupported scan is live)', () => {
+        expect(columns.map((c) => c.key)).toContain('SearchVector.lexemes');
+    });
+
+    it('every tsvector column is a classified plaintext derivative', () => {
+        const unclassified = columns.filter((c) => PLAINTEXT_DERIVATIVES[c.key] === undefined).map((c) => c.key);
+        if (unclassified.length > 0) {
+            throw new Error(
+                `${unclassified.length} column(s) hold a derivative of text but are not classified:\n` +
+                    unclassified.map((k) => `  ${k}`).join('\n') +
+                    '\n\nA searchable derivative of an encrypted field is readable in the database and its backups. ' +
+                    'It needs an amendment to ADR 0008 and an owner decision, then an entry in PLAINTEXT_DERIVATIVES.',
+            );
+        }
+    });
+
+    it('has no stale PLAINTEXT_DERIVATIVES entries', () => {
+        const live = new Set(columns.map((c) => c.key));
+        expect(Object.keys(PLAINTEXT_DERIVATIVES).filter((k) => !live.has(k))).toEqual([]);
+    });
+
+    it('every entry cites an existing ADR that names the column, and its sources are encrypted fields', () => {
+        for (const [key, entry] of Object.entries(PLAINTEXT_DERIVATIVES)) {
+            const adr = fs.readFileSync(path.join(__dirname, '../..', entry.adr), 'utf8');
+            expect({ key, adrNamesModel: adr.includes(key.split('.')[0]) }).toEqual({ key, adrNamesModel: true });
+            expect(entry.decision.trim().length).toBeGreaterThan(20);
+            expect(entry.sources.length).toBeGreaterThan(0);
+            for (const source of entry.sources) {
+                const [model, field] = source.split('.');
+                expect({ key, source, encrypted: isEncrypted(model, field) }).toEqual({ key, source, encrypted: true });
+            }
+        }
+    });
+
+    it('a derivative is never also excused as NOT_SENSITIVE', () => {
+        expect(Object.keys(PLAINTEXT_DERIVATIVES).filter((k) => NOT_SENSITIVE[k] !== undefined)).toEqual([]);
+    });
+});
+
 // ─── Self-test: prove the heuristic + wiring actually fire ──────────
 //
 // Without this, a refactor that broke SENSITIVITY_HEURISTIC or the
@@ -210,6 +295,13 @@ describe('encryption-manifest guard — detector self-test', () => {
         for (const name of ['status', 'tenantId', 'createdAt', 'score', 'slug', 'email']) {
             expect(SENSITIVITY_HEURISTIC.test(name)).toBe(false);
         }
+    });
+
+    it('a hypothetical new tsvector column with no classification WOULD fail', () => {
+        // The predicate the forward test applies to `Unsupported("tsvector")`.
+        const key = 'Comment.bodyVector';
+        expect(DERIVATIVE_NATIVE_TYPES.test('tsvector')).toBe(true);
+        expect(PLAINTEXT_DERIVATIVES[key]).toBeUndefined();
     });
 
     it('a hypothetical new sensitive column with no classification WOULD fail', () => {

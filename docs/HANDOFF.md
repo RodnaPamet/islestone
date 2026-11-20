@@ -155,6 +155,9 @@ porting maps now record them (next step 2); the last column says where.
 | 142 | A project's intake may name one recipient list in addition to its notify-list member rows, resolved at send time for `intake.view` holders (question 19; decision 95's "may"). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.7.md`; 2.7e |
 | 143 | ADR 0006 gains the rows Notification preference, Digest, Mention, Recipient list and Search vector, and the Inbox's archive verb is Done. The drafted "Search token" row becomes **Search vector** (`SearchVector`) to fit decision 124's plaintext index; "Document" stays a page's word (question 20). Decided 2026-11-20, relayed. | relayed | ADR 0006 "Search, inbox and mention words of sub-phase 2.7"; `docs/porting/maps/2.7.md` |
 | 144 | 2.7 ships as six pull requests, in order: 2.7a My Work's "waiting on me" and the waiting-on reminder; 2.7b search over titles and keys; 2.7c the Inbox, preferences and digests; 2.7d mentions; 2.7e recipient lists; 2.7f search over descriptions and comments with the Bulgarian dictionary and its Postgres image (question 21). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.7.md` |
+| 145 | **Bulgarian dictionary licence: option A.** The bgOffice Bulgarian spelling dictionary, OOo-spell-bg 4.3 (`OOo-full-pack-bg-4.3.zip`, SHA512 `1c4acf0c…bd66341d7`, as Gentoo's `app-dicts/myspell-bg/Manifest` at `1d677101c0776fa2bf680550e2864f4f0a2e6ccd` records), is offered under "GPL-2.0-or-later OR LGPL-2.1-or-later OR MPL-1.1" (`Copyright_spell`); Islestone takes it under MPL-1.1 and uses it under MPL-2.0 through MPL-1.1 §6.2 ("any subsequent version"). ADR 0007 gains E10, admitting this one file set, modified only by re-encoding to UTF-8; the converted files are MPL-2.0, published with their source and a statement of the change in the repository and the image. `ALLOWED_LICENCES` is not widened: the licence gate scans npm packages, so a guard (`tests/guards/postgres-dictionary-pinned.test.ts`) and the image build hold the files to the pinned hashes and E10. Decided 2026-11-20, relayed. | relayed | ADR 0007 E10; `deploy/postgres/dictionary.json`; `deploy/postgres/tsearch_data/`; `PROVENANCE.md`; `NOTICE`; 2.7f |
+| 146 | **Islestone's Postgres image is a new public GHCR package,** `ghcr.io/rodnapamet/islestone-postgres`, built from `deploy/postgres/Dockerfile` (`FROM` pgvector by digest) and published by the release workflow (actions pinned by SHA) under an immutable version tag. Production's compose file pins it; the local `docker-compose.yml` builds it; CI's Integration, E2E and DAST jobs build and run it as steps, so every pull request tests the Dockerfile. Decided 2026-11-20, relayed. Applied: the compose file names the version tag until the first publish exists, then the tag and its digest (`tests/guards/postgres-image-pinning.test.ts`). | relayed | `deploy/postgres/Dockerfile`; `.github/workflows/release.yml`, `ci.yml`, `dast.yml`; `deploy/docker-compose.prod.yml`; `docker-compose.yml`; 2.7f |
+| 147 | **Rollout: a one-time operator step.** Before the dictionary migration (`20261207120000_search_configuration`) reaches production, an operator recreates the `postgres` container on the same volume onto the new image with `deploy/apply.sh`; the data directory is unchanged. If the migration runs first it fails closed and both images wait at `wait-for-migrations` until the move. Recorded in `docs/deployment.md`, "The Postgres image". Decided 2026-11-20, relayed. | relayed | `docs/deployment.md`; 2.7f |
 
 Rows 62 to 75 are sub-phase 2.5's decisions. Rows 85 to 99 are sub-phase 2.6's (`docs/porting/maps/2.6.md`, questions 1 to 13, then the public perimeter and the member-email rule). Rows 100 to 119 are sub-phase 2.4b's (`docs/porting/maps/2.4b.md`, questions 1 to 20 in order): every recommendation accepted except question 7, where the owner chose option C. Rows 124 to 144 are sub-phase 2.7's (`docs/porting/maps/2.7.md`, questions 1 to 21 in order): every recommendation accepted except question 1, where the owner chose the plaintext full-text index (option C, ADR 0008), question 2, moot as a result, question 3, where the owner chose Bulgarian and English stemming through a custom configuration, and question 20, whose "Search token" row became "Search vector". Rows 120 to 123 are sub-phase 2.6c's: the provider for the 2.6 map's question 3. Rows 76 to 84 are the ideas the owner adopted from the Procore audit, all of its top ten but #8 (event triggers for delegate agents and a search skill), which 6.3 and a search skill already plan. Those of 76 to 78 changed ADRs 0002 and 0006 with 2.4b's decisions (rows 100 to 119); the others change none yet: each sub-phase lists the amendments it needs and its proposed words as open questions, decided when it starts.
 
@@ -958,3 +961,41 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      (the map had one set whose usecase asserted the scope's key), the intake column is
      `recipientListId` (the map's `notifyListId`), and archiving is not behind a typed
      confirmation (the brief: archiving is not a delete).
+   2.7e merged as #61. **2.7f (search over descriptions and comments, decisions 124, 126 and 145
+   to 147) is built** on branch `wt/p27f`, on top of 2.7e, per `docs/search.md`, ADR 0008 and
+   ADR 0007 E10; written fresh, with the dictionary recorded in `PROVENANCE.md` and `NOTICE`:
+   - Licence (stopped for the owner, decided as 145): the LibreOffice `bg_BG` ships only the
+     GPL-2.0 text, so the source is bgOffice's OOo-spell-bg 4.3 (`Copyright_spell`: GPL-2.0+ or
+     LGPL-2.1+ or MPL-1.1), taken under MPL-1.1, used under MPL-2.0 by §6.2, re-encoded to UTF-8
+     only (`deploy/postgres/convert-bgoffice.sh` reproduces it). ADR 0007 E10 admits that file set;
+     `deploy/postgres/dictionary.json` and `tests/guards/postgres-dictionary-pinned.test.ts` hold it.
+   - Image (146): `deploy/postgres/Dockerfile` (pgvector by digest + the two files, hash-checked);
+     `release.yml` publishes `ghcr.io/rodnapamet/islestone-postgres:17-0.8.7-bg4.3-r1` once;
+     production names that tag with the `POSTGRES-IMAGE-DIGEST-PENDING` marker until the first
+     publish, then the tag and its digest (a follow-up PR; `postgres-image-pinning.test.ts`);
+     `docker-compose.yml` builds it; CI's Integration, E2E and DAST run it through
+     `scripts/ci-postgres.sh` (no `services:` Postgres any more).
+   - Schema: migration `20261207120000_search_configuration` (the dictionary and `islestone_bg_en`,
+     failing closed with a named error on the stock image, 17 fixtures asserted; 2.7b's two
+     `simple` full-text indexes rebuilt on it) and `20261207120100_search_vectors` (`SearchVector`:
+     one row per description or comment by two partial uniques, a tenant-leading GIN partial on
+     the configuration, a CHECK on `configName` and `revision`, cascades from the workspace, the
+     item and the comment; RLS, grants, a two-tenant test). The drift check passes, residue
+     unchanged (the GIN index is partial so Prisma ignores it; Prisma cannot declare a GIN that
+     leads with a text column).
+   - Write path: `SearchVectorRepository.replaceForSource` in `createWorkItemInTx`,
+     `insertTemplateItemInTx`, `updateWorkItem`, `addComment`, `editComment`; `removeForSource`
+     in `deleteComment`; mention tokens stripped; `tests/guards/search-vector-write-seam.test.ts`
+     finds every writer by AST.
+   - Reads: `/api/t/:slug/search` adds description and comment hits (`matchedIn`, a snippet for
+     the best five, below title hits); the list's `q` also matches stemmed titles and the vectors.
+   - Jobs and checks: `search-index-rebuild` (02:40 nightly; on demand through
+     `POST /api/t/:slug/admin/search-index/rebuild`, `admin.manage`); the startup checks in the app
+     and the worker and `/api/readyz`'s `search` check.
+   - Measured: about 9.3 MB per backend that loads the dictionary, ~100 ms first use; no memory
+     limit changed.
+   - Not built: the palette's "still being indexed" notice from the map (the backfill is the nightly
+     job or an admin's request).
+   - **Before merging, the operator step of decision 147** (`docs/deployment.md`, "The Postgres
+     image"): pin the running build, merge, wait for the publish, apply, unpin. After the first
+     publish, pin the digest in `deploy/docker-compose.prod.yml` and remove the marker.

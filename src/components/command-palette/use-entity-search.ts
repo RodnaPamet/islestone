@@ -38,6 +38,10 @@ export interface EntitySearchResult {
     secondary?: string;
     badge?: string;
     href: string;
+    /** Found in a work item's description or a comment, not its title (2.7f). */
+    matchedIn?: 'description' | 'comment';
+    /** A window of the matched text, for a description or comment match. */
+    snippet?: string;
 }
 
 export interface EntitySearchState {
@@ -80,6 +84,8 @@ function adaptHit(h: SearchHit): EntitySearchResult {
         secondary: h.subtitle ?? undefined,
         badge: h.badge ?? undefined,
         href: h.href,
+        ...(h.matchedIn === 'description' || h.matchedIn === 'comment' ? { matchedIn: h.matchedIn } : {}),
+        ...(h.snippet ? { snippet: h.snippet } : {}),
     };
 }
 

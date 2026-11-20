@@ -1,7 +1,8 @@
 /**
  * Readiness: "should this replica receive traffic?"
  *
- * 200 with `status: "ready"` when PostgreSQL and Redis both answer; 503 with
+ * 200 with `status: "ready"` when PostgreSQL and Redis both answer and the
+ * database's `islestone_bg_en` configuration stems as pinned (2.7f); 503 with
  * `status: "not_ready"` and the failing checks named in `failed` otherwise.
  * The checks, their timeouts and their closed set of error strings live in
  * `src/lib/health/readiness.ts`; this handler only wires the app's own clients
@@ -12,6 +13,7 @@
  */
 import { env } from '@/env';
 import { checkReadiness } from '@/lib/health/readiness';
+import { checkSearchConfiguration } from '@/lib/search/configuration-check';
 import { logger } from '@/lib/observability/logger';
 import { prisma } from '@/lib/prisma';
 import { getRedis } from '@/lib/redis';
@@ -23,6 +25,7 @@ export async function GET(): Promise<Response> {
     const report = await checkReadiness({
         queryDatabase: () => prisma.$queryRaw`SELECT 1`,
         pingRedis: redis ? () => redis.ping() : null,
+        checkSearch: async () => (await checkSearchConfiguration((query) => prisma.$queryRaw(query))).ok,
         production: env.NODE_ENV === 'production',
         version: env.BUILD_SHA || 'dev',
     });

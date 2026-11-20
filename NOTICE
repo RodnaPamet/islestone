@@ -78,6 +78,24 @@ when they are distributed (ADR 0007):
   https://www.eclipse.org/legal/epl-2.0/; its LICENSE.md is kept. Used
   unmodified and never imported by Islestone. The worker image only.
 
+Islestone's Postgres image (ghcr.io/rodnapamet/islestone-postgres, sub-phase
+2.7f, deploy/postgres/Dockerfile) carries one more:
+
+- The bgOffice Bulgarian spelling dictionary, OOo-spell-bg 4.3
+  (http://bgoffice.sourceforge.net/, OOo-full-pack-bg-4.3.zip, SHA512
+  1c4acf0c8377c6ec3f0dd26c84a5232be88b1fecabcb08dfae4f45bf819c770427731cbf1b01d65d3a182cccc3d0bcaabf3ab85735221e2ff09fc47bd66341d7),
+  as deploy/postgres/tsearch_data/bulgarian.dict and bulgarian.affix in this
+  repository and $SHAREDIR/tsearch_data/ in the image.
+  Copyright (C) 2001-2010 Radostin Radnev <radnev@gmail.com>
+  Offered under GPL-2.0-or-later, LGPL-2.1-or-later or MPL-1.1; Islestone
+  takes it under the Mozilla Public License 1.1 and uses it under the Mozilla
+  Public License, v. 2.0 (MPL-1.1 section 6.2; ADR 0007, decision E10),
+  https://mozilla.org/MPL/2.0/. The files were re-encoded from Windows-1251
+  to UTF-8 (line endings and the affix file's SET line with them) and changed
+  in no other way; the files, their licence text, the upstream copyright
+  statement and the statement of change are in deploy/postgres/tsearch_data/
+  and, in the image, /usr/share/doc/islestone-postgres/bgoffice-bulgarian/.
+
 Planned
 -------
 

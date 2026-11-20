@@ -69,6 +69,8 @@ const SAMPLE_HITS: SearchHit[] = [
         score: 61,
         iconKey: 'work-item',
         category: 'Work items',
+        matchedIn: 'title',
+        snippet: null,
     },
     {
         type: 'project',
@@ -80,6 +82,8 @@ const SAMPLE_HITS: SearchHit[] = [
         score: 60,
         iconKey: 'project',
         category: 'Projects',
+        matchedIn: 'title',
+        snippet: null,
     },
 ];
 
@@ -189,6 +193,37 @@ describe('CommandPalette — entity search (2.7b)', () => {
         render(<Shell />);
         await typeIntoPalette('login');
         await waitFor(() => expect(document.querySelector('[cmdk-empty]')?.textContent).toBe('Search failed. Try again in a moment.'));
+    });
+
+    it('says where a description or comment hit matched, with its snippet as text (2.7f)', async () => {
+        installFetchStub([
+            { ...SAMPLE_HITS[0]!, matchedIn: 'title' },
+            {
+                ...SAMPLE_HITS[0]!,
+                id: 'wi-2',
+                title: 'Invoices',
+                subtitle: 'ISL-13',
+                href: '/t/acme/work-items/ISL-13',
+                score: 0.6,
+                matchedIn: 'comment',
+                snippet: '…the <b>login</b> fails after the redirect…',
+            },
+            { ...SAMPLE_HITS[0]!, id: 'wi-3', title: 'Billing', subtitle: 'ISL-14', href: '/t/acme/work-items/ISL-14', score: 0.55, matchedIn: 'description', snippet: null },
+        ]);
+        render(<Shell />);
+        await typeIntoPalette('login');
+        const rows = await waitFor(() => {
+            const found = document.querySelectorAll('[data-testid="command-palette-result-workItem"]');
+            expect(found).toHaveLength(3);
+            return Array.from(found);
+        });
+        expect(rows[0]!.querySelector('[data-testid="command-palette-result-match"]')).toBeNull();
+        expect(rows[1]!.querySelector('[data-testid="command-palette-result-match"]')!.textContent).toBe(
+            'In a comment: …the <b>login</b> fails after the redirect…',
+        );
+        // Rendered as text, never as markup.
+        expect(rows[1]!.querySelector('b')).toBeNull();
+        expect(rows[2]!.querySelector('[data-testid="command-palette-result-match"]')!.textContent).toBe('In the description');
     });
 
     it('debounces repeated keystrokes into one request', async () => {

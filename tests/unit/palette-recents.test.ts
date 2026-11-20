@@ -102,6 +102,8 @@ describe('recentFromHit — adapter shape', () => {
             score: 99,
             iconKey: 'project',
             category: 'Projects',
+            matchedIn: 'title',
+            snippet: null,
         };
         expect(recentFromHit(hit)).toEqual({
             type: 'project',

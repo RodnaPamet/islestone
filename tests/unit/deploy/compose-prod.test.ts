@@ -69,7 +69,10 @@ describe('the stack', () => {
             expect(svc(name).image).toMatch(/:[^:]*\d+\.\d+/);
             expect(svc(name).image).not.toMatch(/:latest$/);
         }
-        expect(svc('postgres').image).toMatch(/^pgvector\/pgvector:/);
+        // Islestone's Postgres image (2.7f, decision 146): a version tag, never
+        // a moving one; tests/guards/postgres-image-pinning.test.ts holds the
+        // tag to the Dockerfile and the digest rule.
+        expect(svc('postgres').image).toMatch(/^ghcr\.io\/rodnapamet\/islestone-postgres:[0-9][^:@]*(@sha256:[0-9a-f]{64})?$/);
         // `:latest` unless ISLESTONE_IMAGE_TAG pins a build (the rollback lever).
         expect(svc('app').image).toBe('ghcr.io/rodnapamet/islestone:${ISLESTONE_IMAGE_TAG:-latest}');
         expect(svc('worker').image).toBe('ghcr.io/rodnapamet/islestone-worker:${ISLESTONE_IMAGE_TAG:-latest}');

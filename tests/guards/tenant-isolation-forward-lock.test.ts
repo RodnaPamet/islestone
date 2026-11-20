@@ -41,6 +41,7 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     RecipientList: 'tests/integration/recipient-lists.test.ts',
     RecipientListMember: 'tests/integration/recipient-lists.test.ts',
     Mention: 'tests/integration/mentions.test.ts',
+    SearchVector: 'tests/integration/search-vectors.test.ts',
     // Sub-phases 2.1–2.2.
     Team: 'tests/integration/work-tables-isolation.test.ts',
     WorkflowState: 'tests/integration/work-tables-isolation.test.ts',

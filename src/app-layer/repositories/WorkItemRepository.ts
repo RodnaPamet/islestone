@@ -43,6 +43,7 @@ import {
 import { CUSTOM_FIELD_LIMITS, CUSTOM_FIELD_TYPE_SPECS } from '@/lib/work-items/custom-fields';
 import { DEFAULT_SORT_DIRECTION, type ListSort, type SortDirection } from '@/lib/work-items/list-sorts';
 import { SEARCH_ROW_CAP, containsPattern, escapeLike, prefixPattern } from '@/lib/search/query';
+import { SEARCH_MATCH_CAP } from './SearchVectorRepository';
 import type { CustomFieldCondition } from '../domain/custom-field';
 import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
 import { DUE_FILTERS, DUE_SOON_DAYS, type DueFilter } from '../domain/work-item-due';
@@ -96,6 +97,13 @@ export interface WorkItemFilters {
     due?: DueFilter;
     /** Title text; an exact key hit is passed as `keyHit`. */
     q?: string;
+    /**
+     * INTERNAL, never from a request: the items whose title (stemmed), description
+     * or a live comment matches `q` in full text (2.7f; `titleFullTextIds`,
+     * `SearchVectorRepository.matchItems`), set by the list usecase. Widens
+     * the `q` match; ignored without `q`.
+     */
+    fullTextMatchIds?: readonly string[];
     /** Include archived projects' items (default: excluded). */
     includeArchived?: boolean;
     /** Custom-field conditions (2.4), each already parsed against its field's type. */
@@ -403,6 +411,9 @@ export class WorkItemRepository {
             // `_` was a wildcard; `escapeLike` makes it match itself.
             const or: Prisma.WorkItemWhereInput[] = [{ title: { contains: escapeLike(filters.q), mode: 'insensitive' } }];
             if (keyHit) or.push({ projectId: keyHit.projectId, number: keyHit.number });
+            // Full text (2.7f): stemmed titles, descriptions and comments, the
+            // matched ids already filtered by the same visibility and liveness.
+            if (filters.fullTextMatchIds && filters.fullTextMatchIds.length > 0) or.push({ id: { in: [...filters.fullTextMatchIds] } });
             and.push({ OR: or });
         }
 
@@ -1163,7 +1174,7 @@ export class WorkItemRepository {
     /**
      * Live, visible items of unarchived projects whose title holds the
      * query (substring, `WorkItem_search_title_trgm`) or all of its words
-     * (`simple` full text, `WorkItem_search_title_fts`), plus the item a
+     * (full text through `islestone_bg_en`, stemmed, 2.7f; `WorkItem_search_title_fts`), plus the item a
      * typed key resolved to (`keyHitId`). Ordered so the best candidates make
      * the cut: the key hit, an exact title, a title prefix, the full-text
      * rank, the trigram similarity, then the id; the usecase ranks the rows
@@ -1194,13 +1205,87 @@ export class WorkItemRepository {
                AND w."deletedAt" IS NULL
                AND ${projectVisibilitySql(v, { projectAlias: 'p', projectIdColumn: 'w."projectId"' })}
                AND (w."title" ILIKE ${containsPattern(query)}
-                    OR to_tsvector('simple', w."title") @@ plainto_tsquery('simple', ${query})${keyHit})
+                    OR to_tsvector('islestone_bg_en', w."title") @@ plainto_tsquery('islestone_bg_en', ${query})${keyHit})
              ORDER BY ${keyFirst}(lower(w."title") = lower(${query})) DESC,
                       (w."title" ILIKE ${prefixPattern(query)}) DESC,
-                      ts_rank(to_tsvector('simple', w."title"), plainto_tsquery('simple', ${query})) DESC,
+                      ts_rank(to_tsvector('islestone_bg_en', w."title"), plainto_tsquery('islestone_bg_en', ${query})) DESC,
                       similarity(w."title", ${query}) DESC,
                       w."id" ASC
              LIMIT ${limit}`);
+    }
+
+    /**
+     * Live, visible items whose title matches the query in full text through
+     * `islestone_bg_en` (stems in either language, `websearch_to_tsquery`
+     * syntax), for the list's `q` (2.7f); `WorkItem_search_title_fts` serves
+     * it. At most `cap` (at most `SEARCH_MATCH_CAP`) ids.
+     */
+    static async titleFullTextIds(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, query: string, cap: number): Promise<string[]> {
+        const limit = Math.min(Math.max(1, Math.floor(cap)), SEARCH_MATCH_CAP);
+        const rows = await db.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+            SELECT w."id"
+              FROM "WorkItem" w
+              JOIN "Project" p ON p."id" = w."projectId" AND p."tenantId" = w."tenantId"
+             WHERE w."tenantId" = ${ctx.tenantId}
+               AND w."deletedAt" IS NULL
+               AND ${projectVisibilitySql(v, { projectAlias: 'p', projectIdColumn: 'w."projectId"' })}
+               AND to_tsvector('islestone_bg_en', w."title") @@ websearch_to_tsquery('islestone_bg_en', ${query})
+             ORDER BY w."id" ASC
+             LIMIT ${limit}`);
+        return rows.map((r) => r.id);
+    }
+
+    /**
+     * The search rows of items found by their description or a comment
+     * (2.7f): live, visible, unarchived, by id; at most `SEARCH_MATCH_CAP`.
+     */
+    static async findSearchRows(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, ids: readonly string[]): Promise<WorkItemSearchRow[]> {
+        if (ids.length === 0) return [];
+        const rows = await db.workItem.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: [...ids] }, deletedAt: null, AND: [projectVisibilityWhere(v)] },
+            take: SEARCH_MATCH_CAP,
+            select: { id: true, title: true, number: true, project: { select: { keyPrefix: true } } },
+        });
+        return rows.map((r) => ({ id: r.id, title: r.title, number: r.number, keyPrefix: r.project.keyPrefix }));
+    }
+
+    /**
+     * The texts a search shows its snippets from (2.7f): the descriptions of
+     * live, visible items and the bodies of live comments on them, decrypted
+     * by the client's extension. At most `SEARCH_ROW_CAP` of each.
+     */
+    static async searchSnippetSources(
+        db: PrismaTx,
+        ctx: RequestContext,
+        v: ProjectVisibility,
+        ids: { descriptionItemIds: readonly string[]; commentIds: readonly string[] },
+    ): Promise<{ descriptions: Map<string, string>; comments: Map<string, string> }> {
+        const visible = projectVisibilityWhere(v);
+        const [items, comments] = await Promise.all([
+            ids.descriptionItemIds.length === 0
+                ? Promise.resolve([])
+                : db.workItem.findMany({
+                      where: { tenantId: ctx.tenantId, id: { in: [...ids.descriptionItemIds] }, deletedAt: null, AND: [visible] },
+                      take: SEARCH_ROW_CAP,
+                      select: { id: true, description: true },
+                  }),
+            ids.commentIds.length === 0
+                ? Promise.resolve([])
+                : db.comment.findMany({
+                      where: {
+                          tenantId: ctx.tenantId,
+                          id: { in: [...ids.commentIds] },
+                          deletedAt: null,
+                          workItem: { deletedAt: null, AND: [visible] },
+                      },
+                      take: SEARCH_ROW_CAP,
+                      select: { id: true, body: true },
+                  }),
+        ]);
+        return {
+            descriptions: new Map(items.flatMap((i) => (i.description ? [[i.id, i.description] as const] : []))),
+            comments: new Map(comments.map((c) => [c.id, c.body] as const)),
+        };
     }
 
     // ── Keys ─────────────────────────────────────────────────────────

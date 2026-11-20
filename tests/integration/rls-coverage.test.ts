@@ -307,6 +307,7 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             'RecipientList',
             'RecipientListMember',
             'SavedView',
+            'SearchVector',
             'Team',
             'TenantCustomRole',
             'TenantInvite',

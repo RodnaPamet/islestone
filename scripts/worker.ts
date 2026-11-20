@@ -101,6 +101,19 @@ if (process.env.NODE_ENV === 'production') {
         }
 
         log.info('encryption key check passed (presence + sentinel round-trip)');
+
+        // ── Sub-phase 2.7f: the full-text configuration (ADR 0008 D2) ──
+        // The worker writes search vectors (the rebuild job, repeat copies,
+        // intake accepts); without Islestone's Postgres image and the
+        // `islestone_bg_en` migration it refuses to start, as the app does.
+        const { checkSearchConfiguration, searchConfigurationRefusal } = await import('../src/lib/search/configuration-check');
+        const { prisma } = await import('../src/lib/prisma');
+        const search = await checkSearchConfiguration((query) => prisma.$queryRaw(query));
+        if (!search.ok) {
+            log.fatal('[startup] FATAL: ' + searchConfigurationRefusal(search));
+            process.exit(1);
+        }
+        log.info('search configuration check passed (islestone_bg_en fixtures)');
     })();
 }
 

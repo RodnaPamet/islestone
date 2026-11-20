@@ -11,7 +11,8 @@
  * are Islestone's (work items and projects, ADR 0006); the shapes and the
  * tunables are kept. The endpoint, `GET /api/t/<slug>/search`, shipped with
  * sub-phase 2.7b: work-item titles and keys and project names (ADR 0008 D1
- * item 1, docs/search.md); 2.7f adds descriptions and comments.
+ * item 1, docs/search.md); 2.7f added descriptions and comments (`matchedIn`,
+ * `snippet`).
  *
  * This contract is not a permission-evaluation surface: hits carry no
  * "you can/cannot edit this"; that lives on the detail page.
@@ -34,6 +35,13 @@
  * `SEARCH_TYPE_DEFAULTS`; downstream code is type-checked.
  */
 export type SearchHitType = 'workItem' | 'project';
+
+/**
+ * Where a hit matched (2.7f): its title (or a project's name), its key (or a
+ * project's key prefix), a work item's description, or one of its comments.
+ * Description and comment matches rank below every title match.
+ */
+export type SearchMatchSource = 'title' | 'key' | 'description' | 'comment';
 
 // ─── Hit shape ─────────────────────────────────────────────────────────
 
@@ -66,6 +74,14 @@ export interface SearchHit {
     iconKey: 'work-item' | 'project';
     /** Plural display name for grouping headers ("Work items", "Projects"). */
     category: string;
+    /** Where it matched (2.7f). */
+    matchedIn: SearchMatchSource;
+    /**
+     * For a description or comment match: a short window of the matched text
+     * (at most `SNIPPET_LENGTH` characters plus ellipses), read under the
+     * caller's visibility and never stored; `null` otherwise.
+     */
+    snippet: string | null;
 }
 
 // ─── Per-type metadata ─────────────────────────────────────────────────
@@ -133,3 +149,12 @@ export const MIN_QUERY_LENGTH = 1;
  * "a" characters). Anything longer is truncated.
  */
 export const MAX_QUERY_LENGTH = 200;
+
+/** The longest snippet a description or comment hit carries (2.7f). */
+export const SNIPPET_LENGTH = 120;
+
+/**
+ * How many of the best description and comment hits carry a snippet: each
+ * snippet is a decrypted read, so the rest carry `null`.
+ */
+export const SNIPPET_HITS = 5;
