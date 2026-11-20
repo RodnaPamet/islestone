@@ -597,7 +597,31 @@
             "resourcePlural": "work items"
         },
         "myWork": {
-            "description": "Work items assigned to you."
+            "description": "Your work items: assigned to you, created by you, watched by you, and due soon.",
+            "count": "{count}",
+            "countMore": "{count}+",
+            "closedHidden": "Done and cancelled items are hidden; choose a category in the filters to show them.",
+            "sections": {
+                "assigned": {
+                    "title": "Assigned to me",
+                    "empty": "Nothing assigned to you matches these filters."
+                },
+                "created": {
+                    "title": "Created by me",
+                    "empty": "Nothing you created matches these filters."
+                },
+                "watching": {
+                    "title": "Watching",
+                    "empty": "Nothing you watch matches these filters."
+                },
+                "dueSoon": {
+                    "title": "Due soon",
+                    "description": "Your open items that are overdue or due within {days} days.",
+                    "empty": "Nothing of yours is overdue or due within {days} days."
+                }
+            },
+            "countHint": "Items loaded",
+            "loadMoreIn": "Load more in {section}"
         },
         "layout": {
             "label": "Layout",

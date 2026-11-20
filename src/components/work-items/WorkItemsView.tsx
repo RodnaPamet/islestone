@@ -6,7 +6,7 @@
  * URL), the create modal, the bulk actions, the Deleted view with restore,
  * and the detail sheet. Used by the workspace list (`/work-items`), a
  * project (`/projects/<key>`, where the board's columns are the team's
- * states) and My Work (the person's assigned items).
+ * states). My Work has its own sections (`MyWorkView`) over the same query.
  *
  * The list, every board column and the detail read the same hooks over the
  * one SWR cache, so a change in one is in the others at once; every mutation
@@ -22,7 +22,7 @@
  * severity, type, source and control columns, "Awaiting my review", the KPI
  * sparklines and the client-side sort cut.
  */
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -33,33 +33,33 @@ import { ListPageShell } from '@/components/layout/ListPageShell';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
-import { FilterProvider, useFilterContext, useFilters } from '@/components/ui/filter';
+import { FilterProvider, useFilters } from '@/components/ui/filter';
 import { useLocalStorage } from '@/components/ui/hooks';
 import { BatchActionButton, createColumns, type TableInstance } from '@/components/ui/table';
 import { useTenantSWR } from '@/lib/data/use-tenant-swr';
-import { usePermissions, useTenantContext, useTenantHref } from '@/lib/tenant-context-provider';
+import { usePermissions, useTenantContext } from '@/lib/tenant-context-provider';
 import { uiStorageKey } from '@/lib/ui-storage';
-import { workItemPath } from '@/lib/work-item-paths';
 import type { WorkItemRow, WorkflowStateCategory } from '@/lib/work-items/types';
 import { WORKFLOW_STATE_CATEGORIES } from '@/app-layer/domain/workflow-state';
 
-import { PriorityBadge, StateBadge } from './badges';
 import { LANE_BY_VALUES, categoryColumns, stateColumns, type LaneBy } from './board/board-model';
 import { WorkItemBoard } from './board/WorkItemBoard';
 import { publishListOrder } from './data/list-order';
 import type { WorkItemListFilters } from './data/list-filters';
-import { memberLabel, useMembers, useWorkConfig } from './data/use-work-config';
+import { useWorkConfig } from './data/use-work-config';
 import { useWorkItemList } from './data/use-work-item-list';
 import { useWorkItemMutations } from './data/use-work-item-mutations';
-import { buildWorkItemFilterDefs } from './filter-defs';
+import type { buildWorkItemFilterDefs } from './filter-defs';
 import { LayoutToggle, type WorkItemLayout } from './LayoutToggle';
 import { NewWorkItemModal } from './NewWorkItemModal';
 import { AssigneePicker } from './pickers';
+import { useWorkItemColumns } from './use-work-item-columns';
+import { useListFiltersFromContext, useWorkItemFilterContext } from './use-work-item-filter-context';
 import { WorkItemSheet } from './WorkItemSheet';
 
 export interface WorkItemsViewProps {
-    /** The view's fixed scope: a project (and its team), or an assignee (My Work). */
-    scope: { projectId?: string; teamId?: string; assigneeId?: string };
+    /** The view's fixed scope: a project (and its team), or none (every visible item). */
+    scope: { projectId?: string; teamId?: string };
     title: string;
     description?: string;
     /** Per-view key for the remembered layout and lanes. */
@@ -179,38 +179,14 @@ function DeletedView({ onBack }: { onBack: () => void }) {
 }
 
 export function WorkItemsView(props: WorkItemsViewProps) {
-    const tView = useTranslations('workItems');
-    const config = useWorkConfig();
-    const { members } = useMembers();
-    const defs = useMemo(
-        () =>
-            buildWorkItemFilterDefs(
-                config,
-                members,
-                { projectId: props.scope.projectId, teamId: props.scope.teamId, fixedAssignee: !!props.scope.assigneeId },
-                (k, v) => tView(k, v),
-            ),
-        [config, members, props.scope, tView],
+    const filterScope = useMemo(
+        () => ({ projectId: props.scope.projectId, teamId: props.scope.teamId }),
+        [props.scope.projectId, props.scope.teamId],
     );
-    const raw = useFilterContext(defs.filters, defs.filterKeys, { syncUrl: true });
-    // The mirrored filter select reports its (empty) search on mount and the
-    // toolbar debounces it into `setSearch`, which writes the URL with
-    // `router.replace`. That no-op replace, 250 ms after the page mounts,
-    // cancelled a navigation the person had just started (the palette's
-    // "Go to Inbox" left them on this page). A search that does not change
-    // writes nothing.
-    const filterCtx = useMemo(
-        () => ({
-            ...raw,
-            setSearch: (q: string) => {
-                if (q !== raw.search) raw.setSearch(q);
-            },
-        }),
-        [raw],
-    );
+    const { filterCtx, filterDefs } = useWorkItemFilterContext(filterScope);
     return (
         <FilterProvider value={filterCtx}>
-            <WorkItemsViewBody {...props} filterDefs={defs.filters} />
+            <WorkItemsViewBody {...props} filterDefs={filterDefs} />
         </FilterProvider>
     );
 }
@@ -223,13 +199,10 @@ function WorkItemsViewBody({
     filterDefs,
 }: WorkItemsViewProps & { filterDefs: ReturnType<typeof buildWorkItemFilterDefs>['filters'] }) {
     const tBody = useTranslations('workItems');
-    const router = useRouter();
     const searchParams = useSearchParams();
-    const tenantHref = useTenantHref();
     const { tenantSlug } = useTenantContext();
     const perms = usePermissions().work_items;
     const config = useWorkConfig();
-    const { byId: memberById } = useMembers();
     const [layout, setLayout] = useLocalStorage<WorkItemLayout>(uiStorageKey('work-items', 'layout', viewKey), 'list');
     const [laneBy, setLaneBy] = useLocalStorage<LaneBy>(uiStorageKey('work-items', 'lanes', viewKey), 'none');
     const [sheetId, setSheetId] = useState<string | null>(null);
@@ -317,9 +290,7 @@ function WorkItemsViewBody({
                         filterDefs={filterDefs}
                         onOpen={openRow}
                         teamId={scope.teamId}
-                        memberName={(id) => (id ? memberLabel(memberById.get(id)) : null)}
                         onPublish={(keys) => publishListOrder(tenantSlug, keys)}
-                        openPage={(row) => router.push(tenantHref(workItemPath(row.key)))}
                     >
                         {sheet}
                     </ListLayout>
@@ -338,18 +309,16 @@ function FiltersBound({
     render: (filters: WorkItemListFilters, toolbar: (leading: React.ReactNode) => React.ReactNode) => React.ReactNode;
 }) {
     const tFilters = useTranslations('workItems');
-    const { state, search, filters: defs } = useFilters();
-    const filters = useMemo<WorkItemListFilters>(() => {
-        const joined: Record<string, string> = {};
-        for (const [key, values] of Object.entries(state)) if (values.length) joined[key] = values.join(',');
-        return {
-            ...joined,
+    const { filters: defs } = useFilters();
+    const fromContext = useListFiltersFromContext();
+    const filters = useMemo<WorkItemListFilters>(
+        () => ({
+            ...fromContext,
             ...(scope.projectId ? { projectId: scope.projectId } : {}),
-            ...(scope.assigneeId ? { assigneeId: scope.assigneeId } : {}),
-            q: search,
             order: 'manual',
-        };
-    }, [state, search, scope.projectId, scope.assigneeId]);
+        }),
+        [fromContext, scope.projectId],
+    );
     const toolbar = useCallback(
         (leading: React.ReactNode) => (
             <FilterToolbar filters={defs} searchId="work-items-search" searchPlaceholder={tFilters('list.searchPlaceholder')} leading={leading} />
@@ -366,9 +335,7 @@ function ListLayout({
     filterDefs,
     onOpen,
     teamId,
-    memberName,
     onPublish,
-    openPage,
     children,
 }: {
     filters: WorkItemListFilters;
@@ -377,14 +344,10 @@ function ListLayout({
     filterDefs: ReturnType<typeof buildWorkItemFilterDefs>['filters'];
     onOpen: (row: WorkItemRow) => void;
     teamId: string | undefined;
-    memberName: (id: string | null) => string | null;
     onPublish: (keys: string[]) => void;
-    openPage: (row: WorkItemRow) => void;
     children: React.ReactNode;
 }) {
     const tList = useTranslations('workItems');
-    const config = useWorkConfig();
-    const tenantHref = useTenantHref();
     const list = useWorkItemList(filters);
 
     useEffect(() => {
@@ -393,42 +356,7 @@ function ListLayout({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [list.items]);
 
-    const columns = useMemo(
-        () =>
-            createColumns<WorkItemRow>([
-                { id: 'key', header: tList('col.key'), cell: ({ row }) => <span className="font-mono text-xs text-content-muted">{row.original.key}</span> },
-                {
-                    id: 'title',
-                    header: tList('col.title'),
-                    cell: ({ row }) => (
-                        <a
-                            href={tenantHref(workItemPath(row.original.key))}
-                            className="text-content-emphasis hover:underline"
-                            onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                openPage(row.original);
-                            }}
-                        >
-                            {row.original.title}
-                        </a>
-                    ),
-                },
-                {
-                    id: 'state',
-                    header: tList('col.state'),
-                    cell: ({ row }) => <StateBadge name={config.stateById.get(row.original.stateId)?.name} category={row.original.stateCategory} />,
-                },
-                { id: 'priority', header: tList('col.priority'), cell: ({ row }) => <PriorityBadge priority={row.original.priority} /> },
-                {
-                    id: 'assignee',
-                    header: tList('col.assignee'),
-                    cell: ({ row }) => memberName(row.original.assigneeId) ?? <span className="text-content-muted">{tList('detail.unassigned')}</span>,
-                },
-                { id: 'due', header: tList('col.dueDate'), cell: ({ row }) => row.original.dueDate ?? '' },
-            ]),
-        [tList, config, tenantHref, memberName, openPage],
-    );
+    const columns = useWorkItemColumns();
 
     return (
         <EntityListPage<WorkItemRow>
