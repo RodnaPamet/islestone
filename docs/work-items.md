@@ -257,3 +257,6 @@ A workspace admin configures work without the API on the Settings pages (`src/ap
 - **The workflow order.** `workflow-order.ts` lists a team's states by category in workflow order, and a move names the neighbour in the same category, so a state never leaves its category by being moved.
 - **Not offered (decisions for this pull request).** Project delete and restore, a key-prefix change, type icons, colours and order, and label colours stay API-only. Settings stays admin-only through `mayOpenSettings`; a Member, who holds `projects.create`, creates a project from the Projects page instead (decision 57, "Views (2.3)"), through the same dialog.
 
+## Intake (2.6a)
+
+Requests from forms wait in intake, outside `WorkItem` (ADR 0002 "Consequences"), until a person accepts, declines, merges or snoozes them. Accepting creates the item through `createWorkItemInTx`, the create path's in-transaction core that `createWorkItem` also runs, so an accepted request is created exactly as any item is, its `WORK_ITEM_CREATED` entry naming the request. See [docs/intake.md](intake.md).
