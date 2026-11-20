@@ -11,7 +11,7 @@ The schema lives in this directory, not in a single `prisma/schema.prisma`. `pri
 | `tenancy.prisma` | `Organization`, `OrgMembership`, `Tenant` (a workspace), `TenantMembership`, `User` |
 | `auth.prisma` | The NextAuth, session, MFA, invite, custom-role and password-reset models, and `TenantSecuritySettings` (sub-phase 1.4; 1.5 adds the audit-stream columns) |
 | `audit-trail.prisma` | `AuditLog`, `OrgAuditLog`, `AuditOutbox` (sub-phase 1.5, [docs/audit-trail.md](../../docs/audit-trail.md)) |
-| `intake.prisma` | `ProjectIntake`, `IntakeNotifyMember`, `IntakeForm`, `IntakeRequest` (sub-phase 2.6, [docs/porting/maps/2.6.md](../../docs/porting/maps/2.6.md)) |
+| `intake.prisma` | `ProjectIntake`, `IntakeNotifyMember`, `IntakeForm`, `IntakeRequest`, and from 2.6c `IntakeFollowUp`, `IntakeBlockedSender`, `IntakeInboundEmail` (sub-phase 2.6, [docs/porting/maps/2.6.md](../../docs/porting/maps/2.6.md)) |
 
 Later sub-phases add one file per domain.
 

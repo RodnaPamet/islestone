@@ -17,11 +17,12 @@ import { Button, Section, Text } from '@react-email/components';
 
 import { EmailLayout, button, paragraph } from './layout';
 
-export type IntakeRequesterEmailKind = 'CONFIRM' | 'ACCEPTED' | 'DECLINED' | 'MERGED';
+export type IntakeRequesterEmailKind = 'CONFIRM' | 'ACCEPTED' | 'DECLINED' | 'MERGED' | 'RECEIVED';
 
 export interface IntakeRequesterEmailProps {
     kind: IntakeRequesterEmailKind;
-    formName: string;
+    /** The form it was sent through; `null` for a request that arrived by email (2.6c). */
+    formName: string | null;
     reference: string;
     /** CONFIRM: the absolute confirmation page link. */
     confirmUrl?: string;
@@ -44,7 +45,13 @@ export const INTAKE_REQUESTER_HEADING: Record<IntakeRequesterEmailKind, string> 
     ACCEPTED: 'Your request was accepted',
     DECLINED: 'Your request was declined',
     MERGED: 'Your request is being handled with another',
+    RECEIVED: 'We received your request',
 };
+
+/** How a request came in, as a phrase: through its form, or by email. */
+function via(p: Pick<IntakeRequesterEmailProps, 'formName'>): string {
+    return p.formName ? `sent through the form "${p.formName}"` : 'sent by email';
+}
 
 export function intakeRequesterLines(p: IntakeRequesterEmailProps): string[] {
     switch (p.kind) {
@@ -54,16 +61,21 @@ export function intakeRequesterLines(p: IntakeRequesterEmailProps): string[] {
                 'Confirm this address to get updates. If you did not send it, ignore this email: nothing more will be sent.',
             ];
         case 'ACCEPTED':
-            return [`Your request ${p.reference}, sent through the form "${p.formName}", was accepted and will be worked on.`];
+            return [`Your request ${p.reference}, ${via(p)}, was accepted and will be worked on.`];
         case 'DECLINED':
             return [
-                `Your request ${p.reference}, sent through the form "${p.formName}", was declined.`,
+                `Your request ${p.reference}, ${via(p)}, was declined.`,
                 `Reason: ${p.reasonLabel ?? 'Not given'}.`,
                 ...(p.explanation ? [p.explanation] : []),
             ];
         case 'MERGED':
             return [
-                `Your request ${p.reference}, sent through the form "${p.formName}", is being handled together with an existing request.`,
+                `Your request ${p.reference}, ${via(p)}, is being handled together with an existing request.`,
+            ];
+        case 'RECEIVED':
+            return [
+                `We received your request. Its reference is ${p.reference}.`,
+                'To add to it, reply to this email. You will hear from us when it is decided.',
             ];
     }
 }

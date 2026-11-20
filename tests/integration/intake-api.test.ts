@@ -26,6 +26,7 @@ jest.mock('@/app-layer/context', () => ({
     getTenantCtx: (params: unknown, req: unknown) => getTenantCtxMock(params, req),
 }));
 
+import { blockSender } from '@/app-layer/usecases/intake-blocked-senders';
 import { createIntakeForm } from '@/app-layer/usecases/intake-form';
 import { sendIntakeRequest } from '@/app-layer/usecases/intake-request';
 import { setProjectIntake } from '@/app-layer/usecases/intake-settings';
@@ -52,11 +53,12 @@ interface Ids {
     form: string;
     request: string;
     type: string;
+    blocked: string;
 }
 
 interface Call {
     file: string;
-    method: 'GET' | 'POST' | 'PATCH';
+    method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
     path: (i: Ids) => string;
     params: (i: Ids) => Record<string, string>;
     body?: (i: Ids) => unknown;
@@ -83,6 +85,25 @@ const CALLS: Call[] = [
     { file: `${I}/forms/[formId]/requests/route.ts`, method: 'POST', path: (i) => `/intake/forms/${i.form}/requests`, params: (i) => P({ formId: i.form }), body: () => ({ title: 'via api', answers: {} }), key: 'projects.view' },
     { file: `${I}/open-forms/route.ts`, method: 'GET', path: () => '/intake/open-forms', params: () => P(), key: 'projects.view' },
     { file: `${I}/projects/route.ts`, method: 'GET', path: () => '/intake/projects', params: () => P(), key: 'intake.manage' },
+    // Sub-phase 2.6c: blocked senders and the project's address (decision 92).
+    { file: `${I}/blocked-senders/route.ts`, method: 'GET', path: () => '/intake/blocked-senders', params: () => P(), key: 'intake.manage' },
+    {
+        file: `${I}/blocked-senders/route.ts`,
+        method: 'POST',
+        path: () => '/intake/blocked-senders',
+        params: () => P(),
+        body: (i) => ({ email: `spam-${Math.random().toString(36).slice(2)}@example.test`, projectId: i.project }),
+        key: 'intake.manage',
+    },
+    { file: `${I}/blocked-senders/find/route.ts`, method: 'POST', path: () => '/intake/blocked-senders/find', params: () => P(), body: () => ({ email: 'spam@example.test' }), key: 'intake.manage' },
+    { file: `${I}/blocked-senders/[blockedId]/route.ts`, method: 'DELETE', path: (i) => `/intake/blocked-senders/${i.blocked}`, params: (i) => P({ blockedId: i.blocked }), key: 'intake.manage' },
+    {
+        file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/intake/email-address/route.ts',
+        method: 'POST',
+        path: (i) => `/projects/${i.project}/intake/email-address`,
+        params: (i) => P({ projectId: i.project }),
+        key: 'intake.manage',
+    },
 ];
 
 function request(method: string, p: string, body?: unknown): NextRequest {
@@ -124,7 +145,8 @@ describeFn('the intake API', () => {
         await setProjectIntake(owner, project.id, { enabled: true });
         const form = await createIntakeForm(owner, { projectId: project.id, name: 'API form', definition: { fields: [] } });
         const req = await sendIntakeRequest(ctxFor('MEMBER'), form.id, { title: 'seeded', answers: {} });
-        Object.assign(ids, { project: project.id, form: form.id, request: req.id, type: (await listWorkItemTypes(owner))[0]!.id });
+        const blocked = await blockSender(owner, { email: 'spam@example.test', projectId: null });
+        Object.assign(ids, { project: project.id, form: form.id, request: req.id, type: (await listWorkItemTypes(owner))[0]!.id, blocked: blocked.row.id });
     });
 
     afterAll(async () => {

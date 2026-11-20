@@ -90,6 +90,11 @@ const CONTRACTS: ReadonlyArray<{
         handler: 'api/intake/confirm/route.ts',
         methods: { POST: /confirmRequesterAddress\s*\(/ },
         why: 'A requester confirming their address (2.6b, decision 98): a per-IP limit, cross-site refusal, JSON only, a 4 KB capped body, then the 256-bit confirmation token.',
+    },    {
+        prefix: '/api/intake/email',
+        handler: 'api/intake/email/resend/route.ts',
+        methods: { POST: /acceptResendWebhook\s*\(/ },
+        why: "Resend's inbound email webhook (2.6c, decision 98): the Svix signature over the capped raw body, refused outside five minutes; records the delivery and enqueues the fetch.",
     },
 ];
 
@@ -133,10 +138,11 @@ describe('machine-caller paths authenticate themselves', () => {
         expect(CONTRACTS.filter((c) => !MACHINE_CALLER_PREFIXES.includes(c.prefix))).toEqual([]);
     });
 
-    it('the list holds exactly the sub-phase 1.6 beacons and the 2.6b public intake routes — a new entry is a reviewed edit here', () => {
+    it('the list holds exactly the sub-phase 1.6 beacons, the 2.6b public intake routes and the 2.6c email webhook — a new entry is a reviewed edit here', () => {
         expect([...MACHINE_CALLER_PREFIXES].sort()).toEqual([
             '/api/csp-report',
             '/api/intake/confirm',
+            '/api/intake/email',
             '/api/intake/forms',
             '/api/security/csp-report',
             '/api/telemetry/vitals',
@@ -161,6 +167,8 @@ describe('the allowlist opens what it means to open, and nothing else', () => {
             '/api/intake/requests',
             '/api/intake/forms-admin',
             '/api/intake/confirmations',
+            '/api/intake/emails',
+            '/api/intake/email-admin',
             '/api/t/acme/intake/forms',
             '/api/t/acme/intake/requests',
             '/forms',

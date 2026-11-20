@@ -73,6 +73,22 @@ export interface IntakeRequestDetail extends IntakeRequestRow {
     requesterEmail: string | null;
     /** Whether a public requester asked for email updates and confirmed their address. */
     requesterUpdates: 'NONE' | 'ASKED' | 'CONFIRMED';
+    /** An emailed request's sender check (2.6c, decision 123); null on the form channels. */
+    senderCheck: 'VERIFIED' | 'FAILED' | 'NONE' | null;
+    /** Attachments the email carried, counted and not stored (2.6c). */
+    attachmentsDropped: number;
+    /** Later emails on the request, oldest first (2.6c). */
+    followUps: IntakeFollowUpView[];
+    /** The request has a requester address a spam decline can block (2.6c). */
+    senderBlockable: boolean;
+}
+
+/** A later email on an emailed request (2.6c), as people who triage see it. */
+export interface IntakeFollowUpView {
+    id: string;
+    body: string;
+    attachmentsDropped: number;
+    createdAt: string;
 }
 
 export interface IntakeRequestPage {
@@ -117,4 +133,20 @@ export interface ProjectIntakeSettings {
     enabled: boolean;
     notifyUserIds: string[];
     pendingCount: number;
+    /** Whether the project's email address takes mail (2.6c). */
+    emailEnabled: boolean;
+    /** The project's intake address, once it has one (2.6c). */
+    emailAddress: string | null;
+}
+
+/**
+ * An address a project, or the whole workspace (`projectId` null), takes no
+ * intake from (2.6c), for Settings. The address itself is never stored (ADR
+ * 0006 "Blocked sender"), so the row shows where and when it was blocked.
+ */
+export interface IntakeBlockedSenderView {
+    id: string;
+    projectId: string | null;
+    createdByUserId: string;
+    createdAt: string;
 }

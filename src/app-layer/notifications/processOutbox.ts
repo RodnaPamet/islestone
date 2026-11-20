@@ -191,6 +191,7 @@ export async function processOutbox(
                 subject: row.subject,
                 text: row.bodyText,
                 html: row.bodyHtml || undefined,
+                ...(row.replyTo ? { replyTo: row.replyTo } : {}),
                 template: row.type,
                 // The workspace's sender and BCC mailbox — the one definition
                 // every sender of workspace mail uses.

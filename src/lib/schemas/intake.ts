@@ -59,8 +59,24 @@ export const SetProjectIntakeSchema = z
     .object({
         enabled: z.boolean(),
         notifyUserIds: z.array(Id).max(500).optional(),
+        /** The project's email address takes mail (2.6c). */
+        emailEnabled: z.boolean().optional(),
     })
     .strict();
+
+/** An address to block or look up (2.6c): stored only as its lookup hash. */
+const SenderAddress = z.string().trim().min(3).max(320).email();
+
+export const BlockSenderSchema = z
+    .object({
+        email: SenderAddress,
+        /** The project; null blocks the address across the workspace. */
+        projectId: Id.nullable(),
+    })
+    .strict();
+
+/** Find an address's blocks: a POST body, so the address never sits in a URL or an access log. */
+export const FindBlockedSenderSchema = z.object({ email: SenderAddress }).strict();
 
 export const EditIntakeRequestSchema = z
     .object({
@@ -94,8 +110,11 @@ export const DeclineIntakeRequestSchema = z
         reason: z.enum(INTAKE_DECLINE_REASONS as unknown as ['NOT_PLANNED', 'OUT_OF_SCOPE', 'SPAM', 'OTHER']),
         explanation: z.string().max(2000).nullable().optional(),
         remark: z.string().max(2000).nullable().optional(),
+        /** With SPAM only: block the requester's address on the project (2.6c; `intake.manage`). */
+        blockSender: z.boolean().optional(),
     })
-    .strict();
+    .strict()
+    .refine((b) => !b.blockSender || b.reason === 'SPAM', { message: 'Only a spam decline blocks the sender.', path: ['blockSender'] });
 
 export const MergeIntakeRequestSchema = z.union([
     z.object({ workItemId: Id }).strict(),

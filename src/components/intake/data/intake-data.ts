@@ -15,6 +15,7 @@ import { useSWRConfig } from 'swr';
 import { ApiClientError, apiSend } from '@/lib/data/api-client';
 import { useTenantSWR } from '@/lib/data/use-tenant-swr';
 import type {
+    IntakeBlockedSenderView,
     IntakeFormData,
     IntakeRequestDetail,
     IntakeRequestPage,
@@ -32,6 +33,7 @@ export const INTAKE_PATHS = {
     forms: '/intake/forms?includeArchived=1',
     openForms: '/intake/open-forms',
     projects: '/intake/projects',
+    blockedSenders: '/intake/blocked-senders',
 } as const;
 
 export const useIntakeRequests = (view: IntakeView, projectId?: string) => useTenantSWR<IntakeRequestPage>(INTAKE_PATHS.requests(view, projectId));
@@ -39,6 +41,7 @@ export const useIntakeRequest = (id: string | null) => useTenantSWR<IntakeReques
 export const useIntakeForms = (enabled = true) => useTenantSWR<IntakeFormData[]>(enabled ? INTAKE_PATHS.forms : null);
 export const useOpenIntakeForms = () => useTenantSWR<OpenIntakeForm[]>(INTAKE_PATHS.openForms);
 export const useProjectIntakes = (enabled = true) => useTenantSWR<ProjectIntakeSettings[]>(enabled ? INTAKE_PATHS.projects : null);
+export const useBlockedSenders = (enabled = true) => useTenantSWR<IntakeBlockedSenderView[]>(enabled ? INTAKE_PATHS.blockedSenders : null);
 export const usePendingIntakeCount = (enabled: boolean) =>
     useTenantSWR<{ total: number; byProject: Record<string, number> }>(enabled ? INTAKE_PATHS.count : null, { refreshInterval: 60_000 });
 

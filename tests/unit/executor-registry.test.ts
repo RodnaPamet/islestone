@@ -45,6 +45,7 @@ describe('executorRegistry — default registrations', () => {
             'audit-outbox-flush',
             'cycle-rollover',
             'health-check',
+            'intake-email-fetch',
             'intake-purge',
             'intake-snooze-wake',
             'key-rotation',

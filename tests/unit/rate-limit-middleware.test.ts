@@ -45,7 +45,7 @@ import * as rateLimitModule from '@/lib/security/rate-limit';
 // "must find API_READ_LIMIT there"; the same argument applies here and the
 // gap is noted rather than papered over by importing it from the barrel it
 // is absent from.
-import { INTAKE_CONFIRM_LIMIT, INTAKE_PUBLIC_SUBMIT_HOURLY_LIMIT, INTAKE_PUBLIC_SUBMIT_LIMIT, TENANT_CREATE_LIMIT } from '@/lib/security/rate-limit';
+import { INTAKE_CONFIRM_LIMIT, INTAKE_EMAIL_WEBHOOK_LIMIT, INTAKE_PUBLIC_SUBMIT_HOURLY_LIMIT, INTAKE_PUBLIC_SUBMIT_LIMIT, TENANT_CREATE_LIMIT } from '@/lib/security/rate-limit';
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
@@ -517,6 +517,8 @@ describe('Preset policy sanity', () => {
         ['INTAKE_PUBLIC_SUBMIT_LIMIT', INTAKE_PUBLIC_SUBMIT_LIMIT, 5, 60 * 1000, undefined],
         ['INTAKE_PUBLIC_SUBMIT_HOURLY_LIMIT', INTAKE_PUBLIC_SUBMIT_HOURLY_LIMIT, 30, 60 * 60 * 1000, undefined],
         ['INTAKE_CONFIRM_LIMIT', INTAKE_CONFIRM_LIMIT, 10, 60 * 1000, undefined],
+        // Sub-phase 2.6c: the inbound email webhook, per IP (the provider's senders share few addresses).
+        ['INTAKE_EMAIL_WEBHOOK_LIMIT', INTAKE_EMAIL_WEBHOOK_LIMIT, 300, 60 * 1000, undefined],
     ];
 
     it('the pinned table covers every preset the module exports', () => {

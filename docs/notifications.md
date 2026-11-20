@@ -166,6 +166,19 @@ nowhere into the app (the confirmation page is outside it). The workspace's
 email switch applies as for every other email. See `docs/intake.md`,
 "Public forms (2.6b)".
 
+From 2.6c an emailed request's sender is such a recipient too.
+`INTAKE_RECEIVED_ACK`, added in a migration of its own, acknowledges a new
+emailed request, only when the sender check is `VERIFIED` (owner decision
+123), once per request; it names the reference only and carries a
+`Reply-To`: the request's reply address, so the sender's reply threads onto
+the request. `NotificationOutbox.replyTo` holds it (our own intake address,
+not personal data), and the mailer passes it to nodemailer. A `VERIFIED`
+sender's address counts as confirmed, so the accepted, declined and merged
+notices reach it; nothing is ever sent to an unauthenticated sender, to an
+auto-reply or bounce, or about a follow-up. See `docs/intake.md`, "Inbound
+email (2.6c)". Outbound mail goes through Resend's SMTP once an operator
+configures it (`docs/deployment.md`, "Email (Resend)").
+
 ### Sender address
 
 The `From` header is the workspace's `defaultFromEmail`, and when the

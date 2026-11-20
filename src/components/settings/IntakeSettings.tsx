@@ -7,7 +7,11 @@
  * builder). The writes are offered only when the server's affordances say
  * so (`intakeAffordances().manage`); a component never checks a role.
  * A published public form (2.6b) offers its link to copy; whether public
- * forms are open on the deployment is asked on the server.
+ * forms are open on the deployment is asked on the server. The project's
+ * email address (2.6c) is turned on here (only while inbound email is open
+ * on the deployment, asked on the server), copied, or replaced with a new
+ * one after an inline confirmation; blocked senders are listed below the
+ * projects (`IntakeBlockedSenders`).
  *
  * Written fresh for Islestone.
  */
@@ -28,6 +32,7 @@ import { useTenantHref } from '@/lib/tenant-context-provider';
 import { env as clientEnv } from '@/env-client';
 
 import { intakeRefusal, useIntakeApi, useIntakeForms, useProjectIntakes } from '@/components/intake/data/intake-data';
+import { IntakeBlockedSenders } from './IntakeBlockedSenders';
 import { IntakeFormBuilder } from './IntakeFormBuilder';
 
 function ProjectIntakeCard({
@@ -35,11 +40,13 @@ function ProjectIntakeCard({
     forms,
     canManage,
     publicForms,
+    inboundEmail,
 }: {
     project: ProjectIntakeSettings;
     forms: IntakeFormData[];
     canManage: boolean;
     publicForms: boolean;
+    inboundEmail: boolean;
 }) {
     const tCard = useTranslations('settings.intake');
     const toast = useToast();
@@ -47,10 +54,20 @@ function ProjectIntakeCard({
     const { send } = useIntakeApi();
     const { members } = useMembers();
     const [editing, setEditing] = useState<IntakeFormData | 'new' | null>(null);
+    const [confirmRotate, setConfirmRotate] = useState(false);
     const memberOptions = members.map((m) => ({ value: m.id, label: memberLabel(m) ?? m.id }));
     const notify = memberOptions.filter((o) => project.notifyUserIds.includes(o.value));
 
-    const save = async (body: { enabled: boolean; notifyUserIds?: string[] }) => {
+    const rotate = async () => {
+        setConfirmRotate(false);
+        try {
+            await send('POST', `/projects/${encodeURIComponent(project.projectId)}/intake/email-address`);
+            toast.success(tCard('email.rotated', { project: project.projectName }));
+        } catch (err) {
+            toast.error(intakeRefusal(err, tCard('failed')));
+        }
+    };
+    const save = async (body: { enabled: boolean; notifyUserIds?: string[]; emailEnabled?: boolean }) => {
         try {
             await send('PUT', `/projects/${encodeURIComponent(project.projectId)}/intake`, body);
             toast.success(tCard('saved', { project: project.projectName }));
@@ -106,6 +123,42 @@ function ProjectIntakeCard({
                             placeholder={tCard('notifyNone')}
                             buttonProps={{ 'aria-label': tCard('notifyFor', { project: project.projectName }) }}
                         />
+                    </div>
+                    <div className="space-y-tight">
+                        <div className="flex flex-wrap items-center justify-between gap-tight">
+                            <h3 className="text-sm font-medium text-content-emphasis">{tCard('email.title')}</h3>
+                            <div className="flex items-center gap-tight">
+                                <Switch
+                                    id={`intake-email-${project.projectId}`}
+                                    checked={project.emailEnabled}
+                                    // Turning it on needs inbound email open on the deployment; off is always allowed.
+                                    disabled={!canManage || (!project.emailEnabled && !inboundEmail)}
+                                    onCheckedChange={(v) => void save({ enabled: true, emailEnabled: v })}
+                                    aria-label={tCard('email.enabledFor', { project: project.projectName })}
+                                />
+                                <label htmlFor={`intake-email-${project.projectId}`} className="text-sm text-content-default">
+                                    {project.emailEnabled ? tCard('on') : tCard('off')}
+                                </label>
+                            </div>
+                        </div>
+                        {!inboundEmail && <p className="text-xs text-content-muted">{tCard('email.closed')}</p>}
+                        {project.emailAddress && (
+                            <div className="flex flex-wrap items-center gap-tight">
+                                <code className="break-all rounded-sm bg-bg-subtle px-tight text-sm text-content-emphasis">{project.emailAddress}</code>
+                                <CopyButton value={project.emailAddress} label={tCard('email.copyFor', { project: project.projectName })} successMessage={tCard('email.copied')} />
+                                {canManage &&
+                                    (confirmRotate ? (
+                                        <span className="flex flex-wrap items-center gap-tight" role="group" aria-label={tCard('email.rotateConfirmLabel')}>
+                                            <span className="text-xs text-content-muted">{tCard('email.rotateWarning')}</span>
+                                            <Button variant="destructive" size="sm" text={tCard('email.rotateConfirm')} onClick={() => void rotate()} />
+                                            <Button variant="ghost" size="sm" text={tCard('email.rotateCancel')} onClick={() => setConfirmRotate(false)} />
+                                        </span>
+                                    ) : (
+                                        <Button variant="ghost" size="sm" text={tCard('email.rotate')} aria-label={tCard('email.rotateFor', { project: project.projectName })} onClick={() => setConfirmRotate(true)} />
+                                    ))}
+                            </div>
+                        )}
+                        <p className="text-xs text-content-muted">{tCard('email.hint')}</p>
                     </div>
                     <div className="space-y-tight">
                         <div className="flex items-center justify-between gap-tight">
@@ -178,7 +231,7 @@ function ProjectIntakeCard({
     );
 }
 
-export function IntakeSettings({ affordances, publicForms = false }: { affordances: IntakeAffordances; publicForms?: boolean }) {
+export function IntakeSettings({ affordances, publicForms = false, inboundEmail = false }: { affordances: IntakeAffordances; publicForms?: boolean; inboundEmail?: boolean }) {
     const t = useTranslations('settings.intake');
     const { data: projects, error, isLoading } = useProjectIntakes(affordances.manage);
     const { data: forms } = useIntakeForms(affordances.manage || affordances.view);
@@ -188,8 +241,9 @@ export function IntakeSettings({ affordances, publicForms = false }: { affordanc
             {error && <p role="alert">{intakeRefusal(error, t('failed'))}</p>}
             {!isLoading && (projects ?? []).length === 0 && affordances.manage && <p className="text-sm text-content-muted">{t('noProjects')}</p>}
             {(projects ?? []).map((p) => (
-                <ProjectIntakeCard key={p.projectId} project={p} forms={(forms ?? []).filter((f) => f.projectId === p.projectId)} canManage={affordances.manage} publicForms={publicForms} />
+                <ProjectIntakeCard key={p.projectId} project={p} forms={(forms ?? []).filter((f) => f.projectId === p.projectId)} canManage={affordances.manage} publicForms={publicForms} inboundEmail={inboundEmail} />
             ))}
+            {(projects ?? []).length > 0 && <IntakeBlockedSenders projects={projects ?? []} canManage={affordances.manage} />}
         </DashboardLayout>
     );
 }

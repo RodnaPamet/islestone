@@ -7,7 +7,7 @@
  *
  * Written fresh for Islestone.
  */
-import type { IntakeChannel, IntakeDeclineReason, IntakeFormAccess, IntakeRequestStatus, Prisma } from '@prisma/client';
+import type { IntakeChannel, IntakeDeclineReason, IntakeFormAccess, IntakeRequestStatus, IntakeSenderCheck, Prisma } from '@prisma/client';
 
 import type { PrismaTx } from '@/lib/db-context';
 import { buildKeysetWhere, keysetOrderBy, type CursorPayload, type KeysetOrder } from '@/lib/pagination';
@@ -86,6 +86,10 @@ export const intakeRequestDetailSelect = {
     requesterEmail: true,
     updatesRequested: true,
     updatesConfirmedAt: true,
+    requesterEmailHash: true,
+    /** An emailed request (2.6c). */
+    senderCheck: true,
+    attachmentsDropped: true,
     form: { select: { name: true, definitionJson: true, definitionVersion: true } },
 } satisfies Prisma.IntakeRequestSelect;
 
@@ -247,6 +251,11 @@ export class IntakeRepository {
             updatesConfirmedAt?: Date | null;
             confirmTokenHash?: string | null;
             formTokenNonce?: string | null;
+            /** An emailed request (2.6c). */
+            senderCheck?: IntakeSenderCheck | null;
+            replyToken?: string | null;
+            sourceDedupeHash?: string | null;
+            attachmentsDropped?: number;
         },
     ) {
         return db.intakeRequest.create({ data: { tenantId: ctx.tenantId, ...data }, select: intakeRequestListSelect });
@@ -332,7 +341,9 @@ export class IntakeRepository {
     static async listConfirmedRequesters(db: PrismaTx, ctx: Ctx, ids: readonly string[]) {
         if (ids.length === 0) return [];
         return db.intakeRequest.findMany({
-            where: { tenantId: ctx.tenantId, id: { in: [...ids] }, channel: 'PUBLIC_FORM', updatesRequested: true, updatesConfirmedAt: { not: null } },
+            // A public form's confirmed requester (2.6b), or an emailed request's
+            // authenticated sender (2.6c: VERIFIED confirms the address).
+            where: { tenantId: ctx.tenantId, id: { in: [...ids] }, channel: { in: ['PUBLIC_FORM', 'EMAIL'] }, updatesRequested: true, updatesConfirmedAt: { not: null } },
             orderBy: { id: 'asc' },
             take: INTAKE_JOB_BATCH,
             select: { id: true, requesterEmail: true, form: { select: { name: true } } },

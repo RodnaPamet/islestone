@@ -22,7 +22,8 @@
  *   one; its nonce makes at most one request (a unique column, so a replay
  *   fails inside the insert's own transaction). The browser solves a small
  *   proof-of-work bound to the token. A filled trap field answers the success
- *   screen and stores nothing. The per-IP limits and the size cap are the
+ *   screen and stores nothing, and so does an address blocked on the form's
+ *   project or the workspace (2.6c). The per-IP limits and the size cap are the
  *   route's (`src/lib/intake/public/http.ts`); the daily caps are counted here
  *   from the database under the form's row lock, because production's
  *   in-memory limiter forgets on every deploy (decision 50).
@@ -49,6 +50,7 @@ import { z } from 'zod';
 import { emitAutomationEvent } from '../automation';
 import { buildTenantSystemJobContext } from '../context-system';
 import { logEvent } from '../events/audit';
+import { IntakeEmailRepository } from '../repositories/IntakeEmailRepository';
 import { IntakeRepository } from '../repositories/IntakeRepository';
 import { appLink } from '../notifications/app-link';
 import { enqueueEmail } from '../notifications/enqueue';
@@ -254,6 +256,8 @@ export async function submitPublicIntakeRequest(publicId: string, raw: unknown, 
         // The daily caps, counted under the form's row lock so two submits
         // count one after the other.
         if (!(await IntakeRepository.lockForm(db, ctx, form.id))) throw publicFormNotFound();
+        // A blocked sender (2.6c): answered like the trap, nothing stored or sent.
+        if (email && (await IntakeEmailRepository.isBlocked(db, ctx, form.projectId, hashForLookup(email)))) return null;
         const since = new Date(now.getTime() - CAP_WINDOW_MS);
         if ((await IntakeRepository.countFormRequestsSince(db, ctx, form.id, since)) >= form.dailyCap) throw formResting();
         if ((await IntakeRepository.countChannelSince(db, ctx, 'PUBLIC_FORM', since)) >= WORKSPACE_PUBLIC_DAILY_CAP) throw formResting();
@@ -323,6 +327,9 @@ export async function submitPublicIntakeRequest(publicId: string, raw: unknown, 
         const updates: PublicIntakeUpdates = !updatesRequested ? 'NONE' : confirmedBefore ? 'CONFIRMED' : 'CONFIRM_PENDING';
         return { row, updates };
     });
+    if (created === null) {
+        return { reference: randomBytes(6).toString('hex').slice(0, 8).toUpperCase(), confirmation: form.definition.confirmation, updates: updatesRequested ? 'CONFIRM_PENDING' : 'NONE' };
+    }
     await notifyIntakeReceived(ctx, created.row, form.projectKeyPrefix);
     return { reference: intakeReference(created.row.id), confirmation: form.definition.confirmation, updates: created.updates };
 }

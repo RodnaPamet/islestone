@@ -66,6 +66,8 @@ export function snoozeDateIsFuture(until: string, today: string): boolean {
 /** The intake purge windows (decision 90): decided requests after 90 days, spam after 7. */
 export const INTAKE_PURGE_DAYS = 90;
 export const INTAKE_SPAM_PURGE_DAYS = 7;
+/** Settled inbound email deliveries (2.6c) are purged this many days after they arrived. */
+export const INBOUND_RETENTION_DAYS = 30;
 
 // ─── Answers → the accepted item's fields ─────────────────────────────────
 

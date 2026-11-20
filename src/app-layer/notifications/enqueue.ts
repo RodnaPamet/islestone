@@ -42,6 +42,8 @@ export interface EmailPayloadByType {
     INTAKE_ACCEPTED: IntakeRequesterPayload;
     INTAKE_DECLINED: IntakeDeclinedPayload;
     INTAKE_MERGED: IntakeRequesterPayload;
+    /** Sub-phase 2.6c: an emailed request received, to an authenticated sender only (decision 123). */
+    INTAKE_RECEIVED_ACK: IntakeRequesterPayload;
 }
 
 type EmailPayloadMap = { [K in EmailNotificationType]: EmailPayloadByType[K] };
@@ -55,6 +57,8 @@ export type EnqueueEmailInput = {
         payload: EmailPayloadMap[K];
         sendAfter?: Date;
         requestId?: string;
+        /** A Reply-To (2.6c: an emailed request's reply address). Not personal data. */
+        replyTo?: string;
     };
 }[EmailNotificationType];
 
@@ -113,7 +117,7 @@ export async function enqueueEmail(
     db: PrismaTx,
     input: EnqueueEmailInput,
 ): Promise<{ id: string; dedupeKey: string } | null> {
-    const { tenantId, type, toEmail, entityId, sendAfter, requestId } = input;
+    const { tenantId, type, toEmail, entityId, sendAfter, requestId, replyTo } = input;
 
     // Check tenant settings — skip if disabled
     const enabled = await isNotificationsEnabled(db, tenantId);
@@ -146,6 +150,7 @@ export async function enqueueEmail(
                 bodyHtml,
                 dedupeKey,
                 ...(sendAfter ? { sendAfter } : {}),
+                ...(replyTo ? { replyTo } : {}),
             },
         ],
         skipDuplicates: true,
@@ -184,6 +189,8 @@ async function buildEmailContent(input: EnqueueEmailInput): Promise<EmailTemplat
             return buildIntakeRequesterEmail('DECLINED', input.payload);
         case 'INTAKE_MERGED':
             return buildIntakeRequesterEmail('MERGED', input.payload);
+        case 'INTAKE_RECEIVED_ACK':
+            return buildIntakeRequesterEmail('RECEIVED', input.payload);
         default: {
             const unhandled: never = input;
             throw new Error(`Unknown notification type: ${(unhandled as { type: string }).type}`);

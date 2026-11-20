@@ -280,6 +280,15 @@ export interface IntakePurgePayload {
 }
 
 /**
+ * One inbound email delivery to fetch and file (sub-phase 2.6c, decision
+ * 122): enqueued by the webhook with the delivery row's id as the job id.
+ */
+export interface IntakeEmailFetchPayload {
+    tenantId: string;
+    inboundId: string;
+}
+
+/**
  * Nightly repeats (sub-phase 2.5d): make each due occurrence as the person
  * who set the repeat, re-resolved. No `tenantId` sweeps every workspace with
  * a running repeat; a `tenantId` re-runs one.
@@ -328,6 +337,7 @@ export interface JobPayloadMap {
     'cycle-rollover': CycleRolloverPayload;
     'intake-snooze-wake': IntakeSnoozeWakePayload;
     'intake-purge': IntakePurgePayload;
+    'intake-email-fetch': IntakeEmailFetchPayload;
     'work-item-recurrence': WorkItemRecurrencePayload;
 }
 
@@ -460,6 +470,16 @@ export const JOB_DEFAULTS: Record<JobName, {
         backoff: { type: 'fixed', delay: 300_000 },
         removeOnComplete: 30,
         removeOnFail: 100,
+    },
+    'intake-email-fetch': {
+        // Five attempts, backing off from 30 seconds: Resend or the download
+        // may be briefly unavailable. A retry is harmless (the delivery row is
+        // claimed per attempt, a stored message is never stored twice), and
+        // the last attempt settles the row FAILED itself.
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 30_000 },
+        removeOnComplete: 100,
+        removeOnFail: 500,
     },
     'intake-purge': {
         // One attempt: the next daily run is the retry, and every batch it

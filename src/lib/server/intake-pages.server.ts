@@ -14,6 +14,7 @@ import { intakeAffordances, mayReadIntake } from '@/app-layer/policies/intake.po
 import { getOpenIntakeForm, listOpenIntakeForms } from '@/app-layer/usecases/intake-form';
 import { getWorkItemViewConfig } from '@/app-layer/usecases/work-item-views';
 import { isAppError } from '@/lib/errors/types';
+import { isInboundEmailOpen } from '@/lib/intake/email/switch';
 import { isPublicIntakeOpen } from '@/lib/intake/public-switch';
 import type { IntakeAffordances, OpenIntakeForm } from '@/lib/intake/types';
 import { settingsPageAccess } from '@/lib/server/settings-pages.server';
@@ -61,7 +62,12 @@ export async function formPageContext(tenantSlug: string, formId: string): Promi
  * the intake writes it offers, and whether public forms are open on this
  * deployment (2.6b), which decides whether a form may be made public.
  */
-export async function intakeSettingsAccess(tenantSlug: string): Promise<{ affordances: IntakeAffordances; publicForms: boolean }> {
+export async function intakeSettingsAccess(tenantSlug: string): Promise<{ affordances: IntakeAffordances; publicForms: boolean; inboundEmail: boolean }> {
     await settingsPageAccess(tenantSlug);
-    return or404(async () => ({ affordances: intakeAffordances(await getTenantCtx({ tenantSlug })), publicForms: isPublicIntakeOpen() }));
+    return or404(async () => ({
+        affordances: intakeAffordances(await getTenantCtx({ tenantSlug })),
+        publicForms: isPublicIntakeOpen(),
+        // Whether a project's email address may be turned on (2.6c, `INTAKE_EMAIL`).
+        inboundEmail: isInboundEmailOpen(),
+    }));
 }

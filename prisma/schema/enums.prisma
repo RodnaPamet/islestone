@@ -110,6 +110,9 @@ enum EmailNotificationType {
   /// Sub-phase 2.6b: a confirmed requester's request is handled together
   /// with another.
   INTAKE_MERGED
+  /// Sub-phase 2.6c: an emailed request was received; only to a sender whose
+  /// domain authentication passed (decision 123).
+  INTAKE_RECEIVED_ACK
 }
 
 /// The state of a `NotificationOutbox` row.
@@ -251,4 +254,21 @@ enum FieldRequirement {
   REQUIRED
   OPTIONAL
   HIDDEN
+}
+
+/// An emailed request's sender authentication (sub-phase 2.6c, decision
+/// 123), from the receiving MTA's `Authentication-Results`: absent, or not a
+/// pass, is NONE.
+enum IntakeSenderCheck {
+  VERIFIED
+  FAILED
+  NONE
+}
+
+/// One inbound email delivery's state (sub-phase 2.6c).
+enum IntakeInboundStatus {
+  PENDING
+  PROCESSED
+  DROPPED
+  FAILED
 }

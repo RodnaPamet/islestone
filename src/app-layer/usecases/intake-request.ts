@@ -39,12 +39,14 @@ import {
     type IntakeRequestListRow,
     type IntakeTriagePatch,
 } from '../repositories/IntakeRepository';
+import { IntakeEmailRepository } from '../repositories/IntakeEmailRepository';
 import { MembershipRepository } from '../repositories/MembershipRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
 import { TeamRepository } from '../repositories/TeamRepository';
 import { WorkItemRepository, WorkItemWatcherRepository } from '../repositories/WorkItemRepository';
 import {
     assertCanAcceptIntake,
+    assertCanManageIntake,
     assertCanReadIntake,
     assertCanSendInternalRequests,
     assertCanTriageIntake,
@@ -66,6 +68,7 @@ import { formatKey } from '../domain/work-item-key';
 import { enqueueEmail } from '../notifications/enqueue';
 import { createIntakeNotifications } from '../notifications/intake';
 import { dayKeyInTz } from '../notifications/work-item-due';
+import { blockSenderInTx } from './intake-blocked-senders';
 import { formIsOpen } from './intake-form';
 import { createWorkItemInTx, emitCreatedItemBells } from './work-item';
 import { notificationsTz } from './work-item-shared';
@@ -322,6 +325,12 @@ async function detailOf(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility,
         requesterName: r.requesterName,
         requesterEmail: r.requesterEmail,
         requesterUpdates: r.updatesConfirmedAt ? 'CONFIRMED' : r.updatesRequested ? 'ASKED' : 'NONE',
+        senderCheck: r.senderCheck,
+        attachmentsDropped: r.attachmentsDropped,
+        followUps: r.channel === 'EMAIL'
+            ? (await IntakeEmailRepository.listFollowUps(db, ctx, r.id)).map((f) => ({ id: f.id, body: f.body, attachmentsDropped: f.attachmentsDropped, createdAt: f.createdAt.toISOString() }))
+            : [],
+        senderBlockable: r.requesterEmailHash !== null,
     };
 }
 
@@ -416,7 +425,7 @@ export async function enqueueRequesterNotices(
     for (const row of rows) {
         if (!row.requesterEmail) continue;
         const base = { tenantId: ctx.tenantId, toEmail: row.requesterEmail, entityId: row.id };
-        const payload = { formName: row.form?.name ?? 'a form', reference: intakeReference(row.id) };
+        const payload = { formName: row.form?.name ?? null, reference: intakeReference(row.id) };
         const queued =
             notice.kind === 'DECLINED'
                 ? await enqueueEmail(db, {
@@ -548,14 +557,24 @@ export interface DeclineIntakeInput {
     explanation?: string | null;
     /** Never sent. */
     remark?: string | null;
+    /** With SPAM: block the requester's address on the request's project (2.6c; `intake.manage`). */
+    blockSender?: boolean;
 }
 
 export async function declineIntakeRequest(ctx: RequestContext, id: string, input: DeclineIntakeInput, expectedVersion?: number): Promise<IntakeRequestDetail> {
     assertCanTriageIntake(ctx);
+    if (input.blockSender) {
+        if (input.reason !== 'SPAM') throw badRequest('Only a spam decline blocks the sender.');
+        // Blocked senders are managed under `intake.manage` (decision 92), also from triage.
+        assertCanManageIntake(ctx);
+    }
     if (expectedVersion === undefined) throw triagePreconditionRequired();
     const out = await runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const r = await lockForTriage(db, ctx, v, id, 'decline', expectedVersion);
+        if (input.blockSender && !r.requesterEmailHash) {
+            throw new ConflictError('The request has no sender address to block.', { reason: 'NO_SENDER_ADDRESS' });
+        }
         await claim(db, ctx, r, 'decline', {
             decidedAt: new Date(),
             decidedByUserId: ctx.userId,
@@ -572,6 +591,9 @@ export async function declineIntakeRequest(ctx: RequestContext, id: string, inpu
             await enqueueRequesterNotices(db, ctx, [r.id], { kind: 'DECLINED', reason: input.reason, explanation });
         }
         await auditTriage(db, ctx, r, 'decline', { declineReason: input.reason }, input.reason);
+        if (input.blockSender && r.requesterEmailHash) {
+            await blockSenderInTx(db, ctx, { projectId: r.projectId, emailHash: r.requesterEmailHash, via: 'SPAM_DECLINE' });
+        }
         const after = (await IntakeRepository.getRequest(db, ctx, v, id))!;
         return { after, detail: await detailOf(db, ctx, v, after) };
     });
