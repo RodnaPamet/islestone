@@ -1,6 +1,6 @@
 # 0009 — Review steps
 
-Status: Accepted (owner decisions 148 to 165, 2026-11-20): review steps, rounds and reviewers on a work item, Signed off and Returned, an indicator with a per-type Done check, explicit sending, lists resolved when a step opens, any active member who sees the project as a reviewer but never the item's assignee (158), a response changeable until its step completes (162), and only people review
+Status: Accepted (owner decisions 148 to 165, 2026-11-20): review steps, rounds and reviewers on a work item, Signed off and Returned, an indicator with a per-type Done check, explicit sending, lists resolved when a step opens, any active member who sees the project as a reviewer but never the item's assignee (158), a response changeable until its step completes (162), and only people review; §13 amended by owner decisions 191 and 192, 2026-11-20 (working days from working calendars, ADR 0010)
 
 ## Context
 
@@ -24,7 +24,7 @@ Roadmap 2.8 asks for ordered review steps on a work item: each step names review
 10. **Only people review.** A reviewer is a person with an active membership, responding as themselves. An agent, an automation rule, an API key, an import, the system user, and a person acting for another (an admin included) never respond to a step and never count towards one. A delegate may at most draft a review comment as a proposal (roadmap 6.2) that the named reviewer approves as their own comment; approving it records no response. This stands beside ADR 0003 §4's "agents propose, people approve" and is not changed by any autonomy rung.
 11. **Who changes, skips and closes steps** (decision 150). Anyone with `work_items.edit` edits steps not yet opened, sends a round and withdraws it. Skipping a step, closing one whose reviewers left (a skip with reason `NO_REVIEWERS_LEFT`) and removing a pending reviewer from an open step take the item's assignee, whoever sent the round, or an admin (`admin.manage`), and are audited. No new permission domain (decision 160): responding is under `work_items.view` plus being the named reviewer.
 12. **The item stays editable during a round** (decision 163). Each response records the item's `version`, so the record says what was reviewed and the review section can show "changed since signed off".
-13. **Due dates in working days** (decision 151): Monday to Friday, no holidays, computed in `NOTIFICATIONS_TZ` when the step opens and stored date-only; roadmap 3.1's calendars replace the constant for steps opened after it.
+13. **Due dates in working days** (decision 151): Monday to Friday, no holidays, computed in `NOTIFICATIONS_TZ` when the step opens and stored date-only; roadmap 3.1's calendars replace the constant for steps opened after it. **Amended by decisions 191 and 192 (2026-11-20; ADR 0010 §5):** from roadmap 3.1, working days come from the item's team's working calendar, else the workspace's, resolved when the step opens, with "today" in that calendar's time zone (the 08:00 reminder job keeps firing in `NOTIFICATIONS_TZ`); a stored `dueOn` never moves, whatever later happens to a calendar. Before 3.1, Monday to Friday in `NOTIFICATIONS_TZ`.
 14. **Gate or indicator** (decision 149). Review is an indicator by default. A work item type may require its review to finish before an item moves to Done (built in 2.8c); cancelling is never held. Closing or deleting an item withdraws its open round; a reopen or a restore does not reopen it.
 15. **Default steps** (decision 159) belong to a work item type across the workspace, set under `admin.manage`, naming members and workspace lists, and are copied onto an item by every create path, templates, intake and repeats included; none opens them, and changing them changes no item (built in 2.8c).
 16. **Notifications** (decision 161): review requested, review due, returned and completed; immediate email is offered for requested and returned, the reminders come from the 08:00 due job. None carries the response text.
@@ -41,7 +41,7 @@ Roadmap 2.8 asks for ordered review steps on a work item: each step names review
 
 - Teams need reviewers who are not members (8.4's guests), a reviewer acting for another, or sign-offs that certify an exact version (decision 163's option B: lock title and description during a round).
 - Review gates are wanted beyond the per-type Done check, or conditional steps (5.1) need a step to open on something other than the previous step's completion.
-- A calendar other than Monday to Friday is needed before 3.1.
+- A calendar other than Monday to Friday is needed before 3.1. (3.1's working calendars answer it from 3.1a: §13 as amended, ADR 0010.)
 
 ## References
 
