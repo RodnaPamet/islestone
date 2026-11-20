@@ -554,3 +554,52 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    - ADR 0002's sketch is refined in three places, named in `docs/work-items.md`: the
      relation index order, `WorkItemLink.type`/`location` (the schema guard refuses
      `kind` and `target`), and `createdByUserId` kept (the map said `creatorId`).
+
+   **2.3 (the work-item list, board and detail views) has landed** on branch `wt/p23`
+   (not pushed), by `docs/porting/maps/2.3.md` (`PROVENANCE.md`, "Copied: work-item
+   views"; `docs/work-items.md`, "Views (2.3)"):
+   - Pages: Work items (`/work-items`), a project (`/projects/<prefix>`), Projects (a
+     list of projects) and My Work (the items assigned to you) replace 1.7's
+     placeholders; an item's page is `/work-items/<key>` (an old key or an id
+     redirects). The routes are in `NAV_PATHS` (a "Work items" row in the sidebar and
+     the palette), `MAIN_PAGES`, `SUBPAGES` and the canonical parents; the stepper
+     names work items.
+   - The list on `EntityListPage` with the filter system (options from the server's
+     configuration and the roster), cursor pages, bulk state, assign and delete with
+     rollback, and the Deleted view with restore. The board on
+     `@atlaskit/pragmatic-drag-and-drop` 4.0.0 (with its hitbox 3.0.0 and auto-scroll
+     3.2.1, Apache-2.0, pinned): columns by state grouped by category for a project, by
+     category across teams; swimlanes by assignee, priority, type, label or project;
+     virtualised columns; keyboard moves announced through a live region and a
+     per-card "Move to…" menu. The detail as a full page and as a sheet over the same
+     reads: state, assignee, priority, type, labels, due date, watchers, relations,
+     URL links, comments (decision 53, asked through `comment.policies.ts`), Activity
+     and sub-items; delete with undo; prev/next. A create dialog.
+   - One list query and one cache for all three; every write optimistic, versioned
+     (`If-Match`), retried once on a 409 whose fields did not move, rolled back with
+     the server's reason otherwise; every removal through the undo toast.
+   - Server additions: the move route takes a board drop (`stateId` with a
+     `position`, one transaction, `moveWorkItemOnBoard`); `GET /users/assignable`
+     (`listAssignableUsers`, re-added without the reviewer audience);
+     `getWorkItemViewConfig`.
+   - Tests: rendered (rollback, the 409 paths, undo, board keyboard moves and
+     refusals, detail and list, jest-axe on list, board and detail), unit (board-model
+     properties, cache placement, Activity phrases, the work-item path), integration
+     (the board drop, the view configuration, the roster, the API matrix), two guards
+     (`undo-toast-coverage`, `work-item-views-shared-query`) and e2e (create → list →
+     board by pointer and keyboard → sheet → page → comment → delete and undo; a
+     keyboard-only board).
+   Cut or deferred from the map, each named in the report: the KPI strip (its
+   sparklines are 3.6's), list sorts beyond manual order (2.4, with their indexes), the
+   `AsidePanel` quick view (the `Sheet` primitive serves), the column gear, the
+   copied `use-tenant-mutation`, `use-entity-list-ids`, `use-guarded-push`,
+   `url-sync`, `swr-keys`, `bulk-action-bar`, `kpi-filter-card`, `user-combobox` and
+   their tests, and the `no-router-push-in-row-click` lint rule. ln-dev7/circle was
+   not read; its row stays UNPINNED.
+   Open for the owner:
+   - **My Work** shows only the assigned items until 2.7 adds created, watching and due
+     soon (the 1.7 map gave My Work to 2.7; the brief asked 2.3 to replace the
+     placeholder).
+   - **Creating teams, projects, states, types and labels** has no UI yet (decision 52
+     puts them under `admin.manage`; Settings is still a placeholder), so a workspace
+     needs the API to get its first project.
