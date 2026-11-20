@@ -41,6 +41,7 @@ import {
     CommentRepository,
     LIST_ORDERS,
     WorkItemRepository,
+    WorkItemWatcherRepository,
     listSortSpec,
     type KeyHit,
     type WorkItemFilters,
@@ -108,7 +109,8 @@ import { assertMilestoneOfProject } from './milestone';
 import { loadUsableTemplate, peopleNamedBy, templateSource, templateUseContextInTx } from './work-item-template';
 import { templateToCreateInput, type TemplateOverrides, type TemplateProjection } from '../domain/work-item-template';
 import { sanitizePlainText } from '@/lib/security/sanitize';
-import { isClosedCategory, type FieldKey, type FieldValues } from '@/lib/work-items/field-sets';
+import { isClosedCategory, requirementOf, type FieldKey, type FieldValues, type ResolvedFieldSet } from '@/lib/work-items/field-sets';
+import { isTenantSystemUserId } from '@/lib/tenant-system-user';
 import { assertFieldWrite, checkCreate, checkTypeChange, checkWrite, loadFieldSet, loadFieldSets, type LoadedFieldSet } from './field-set';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────
@@ -323,8 +325,11 @@ export async function getWorkItem(ctx: RequestContext, id: string) {
     return runInTenantContext(ctx, async (db) => {
         const item = await WorkItemRepository.getById(db, ctx, await visibleProjects(ctx, db), id);
         if (!item) throw notFound('Work item not found');
+        // The marked answer's comment (2.4b-c), pinned on the detail; live by the trigger.
+        const answer = item.answerCommentId ? await CommentRepository.getWithBody(db, ctx, item.id, item.answerCommentId) : null;
         return {
             ...toWorkItemDto(item),
+            answer: answer ? { id: answer.id, authorUserId: answer.authorUserId, body: answer.body, editedAt: answer.editedAt, createdAt: answer.createdAt } : null,
             description: item.description,
             createdByUserId: item.createdByUserId,
             project: item.project,
@@ -501,6 +506,7 @@ function itemFieldValues(row: NonNullable<Awaited<ReturnType<typeof WorkItemRepo
         dueDate: dto.dueDate,
         cycleId: dto.cycleId,
         milestoneId: dto.milestoneId,
+        answerCommentId: dto.answerCommentId,
         customFields: dto.customFields,
     };
 }
@@ -519,6 +525,17 @@ function createValues(plan: CreateWorkItemInput): FieldValues {
         milestoneId: plan.milestoneId ?? null,
         customFields: plan.customFields ?? {},
     };
+}
+
+/**
+ * Decision 117 (2.4b-c): the creator of an item whose type shows the answer
+ * watches it, so the asker hears when it is answered. Never the workspace
+ * system user, who has no membership.
+ */
+async function watchIfAnswerShown(db: PrismaTx, ctx: RequestContext, set: ResolvedFieldSet, workItemId: string): Promise<boolean> {
+    if (requirementOf(set, 'answer') === 'HIDDEN' || isTenantSystemUserId(ctx.userId)) return false;
+    await WorkItemWatcherRepository.add(db, ctx, workItemId, ctx.userId);
+    return true;
 }
 
 /**
@@ -660,6 +677,7 @@ export async function createWorkItemInTx(
     if (labelIds.length > 0) await LabelRepository.attach(db, ctx, row.id, labelIds);
     const customFieldIds = await writeInitialCustomFieldValues(db, ctx, { id: row.id, projectId: project.id }, plan.customFields ?? {});
     const key = formatKey(project.keyPrefix, number);
+    const creatorWatching = await watchIfAnswerShown(db, ctx, fieldSet.set, row.id);
 
     await logEvent(db, ctx, {
         action: 'WORK_ITEM_CREATED',
@@ -678,7 +696,8 @@ export async function createWorkItemInTx(
             ...(customFieldIds.length ? { customFieldIds } : {}),
             ...(fromTemplate ? { templateId: input.templateId, ...(fromTemplate.skipped.length ? { templateSkipped: fromTemplate.skipped } : {}) } : {}),
             ...(fieldSkipped.length ? { fieldSetSkipped: fieldSkipped } : {}),
-        ...(opts.metadata ?? {}),
+            ...(creatorWatching ? { creatorWatching: true } : {}),
+            ...(opts.metadata ?? {}),
         },
     });
     // The template's sub-items, in its order, in this transaction.
@@ -774,8 +793,9 @@ export async function insertTemplateItemInTx(
     if (!state) throw new ConflictError('The team has no default state.', { reason: 'NO_DEFAULT_STATE' });
     // The type's field set (2.4b-b, decision 111): checked like any create;
     // every value here came from a template, so a hidden one is skipped and named.
+    const loaded = fieldSet ?? (await loadFieldSet(db, ctx, sub.typeId, project.id));
     const checked = checkCreate(
-        fieldSet ?? (await loadFieldSet(db, ctx, sub.typeId, project.id)),
+        loaded,
         {
             description: sub.description ?? null,
             priority: sub.priority ?? 'NONE',
@@ -825,6 +845,7 @@ export async function insertTemplateItemInTx(
     });
     if (sub.labelIds && sub.labelIds.length > 0) await LabelRepository.attach(db, ctx, row.id, [...sub.labelIds]);
     const key = formatKey(project.keyPrefix, number);
+    const creatorWatching = await watchIfAnswerShown(db, ctx, loaded.set, row.id);
     await logEvent(db, ctx, {
         action: 'WORK_ITEM_CREATED',
         entityType: 'WorkItem',
@@ -839,6 +860,7 @@ export async function insertTemplateItemInTx(
             ...(sub.templateId ? { templateId: sub.templateId } : {}),
             ...(sub.projectTemplateId ? { projectTemplateId: sub.projectTemplateId } : {}),
             ...(checked.skipped.length ? { fieldSetSkipped: checked.skipped } : {}),
+            ...(creatorWatching ? { creatorWatching: true } : {}),
         },
     });
     await emitAutomationEvent(ctx, {

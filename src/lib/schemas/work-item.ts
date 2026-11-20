@@ -88,6 +88,13 @@ export const AssignWorkItemSchema = z.object({ assigneeId: Id.nullable() }).stri
 /** Name the active member an open item waits on, or nobody (`null`; 2.4b). */
 export const SetWorkItemWaitingOnSchema = z.object({ userId: Id.nullable() }).strict();
 
+/**
+ * Mark a comment of the item as its answer (2.4b-c). `stateId` chooses the
+ * Done state an open item moves to; without it, the team's first live Done
+ * state (decision 114).
+ */
+export const MarkWorkItemAnswerSchema = z.object({ commentId: Id, stateId: Id.nullish() }).strict();
+
 /** Put an item in a cycle of its team, or take it out (`null`; 2.5a). */
 export const SetWorkItemCycleSchema = z.object({ cycleId: Id.nullable() }).strict();
 

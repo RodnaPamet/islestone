@@ -20,7 +20,7 @@
  *   - attaching or detaching a label increases the item's version (ADR 0002 §9).
  */
 import { logEvent } from '../events/audit';
-import { commentDeleteBasis, mayEditComment } from '../policies/comment.policies';
+import { commentDeleteBasis, isMarkedAnswer, mayEditComment } from '../policies/comment.policies';
 import { LabelRepository } from '../repositories/LabelRepository';
 import { MembershipRepository } from '../repositories/MembershipRepository';
 import {
@@ -41,9 +41,17 @@ import { emitWatcherActivity, keyOf, loadVisibleItem, loadWritableItem } from '.
 import type { RequestContext } from '../types';
 import { appendAuditEntryOrQueue } from '@/lib/audit';
 import { runInTenantContext } from '@/lib/db-context';
-import { badRequest, forbidden, notFound } from '@/lib/errors/types';
+import { badRequest, ConflictError, forbidden, notFound } from '@/lib/errors/types';
 import { clampLimit, computeKeysetPage, decodeCursor, InvalidCursorError, type KeysetOrder } from '@/lib/pagination';
 import { sanitizePlainText, sanitizeUrlText } from '@/lib/security/sanitize';
+
+/**
+ * 409 `ANSWER_LOCKED`: the comment is its item's marked answer (2.4b-c,
+ * decision 113). A validation of state, not an authority refusal: not audited.
+ */
+function answerLocked(verb: 'edit' | 'delete'): ConflictError {
+    return new ConflictError(`This comment is the work item's answer. Clear the answer first, then ${verb} it.`, { reason: 'ANSWER_LOCKED' });
+}
 
 const COMMENT_ORDER: KeysetOrder = { column: 'createdAt', direction: 'desc', kind: 'date' };
 
@@ -128,12 +136,13 @@ export async function editComment(ctx: RequestContext, workItemId: string, comme
     assertCanCommentOnWorkItems(ctx);
     const body = cleanBody(input.body);
     return runInTenantContext(ctx, async (db) => {
-        await loadWritableItem(db, ctx, await visibleProjects(ctx, db), workItemId);
+        const item = await loadWritableItem(db, ctx, await visibleProjects(ctx, db), workItemId);
         const comment = await CommentRepository.get(db, ctx, workItemId, commentId);
         if (!comment) throw notFound('Comment not found');
         if (!mayEditComment(ctx, comment)) {
             await refuseComment(ctx, commentId, 'edit', 'Only the comment\'s author can edit it.');
         }
+        if (isMarkedAnswer(comment, item)) throw answerLocked('edit');
         await CommentRepository.edit(db, ctx, commentId, body);
         await logEvent(db, ctx, {
             action: 'COMMENT_EDITED',
@@ -150,13 +159,14 @@ export async function editComment(ctx: RequestContext, workItemId: string, comme
 export async function deleteComment(ctx: RequestContext, workItemId: string, commentId: string) {
     assertCanCommentOnWorkItems(ctx);
     return runInTenantContext(ctx, async (db) => {
-        await loadWritableItem(db, ctx, await visibleProjects(ctx, db), workItemId);
+        const item = await loadWritableItem(db, ctx, await visibleProjects(ctx, db), workItemId);
         const comment = await CommentRepository.get(db, ctx, workItemId, commentId);
         if (!comment) throw notFound('Comment not found');
         const basis = commentDeleteBasis(ctx, comment);
         if (!basis) {
             await refuseComment(ctx, commentId, 'delete', 'Only the comment\'s author or a workspace admin can delete it.');
         }
+        if (isMarkedAnswer(comment, item)) throw answerLocked('delete');
         await CommentRepository.softDelete(db, ctx, commentId);
         // An admin removing someone else's comment is moderation, and the
         // trail says so: its own action, and the author it acted on.

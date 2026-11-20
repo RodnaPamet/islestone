@@ -55,6 +55,7 @@ export function toRow(item: WorkItemRow): WorkItemRow {
         priority: item.priority,
         assigneeId: item.assigneeId,
         waitingOnUserId: item.waitingOnUserId ?? null,
+        answerCommentId: item.answerCommentId ?? null,
         createdByUserId: item.createdByUserId,
         parentId: item.parentId,
         cycleId: item.cycleId ?? null,
@@ -226,6 +227,45 @@ export function useWorkItemMutations() {
                 ).then((saved) => {
                     if (saved && description !== undefined) void cache.revalidateItem(item.id);
                     return saved;
+                });
+            },
+
+            /**
+             * Mark a comment as the answer (2.4b-c; `If-Match`): an open item
+             * moves to `stateId`, a Done state of its team, in the same write;
+             * a closed one keeps its state. The detail then reads the pinned
+             * answer again.
+             */
+            markAnswer(item: WorkItemRow, commentId: string, stateId: string | null) {
+                const closed = item.stateCategory === 'DONE' || item.stateCategory === 'CANCELLED';
+                const state = !closed && stateId ? config.stateById.get(stateId) : undefined;
+                const fields: Partial<WorkItemRow> = { answerCommentId: commentId, ...(state ? { stateId: state.id, ...stateRowFields(state) } : {}) };
+                return write(item, fields, (version) =>
+                    apiSend<WorkItemDetailData>('PUT', url(`/work-items/${item.id}/answer`), { commentId, ...(stateId ? { stateId } : {}) }, { ifMatch: version }),
+                ).then((saved) => {
+                    if (saved) void cache.revalidateItem(item.id);
+                    return saved;
+                });
+            },
+
+            /**
+             * Clear the answer (2.4b-c): the state stays. A removal, so it
+             * leaves the views at once and is sent when the undo window closes.
+             */
+            clearAnswer(item: WorkItemRow, answer: WorkItemDetailData['answer']) {
+                cache.applyRow({ ...item, answerCommentId: null }, { answer: null });
+                triggerUndo({
+                    message: t('answerCleared', { key: item.key }),
+                    undoMessage: t('undo'),
+                    action: () => apiSend('DELETE', url(`/work-items/${item.id}/answer`)),
+                    undoAction: () => cache.applyRow(item, { answer }),
+                    onCommit: () => {
+                        void cache.revalidateItem(item.id);
+                    },
+                    onError: (err) => {
+                        cache.applyRow(item, { answer });
+                        notify(reason(err));
+                    },
                 });
             },
 

@@ -32,7 +32,7 @@ import { codeOf } from '../helpers/source-blocks';
 
 /** Each caller of `useToastWithUndo`, and what it removes through it. */
 const SITE_CONTRACTS: Record<string, string> = {
-    'src/components/work-items/data/use-work-item-mutations.ts': 'work item delete (detail, sheet, board card) and the list bulk delete',
+    'src/components/work-items/data/use-work-item-mutations.ts': 'work item delete (detail, sheet, board card), the list bulk delete and clearing an answer (2.4b-c)',
     'src/components/work-items/data/use-work-item-collab.ts': 'comment delete, watcher, label, relation and link removal',
     'src/components/settings/use-undo-delete.ts': 'Settings: team, workflow state and label delete (decision 55)',
     'src/components/work-items/data/use-saved-views.ts': 'saved view delete (the views menu, 2.4)',

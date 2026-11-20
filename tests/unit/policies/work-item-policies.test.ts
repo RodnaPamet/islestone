@@ -31,7 +31,7 @@ import {
     mayReadWorkConfig,
     workConfigAffordances,
 } from '@/app-layer/policies/work-config.policies';
-import { commentDeleteBasis, mayEditComment } from '@/app-layer/policies/comment.policies';
+import { commentAffordances, commentDeleteBasis, isMarkedAnswer, mayEditComment } from '@/app-layer/policies/comment.policies';
 import {
     JOB_PROJECT_VISIBILITY_WHERE,
     projectRowVisibilityWhere,
@@ -197,5 +197,31 @@ describe('comments (owner decision, 2026-11-19)', () => {
         expect(commentDeleteBasis(makeRequestContext('MEMBER', { userId: 'author-1' }), author)).toBe('author');
         expect(commentDeleteBasis(makeRequestContext('ADMIN', { userId: 'admin-1' }), author)).toBe('moderation');
         expect(commentDeleteBasis(makeRequestContext('MEMBER', { userId: 'other-1' }), author)).toBeNull();
+    });
+});
+
+describe('the marked answer (2.4b-c, decisions 113 and 118)', () => {
+    const comment = { id: 'c-1', authorUserId: 'author-1' };
+    const answered = { answerCommentId: 'c-1' };
+    const open = { mayEditItem: true, answerShown: true };
+
+    it('locks the marked answer: neither its author nor an admin edits or deletes it until the answer is cleared', () => {
+        expect(isMarkedAnswer(comment, answered)).toBe(true);
+        expect(isMarkedAnswer(comment, { answerCommentId: 'c-2' })).toBe(false);
+        expect(isMarkedAnswer(comment, { answerCommentId: null })).toBe(false);
+        const asAuthor = commentAffordances(makeRequestContext('MEMBER', { userId: 'author-1' }), comment, answered, open);
+        expect(asAuthor).toEqual({ edit: false, deleteBasis: null, isAnswer: true, markAnswer: false });
+        const asAdmin = commentAffordances(makeRequestContext('ADMIN', { userId: 'admin-1' }), comment, answered, open);
+        expect(asAdmin.deleteBasis).toBeNull();
+        // Cleared, the ordinary rules return.
+        const cleared = commentAffordances(makeRequestContext('ADMIN', { userId: 'admin-1' }), comment, { answerCommentId: null }, open);
+        expect(cleared).toEqual({ edit: false, deleteBasis: 'moderation', isAnswer: false, markAnswer: true });
+    });
+
+    it('offers "Mark as answer" only to someone who may edit the item, where the field set shows the answer', () => {
+        const ctx = makeRequestContext('MEMBER', { userId: 'other-1' });
+        expect(commentAffordances(ctx, comment, {}, open).markAnswer).toBe(true);
+        expect(commentAffordances(ctx, comment, {}, { mayEditItem: false, answerShown: true }).markAnswer).toBe(false);
+        expect(commentAffordances(ctx, comment, {}, { mayEditItem: true, answerShown: false }).markAnswer).toBe(false);
     });
 });

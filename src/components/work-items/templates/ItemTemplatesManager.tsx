@@ -23,6 +23,7 @@ import type { WorkItemPriority, WorkItemTemplateData } from '@/lib/work-items/ty
 import { useFieldSet } from '../data/use-field-sets';
 import { useWorkConfig } from '../data/use-work-config';
 import { requirementOf, type FieldKey } from '@/lib/work-items/field-sets';
+import { QUESTION_TEMPLATE_PRESET, typeShowsAnswer } from '@/lib/work-items/question-preset';
 import { useItemTemplateManager } from '../data/use-item-templates';
 import { AssigneePicker, LabelsPicker, PriorityPicker, TypePicker } from '../pickers';
 
@@ -76,6 +77,22 @@ export function ItemTemplatesManager({
     // Field sets (2.4b-b): a field the chosen type hides is not offered; a template's value for it would be skipped at use.
     const fieldSet = useFieldSet(draft.typeId || undefined, projectId, []);
     const offered = (key: FieldKey) => requirementOf(fieldSet, key) !== 'HIDDEN';
+
+    // "Add a Question template" (2.4b-c, decision 116): the preset fills the
+    // form for the first type whose field set shows the answer; the person
+    // reviews it and saves through the ordinary template route.
+    const questionTypeId = config.types.find((ty) => typeShowsAnswer(config.fieldSetEntries, ty.id))?.id ?? null;
+    const startQuestionTemplate = () => {
+        if (!questionTypeId) return;
+        setEditing(null);
+        setDraft({
+            ...draftOf(null, questionTypeId),
+            name: QUESTION_TEMPLATE_PRESET.name,
+            title: QUESTION_TEMPLATE_PRESET.title,
+            dueInDays: String(QUESTION_TEMPLATE_PRESET.dueInDays),
+        });
+        setError(null);
+    };
 
     const startEdit = (t: WorkItemTemplateData | null) => {
         setEditing(t);
@@ -167,9 +184,14 @@ export function ItemTemplatesManager({
                         )}
                     </section>
                     <form onSubmit={submit} className="space-y-default" aria-labelledby="tpl-form-heading">
-                        <h2 id="tpl-form-heading" className="text-sm font-semibold text-content-emphasis">
-                            {editing ? tManager('editHeading', { name: editing.name }) : tManager('createHeading')}
-                        </h2>
+                        <div className="flex flex-wrap items-center justify-between gap-tight">
+                            <h2 id="tpl-form-heading" className="text-sm font-semibold text-content-emphasis">
+                                {editing ? tManager('editHeading', { name: editing.name }) : tManager('createHeading')}
+                            </h2>
+                            {!editing && questionTypeId && (
+                                <Button type="button" variant="secondary" size="sm" text={tManager('addQuestion')} onClick={startQuestionTemplate} />
+                            )}
+                        </div>
                         <FormField label={tManager('name')} required>
                             <Input id="tpl-name" value={draft.name} maxLength={100} onChange={(e) => set('name', e.target.value)} />
                         </FormField>

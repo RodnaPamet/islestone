@@ -8,6 +8,7 @@
  * Written fresh for Islestone.
  */
 import { logEvent } from '../events/audit';
+import { FieldSetRepository } from '../repositories/FieldSetRepository';
 import { WorkItemTypeRepository } from '../repositories/WorkItemTypeRepository';
 import { assertCanManageWorkConfig, assertCanReadWorkConfig } from '../policies/work-config.policies';
 import { keyBetween, keysBetween } from '../domain/fractional-index';
@@ -15,8 +16,10 @@ import { DEFAULT_WORK_ITEM_TYPES } from '../domain/workflow-state';
 import type { RequestContext } from '../types';
 import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db-context';
-import { badRequest, notFound } from '@/lib/errors/types';
+import { badRequest, ConflictError, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { defaultRequirement } from '@/lib/work-items/field-sets';
+import { QUESTION_TYPE_PRESET } from '@/lib/work-items/question-preset';
 
 /** Seed the default types when the workspace has none (idempotent). */
 export async function ensureDefaultWorkItemTypes(db: PrismaTx, ctx: RequestContext): Promise<void> {
@@ -92,5 +95,45 @@ export async function updateWorkItemType(
             detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItemType', operation: 'updated', changedFields: changed },
         });
         return WorkItemTypeRepository.getById(db, ctx, typeId);
+    });
+}
+
+/**
+ * "Add the Question type" (2.4b-c, decision 116): a type, named Question
+ * unless the admin gives another name, with its field set (due date and
+ * waiting on required, the answer shown), in one transaction under
+ * `admin.manage`. Nothing is seeded; a name already taken is a 409
+ * `TYPE_NAME_TAKEN`, so the admin can choose another.
+ */
+export async function addQuestionType(ctx: RequestContext, input: { name?: string } = {}) {
+    assertCanManageWorkConfig(ctx);
+    const name = sanitizePlainText(input.name ?? QUESTION_TYPE_PRESET.name).trim();
+    if (!name) throw badRequest('The type needs a name.');
+    return runInTenantContext(ctx, async (db) => {
+        const taken = (await WorkItemTypeRepository.list(db, ctx, { includeArchived: true })).some((t) => t.name.toLowerCase() === name.toLowerCase());
+        if (taken) throw new ConflictError(`A type named ${name} already exists. Give the new type another name.`, { reason: 'TYPE_NAME_TAKEN' });
+        const sortKey = keyBetween(await WorkItemTypeRepository.lastSortKey(db, ctx), null);
+        const type = await WorkItemTypeRepository.create(db, ctx, { name, icon: null, color: null, sortKey });
+        await logEvent(db, ctx, {
+            action: 'WORK_ITEM_TYPE_CREATED',
+            entityType: 'WorkItemType',
+            entityId: type.id,
+            details: `Created work item type ${name} from the Question preset`,
+            detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItemType', operation: 'created' },
+            metadata: { preset: 'question' },
+        });
+        for (const { field, requirement } of QUESTION_TYPE_PRESET.fields) {
+            // guardrail-allow: n+1 — the preset's three rules, each a delete-then-insert.
+            await FieldSetRepository.setBuiltIn(db, ctx, type.id, field, requirement === defaultRequirement(field) ? null : requirement);
+            await logEvent(db, ctx, {
+                action: 'WORK_ITEM_TYPE_FIELD_SET',
+                entityType: 'WorkItemType',
+                entityId: type.id,
+                details: `Set ${field} to ${requirement} for the type ${name}`,
+                detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItemTypeField', operation: 'updated', changedFields: ['requirement'] },
+                metadata: { field, requirement, preset: 'question' },
+            });
+        }
+        return type;
     });
 }

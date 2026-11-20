@@ -328,6 +328,39 @@ Decision 111: one rule for the forms, the API and the jobs.
 - **The create dialog** does not offer hidden fields, marks required ones, offers a start date and the required custom fields, and names the gaps before sending; **the detail** leaves hidden fields out (unless they hold a value), marks required ones and lists what an open item is missing; **the intake accept dialog** and **the item-templates manager** leave out what the type hides. The rules come from the view configuration (`fieldSetEntries`, built-in rules) and `GET /projects/:id/type-fields` (`useFieldSet`). The sub-item quick add opens the full create dialog.
 - List columns, filters and lanes are unchanged: they span types.
 
+## Questions (2.4b-c)
+
+Built by [`docs/porting/maps/2.4b.md`](porting/maps/2.4b.md) under owner decisions 102 and 113 to 118 (`docs/HANDOFF.md`), ADR 0002 §15 and ADR 0006 ("Answer"). Nothing was copied (`PROVENANCE.md`).
+
+### The answer
+
+`WorkItem.answerCommentId` points at one live comment of the same item, its marked answer. The composite foreign key `(answerCommentId, id, tenantId)` → `Comment(id, workItemId, tenantId)` (Comment's new unique key) makes another item's comment unstorable; it is `NO ACTION`, so the purge's cascade from an item to its comments passes. Comments are soft-deleted, so the foreign key cannot see a delete: the usecases refuse it, and the trigger `comment_answer_not_deleted` (`BEFORE UPDATE OF "deletedAt"` on `Comment`) refuses setting `deletedAt` on a comment an item marks, for any writer; it leaves the key-rotation sweeps' re-wrap of the text alone. Index `[tenantId, answerCommentId]`. Migration `20261202120000_answers`; the behaviour and catalogue tests are `tests/integration/questions.test.ts`.
+
+**There is no Question type in code** (decision 118). The answer is a field-set field: Hidden unless the type's field set shows it, never Required. Any type whose field set shows the answer is question-like; nothing keys on a type's name or identity.
+
+### Writes and who may make them
+
+- `PUT /work-items/:id/answer { commentId, stateId? }` marks a comment; `DELETE /work-items/:id/answer` clears it. Key `work_items.edit`; a person only (`assertActingAsPerson`: an API key or an agent is a 403 `NOT_A_PERSON`, never proposed); the field set must show the answer (otherwise 400 `FIELD_HIDDEN`); the comment must be a live comment of the item (404). A single-field change: `If-Match` optional, the version increases, a stale version is a 409 with the current row.
+- **Marking moves an open item to Done** (decision 114) in the same versioned write, through `stateTransitionEffects` (so waiting on is cleared and the transition trigger records the move): to the Done state the request names (`stateId`, which must be a live Done state of the item's team: 400 `NOT_A_DONE_STATE`), or else the team's first live Done state in its order (a team with none: 409 `NO_DONE_STATE`). The plan is the pure `planAnswerMark` (`src/app-layer/domain/work-item-answer.ts`).
+- **On a closed item** (Done or Cancelled), marking and clearing change only the answer; clearing never reopens (decision 115).
+- **The marked comment is locked** (decision 113; `comment.policies.ts`: `isMarkedAnswer`, `commentAffordances`): while it is the answer, neither its author edits it nor anyone deletes it, an admin included: 409 `ANSWER_LOCKED`, "clear the answer first". An admin moderates in two steps: clear the answer, then delete the comment (`COMMENT_MODERATED`).
+- Audited `WORK_ITEM_ANSWER_MARKED` / `WORK_ITEM_ANSWER_CLEARED` (`changedFields: ['answerCommentId']`, the comment's id, never its text) inside the transaction, then the state change's own `WORK_ITEM_STATE_CHANGED`; after the commit, the state change's automation and watcher fan-out, then the watchers are told the item was answered (`emitWatcherActivity`, kind `answered`).
+- **The asker hears** (decision 117): the creator of an item whose type shows the answer becomes a watcher in the create's transaction (`creatorWatching` on `WORK_ITEM_CREATED`), on every create path (the dialog, the API, template sub-items, starter items, intake accept, repeat copies), never the workspace system user. Other types' creates add no watcher.
+- Templates and repeats never copy the answer (comments are not copied).
+
+### Setting it up (decision 116)
+
+Nothing is seeded: Feature, Bug and Chore stay the only seeded types.
+
+- **Settings → Work item types → "Add the Question type"** (`POST /work-item-types/question-preset { name? }`, `admin.manage`, `addQuestionType`): one transaction makes a type, named Question unless the admin gives another name (a taken name is a 409 `TYPE_NAME_TAKEN`), with its field set: due date and waiting on Required, the answer shown. Audited `WORK_ITEM_TYPE_CREATED` and one `WORK_ITEM_TYPE_FIELD_SET` per rule. The type is ordinary afterwards: renamed, archived or re-ruled like any other. The preset's values are `src/lib/work-items/question-preset.ts` (client-safe).
+- **A project's item-templates manager → "Add a Question template"**, offered when some type shows the answer: fills the form with the preset (name and title Question, the first such type, due in 5 days) for the person to review and save through 2.5c's ordinary template route (`projects.edit`). A Question requires waiting on, which templates do not carry, so the create dialog asks for it.
+
+### The views
+
+- **The detail**: on each comment, "Mark as answer" where `commentAffordances` allows (someone who may edit the item, the field set showing the answer, not already the answer); when the team has several live Done states and the item is open, a dialog asks which one, the first preselected. The marked comment carries "Answer" and says it is locked; the answer is pinned on the Overview with its author and "Clear answer", which goes through the undo toast.
+- **Activity** shows "marked an answer" and "cleared the answer".
+- No list filter or column in 2.4b.
+
 ## Settings (decision 55)
 
 A workspace admin configures work without the API on the Settings pages (`src/app/t/[tenantSlug]/(app)/settings/`, components in `src/components/settings/`), built on 2.2's routes with no new route or usecase:

@@ -180,6 +180,7 @@ export const workItemListSelect = {
     priorityRank: true,
     assigneeId: true,
     waitingOnUserId: true,
+    answerCommentId: true,
     createdByUserId: true,
     parentId: true,
     cycleId: true,
@@ -215,6 +216,7 @@ export const workItemGateSelect = {
     stateCategory: true,
     assigneeId: true,
     waitingOnUserId: true,
+    answerCommentId: true,
     parentId: true,
     cycleId: true,
     milestoneId: true,
@@ -239,6 +241,7 @@ export type WorkItemPatch = Partial<{
     typeId: string;
     assigneeId: string | null;
     waitingOnUserId: string | null;
+    answerCommentId: string | null;
     stateId: string;
     stateCategory: WorkflowStateCategory;
     startedAt: Date | null;
@@ -1341,6 +1344,14 @@ export class CommentRepository {
         return db.comment.findFirst({
             where: { id, workItemId, tenantId: ctx.tenantId, deletedAt: null },
             select: { id: true, workItemId: true, authorUserId: true, createdAt: true },
+        });
+    }
+
+    /** One live comment with its text: the item's marked answer, pinned on the detail (2.4b-c). */
+    static async getWithBody(db: PrismaTx, ctx: RequestContext, workItemId: string, id: string) {
+        return db.comment.findFirst({
+            where: { id, workItemId, tenantId: ctx.tenantId, deletedAt: null },
+            select: { id: true, workItemId: true, authorUserId: true, body: true, editedAt: true, createdAt: true },
         });
     }
 

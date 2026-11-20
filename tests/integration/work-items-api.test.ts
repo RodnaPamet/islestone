@@ -203,6 +203,10 @@ const CALLS: Call[] = [
     { file: 'src/app/api/t/[tenantSlug]/project-templates/[templateId]/route.ts', method: 'DELETE', path: () => '/project-templates/none', params: (i) => P(i, { templateId: 'none' }), write: true, key: 'admin.manage' },
     // Sub-phase 2.4b: waiting on.
     { file: `${W}/[workItemId]/waiting-on/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/waiting-on`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ userId: i.member }), write: true, key: 'work_items.edit' },
+    // Sub-phase 2.4b-c: the marked answer (the item's type hides the answer, so a MEMBER's mark is a 400, never a 403) and the Question type.
+    { file: `${W}/[workItemId]/answer/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.item}/answer`, params: (i) => P(i, { workItemId: i.item }), body: (i) => ({ commentId: i.comment }), write: true, key: 'work_items.edit' },
+    { file: `${W}/[workItemId]/answer/route.ts`, method: 'DELETE', path: (i) => `/work-items/${i.item}/answer`, params: (i) => P(i, { workItemId: i.item }), write: true, key: 'work_items.edit' },
+    { file: 'src/app/api/t/[tenantSlug]/work-item-types/question-preset/route.ts', method: 'POST', path: () => '/work-item-types/question-preset', params: (i) => P(i), body: () => ({ name: `Question ${Math.random()}` }), write: true, key: 'admin.manage' },
     // Sub-phase 2.4b-b: field sets (OPTIONAL removes a rule, so the calls leave nothing behind).
     { file: 'src/app/api/t/[tenantSlug]/work-item-types/[typeId]/fields/route.ts', method: 'GET', path: (i) => `/work-item-types/${i.type}/fields`, params: (i) => P(i, { typeId: i.type }), write: false, key: 'projects.view' },
     { file: 'src/app/api/t/[tenantSlug]/work-item-types/[typeId]/fields/route.ts', method: 'PUT', path: (i) => `/work-item-types/${i.type}/fields`, params: (i) => P(i, { typeId: i.type }), body: () => ({ field: 'dueDate', requirement: 'OPTIONAL' }), write: true, key: 'admin.manage' },

@@ -2006,6 +2006,17 @@ Built by [`docs/porting/maps/2.4b.md`](docs/porting/maps/2.4b.md) under owner de
 | `src/components/settings/WorkItemTypeFieldsSettings.tsx`, `src/app/t/[tenantSlug]/(app)/settings/work-item-types/[typeId]/page.tsx`, `src/components/work-items/data/use-field-sets.ts`; the 2.4b-b changes to `WorkItemTypesSettings.tsx`, `settings-data.ts`, `NewWorkItemModal.tsx`, `WorkItemDetail.tsx`, `IntakeDialogs.tsx`, `CustomFieldsManager.tsx`, `ItemTemplatesManager.tsx`, `use-work-config.tsx`, `activity-phrases.ts`, `src/lib/work-items/types.ts`, the navigation | — | Islestone-owned | Written fresh. |
 | `tests/unit/work-items/field-sets.test.ts`, `tests/integration/field-sets.test.ts`, `tests/rendered/field-sets.test.tsx` and the 2.4b-b cases in the unit, guard, rendered and integration suites they extend | — | Islestone-owned | Written fresh. |
 
+## Questions (sub-phase 2.4b-c)
+
+Built by [`docs/porting/maps/2.4b.md`](docs/porting/maps/2.4b.md) under owner decisions 102 and 113 to 118, from the Procore audit's idea of a question with one marked answer (ideas only; see "Product ideas adopted into the roadmap"). **Nothing was copied.** inflect-compliance's `Task.resolution` (`prisma/schema/tasks.prisma` line 26 at 5528464fc54a8681956f3b9ce23ca9c075f0420e), a free-text column, was read and not taken: the answer here is a pointer to a comment.
+
+| File | Source | Action | Changes |
+|---|---|---|---|
+| `prisma/schema/work.prisma` (`WorkItem.answerCommentId`, `Comment @@unique([id, workItemId, tenantId])`), migration `20261202120000_answers` | ADR 0002 §15 | Islestone-owned | Written fresh: the composite FK and the soft-delete trigger. |
+| `src/app-layer/domain/work-item-answer.ts`, `src/app-layer/usecases/work-item-answer.ts`, `src/lib/work-items/question-preset.ts`; the 2.4b-c changes to `work-item.ts`, `work-item-collab.ts`, `work-item-type.ts`, `comment.policies.ts`, `notifications/watcher.ts`, `WorkItemRepository.ts`, `src/lib/schemas/work-item.ts`, `work-config.ts`, `route-permissions.ts`; the routes `work-items/[workItemId]/answer/` and `work-item-types/question-preset/` | — | Islestone-owned | Written fresh. |
+| `src/components/work-items/detail/AnswerControls.tsx`; the 2.4b-c changes to `WorkItemDetail.tsx`, `collab-panels.tsx`, `activity-phrases.ts`, `use-work-item-mutations.ts`, `ItemTemplatesManager.tsx`, `WorkItemTypesSettings.tsx`, `src/lib/work-items/types.ts` | — | Islestone-owned | Written fresh. |
+| `tests/integration/questions.test.ts`, `tests/unit/domain/work-item-answer.test.ts`, `tests/rendered/questions.test.tsx`, `tests/e2e/questions.spec.ts` and the 2.4b-c cases in the unit, guard, rendered and integration suites they extend | — | Islestone-owned | Written fresh. |
+
 ## Templates (sub-phase 2.5c)
 
 Built by [`docs/porting/maps/2.5.md`](docs/porting/maps/2.5.md) under owner decisions 71 to 73. **Nothing was copied.** inflect-compliance has no work-item or project templates (its templates are compliance catalogues). Its "one projection from template to task" was read for the pattern, pattern only: `src/app-layer/usecases/control/task-from-template.ts` at `5528464fc54a8681956f3b9ce23ca9c075f0420e` (BUSL-1.1), whose lesson (one function, after four call sites drifted, and the item records where it came from) is `templateToCreateInput` and the `templateId` on `WORK_ITEM_CREATED`. Its `src/lib/processes/create-map-from-template.ts` (two round trips, no transaction) was read as the anti-pattern: a project template is applied in one transaction.
@@ -2092,7 +2103,7 @@ These ADRs adopt designs read in inflect-compliance at `5528464fc54a8681956f3b9c
 
 ### Product ideas adopted into the roadmap
 
-Ideas read in a proprietary product and adopted by the owner into `docs/ROADMAP.md`. Nothing was copied. The sub-phase that builds each one adds its own row, saying it was written fresh: waiting on is built ("Waiting on (sub-phase 2.4b-a)" above); the others are not yet.
+Ideas read in a proprietary product and adopted by the owner into `docs/ROADMAP.md`. Nothing was copied. The sub-phase that builds each one adds its own row, saying it was written fresh: waiting on, field sets and the marked answer are built ("Waiting on (sub-phase 2.4b-a)", "Field sets (sub-phase 2.4b-b)" and "Questions (sub-phase 2.4b-c)" above); the others are not yet.
 
 | Component | Source | Commit or version | Licence | What was taken | Changes |
 |---|---|---|---|---|---|

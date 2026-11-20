@@ -244,6 +244,14 @@ model WorkItem {
   /// naming one. From 6.3 a nullable agent-session reference joins it, with a
   /// CHECK that at most one of the two is set (owner decision 106).
   waitingOnUserId String?
+  /// The marked answer (2.4b-c, ADR 0002 §15; owner decisions 113 to 118):
+  /// one live comment of this same item, by the composite FK
+  /// `(answerCommentId, id, tenantId)` → `Comment(id, workItemId, tenantId)`,
+  /// NO ACTION so the purge's cascade from item to comments passes. A person
+  /// marks it (never an API key or agent); the trigger
+  /// `comment_answer_not_deleted` (SQL) refuses soft-deleting the marked
+  /// comment. Offered only where the item's field set shows the answer.
+  answerCommentId String?
 
   tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project        Project             @relation(fields: [projectId, teamId, tenantId], references: [id, teamId, tenantId], onDelete: Cascade)
@@ -255,6 +263,7 @@ model WorkItem {
   parent         WorkItem?           @relation("WorkItemParent", fields: [parentId, projectId, tenantId], references: [id, projectId, tenantId], onDelete: NoAction, onUpdate: NoAction)
   cycle          Cycle?              @relation(fields: [cycleId, teamId, tenantId], references: [id, teamId, tenantId], onDelete: Restrict, onUpdate: NoAction)
   milestone      Milestone?          @relation(fields: [milestoneId, projectId, tenantId], references: [id, projectId, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  answerComment  Comment?            @relation("WorkItemAnswer", fields: [answerCommentId, id, tenantId], references: [id, workItemId, tenantId], onDelete: NoAction, onUpdate: NoAction)
   subItems       WorkItem[]          @relation("WorkItemParent")
   recurrence     WorkItemRecurrence? @relation("RecurrenceOccurrences", fields: [recurrenceId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
   recurrenceRule WorkItemRecurrence? @relation("RecurrenceSource")
@@ -296,6 +305,8 @@ model WorkItem {
   @@index([tenantId, milestoneId, stateCategory])
   /// A repeat's occurrences (stopping a repeat, the series mark).
   @@index([tenantId, recurrenceId])
+  /// The marked answer's FK (2.4b-c): the comment trigger's lookup.
+  @@index([tenantId, answerCommentId])
   /// The purge sweep across every workspace (ADR 0002 §13's one exception).
   @@index([deletedAt])
 }
@@ -392,10 +403,15 @@ model Comment {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  workItem WorkItem @relation(fields: [workItemId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  author   User     @relation("CommentAuthor", fields: [authorUserId], references: [id])
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workItem WorkItem   @relation(fields: [workItemId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  author   User       @relation("CommentAuthor", fields: [authorUserId], references: [id])
+  /// The item that marks this comment as its answer (2.4b-c); at most one,
+  /// and only the comment's own item (the FK names the item's id).
+  answerOf WorkItem[] @relation("WorkItemAnswer")
 
+  /// Target of the answer link: another item's comment cannot be stored.
+  @@unique([id, workItemId, tenantId])
   @@index([tenantId, workItemId, createdAt])
   @@index([tenantId, authorUserId])
 }

@@ -53,6 +53,9 @@ export const CreateWorkItemTypeSchema = z
     .object({ name: Name, icon: z.enum(WORK_ITEM_TYPE_ICONS).nullish(), color: Color.nullish() })
     .strict();
 
+/** "Add the Question type" (2.4b-c): another name when Question is taken. */
+export const AddQuestionTypeSchema = z.object({ name: Name.optional() }).strict();
+
 export const UpdateWorkItemTypeSchema = z
     .object({
         name: Name.optional(),
