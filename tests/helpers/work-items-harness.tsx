@@ -64,6 +64,7 @@ export function row(n: number, over: Partial<WorkItemRow> = {}): WorkItemRow {
         stateCategory: 'UNSTARTED',
         priority: 'NONE',
         assigneeId: null,
+        createdByUserId: 'u-ada',
         parentId: null,
         sortKey: `a${n}`,
         startDate: null,

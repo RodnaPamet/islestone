@@ -107,7 +107,8 @@ export function workItemDetailPath(id: string): string {
 export interface WorkItemCache {
     applyRow: (row: WorkItemRow, detail?: Partial<WorkItemDetailData>) => void;
     removeRow: (id: string) => void;
-    revalidateLists: () => void;
+    /** Re-read every mounted list, or only those whose filters `match`. */
+    revalidateLists: (match?: (filters: WorkItemListFilters) => boolean) => void;
     revalidateItem: (id: string) => Promise<unknown>;
     /** Revalidate one of the item's own reads (comments, watchers, …). */
     revalidatePath: (path: string) => Promise<unknown>;
@@ -135,8 +136,8 @@ export function useWorkItemCache(): WorkItemCache {
             removeRow(id) {
                 for (const list of lists) list.update((pages) => removeRowFromPages(pages, id));
             },
-            revalidateLists() {
-                for (const list of lists) list.revalidate();
+            revalidateLists(match) {
+                for (const list of lists) if (!match || match(list.filters)) list.revalidate();
             },
             revalidateItem(id) {
                 return mutate(apiUrl(workItemDetailPath(id)));

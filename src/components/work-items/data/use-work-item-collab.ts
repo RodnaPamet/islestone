@@ -78,6 +78,9 @@ export function useWorkItemCollab(id: string) {
         const paths = itemPaths(id);
         const reason = (err: unknown) => (err instanceof ApiClientError && err.reason ? err.reason : t('failed'));
         const fail = (err: unknown) => toast.error(reason(err));
+        // My Work's "Watching" list: the watcher set is not on the row, so the
+        // lists filtered by it re-read once the caller's own watch changes.
+        const revalidateWatching = () => cache.revalidateLists((f) => !!f.watching);
 
         /** An optimistic edit of one key, rolled back to its prior value on failure. */
         async function optimistic<T>(path: string, change: (current: T | undefined) => T | undefined, send: () => Promise<unknown>) {
@@ -165,7 +168,10 @@ export function useWorkItemCollab(id: string) {
                     paths.watchers,
                     (w) => [...(w ?? []).filter((x) => x.userId !== userId), { userId, createdAt: new Date().toISOString() }],
                     () => apiSend('POST', apiUrl(self ? paths.watchers : `${paths.watchers}/${userId}`)),
-                );
+                ).then((ok) => {
+                    if (ok && self) revalidateWatching();
+                    return ok;
+                });
             },
             removeWatcher(userId: string, self: boolean) {
                 removeWithUndo<WatcherRow[]>(
@@ -173,6 +179,7 @@ export function useWorkItemCollab(id: string) {
                     (w) => (w ?? []).filter((x) => x.userId !== userId),
                     t('watcherRemoved'),
                     () => apiSend('DELETE', apiUrl(self ? paths.watchers : `${paths.watchers}/${userId}`)),
+                    self ? revalidateWatching : undefined,
                 );
             },
 

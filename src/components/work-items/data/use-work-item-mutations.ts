@@ -53,6 +53,7 @@ export function toRow(item: WorkItemRow): WorkItemRow {
         stateCategory: item.stateCategory,
         priority: item.priority,
         assigneeId: item.assigneeId,
+        createdByUserId: item.createdByUserId,
         parentId: item.parentId,
         sortKey: item.sortKey,
         startDate: item.startDate,

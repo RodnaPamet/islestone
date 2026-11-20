@@ -26,6 +26,8 @@ export interface WorkItemRow {
     stateCategory: WorkflowStateCategory;
     priority: WorkItemPriority;
     assigneeId: string | null;
+    /** Who created the item (My Work's "Created by me"). */
+    createdByUserId: string;
     parentId: string | null;
     sortKey: string;
     startDate: string | null;
@@ -45,7 +47,6 @@ export interface WorkItemPage {
 /** The detail read (`GET /work-items/:id`). */
 export interface WorkItemDetailData extends WorkItemRow {
     description: string | null;
-    createdByUserId: string;
     project: { id?: string; keyPrefix: string; name?: string; archivedAt?: string | null };
     state: { id: string; name: string; category: WorkflowStateCategory; archivedAt?: string | null };
     type: { id: string; name: string } | null;

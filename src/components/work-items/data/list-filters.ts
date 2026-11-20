@@ -7,7 +7,7 @@
  * The server owns filtering: a list is always what the API answered for its
  * query. `rowBelongs` only decides where an optimistic row goes until the
  * server's answer replaces it, and answers `unknown` for the facets it cannot
- * decide on the client (free text, due windows), in which case the row keeps
+ * decide on the client (free text, due windows, watching), in which case the row keeps
  * its place and the next revalidation settles it.
  *
  * Written fresh for Islestone (sub-phase 2.3).
@@ -24,6 +24,9 @@ export interface WorkItemListFilters {
     priority?: string;
     labelId?: string;
     assigneeId?: string;
+    createdById?: string;
+    /** `me` only: the server reads the caller from the request context. */
+    watching?: 'me';
     parentId?: string;
     due?: string;
     q?: string;
@@ -39,6 +42,8 @@ export const LIST_FILTER_KEYS = [
     'priority',
     'labelId',
     'assigneeId',
+    'createdById',
+    'watching',
     'parentId',
     'due',
     'q',
@@ -90,11 +95,13 @@ export function rowBelongs(filters: WorkItemListFilters, row: WorkItemRow): 'yes
         inList(f.typeId, row.typeId),
         inList(f.priority, row.priority),
         inList(f.assigneeId, row.assigneeId),
+        inList(f.createdById, row.createdByUserId),
         inList(f.parentId, row.parentId),
         f.labelId ? f.labelId.split(',').some((id) => row.labelIds.includes(id)) : undefined,
     ];
     if (checks.some((c) => c === false)) return 'no';
-    if (f.q || f.due) return 'unknown';
+    // The watcher set is not on the row: a watch or unwatch revalidates the lists.
+    if (f.q || f.due || f.watching) return 'unknown';
     return 'yes';
 }
 

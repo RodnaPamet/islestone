@@ -21,6 +21,7 @@ function row(id: string, over: Partial<WorkItemRow> = {}): WorkItemRow {
         stateCategory: 'UNSTARTED',
         priority: 'NONE',
         assigneeId: null,
+        createdByUserId: 'u-ada',
         parentId: null,
         sortKey: 'm',
         startDate: null,

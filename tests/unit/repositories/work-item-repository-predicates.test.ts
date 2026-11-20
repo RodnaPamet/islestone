@@ -50,6 +50,14 @@ const deletedPredicate = (where: Record<string, unknown>) => JSON.stringify(wher
 describe('WorkItemRepository — every person-facing method carries deletedAt AND visibility', () => {
     const cases: Array<[string, (db: PrismaTx) => Promise<unknown>]> = [
         ['list', (db) => WorkItemRepository.list(db, ctx, GUEST, {}, { limit: 10, order: { column: 'sortKey', direction: 'asc', kind: 'string' } })],
+        [
+            'list (My Work filters)',
+            (db) =>
+                WorkItemRepository.list(db, ctx, GUEST, { createdById: 'u-1', watching: 'me', due: 'soon' }, {
+                    limit: 10,
+                    order: { column: 'sortKey', direction: 'asc', kind: 'string' },
+                }),
+        ],
         ['listDeleted', (db) => WorkItemRepository.listDeleted(db, ctx, GUEST)],
         ['getById', (db) => WorkItemRepository.getById(db, ctx, GUEST, 'w1')],
         ['findVisible', (db) => WorkItemRepository.findVisible(db, ctx, GUEST, 'w1')],

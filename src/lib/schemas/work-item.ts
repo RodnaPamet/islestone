@@ -13,6 +13,7 @@
  */
 import { z } from 'zod';
 
+import { DUE_FILTERS } from '@/app-layer/domain/work-item-due';
 import { WORKFLOW_STATE_CATEGORIES } from '@/app-layer/domain/workflow-state';
 
 export const WORK_ITEM_PRIORITIES = ['NONE', 'URGENT', 'HIGH', 'MEDIUM', 'LOW'] as const;
@@ -131,7 +132,11 @@ export const WorkItemQuerySchema = z.object({
     labelId: z.string().max(2000).optional(),
     parentId: z.string().max(2000).optional(),
     assigneeId: z.string().max(2000).optional(),
-    due: z.enum(['overdue', 'next7d']).optional(),
+    /** Creator user ids, comma-joinable, as `assigneeId`. */
+    createdById: z.string().max(2000).optional(),
+    /** Only `me`: the caller's watched items, resolved from the request context. */
+    watching: z.enum(['me']).optional(),
+    due: z.enum(DUE_FILTERS).optional(),
     q: z.string().max(200).optional(),
     includeArchived: z.enum(['true', 'false', '1', '0']).optional(),
     order: z.enum(['manual', 'updated']).optional(),
