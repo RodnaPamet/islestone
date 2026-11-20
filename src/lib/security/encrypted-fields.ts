@@ -81,6 +81,14 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // commit messages). Both are sanitised before they are stored.
     WorkItem: ['description'],
     Comment: ['body'],
+    // Templates (sub-phase 2.5c, owner decision 73). An item template's
+    // description is the same kind of text as an item's, so it is encrypted
+    // the same way; a project template's whole content (fields, milestones,
+    // item templates with their descriptions, starter items) is one JSON
+    // document, encrypted as one value. Names and titles stay plaintext.
+    // Both are sanitised before they are stored.
+    WorkItemTemplate: ['description'],
+    ProjectTemplate: ['contentJson'],
 } as const;
 
 /** Set of model names with at least one encrypted field. Fast-path check. */

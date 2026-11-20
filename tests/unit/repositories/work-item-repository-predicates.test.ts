@@ -84,6 +84,7 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
         ['metrics', (db) => WorkItemRepository.metrics(db, ctx, GUEST, {}, new Date())],
         ['countsByCycle (2.5a)', (db) => WorkItemRepository.countsByCycle(db, ctx, GUEST, ['c1'])],
         ['list (a cycle filter, 2.5a)', (db) => WorkItemRepository.list(db, ctx, GUEST, { cycleId: 'c1,c2' }, { limit: 10, sort: listSortSpec('manual') })],
+        ['openItemsForTemplate (2.5c, top level and sub-items)', (db) => Promise.all([WorkItemRepository.openItemsForTemplate(db, ctx, GUEST, 'p1', null, 10), WorkItemRepository.openItemsForTemplate(db, ctx, GUEST, 'p1', ['w1'], 10)])],
         ['countsByMilestone (2.5b)', (db) => WorkItemRepository.countsByMilestone(db, ctx, GUEST, ['m1'])],
         ['list (a milestone filter, 2.5b)', (db) => WorkItemRepository.list(db, ctx, GUEST, { milestoneId: 'm1,none' }, { limit: 10, sort: listSortSpec('manual') })],
     ];

@@ -321,3 +321,40 @@ export interface MilestoneAffordances {
     /** Aim an item at a milestone or clear it (`work_items.edit`). */
     planItems: boolean;
 }
+
+/** What the template surfaces offer their viewer (2.5c), asked on the server. */
+export interface TemplateAffordances {
+    /** Create, change, archive and delete a project's item templates (`projects.edit`). */
+    manageItemTemplates: boolean;
+    /** List project templates and make a project from one (`projects.create`). */
+    useProjectTemplates: boolean;
+    /** Save a project as a template, rename, archive and delete one (`admin.manage`). */
+    manageProjectTemplates: boolean;
+}
+
+/** An item template as `GET /projects/:id/work-item-templates` returns it (2.5c). */
+export interface WorkItemTemplateData {
+    id: string;
+    projectId: string;
+    name: string;
+    title: string;
+    description: string | null;
+    typeId: string | null;
+    priority: WorkItemPriority;
+    labelIds: string[];
+    assigneeId: string | null;
+    dueInDays: number | null;
+    customFields: Record<string, unknown>;
+    subItems: Array<{ title: string }>;
+    archived: boolean;
+}
+
+/** A project template as `GET /project-templates` lists it (2.5c): never its content. */
+export interface ProjectTemplateSummary {
+    id: string;
+    name: string;
+    archived: boolean;
+    createdAt: string;
+    /** What the content holds, counted when it is read for an admin's list. */
+    counts?: { customFields: number; milestones: number; itemTemplates: number; items: number };
+}

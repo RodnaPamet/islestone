@@ -571,6 +571,44 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'work_items.edit',
         note: "Aim an item at a milestone of its project, or clear it (the version increases).",
     },
+
+    // ── Templates (sub-phase 2.5c; owner decisions 71 and 72) ──────
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/work-item-templates$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: "A visible project's item templates.",
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/work-item-templates$`),
+        methods: ['POST'],
+        permission: 'projects.edit',
+        note: 'Create an item template: a template is part of its project (decision 71).',
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/work-item-templates\\/[^\\/]+$`),
+        methods: ['PATCH', 'DELETE'],
+        permission: 'projects.edit',
+        note: 'Change, archive, reorder or delete an item template.',
+    },
+    {
+        path: new RegExp(`^${T}\\/project-templates$`),
+        methods: ['GET'],
+        permission: 'projects.create',
+        note: "The workspace's project templates, for whoever may make a project from one.",
+    },
+    {
+        path: new RegExp(`^${T}\\/project-templates$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note: 'Save a project as a template: admins manage project templates (decision 71).',
+    },
+    {
+        path: new RegExp(`^${T}\\/project-templates\\/[^\\/]+$`),
+        methods: ['PATCH', 'DELETE'],
+        permission: 'admin.manage',
+        note: 'Rename, archive or delete a project template.',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────
