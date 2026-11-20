@@ -3,7 +3,7 @@
 /**
  * The work-item views' filter context: the filter definitions for a scope
  * (every option from the server's configuration or the roster), the shared
- * filter system synced to the URL, and the guard against a no-op URL write.
+ * filter system synced to the URL.
  * The list and board view (`WorkItemsView`) and My Work (`MyWorkView`) both
  * mount it, so the two pages filter alike.
  *
@@ -30,22 +30,10 @@ export function useWorkItemFilterContext(scope: FilterScope): {
         () => buildWorkItemFilterDefs(config, members, scope, (k, v) => tFilterCtx(k, v)),
         [config, members, scope, tFilterCtx],
     );
-    const raw = useFilterContext(defs.filters, defs.filterKeys, { syncUrl: true });
-    // The mirrored filter select reports its (empty) search on mount and the
-    // toolbar debounces it into `setSearch`, which writes the URL with
-    // `router.replace`. That no-op replace, 250 ms after the page mounts,
-    // cancelled a navigation the person had just started (the palette's
-    // "Go to Inbox" left them on this page). A search that does not change
-    // writes nothing.
-    const filterCtx = useMemo(
-        () => ({
-            ...raw,
-            setSearch: (q: string) => {
-                if (q !== raw.search) raw.setSearch(q);
-            },
-        }),
-        [raw],
-    );
+    // The mirrored filter context itself refuses a search that does not
+    // change (inflect-compliance #5778, owner decision 56), so an unchanged
+    // search no longer writes the URL and cancels a navigation.
+    const filterCtx = useFilterContext(defs.filters, defs.filterKeys, { syncUrl: true });
     return { filterCtx, filterDefs: defs.filters };
 }
 
