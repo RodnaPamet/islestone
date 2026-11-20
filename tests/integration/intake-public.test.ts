@@ -204,8 +204,14 @@ describeFn('public intake forms', () => {
             expect(firstId.slice(-8).toUpperCase()).toBe(receipt.reference);
             expect(raw!.requesterUserId).toBeNull();
             expect(raw!.title).not.toMatch(/‮|<script/i);
-            expect(raw!.requesterName).not.toContain('Ada');
-            expect(raw!.requesterEmail).not.toContain('xample');
+            // Ciphertext is base64, so a short needle can turn up in it by chance
+            // (one run's name ciphertext held "Ada"): check the envelope, and
+            // that the longest plaintext word is absent.
+            expect(raw!.requesterName).toMatch(/^v\d+:/);
+            expect(raw!.requesterName).not.toContain('Lovelace');
+            expect(raw!.requesterEmail).toMatch(/^v\d+:/);
+            expect(raw!.requesterEmail).not.toContain('Example.com');
+            expect(raw!.body).toMatch(/^v\d+:/);
             expect(raw!.body).not.toContain('smokes');
             expect(raw!.requesterEmailHash).toBe(hashForLookup('ada@example.com'));
             expect(raw!.formTokenNonce).toBe(firstEnvelope.token.split('.')[3]);

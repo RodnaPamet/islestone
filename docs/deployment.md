@@ -133,7 +133,10 @@ and no restore.
   published it, the run's summary prints `<tag>@sha256:<digest>`, and a
   follow-up pull request puts that on the line and removes the marker
   (`tests/guards/postgres-image-pinning.test.ts` accepts exactly those two
-  states). Watchtower never rolls the database (`enable=false`).
+  states). `17-0.8.7-bg4.3-r1` is pinned at
+  `sha256:796db89d604fee3df2f06b041e8cc417b1597b69ceb0e7f695586df479833835`
+  (release run 26, 2026-11-20). Watchtower never rolls the database
+  (`enable=false`).
 - **Fail closed.** Migration `20261207120000_search_configuration` refuses to
   run on a server without the dictionary ("the Bulgarian dictionary could not
   be loaded … This server is not running Islestone's Postgres image"), and the
