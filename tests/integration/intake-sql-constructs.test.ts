@@ -2,7 +2,10 @@
  * What migration `20261125120100_intake_core` adds beyond Prisma (sub-phase
  * 2.6a), each checked in the catalogue AND by its bite: the CHECKs that keep
  * an intake request's status and its columns in step, the form's caps, and
- * the archive-only privilege on forms and project intake.
+ * the archive-only privilege on forms and project intake. And what
+ * `20261126120100_intake_public` adds (sub-phase 2.6b): the CHECKs that keep a
+ * public request's requester columns in step with its channel, and the
+ * per-workspace uniqueness of a form token's nonce.
  */
 import type { Prisma, PrismaClient } from '@prisma/client';
 
@@ -46,13 +49,18 @@ describeFn('intake: SQL constructs', () => {
             'IntakeForm_daily_cap_range',
             'IntakeForm_name_length',
             'IntakeRequest_accepted_has_item',
+            'IntakeRequest_confirmed_asked',
             'IntakeRequest_decided_when_decided',
             'IntakeRequest_declined_has_reason',
+            'IntakeRequest_email_has_hash',
+            'IntakeRequest_internal_has_no_outsider',
             'IntakeRequest_internal_has_requester',
             'IntakeRequest_merged_has_one_target',
             'IntakeRequest_not_merged_into_itself',
+            'IntakeRequest_public_has_form',
             'IntakeRequest_snoozed_has_date',
             'IntakeRequest_title_length',
+            'IntakeRequest_updates_need_email',
         ]);
     });
 
@@ -82,6 +90,23 @@ describeFn('intake: SQL constructs', () => {
         await expect(request({ status: 'DECLINED', decidedAt: now, declineReason: 'SPAM' })).resolves.toBeTruthy();
         await expect(request({ status: 'MERGED', decidedAt: now, mergedIntoRequestId: 'r1' })).resolves.toBeTruthy();
         await expect(request({ status: 'SNOOZED', snoozedUntil: new Date('2030-01-01T00:00:00Z') })).resolves.toBeTruthy();
+    });
+
+    it("a public request's requester columns stay in step with its channel (2.6b)", async () => {
+        const form = await prisma.intakeForm.create({
+            data: { tenantId, projectId: world.projectId, name: 'Public', access: 'PUBLIC', publicId: `${TAG}-pub`, definitionJson: {}, createdByUserId: userId },
+        });
+        const pub = (data: Partial<Prisma.IntakeRequestUncheckedCreateInput>) => request({ channel: 'PUBLIC_FORM', requesterUserId: null, formId: form.id, ...data });
+        await expect(pub({ formId: null })).rejects.toThrow(/IntakeRequest_public_has_form/);
+        await expect(request({ requesterName: 'Ada' })).rejects.toThrow(/IntakeRequest_internal_has_no_outsider/);
+        await expect(request({ formTokenNonce: 'n1' })).rejects.toThrow(/IntakeRequest_internal_has_no_outsider/);
+        await expect(pub({ updatesRequested: true })).rejects.toThrow(/IntakeRequest_updates_need_email/);
+        await expect(pub({ requesterEmail: 'a@example.test', updatesConfirmedAt: new Date() })).rejects.toThrow(/IntakeRequest_confirmed_asked/);
+        // The PII extension writes the hash with the address; a row losing it is refused.
+        const ok = await pub({ requesterName: 'Ada', requesterEmail: 'a@example.test', updatesRequested: true, updatesConfirmedAt: new Date(), formTokenNonce: 'nonce-1' });
+        await expect(prisma.$executeRaw`UPDATE "IntakeRequest" SET "requesterEmailHash" = NULL WHERE "id" = ${ok.id}`).rejects.toThrow(/IntakeRequest_email_has_hash/);
+        // A form token's nonce makes one request in a workspace.
+        await expect(pub({ formTokenNonce: 'nonce-1' })).rejects.toThrow(/Unique constraint|formTokenNonce/);
     });
 
     it('a form refuses a blank or long name and a daily cap outside 1 to 5,000', async () => {

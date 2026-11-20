@@ -25,7 +25,7 @@ const field = (over: Partial<IntakeFormField> & Pick<IntakeFormField, 'id' | 'ki
     ...over,
 });
 
-const def = (fields: IntakeFormField[]): IntakeFormDefinition => ({ intro: '', confirmation: '', fields });
+const def = (fields: IntakeFormField[]): IntakeFormDefinition => ({ intro: '', confirmation: '', fields, requester: { name: 'OFF', email: 'OFF' } });
 
 describe('the form definition', () => {
     it('accepts every kind, and refuses a select without options or options on a non-select', () => {
@@ -48,7 +48,9 @@ describe('the form definition', () => {
     });
 
     it('reads an unreadable stored definition as empty, and mints the next id past the highest', () => {
-        expect(readDefinition({ fields: 'nope' })).toEqual({ intro: '', confirmation: '', fields: [] });
+        expect(readDefinition({ fields: 'nope' })).toEqual({ intro: '', confirmation: '', fields: [], requester: { name: 'OFF', email: 'OFF' } });
+        // A 2.6a definition (no requester rules) reads with both turned off.
+        expect(readDefinition({ intro: '', confirmation: '', fields: [] }).requester).toEqual({ name: 'OFF', email: 'OFF' });
         expect(nextFieldId([])).toBe('f1');
         expect(nextFieldId([{ id: 'f2' }, { id: 'f7' }])).toBe('f8');
     });

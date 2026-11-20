@@ -199,8 +199,8 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
         // SavedViewVisibility 2 (2.4), CycleRollover 2 (2.5a), NotificationType
         // +2, IntakeChannel 3, IntakeFormAccess 2, IntakeRequestStatus 5,
         // IntakeDeclineReason 4 (2.6a), RecurrenceFrequency 4 and
-        // RecurrenceHold 6 (2.5d).
-        expect(values).toBe(92);
+        // RecurrenceHold 6 (2.5d), EmailNotificationType +4 (2.6b).
+        expect(values).toBe(96);
 
         // No `@@map`ed enum: ADR 0006 rule 3. The mapping half is proved with
         // planted inputs below instead.
