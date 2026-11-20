@@ -675,6 +675,50 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note: 'Name the active member an open item waits on, or nobody (the version increases).',
     },
 
+    // ── Review steps (sub-phase 2.8a; ADR 0009; owner decisions 150, 158, 160) ──
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/review$`),
+        methods: ['GET'],
+        permission: 'work_items.view',
+        note: "An item's review rounds, steps, reviewers and responses, and what the caller may do.",
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/review\\/steps$`),
+        methods: ['PUT'],
+        permission: 'work_items.edit',
+        note: 'Replace the review steps not yet opened (decision 150); naming the assignee is refused (decision 158).',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/review\\/(send|withdraw)$`),
+        methods: ['POST'],
+        permission: 'work_items.edit',
+        note: 'Send the planned round for review (decision 155), or withdraw the open one.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/review\\/steps\\/[^\\/]+\\/respond$`),
+        methods: ['POST'],
+        permission: 'work_items.view',
+        note: "Sign off or return a step (decision 160): the usecase admits only the person named, acting as themselves, never the item's assignee (decision 158), and audits a refusal.",
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/review\\/steps\\/[^\\/]+\\/skip$`),
+        methods: ['POST'],
+        permission: 'work_items.edit',
+        note: 'Skip a step, or close one whose reviewers left: the usecase admits the assignee, the sender or an admin (decision 150).',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/review\\/steps\\/[^\\/]+\\/reviewers$`),
+        methods: ['POST'],
+        permission: 'work_items.edit',
+        note: 'Add a reviewer to a step that has not ended.',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/review\\/steps\\/[^\\/]+\\/reviewers\\/[^\\/]+$`),
+        methods: ['DELETE'],
+        permission: 'work_items.edit',
+        note: 'Withdraw a pending reviewer; on an open step the usecase asks the standing of decision 150.',
+    },
+
     // ── The marked answer (sub-phase 2.4b-c; owner decisions 113 to 118) ──
     {
         path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/answer$`),

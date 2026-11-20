@@ -887,7 +887,16 @@
             "answerCleared": "cleared the answer",
             "mentioned": "mentioned someone",
             "mentionsRemoved": "removed a mention",
-            "watchersAddedFromList": "added watchers from a recipient list"
+            "watchersAddedFromList": "added watchers from a recipient list",
+            "reviewStepsChanged": "changed the review steps",
+            "reviewRoundStarted": "sent the item for review",
+            "reviewStepOpened": "opened a review step",
+            "reviewResponded": "responded to a review step",
+            "reviewResponseChanged": "changed a review response",
+            "reviewStepSkipped": "skipped a review step",
+            "reviewRoundEnded": "ended a review round",
+            "reviewersChanged": "changed the reviewers",
+            "reviewerWithdrawn": "withdrew a reviewer"
         },
         "mentions": {
             "hint": "Type @ to mention a member.",
@@ -1955,6 +1964,10 @@
             "WORK_ITEM_ASSIGNED": "Assigned to you",
             "WORK_ITEM_WAITING_ON": "Waiting on you",
             "WORK_ITEM_MENTIONED": "Mentions",
+            "WORK_ITEM_REVIEW_REQUESTED": "Reviews asked of you",
+            "WORK_ITEM_REVIEW_DUE": "Reviews due",
+            "WORK_ITEM_REVIEW_RETURNED": "Your work returned",
+            "WORK_ITEM_REVIEW_COMPLETED": "Reviews completed",
             "WORK_ITEM_WATCH_UPDATE": "Watched work items",
             "WORK_ITEM_DUE": "Due dates",
             "INTAKE_REQUEST_RECEIVED": "New intake requests",
@@ -2017,7 +2030,7 @@
             "BELL_OFF": "The daily digest lists this kind from your Inbox, so it needs the Inbox and bell on."
         },
         "digestHelp": "The daily digest arrives at 08:10 with your work items due soon and the day's unread notifications you chose to receive daily. It never quotes descriptions or comments.",
-        "immediateHelp": "Email at once is offered for work assigned to you, work waiting on you, and mentions.",
+        "immediateHelp": "Email at once is offered for work assigned to you, work waiting on you, mentions, reviews asked of you, and your work returned by a reviewer.",
         "saved": "Preferences saved",
         "failed": "Your preferences could not be saved. Try again.",
         "loadFailed": "Your preferences could not be loaded. Try again.",

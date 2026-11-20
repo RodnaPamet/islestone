@@ -96,6 +96,19 @@ enum NotificationType {
   /// Sub-phase 2.7d: someone mentioned you in a comment or a description
   /// (owner decisions 127 to 130).
   WORK_ITEM_MENTIONED
+  /// Sub-phase 2.8a: a review step you are a reviewer of opened, or you were
+  /// added to an open one; also the "no reviewers left" notice to the item's
+  /// assignee and whoever sent the round (owner decision 161).
+  WORK_ITEM_REVIEW_REQUESTED
+  /// Sub-phase 2.8a: a review step waiting on you is due or overdue, from the
+  /// 08:00 due job (decision 161).
+  WORK_ITEM_REVIEW_DUE
+  /// Sub-phase 2.8a: a reviewer returned a work item, to its assignee and
+  /// whoever sent the round (decision 161).
+  WORK_ITEM_REVIEW_RETURNED
+  /// Sub-phase 2.8a: a review round completed, to the item's assignee and
+  /// whoever sent the round (decision 161).
+  WORK_ITEM_REVIEW_COMPLETED
 }
 
 /// The kind of an outbound email in `NotificationOutbox` (sub-phase 1.6).
@@ -128,6 +141,47 @@ enum EmailNotificationType {
   /// Sub-phase 2.7d: someone mentioned you, mailed at once when your
   /// preference says so (owner decisions 128 and 130; the default).
   WORK_ITEM_MENTIONED
+  /// Sub-phase 2.8a: a review was requested of you, mailed at once when your
+  /// preference says so (owner decision 161; the default).
+  WORK_ITEM_REVIEW_REQUESTED
+  /// Sub-phase 2.8a: a reviewer returned your work item, mailed at once when
+  /// your preference says so (decision 161; the default).
+  WORK_ITEM_REVIEW_RETURNED
+}
+
+/// A review round's state (sub-phase 2.8a, ADR 0009). PLANNED: steps editable,
+/// nothing open; OPEN: a step is open; COMPLETED, RETURNED, WITHDRAWN: ended,
+/// and from then on never rewritten (the trigger `work_item_review_round_frozen`).
+enum ReviewRoundStatus {
+  PLANNED
+  OPEN
+  COMPLETED
+  RETURNED
+  WITHDRAWN
+}
+
+/// Whether every reviewer of a step must sign off, or any one (ADR 0009 §1).
+enum ReviewStepMode {
+  ALL
+  ANY
+}
+
+/// A review step's state (ADR 0009). PENDING: not yet open (editable); OPEN;
+/// then COMPLETED, RETURNED, SKIPPED or WITHDRAWN, after which the step and
+/// its responses are frozen (owner decision 162).
+enum ReviewStepStatus {
+  PENDING
+  OPEN
+  COMPLETED
+  RETURNED
+  SKIPPED
+  WITHDRAWN
+}
+
+/// A reviewer's response (owner decision 148): Signed off or Returned.
+enum ReviewOutcome {
+  SIGNED_OFF
+  RETURNED
 }
 
 /// A member's email choice for one notification type (sub-phase 2.7c, owner

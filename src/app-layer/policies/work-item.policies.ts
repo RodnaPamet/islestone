@@ -73,9 +73,17 @@ export function assertCanCreateWorkItem(ctx: RequestContext) {
     }
 }
 
+/**
+ * The predicate {@link assertCanEditWorkItems} asserts, for a page that offers
+ * a write rather than refusing one (the review steps' affordances, 2.8a).
+ */
+export function mayEditWorkItems(ctx: RequestContext): boolean {
+    return ctx.permissions.canWrite && !granularWorkItemsDenied(ctx, 'edit');
+}
+
 /** OWNER, ADMIN and MEMBER can edit, relate, link, label and move work items. */
 export function assertCanEditWorkItems(ctx: RequestContext) {
-    if (!ctx.permissions.canWrite || granularWorkItemsDenied(ctx, 'edit')) {
+    if (!mayEditWorkItems(ctx)) {
         throw forbidden('You do not have permission to modify work items.');
     }
 }

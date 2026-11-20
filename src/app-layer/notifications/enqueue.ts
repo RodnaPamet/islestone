@@ -23,6 +23,7 @@ import {
     buildWorkItemAssignedEmail,
     buildWorkItemWaitingOnEmail,
     buildWorkItemMentionedEmail,
+    buildWorkItemReviewEmail,
     type EmailTemplateResult,
     type IntakeConfirmAddressPayload,
     type IntakeDeclinedPayload,
@@ -31,6 +32,7 @@ import {
     type WorkItemAssignedPayload,
     type WorkItemWaitingOnPayload,
     type WorkItemMentionedPayload,
+    type WorkItemReviewPayload,
 } from './templates';
 
 /**
@@ -60,6 +62,10 @@ export interface EmailPayloadByType {
     NOTIFICATION_DIGEST: NotificationDigestPayload;
     /** Sub-phase 2.7d: a person newly mentioned, when their preference is IMMEDIATE (decision 130: never the text). */
     WORK_ITEM_MENTIONED: WorkItemMentionedPayload;
+    /** Sub-phase 2.8a: a review asked of you, when your preference is IMMEDIATE (decision 161: never the response text). */
+    WORK_ITEM_REVIEW_REQUESTED: WorkItemReviewPayload;
+    /** Sub-phase 2.8a: a reviewer returned the item, when your preference is IMMEDIATE. */
+    WORK_ITEM_REVIEW_RETURNED: WorkItemReviewPayload;
 }
 
 type EmailPayloadMap = { [K in EmailNotificationType]: EmailPayloadByType[K] };
@@ -203,6 +209,10 @@ async function buildEmailContent(input: EnqueueEmailInput): Promise<EmailTemplat
             return buildNotificationDigestEmail(input.payload);
         case 'WORK_ITEM_MENTIONED':
             return buildWorkItemMentionedEmail(input.payload);
+        case 'WORK_ITEM_REVIEW_REQUESTED':
+            return buildWorkItemReviewEmail('REQUESTED', input.payload);
+        case 'WORK_ITEM_REVIEW_RETURNED':
+            return buildWorkItemReviewEmail('RETURNED', input.payload);
         case 'INTAKE_CONFIRM_ADDRESS':
             return buildIntakeRequesterEmail('CONFIRM', input.payload);
         case 'INTAKE_ACCEPTED':

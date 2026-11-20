@@ -1,0 +1,155 @@
+// Review steps (sub-phase 2.8a; ADR 0009; owner decisions 148 to 165;
+// docs/porting/maps/2.8.md). One file per domain (README.md).
+//
+// What Prisma cannot declare lives in migration `20261208120600_reviews`:
+// the one live round per item (a partial unique), the CHECKs on the text
+// columns and the response columns, and the triggers that keep an ended round
+// (and a completed step's responses) from ever being rewritten.
+
+/// One pass through a work item's review steps. At most one round of an item
+/// is PLANNED or OPEN (a partial unique in SQL). A Return ends the round and a
+/// new PLANNED round with the same steps follows; an ended round (COMPLETED,
+/// RETURNED, WITHDRAWN) is never rewritten (trigger). `app_user` holds no
+/// DELETE: the item's purge removes rounds by cascade.
+model WorkItemReviewRound {
+  id              String            @id @default(cuid())
+  tenantId        String
+  workItemId      String
+  /// 1, 2, …: unique per item.
+  number          Int
+  status          ReviewRoundStatus @default(PLANNED)
+  /// Who sent it (decision 150's "whoever sent the round"); an actor stamp, no FK.
+  startedByUserId String?
+  startedAt       DateTime?
+  endedAt         DateTime?
+  /// NULL when the system ended it (the item closed, a response completed it).
+  endedByUserId   String?
+  /// Why it ended (text, CHECKed in SQL): COMPLETED, RETURNED, ITEM_CLOSED,
+  /// ITEM_DELETED, WITHDRAWN_BY_PERSON.
+  endReason       String?
+  /// Optimistic concurrency for the round's writes (`If-Match`, ADR 0002 §9).
+  version         Int               @default(1)
+  /// An actor stamp: a plain column, no FK.
+  createdById     String
+  createdAt       DateTime          @default(now())
+
+  tenant   Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workItem WorkItem             @relation(fields: [workItemId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  steps    WorkItemReviewStep[]
+
+  @@unique([id, tenantId])
+  /// Target of the step's composite FK: a step names its round's item.
+  @@unique([id, workItemId, tenantId])
+  @@unique([tenantId, workItemId, number])
+  /// Open rounds per workspace (the waiting-on guard, the reminders).
+  @@index([tenantId, status])
+}
+
+/// One ordered step of a round: a name, all or any, a due date in working
+/// days. While PENDING it is edited (decision 150); when it opens its lists
+/// are resolved into reviewer rows (decision 154) and `dueOn` is stored
+/// (decision 151); once it ends (COMPLETED, RETURNED, SKIPPED, WITHDRAWN) it
+/// and its reviewers' responses are frozen (decision 162, trigger).
+model WorkItemReviewStep {
+  id               String           @id @default(cuid())
+  tenantId         String
+  roundId          String
+  /// Denormalised; held equal to the round's item by the composite FK.
+  workItemId       String
+  /// 1, 2, … in the round.
+  position         Int
+  /// Plaintext, sanitised, at most 120 characters (CHECK).
+  name             String
+  mode             ReviewStepMode   @default(ALL)
+  /// 1..60 (CHECK).
+  dueInWorkingDays Int
+  status           ReviewStepStatus @default(PENDING)
+  openedAt         DateTime?
+  /// Date-only: the working day it is due, set once when it opens; never
+  /// passed through a time zone.
+  dueOn            DateTime?        @db.Date
+  endedAt          DateTime?
+  /// An actor stamp: a plain column, no FK.
+  skippedByUserId  String?
+  /// PERSON_SKIPPED or NO_REVIEWERS_LEFT (CHECK).
+  skipReason       String?
+  createdAt        DateTime         @default(now())
+
+  tenant    Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  round     WorkItemReviewRound      @relation(fields: [roundId, workItemId, tenantId], references: [id, workItemId, tenantId], onDelete: Cascade)
+  lists     WorkItemReviewStepList[]
+  reviewers WorkItemReviewer[]
+
+  @@unique([id, tenantId])
+  /// Target of the reviewer's composite FK.
+  @@unique([id, roundId, workItemId, tenantId])
+  @@unique([roundId, position])
+  @@index([tenantId, roundId, workItemId])
+  /// The reminder job: open steps by due day.
+  @@index([tenantId, status, dueOn])
+}
+
+/// A recipient list a step names, resolved to reviewer rows when the step
+/// opens (decision 154). The list FK is RESTRICT: lists are archived, never
+/// deleted (decision 141).
+model WorkItemReviewStepList {
+  tenantId        String
+  stepId          String
+  recipientListId String
+  createdAt       DateTime @default(now())
+
+  tenant Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  step   WorkItemReviewStep @relation(fields: [stepId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  list   RecipientList      @relation(fields: [recipientListId, tenantId], references: [id, tenantId], onDelete: Restrict)
+
+  @@id([stepId, recipientListId])
+  @@index([tenantId, stepId])
+  @@index([tenantId, recipientListId])
+}
+
+/// One person asked to respond to one step. A member named directly on a
+/// PENDING step is a row with no response; a list's people get rows when the
+/// step opens. `userId` is an FK to `User`, not to the membership: a departed
+/// reviewer's response outlives their membership (as `Comment.authorUserId`).
+/// The response (`outcome`, `respondedAt`, `responseText`, `itemVersionAt`)
+/// may change while the step is open (decision 162) and is frozen once the
+/// step or the round ends (trigger). A person is withdrawn, never deleted:
+/// `app_user` holds no DELETE. Only the respond usecase writes `outcome`
+/// (`tests/guards/review-response-seam.test.ts`).
+model WorkItemReviewer {
+  id                 String         @id @default(cuid())
+  tenantId           String
+  stepId             String
+  roundId            String
+  workItemId         String
+  userId             String
+  /// The list this person came from ("via Legal"); a pointer kept for display,
+  /// no FK (lists are never deleted). NULL: named directly.
+  viaRecipientListId String?
+  outcome            ReviewOutcome?
+  /// The last response's time (a change moves it; the audit trail keeps each).
+  respondedAt        DateTime?
+  /// ENCRYPTED (manifest) and sanitised; at most 4,000 characters; required to
+  /// Return (CHECK). Never searched, never mentions (decision 157).
+  responseText       String?
+  /// The item's `version` when they responded (decision 163).
+  itemVersionAt      Int?
+  withdrawnAt        DateTime?
+  /// MEMBER_REMOVED, STEP_ENDED, REMOVED_BY_PERSON, BECAME_ASSIGNEE,
+  /// NOT_ELIGIBLE (CHECK).
+  withdrawnReason    String?
+  /// An actor stamp: a plain column, no FK.
+  addedById          String
+  createdAt          DateTime       @default(now())
+
+  tenant   Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  step     WorkItemReviewStep @relation(fields: [stepId, roundId, workItemId, tenantId], references: [id, roundId, workItemId, tenantId], onDelete: Cascade)
+  workItem WorkItem           @relation(fields: [workItemId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  user     User               @relation("WorkItemReviewerUser", fields: [userId], references: [id])
+
+  @@unique([stepId, userId])
+  @@index([tenantId, stepId, roundId, workItemId])
+  /// "To review" and the reviewer filter: a person's pending rows.
+  @@index([tenantId, userId, withdrawnAt])
+  @@index([tenantId, workItemId])
+}

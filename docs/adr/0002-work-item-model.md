@@ -1,6 +1,6 @@
 # 0002 — Work item model
 
-Status: Accepted (owner decisions, 2026-11-19; amended by owner decisions 100 to 119, 2026-11-20: field sets in §1 and §7, waiting on in §14, the marked answer in §15)
+Status: Accepted (owner decisions, 2026-11-19; amended by owner decisions 100 to 119, 2026-11-20: field sets in §1 and §7, waiting on in §14, the marked answer in §15; and by owner decisions 148 to 165, 2026-11-20: review steps in §1, §3 and §14, ADR 0009)
 
 ## Context
 
@@ -42,7 +42,7 @@ Why rows, not an enum: types are customer data, and an enum change is a migratio
 - The usecases enforce it. A create, or a write to an open item, that leaves a required field empty is refused, naming the fields; a write that sets a hidden field is refused, and a hidden field a template brings is skipped and named. A closed item is never refused for a missing field. A type change is checked against the new type's whole set. A new or tightened rule does not rewrite existing items; their gaps are shown.
 - Items the system makes (a template's sub-items, a project template's starter items, a repeat's copies) are checked like any create; a refused repeat is held with its reason.
 - Every form reads the rules from the server and evaluates them with the same function the usecases use. Agent proposals are checked against them when made and when approved (roadmap 6.2).
-- Types carry no other behaviour: per-type workflows, parent rules or review steps would each be a new decision.
+- Types carry one more behaviour, their default review steps and whether review must finish before Done (ADR 0009). Per-type workflows or parent rules would each be a new decision.
 
 ### 2. The parent chain
 
@@ -84,7 +84,7 @@ Rules:
   - a move into `DONE` sets `completedAt`; into `CANCELLED` sets `cancelledAt`;
   - a move out of `DONE` or `CANCELLED` clears that timestamp (reopen);
   - a move into `DONE` or `CANCELLED` ends a live agent session on the item (ADR 0003).
-- Per-team transition rules, if ever needed, are new rows read by the same function. No reviewer gate in this ADR.
+- Per-team transition rules, if ever needed, are new rows read by the same function. A move into Done may be held by a review a type requires (ADR 0009 §14); that check runs beside this function in every state path, and every state path into a closed category withdraws an open review round. No other gate.
 - **Adding a category later is a two-deploy change.** A Prisma client that meets an enum value it was not generated with fails the whole read, so the first deploy teaches every reader and the second writes the value. This is recorded in inflect-compliance's `CLAUDE.md` ("Agent recertification", the two-deploy rollout of `AccessReviewScope`).
 
 ### 4. Keys: `ISL-123`
@@ -490,7 +490,7 @@ List queries also filter `deletedAt IS NULL`. If the pinned Prisma version canno
 ### 14. Waiting on
 
 - `WorkItem.waitingOnUserId` names at most one active member who must act next (roadmap 2.4b; owner decisions 76 and 103 to 107, 2026-11-20). It never makes anyone or anything accountable: the assignee stays the one accountable person (ADR 0003 §1, unchanged), and nothing routes reminders, delegation or proposals by it until a later sub-phase says so. The person named gets one in-app notification when someone else names them.
-- It is set by a person under `work_items.edit`, as a single-field change (§9); roadmap 2.8's review steps will set it too, and a repeat copy takes its source's.
+- It is set by a person under `work_items.edit`, as a single-field change (§9); a repeat copy takes its source's. While a review round is open the item waits on its open step's pending reviewers, the column is empty and a person does not set it (409 `REVIEW_ROUND_OPEN`); the round's end names the assignee (ADR 0009 §8).
 - **From roadmap 6.3 it may name the delegate's agent session instead of a member** (owner decision 106). 6.3 adds a nullable session reference beside `waitingOnUserId`, with a CHECK that at most one of the two is set, and widens the closed-item CHECK below to both. The member column keeps its name and its data; nothing is rewritten.
 - It is cleared by every move into `DONE` or `CANCELLED`: `stateTransitionEffects` returns the clear, so every state path applies it, and a CHECK refuses a closed item that names one. A reopen does not restore it.
 - Each change is recorded in `WorkItemTransition`, so time waiting is counted from recorded changes (roadmap 3.6; owner decision 107).
@@ -531,7 +531,7 @@ All five were answered on 2026-11-19 in the working session.
 - Customers need a different manual order per view. A `(viewId, workItemId, sortKey)` table would then replace the single key for those views.
 - Field-level conflicts become common enough that the client retry is not enough. Per-field versions, or Yjs for descriptions under ADR 0005, would replace the single version for those fields.
 - The search ADR chose S2 (ADR 0008, 2026-11-20), which adds a plaintext search store beside the encrypted fields; a later move to keyed tokens (S3), S4, or a retention window other than 30 days would change this ADR again.
-- Per-team transition rules or review gates become a requirement.
+- Per-team transition rules become a requirement, or review gates are wanted beyond ADR 0009's per-type Done check.
 - Measurement at H2 shows a listed index unused, or a query without one.
 
 ## References

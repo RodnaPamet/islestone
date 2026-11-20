@@ -126,6 +126,15 @@ jest.mock('@/app-layer/repositories/MentionRepository', () => ({
         removeForComment: jest.fn(async () => ({ count: 0 })),
     },
 }));
+// Review steps (2.8a): no round is open, nobody is a pending reviewer.
+jest.mock('@/app-layer/repositories/ReviewRepository', () => ({
+    ReviewRepository: {
+        lockItem: jest.fn(async () => undefined),
+        hasOpenRound: jest.fn(async () => false),
+        openRoundsOf: jest.fn(async () => []),
+        pendingRowsOf: jest.fn(async () => []),
+    },
+}));
 jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
     LIST_ORDERS: { manual: { column: 'sortKey', direction: 'asc', kind: 'string' } },
     CommentRepository: {

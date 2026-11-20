@@ -393,6 +393,21 @@ Two callers today:
   `intake.view`, never the sender (`notifyIntakeReceived`). An archived list
   rings nobody until it is restored.
 
+## Reviews (2.8a)
+
+Owner decision 161 ([docs/work-items.md](work-items.md), "Reviews (2.8a)"; ADR 0009). Four bell types, written by `createReviewNotifications` / `createReviewNotificationBatch` (`src/app-layer/notifications/review.ts`), which ask `isInAppTypeEnabled` first like every writer and set `workItemId`:
+
+| Type | To | Default |
+|---|---|---|
+| `WORK_ITEM_REVIEW_REQUESTED` | each reviewer when their step opens, or when they are added to an open one; worded "has no reviewers left" to the assignee and whoever sent the round when a step is left with nobody | bell; email at once |
+| `WORK_ITEM_REVIEW_DUE` | the pending reviewers of an open step due today, on the next working day, or overdue (once), from the 08:00 `work-item-due-notification` job | bell; daily digest |
+| `WORK_ITEM_REVIEW_RETURNED` | the assignee and whoever sent the round, when a reviewer returns the item | bell; email at once |
+| `WORK_ITEM_REVIEW_COMPLETED` | the same people, when a round completes | bell only |
+
+Immediate email is offered for requested and returned: decision 132's `IMMEDIATE_EMAIL_TYPES` and the CHECK `NotificationPreference_immediate_types` gain the two (migration `20261208120600_reviews`). The emails (`EmailNotificationType.WORK_ITEM_REVIEW_REQUESTED`, `WORK_ITEM_REVIEW_RETURNED`; `email/work-item-review.tsx`) go to a person whose preference resolves to `IMMEDIATE`, deduped per address, step and day. After the commit `emitReviewNotices` (`work-item-shared.ts`) rings them; nobody is told of their own act, and a response then fans out to the watchers (kind `reviewed`), skipping the people the review bells reached. The bells and emails name who, which item and which step; never the response text (decision 157).
+
+The reminders are deduplicated per window, step and person (a step's due day is fixed when it opens): ACTIVE members whose role sees the project, live items in live, unarchived projects, in pages of 500. The digest lists the day's unread review rows of a member's daily types, like the other work-item types.
+
 ## Retention (2.7c)
 
 Owner decision 135. The nightly `notification-purge` (03:10 UTC) deletes, per

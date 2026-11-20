@@ -99,6 +99,13 @@ const NOT_SENSITIVE: Readonly<Record<string, string>> = {
         'Append-only hash-chained audit trail — encrypting breaks entryHash integrity (encrypted-fields.ts header).',
     'UserSession.revokedReason':
         'A machine-written code (`user:password-reset`, `policy:concurrent-limit`, …), never free text.',
+    // Sub-phase 2.8a: review codes, each CHECKed to a closed set in the migration.
+    'WorkItemReviewRound.endReason':
+        'A machine-written code (COMPLETED, RETURNED, ITEM_CLOSED, ITEM_DELETED, WITHDRAWN_BY_PERSON), CHECKed; never free text.',
+    'WorkItemReviewStep.skipReason':
+        'A machine-written code (PERSON_SKIPPED, NO_REVIEWERS_LEFT), CHECKed; never free text.',
+    'WorkItemReviewer.withdrawnReason':
+        'A machine-written code (MEMBER_REMOVED, STEP_ENDED, REMOVED_BY_PERSON, BECAME_ASSIGNEE, NOT_ELIGIBLE), CHECKed; never free text.',
     'TenantCustomRole.description':
         'Workspace configuration shown wherever the role is listed, sanitised on write (custom-roles.ts); not business content.',
 };

@@ -51,6 +51,8 @@ function adminDb(status: 'ACTIVE' | 'DEACTIVATED', admins: number) {
         workItem: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
         customFieldValue: { findMany: jest.fn().mockResolvedValue([]) },
         workItemTemplate: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        // Sub-phase 2.8a: the member's reviewer rows still asked are withdrawn first.
+        workItemReviewer: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
         tenantMembership: {
             findFirst: jest.fn().mockResolvedValue(row),
             count: jest.fn().mockResolvedValue(admins),

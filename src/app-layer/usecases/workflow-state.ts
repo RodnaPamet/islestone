@@ -20,7 +20,8 @@ import { logEvent } from '../events/audit';
 import { TeamRepository } from '../repositories/TeamRepository';
 import { assertCanManageWorkConfig, assertCanReadWorkConfig } from '../policies/work-config.policies';
 import { keyBetween } from '../domain/fractional-index';
-import { stateTransitionEffects } from '../domain/workflow-state';
+import { isClosedCategory, stateTransitionEffects } from '../domain/workflow-state';
+import { endOpenRoundsInState } from './review-engine';
 import type { RequestContext } from '../types';
 import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db-context';
@@ -205,6 +206,8 @@ async function moveItemsBetweenStates(
     to: { id: string; category: WorkflowStateCategory },
 ): Promise<number> {
     const now = new Date();
+    // A close withdraws the moved items' open review rounds (decision 149).
+    if (isClosedCategory(to.category) && !isClosedCategory(from.category)) await endOpenRoundsInState(db, ctx, from.id, now);
     // `startedAt` is set only where none is (the first move into STARTED).
     const { startedAt: _first, ...effects } = stateTransitionEffects(from.category, to.category, { startedAt: now }, now);
     void _first;

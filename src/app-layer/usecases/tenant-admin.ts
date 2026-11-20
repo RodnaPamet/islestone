@@ -51,6 +51,8 @@ import {
 import { lockTenantOwners } from './tenant-owner-lock';
 import { clearPersonValuesInTx } from './custom-field';
 import { WorkItemTemplateRepository } from '../repositories/TemplateRepository';
+import { withdrawReviewerRowsOfUser } from './review-engine';
+import { emitReviewNotices } from './work-item-shared';
 
 // Safety cap on the two whole-tenant membership scans below. Both feed
 // surfaces that legitimately want every member (the admin roster, and the
@@ -517,7 +519,7 @@ export async function removeTenantMember(
 ) {
     assertCanManageMembers(ctx);
 
-    return runInTenantContext(ctx, async (db) => {
+    const removed = await runInTenantContext(ctx, async (db) => {
         // First, before the membership is read and the owners counted (#5388).
         await lockTenantOwners(db, ctx.tenantId);
         const membership = await db.tenantMembership.findFirst({
@@ -620,6 +622,21 @@ export async function removeTenantMember(
             });
         }
 
+        // Sub-phase 2.8a (ADR 0009): their reviewer rows still asked are
+        // withdrawn, never deleted, and each open step they were on is decided
+        // again; a step left with nobody stays open, flagged, never completed.
+        const reviews = await withdrawReviewerRowsOfUser(db, ctx, membership.userId);
+        if (reviews.withdrawn > 0) {
+            await logEvent(db, ctx, {
+                action: 'WORK_ITEM_REVIEWERS_WITHDRAWN_ON_MEMBER_REMOVAL',
+                entityType: 'TenantMembership',
+                entityId: membership.id,
+                details: `Withdrew ${reviews.withdrawn} pending review(s) before removing a member`,
+                detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItemReviewer', operation: 'updated', changedFields: ['withdrawnAt'] },
+                metadata: { withdrawnCount: reviews.withdrawn },
+            });
+        }
+
         await db.tenantMembership.delete({
             where: { id: input.membershipId },
         });
@@ -641,8 +658,11 @@ export async function removeTenantMember(
             },
         });
 
-        return { id: membership.id, userId: membership.userId };
+        return { id: membership.id, userId: membership.userId, reviewNotices: reviews.notices };
     });
+    // After the commit: the review steps the removal decided, or left with nobody.
+    await emitReviewNotices(ctx, removed.reviewNotices);
+    return { id: removed.id, userId: removed.userId };
 }
 
 // ─── Tenant Admin Settings ───

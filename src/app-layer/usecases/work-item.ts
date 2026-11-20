@@ -36,6 +36,7 @@ import { LabelRepository } from '../repositories/LabelRepository';
 import { MembershipRepository } from '../repositories/MembershipRepository';
 import { MentionRepository } from '../repositories/MentionRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
+import { ReviewRepository } from '../repositories/ReviewRepository';
 import { SEARCH_MATCH_CAP, SearchVectorRepository } from '../repositories/SearchVectorRepository';
 import { TeamRepository } from '../repositories/TeamRepository';
 import { WorkItemTypeRepository } from '../repositories/WorkItemTypeRepository';
@@ -69,11 +70,13 @@ import {
 import { todayInTz } from '../notifications/work-item-due';
 import { lockWorkItemGraph } from './work-item-graph-lock';
 import { recordMentionsInTx } from './mention';
+import { endOpenRoundsOnClose, withdrawNewAssigneeRows, type ReviewNoticeOut } from './review-engine';
 import {
     assertProjectWritable,
     emitAssignedBells,
     emitDueBell,
     emitMentionBells,
+    emitReviewNotices,
     emitWaitingOnBell,
     emitWatcherActivity,
     enqueueAssignedEmail,
@@ -1063,6 +1066,8 @@ export async function setWorkItemState(ctx: RequestContext, id: string, input: {
             ...effects,
         });
         if (count === 0) await throwWriteConflict(db, ctx, v, id);
+        // A close withdraws an open review round (decision 149).
+        if (isClosedCategory(to.category)) await endOpenRoundsOnClose(db, ctx, [id], 'ITEM_CLOSED');
         await applyStateAudit(db, ctx, item, from!, to);
         return { item, from: from!, to };
     });
@@ -1148,7 +1153,7 @@ export async function assignWorkItem(ctx: RequestContext, id: string, input: { a
     const outcome = await runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const item = await loadWritableItem(db, ctx, v, id);
-        if (item.assigneeId === input.assigneeId) return { item, changed: false, typeName: null as string | null };
+        if (item.assigneeId === input.assigneeId) return { item, changed: false, typeName: null as string | null, reviewNotices: [] as ReviewNoticeOut[] };
         await assertFieldWrite(db, ctx, item, { assigneeId: input.assigneeId });
         if (input.assigneeId) await assertActiveMember(db, ctx, input.assigneeId);
         const count = await WorkItemRepository.updateVersioned(db, ctx, v, id, expectedVersion, { assigneeId: input.assigneeId });
@@ -1161,11 +1166,13 @@ export async function assignWorkItem(ctx: RequestContext, id: string, input: { a
             detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'updated', changedFields: ['assigneeId'] },
             metadata: { fromAssigneeId: item.assigneeId, toAssigneeId: input.assigneeId },
         });
+        // A person never reviews their own work (decision 158): their pending rows go.
+        const reviewNotices = await withdrawNewAssigneeRows(db, ctx, v, [item], input.assigneeId);
         const type = await WorkItemTypeRepository.getById(db, ctx, item.typeId);
         if (input.assigneeId) {
             await enqueueAssignedEmail(db, ctx, input.assigneeId, [{ id, title: item.title, key: keyOf(item), typeName: type?.name ?? null }]);
         }
-        return { item, changed: true, typeName: type?.name ?? null };
+        return { item, changed: true, typeName: type?.name ?? null, reviewNotices };
     });
 
     const after = await getWorkItem(ctx, id);
@@ -1182,6 +1189,7 @@ export async function assignWorkItem(ctx: RequestContext, id: string, input: { a
                 detail: input.assigneeId ? 'assignee changed' : 'assignee cleared',
             },
         ]);
+        await emitReviewNotices(ctx, outcome.reviewNotices);
     }
     return after;
 }
@@ -1200,8 +1208,17 @@ export async function setWorkItemWaitingOn(ctx: RequestContext, id: string, inpu
     assertCanEditWorkItems(ctx);
     const outcome = await runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
+        await loadWritableItem(db, ctx, v, id);
+        // Under the item's lock, as a review round's opening is (decision 153).
+        await ReviewRepository.lockItem(db, ctx, id);
         const item = await loadWritableItem(db, ctx, v, id);
         if (item.waitingOnUserId === input.userId) return { changed: false };
+        if (await ReviewRepository.hasOpenRound(db, ctx, id)) {
+            throw new ConflictError(
+                "A review round is open: the item waits on its open step's reviewers. Add a reviewer, skip the step or withdraw the round instead.",
+                { reason: 'REVIEW_ROUND_OPEN' },
+            );
+        }
         await assertFieldWrite(db, ctx, item, { waitingOnUserId: input.userId });
         if (input.userId) {
             if (isClosedCategory(item.stateCategory)) throw refuseWaitingOnClosed();
@@ -1247,6 +1264,8 @@ export async function setWorkItemWaitingOn(ctx: RequestContext, id: string, inpu
  */
 async function softDeleteSubtrees(db: PrismaTx, ctx: RequestContext, rootIds: readonly string[]) {
     const subtree = await WorkItemRepository.liveSubtree(db, ctx, rootIds);
+    // A delete withdraws an open review round (ADR 0009 §14); a restore does not reopen it.
+    await endOpenRoundsOnClose(db, ctx, subtree.map((r) => r.id), 'ITEM_DELETED');
     const deletionId = randomUUID();
     const count = await WorkItemRepository.softDelete(db, ctx, subtree.map((r) => r.id), deletionId, new Date());
     return { deletionId, count };
@@ -1352,9 +1371,11 @@ export async function bulkAssignWorkItems(ctx: RequestContext, input: { workItem
                 metadata: { fromAssigneeId: item.assigneeId, toAssigneeId: input.assigneeId, bulk: true },
             });
         }
+        // A person never reviews their own work (decision 158): their pending rows go.
+        const reviewNotices = await withdrawNewAssigneeRows(db, ctx, v, changed, input.assigneeId);
         const newly = changed.map((i) => ({ id: i.id, title: i.title, key: keyOf(i), typeName: i.type.name }));
         if (input.assigneeId) await enqueueAssignedEmail(db, ctx, input.assigneeId, newly);
-        return { items, newly };
+        return { items, newly, reviewNotices };
     });
 
     if (input.assigneeId && outcome.newly.length > 0) {
@@ -1369,6 +1390,7 @@ export async function bulkAssignWorkItems(ctx: RequestContext, input: { workItem
             detail: input.assigneeId ? 'assignee changed' : 'assignee cleared',
         })),
     );
+    await emitReviewNotices(ctx, outcome.reviewNotices);
     return bulkResults(ids, new Set(outcome.items.map((i) => i.id)));
 }
 
@@ -1418,6 +1440,8 @@ export async function bulkSetWorkItemState(
             await WorkItemRepository.bulkUpdate(db, ctx, v, [p.item.id], { stateId: p.to.id, stateCategory: p.to.category, ...effects });
             await applyStateAudit(db, ctx, p.item, p.from, p.to);
         }
+        // A close withdraws an open review round (decision 149).
+        await endOpenRoundsOnClose(db, ctx, planned.filter((p) => isClosedCategory(p.to.category)).map((p) => p.item.id), 'ITEM_CLOSED', now);
         return { items, planned };
     });
 

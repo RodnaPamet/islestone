@@ -269,8 +269,8 @@ model WorkItem {
   recurrence     WorkItemRecurrence? @relation("RecurrenceOccurrences", fields: [recurrenceId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
   recurrenceRule WorkItemRecurrence? @relation("RecurrenceSource")
 
-  relationsFrom     WorkItemRelation[] @relation("WorkItemRelationFrom")
-  relationsTo       WorkItemRelation[] @relation("WorkItemRelationTo")
+  relationsFrom     WorkItemRelation[]    @relation("WorkItemRelationFrom")
+  relationsTo       WorkItemRelation[]    @relation("WorkItemRelationTo")
   labels            WorkItemLabel[]
   comments          Comment[]
   watchers          WorkItemWatcher[]
@@ -279,6 +279,9 @@ model WorkItem {
   notifications     Notification[]
   mentions          Mention[]
   searchVectors     SearchVector[]
+  /// Its review rounds and reviewer rows (2.8a, ADR 0009).
+  reviewRounds      WorkItemReviewRound[]
+  reviewers         WorkItemReviewer[]
 
   @@unique([tenantId, projectId, number])
   @@unique([id, tenantId])

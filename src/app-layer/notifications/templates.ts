@@ -39,6 +39,7 @@ import { PRODUCT_NAME } from './email/layout';
 import { WorkItemAssignedEmail, workItemLabel } from './email/work-item-assigned';
 import { WorkItemWaitingOnEmail, waitingOnLede } from './email/work-item-waiting-on';
 import { WorkItemMentionedEmail, mentionedLede } from './email/work-item-mentioned';
+import { REVIEW_EMAIL_HEADING, WorkItemReviewEmail, reviewEmailLede, type WorkItemReviewEmailKind } from './email/work-item-review';
 
 export type { DigestDueGroup } from './email/notification-digest';
 
@@ -192,6 +193,39 @@ export async function buildWorkItemMentionedEmail(payload: WorkItemMentionedPayl
             `— ${PRODUCT_NAME}`,
         ].join('\n'),
         bodyHtml: await render(createElement(WorkItemMentionedEmail, { ...payload, link })),
+    };
+}
+
+// ─── Reviews (2.8a) ───
+
+export interface WorkItemReviewPayload {
+    recipientName: string;
+    actorName?: string;
+    stepName: string;
+    workItemTitle: string;
+    workItemKey?: string | null;
+    /** The item's path in the app (`/t/<slug>/…`, `tenantWorkItemPath`). */
+    linkPath: string;
+}
+
+/** Review requested, or a work item returned: who, which item, which step; never the response text (decision 157). */
+export async function buildWorkItemReviewEmail(kind: WorkItemReviewEmailKind, payload: WorkItemReviewPayload): Promise<EmailTemplateResult> {
+    const link = appLink(payload.linkPath);
+    const label = workItemLabel(payload);
+    return {
+        subject: `${REVIEW_EMAIL_HEADING[kind]}: ${label}`,
+        bodyText: [
+            `Hi ${payload.recipientName},`,
+            '',
+            reviewEmailLede(kind, payload.actorName, payload.stepName),
+            '',
+            `  ${label}`,
+            '',
+            `Open the work item: ${link}`,
+            '',
+            `— ${PRODUCT_NAME}`,
+        ].join('\n'),
+        bodyHtml: await render(createElement(WorkItemReviewEmail, { ...payload, kind, link })),
     };
 }
 
