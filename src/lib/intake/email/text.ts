@@ -21,21 +21,38 @@ export function decodeEntities(s: string): string {
     });
 }
 
+/** Apply `step` until the string stops changing, so a pattern removed once cannot re-form from what it left. */
+function untilStable(s: string, step: (v: string) => string): string {
+    for (let i = 0; i < 50; i++) {
+        const next = step(s);
+        if (next === s) return s;
+        s = next;
+    }
+    return s;
+}
+
 export function htmlToText(html: string): string {
-    let s = html
-        .replace(/<!--[\s\S]*?-->/g, '')
-        .replace(/<(script|style|head|title)\b[\s\S]*?<\/\1\s*>/gi, '')
-        // A quoted reply in HTML mail is a blockquote, or Gmail's quote block.
-        .replace(/<blockquote\b[\s\S]*?<\/blockquote\s*>/gi, '\n')
+    let s = untilStable(html, (v) =>
+        v
+            .replace(/<!--[\s\S]*?-->/g, '')
+            .replace(/<(script|style|head|title)\b[\s\S]*?<\/\1\s*>/gi, '')
+            // A quoted reply in HTML mail is a blockquote, or Gmail's quote block.
+            .replace(/<blockquote\b[\s\S]*?<\/blockquote\s*>/gi, '\n'),
+    );
+    s = s
         .replace(/<br\s*\/?>/gi, '\n')
         .replace(/<li\b[^>]*>/gi, '\n- ')
         .replace(/<\/(p|div|tr|h[1-6]|table|ul|ol|section|article|header|footer)\s*>/gi, '\n')
-        .replace(/<(p|div|tr|h[1-6]|table|ul|ol)\b[^>]*>/gi, '\n')
-        .replace(/<[^>]+>/g, '');
+        .replace(/<(p|div|tr|h[1-6]|table|ul|ol)\b[^>]*>/gi, '\n');
+    // Every remaining tag, then any unterminated fragment (an opening "<" with
+    // no ">"), until none re-forms: the result holds no markup before the
+    // entities are decoded. Decoded "&lt;" is the sender's own text, and the
+    // stored body is sanitised again (`cleanText`).
+    s = untilStable(s, (v) => v.replace(/<[^<>]*>/g, '').replace(/<[^<>]*$/g, ''));
     s = decodeEntities(s);
     return s
         .split('\n')
-        .map((l) => l.replace(/[ \t ]+/g, ' ').trim())
+        .map((l) => l.replace(/[ \t\u00a0]+/g, ' ').trim())
         .join('\n')
         .replace(/\n{3,}/g, '\n\n')
         .trim();

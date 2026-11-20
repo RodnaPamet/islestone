@@ -153,6 +153,19 @@ describe('HTML to text and quoted history', () => {
         );
     });
 
+    it('leaves no markup when a tag re-forms from what one pass removed', () => {
+        for (const html of [
+            '<scr<script>x</script>ipt>alert(1)</script>ok',
+            '<!<!-- a -->-- b -->ok',
+            'ok<scr<b>i</b>pt',
+            'ok <img src=x onerror=alert(1)',
+        ]) {
+            const text = htmlToText(html);
+            expect(text).not.toMatch(/<[a-z!/]/i);
+            expect(text).toContain('ok');
+        }
+    });
+
     it('cuts Gmail, Outlook, Apple Mail and signature history, and drops > lines', () => {
         expect(stripQuotedHistory('New text\n\nOn Mon, 3 Feb 2026 at 10:00, Ada <ada@example.com> wrote:\n> old')).toBe('New text');
         expect(stripQuotedHistory('New text\nOn Mon, 3 Feb 2026 at 10:00, Ada Lovelace <ada@example.com>\nwrote:\n> old')).toBe('New text');

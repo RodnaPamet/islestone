@@ -384,7 +384,7 @@ describeFn('inbound email intake', () => {
         it('generates a new address that retires the old one; turned off, the address takes nothing; on needs the deployment open', async () => {
             const old = address;
             const rotated = await rotateProjectIntakeAddress(owner, projectId);
-            expect(rotated.emailAddress).toMatch(new RegExp(`^[a-z2-9]{12}@${DOMAIN.replace(/\./g, '\\.')}$`));
+            expect(rotated.emailAddress).toMatch(new RegExp(`^[a-z2-9]{12}@${DOMAIN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
             expect(rotated.emailAddress).not.toBe(old);
             expect(await prisma.auditLog.count({ where: { tenantId, action: 'INTAKE_ADDRESS_ROTATED' } })).toBe(1);
             const before = await prisma.intakeInboundEmail.count();
