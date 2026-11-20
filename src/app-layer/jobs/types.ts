@@ -262,6 +262,23 @@ export interface CycleRolloverPayload {
     tenantId?: string;
 }
 
+/**
+ * Daily, 08:00 in NOTIFICATIONS_TZ (sub-phase 2.6a, owner decision 90): wake
+ * the snoozed intake requests whose day has come. No `tenantId` sweeps every
+ * workspace with a snoozed request; a `tenantId` re-runs one.
+ */
+export interface IntakeSnoozeWakePayload {
+    tenantId?: string;
+}
+
+/**
+ * Daily (sub-phase 2.6a, owner decision 90): hard-delete decided intake
+ * requests 90 days after the decision, spam after 7.
+ */
+export interface IntakePurgePayload {
+    tenantId?: string;
+}
+
 /** Daily rebalance of projects whose sort keys passed the length bound (ADR 0002 §5). */
 export interface WorkItemSortKeyRebalancePayload {
     tenantId?: string;
@@ -300,6 +317,8 @@ export interface JobPayloadMap {
     'work-item-purge': WorkItemPurgePayload;
     'work-item-sortkey-rebalance': WorkItemSortKeyRebalancePayload;
     'cycle-rollover': CycleRolloverPayload;
+    'intake-snooze-wake': IntakeSnoozeWakePayload;
+    'intake-purge': IntakePurgePayload;
 }
 
 /** Union of all valid job names */
@@ -411,6 +430,23 @@ export const JOB_DEFAULTS: Record<JobName, {
         // ended until the next night holds its items a day longer.
         attempts: 2,
         backoff: { type: 'fixed', delay: 300_000 },
+        removeOnComplete: 30,
+        removeOnFail: 100,
+    },
+    'intake-snooze-wake': {
+        // Two attempts, five minutes apart: a retry is harmless (the wake is
+        // conditional), and a request left snoozed until the next morning
+        // comes back a day late.
+        attempts: 2,
+        backoff: { type: 'fixed', delay: 300_000 },
+        removeOnComplete: 30,
+        removeOnFail: 100,
+    },
+    'intake-purge': {
+        // One attempt: the next daily run is the retry, and every batch it
+        // finished is already committed.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 60_000 },
         removeOnComplete: 30,
         removeOnFail: 100,
     },

@@ -27,6 +27,13 @@ describe('the due reminder is emitted after the commit', () => {
         expect(emittedAfterCommit(functionBodyOf(USECASES, name), 'emitDueBell')).toEqual({ called: true, insideTransaction: false });
     });
 
+    it('the create core rings no bell; the intake accept rings the create bells after its commit (2.6a)', () => {
+        expect(functionBodyOf(USECASES, 'createWorkItemInTx')).not.toMatch(/\bemitDueBell\s*\(/);
+        expect(functionBodyOf(USECASES, 'emitCreatedItemBells')).toMatch(/\bemitDueBell\s*\(/);
+        const accept = functionBodyOf(read('src/app-layer/usecases/intake-request.ts'), 'acceptIntakeRequest');
+        expect(emittedAfterCommit(accept, 'emitCreatedItemBells')).toEqual({ called: true, insideTransaction: false });
+    });
+
     it('emitDueBell runs in its own transaction and swallows its errors', () => {
         const body = functionBodyOf(SHARED, 'emitDueBell');
         expect(body).toMatch(/\btry\s*\{[\s\S]{0,400}?runInTenantContext\(/);

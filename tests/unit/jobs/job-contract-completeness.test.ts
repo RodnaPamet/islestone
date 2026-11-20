@@ -25,6 +25,8 @@ const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     'audit-outbox-flush',
     'cycle-rollover',
     'health-check',
+    'intake-purge',
+    'intake-snooze-wake',
     'notification-outbox-flush',
     'work-item-due-notification',
     'work-item-purge',

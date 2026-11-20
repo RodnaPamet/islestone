@@ -21,6 +21,20 @@ export class MembershipRepository {
         return new Set(rows.map((r) => r.userId));
     }
 
+    /**
+     * The given users' ACTIVE memberships with their role and custom role, so
+     * a caller can predict what each may do (`permissionsForMembership`):
+     * the intake bells re-check `intake.view` before they ring (2.6a).
+     */
+    static async activeMembershipsWithRoles(db: PrismaTx, ctx: RequestContext, userIds: readonly string[]) {
+        if (userIds.length === 0) return [];
+        return db.tenantMembership.findMany({
+            where: { tenantId: ctx.tenantId, userId: { in: [...userIds] }, status: 'ACTIVE' },
+            take: userIds.length,
+            select: { userId: true, role: true, customRole: { select: { grantsJson: true, baseRole: true } } },
+        });
+    }
+
     /** Name and address of the given users (decrypted by the PII extension). */
     static async contactsOf(db: PrismaTx, userIds: readonly string[]) {
         if (userIds.length === 0) return [];

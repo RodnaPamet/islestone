@@ -597,3 +597,23 @@ executorRegistry.register('cycle-rollover', async (payload) => {
         itemsMoved: r.itemsMoved,
     });
 });
+
+// ── Intake (sub-phase 2.6a) ──────────────────────────────────────────
+
+executorRegistry.register('intake-snooze-wake', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processIntakeSnoozeWake } = await import('./intake');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId };
+    const r = await processIntakeSnoozeWake(forwarded);
+    return makeResult('intake-snooze-wake', startedAt, startMs, r.tenants, r.tenants - r.failedTenants, r.failedTenants, { woken: r.count });
+});
+
+executorRegistry.register('intake-purge', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processIntakePurge } = await import('./intake');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId };
+    const r = await processIntakePurge(forwarded);
+    return makeResult('intake-purge', startedAt, startMs, r.tenants, r.tenants - r.failedTenants, r.failedTenants, { purged: r.count });
+});

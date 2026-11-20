@@ -20,7 +20,7 @@ import { gitFiles } from '../helpers/git-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const T = 'src/app/api/t/[tenantSlug]';
-const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates'].map((r) => `${T}/${r}/`);
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates', 'intake'].map((r) => `${T}/${r}/`);
 
 type Spec = Partial<Record<'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', string>>;
 const W = `${T}/work-items`;
@@ -85,6 +85,22 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${T}/work-item-types/[typeId]/route.ts`]: { PATCH: 'admin.manage' },
     [`${T}/labels/route.ts`]: { GET: 'projects.view', POST: 'admin.manage' },
     [`${T}/labels/[labelId]/route.ts`]: { PATCH: 'admin.manage', DELETE: 'admin.manage' },
+    // Sub-phase 2.6a (owner decision 92).
+    [`${T}/intake/requests/route.ts`]: { GET: 'intake.view' },
+    [`${T}/intake/requests/count/route.ts`]: { GET: 'intake.view' },
+    [`${T}/intake/requests/[requestId]/route.ts`]: { GET: 'intake.view', PATCH: 'intake.triage' },
+    [`${T}/intake/requests/[requestId]/accept/route.ts`]: { POST: 'intake.triage' },
+    [`${T}/intake/requests/[requestId]/decline/route.ts`]: { POST: 'intake.triage' },
+    [`${T}/intake/requests/[requestId]/merge/route.ts`]: { POST: 'intake.triage' },
+    [`${T}/intake/requests/[requestId]/snooze/route.ts`]: { POST: 'intake.triage' },
+    [`${T}/intake/requests/[requestId]/move/route.ts`]: { POST: 'intake.triage' },
+    [`${T}/intake/requests/[requestId]/reopen/route.ts`]: { POST: 'intake.triage' },
+    [`${T}/intake/forms/route.ts`]: { GET: 'intake.view', POST: 'intake.manage' },
+    [`${T}/intake/forms/[formId]/route.ts`]: { GET: 'intake.view', PATCH: 'intake.manage' },
+    [`${T}/intake/forms/[formId]/requests/route.ts`]: { POST: 'projects.view' },
+    [`${T}/intake/open-forms/route.ts`]: { GET: 'projects.view' },
+    [`${T}/intake/projects/route.ts`]: { GET: 'intake.manage' },
+    [`${T}/projects/[projectId]/intake/route.ts`]: { PUT: 'intake.manage' },
 };
 
 /** The key each exported method passes to requirePermission, from comment-masked code. */

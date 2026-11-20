@@ -26,6 +26,7 @@ import { ASSIGNMENT_COPY } from '@/app-layer/notifications/assignment';
 import { listInAppNotificationTypes } from '@/app-layer/notifications/in-app-types';
 import { WATCHER_NOTIFICATION_TITLE, WATCHER_NOTIFICATION_TYPE } from '@/app-layer/notifications/watcher';
 import { WORK_ITEM_DUE_NOTIFICATION_TITLE, WORK_ITEM_DUE_NOTIFICATION_TYPE } from '@/app-layer/notifications/work-item-due';
+import { INTAKE_NOTIFICATION_COPY } from '@/app-layer/notifications/intake';
 
 import { codeOf } from '../../helpers/source-blocks';
 
@@ -45,6 +46,8 @@ describe('the in-app type catalogue', () => {
             ...Object.entries(ASSIGNMENT_COPY).map(([type, copy]) => ({ type, title: copy.title })),
             { type: WATCHER_NOTIFICATION_TYPE, title: WATCHER_NOTIFICATION_TITLE },
             { type: WORK_ITEM_DUE_NOTIFICATION_TYPE, title: WORK_ITEM_DUE_NOTIFICATION_TITLE },
+            // Sub-phase 2.6a: the two intake bells.
+            ...Object.entries(INTAKE_NOTIFICATION_COPY).map(([type, copy]) => ({ type, title: copy.title })),
         ]);
     });
 
@@ -60,6 +63,7 @@ describe('the in-app type catalogue', () => {
             'src/app-layer/notifications/assignment.ts',
             'src/app-layer/notifications/watcher.ts',
             'src/app-layer/notifications/work-item-due.ts',
+            'src/app-layer/notifications/intake.ts',
         ]) {
             expect({ file, mutesFirst: checksMuteBeforeWrite(read(file)) }).toEqual({ file, mutesFirst: true });
         }
