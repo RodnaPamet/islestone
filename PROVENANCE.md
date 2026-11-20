@@ -1984,6 +1984,17 @@ Built by [`docs/porting/maps/2.5.md`](docs/porting/maps/2.5.md) under owner deci
 | `src/components/milestones/*`; `src/app/t/[tenantSlug]/(app)/projects/[projectKey]/milestones/**`; `src/lib/server/milestone-pages.server.ts`; the 2.5b changes to `WorkItemsView.tsx`, `WorkItemDetail.tsx`, `NewWorkItemModal.tsx`, `pickers.tsx`, `board/*`, `filter-defs.ts`, `use-work-item-columns.tsx`, `data/*`, `list-sorts.ts`, `saved-view.ts`, the navigation | — | Islestone-owned | Written fresh. |
 | `tests/integration/milestones.test.ts`, `tests/rendered/milestones.test.tsx`, `tests/unit/work-items/saved-view-config-keys.test.ts`, `tests/e2e/milestones.spec.ts` | — | Islestone-owned | Written fresh. |
 
+## Waiting on (sub-phase 2.4b-a)
+
+Built by [`docs/porting/maps/2.4b.md`](docs/porting/maps/2.4b.md) under owner decisions 100 and 103 to 107, from the Procore audit's top idea #1 (ideas only; see "Product ideas adopted into the roadmap"). **Nothing was copied.** inflect-compliance's `Task.reviewerUserId` (`prisma/schema/tasks.prisma` line 31 at 5528464fc54a8681956f3b9ce23ca9c075f0420e) was read as the nearest second-person column; its pattern was not taken.
+
+| File | Source | Action | Changes |
+|---|---|---|---|
+| `prisma/schema/work.prisma` (`WorkItem.waitingOnUserId`, `WorkItemTransition.waitingOnUserId`), `enums.prisma` (`NotificationType.WORK_ITEM_WAITING_ON`), migrations `20261128120000_notification_type_waiting_on` and `20261128120100_waiting_on` | ADR 0002 §14 | Islestone-owned | Written fresh: the member FK, the closed-item CHECK, the transition trigger extended to the column. |
+| `src/app-layer/domain/workflow-state.ts` (`stateTransitionEffects`), `src/app-layer/usecases/work-item.ts` (`setWorkItemWaitingOn`, the create), `work-item-shared.ts` (`emitWaitingOnBell`), `notifications/assignment.ts`, `tenant-admin.ts`, `recurrence-run.ts`, `WorkItemRepository.ts`, `TeamRepository.ts`, `src/lib/schemas/work-item.ts`, `saved-view.ts`, `route-permissions.ts`, the route `work-items/[workItemId]/waiting-on/` | — | Islestone-owned | Written fresh. |
+| `src/components/work-items/` (`WorkItemDetail.tsx`, `NewWorkItemModal.tsx`, `pickers.tsx`, `board/*`, `filter-defs.ts`, `use-work-item-columns.tsx`, `data/*`, `detail/activity-phrases.ts`), `src/lib/work-items/list-sorts.ts`, `types.ts` | — | Islestone-owned | Written fresh. |
+| `tests/integration/waiting-on.test.ts` and the 2.4b-a cases in the unit, guard and integration suites they extend | — | Islestone-owned | Written fresh. |
+
 ## Templates (sub-phase 2.5c)
 
 Built by [`docs/porting/maps/2.5.md`](docs/porting/maps/2.5.md) under owner decisions 71 to 73. **Nothing was copied.** inflect-compliance has no work-item or project templates (its templates are compliance catalogues). Its "one projection from template to task" was read for the pattern, pattern only: `src/app-layer/usecases/control/task-from-template.ts` at `5528464fc54a8681956f3b9ce23ca9c075f0420e` (BUSL-1.1), whose lesson (one function, after four call sites drifted, and the item records where it came from) is `templateToCreateInput` and the `templateId` on `WORK_ITEM_CREATED`. Its `src/lib/processes/create-map-from-template.ts` (two round trips, no transaction) was read as the anti-pattern: a project template is applied in one transaction.
@@ -2058,9 +2069,9 @@ These ADRs adopt designs read in inflect-compliance at `5528464fc54a8681956f3b9c
 | Data sync strategy ([ADR 0005](docs/adr/0005-data-sync-strategy.md)) | inflect-compliance: `docs/processes-realtime-collab.md`, `src/app-layer/repositories/ProcessMapRepository.ts`, `src/components/processes/TldrawProcessMap.tsx`, `src/app/api/notifications/stream/route.ts`, `src/lib/notifications/notification-sse.ts`, `src/lib/notifications/notification-bus.ts`, `src/components/layout/notifications-bell.tsx` (line ranges in the ADR's References) | `5528464fc54a8681956f3b9ce23ca9c075f0420e` | BUSL-1.1 | Pattern only, no code copied. An optional-to-required `expectedVersion` with a conditional update; updating the held version from each save's response; SSE for one-way updates with a heartbeat, the Node runtime and buffering off; an in-process fan-out bus; polling as the fallback for missed pushes. | The fan-out bus gets the Redis channel per workspace that the parent's comment proposes but never built. Notices carry ids and versions only. |
 | Vocabulary ([ADR 0006](docs/adr/0006-vocabulary.md)) | inflect-compliance: `docs/implementation-notes/2026-08-12-task-vocabulary-and-executing-tests.md`, `prisma/schema/enums.prisma`, `tests/integration/task-enum-db-mapping.test.ts` | `5528464fc54a8681956f3b9ce23ca9c075f0420e` | BUSL-1.1 | Pattern only, no code copied. The lesson of the `@@map` pin and its rename note. | Islestone fixes names before the first migration and allows a pin only with a recorded end date. |
 
-### Product ideas adopted into the roadmap (no code written yet)
+### Product ideas adopted into the roadmap
 
-Ideas read in a proprietary product and adopted by the owner into `docs/ROADMAP.md`. Nothing was copied, and no Islestone code implements them yet. The sub-phase that builds each one adds its own row, saying it was written fresh.
+Ideas read in a proprietary product and adopted by the owner into `docs/ROADMAP.md`. Nothing was copied. The sub-phase that builds each one adds its own row, saying it was written fresh: waiting on is built ("Waiting on (sub-phase 2.4b-a)" above); the others are not yet.
 
 | Component | Source | Commit or version | Licence | What was taken | Changes |
 |---|---|---|---|---|---|

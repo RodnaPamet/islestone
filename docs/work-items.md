@@ -266,6 +266,28 @@ Built by [`docs/porting/maps/2.5.md`](porting/maps/2.5.md) under owner decisions
 - **The detail** has a Repeat row (`RepeatControl`): what the repeat does, its next date or why it is on hold, and for a viewer who may create and edit work items Set repeat or Edit repeat (a dialog: frequency, every N, weekdays, end date or number of times, lead days), Put on hold, Resume, and Stop repeat through the undo toast. A copy says which item's series it is in and links to it.
 - **The list** marks an item that repeats ("Repeats") and a copy in a series ("In a series") beside its title.
 
+## Waiting on (2.4b-a)
+
+Built by [`docs/porting/maps/2.4b.md`](porting/maps/2.4b.md) under owner decisions 100 and 103 to 107 (`docs/HANDOFF.md`), ADR 0002 §14 and ADR 0006 ("Waiting on"). Nothing was copied (`PROVENANCE.md`).
+
+### The column
+
+`WorkItem.waitingOnUserId` names the one active member who must act next on an item, apart from its assignee. It never makes anyone accountable: the assignee stays the one accountable person (ADR 0003 §1), and nothing routes reminders, delegation or proposals by it. It references `TenantMembership(tenantId, userId)`, `ON DELETE RESTRICT` like the assignee: removing a member clears it first (`removeTenantMember`, every item's version increased, one `WORK_ITEMS_WAITING_ON_CLEARED_ON_MEMBER_REMOVAL` entry), and a deactivated member stays named. A closed item waits on nobody: every move into a Done or Cancelled state clears it through `stateTransitionEffects` (the single state change, the bulk one, a board drop, marking a duplicate, a state's delete that moves its items, the create), a reopen does not restore it, and the CHECK `WorkItem_waiting_on_open_only` refuses any path that forgets. The transition trigger records each change (`WorkItemTransition.waitingOnUserId`), so 3.6 can count time waiting from recorded changes. Index `[tenantId, waitingOnUserId, stateCategory, dueDate]`. Migrations `20261128120000_notification_type_waiting_on` (the bell's enum value, alone) and `20261128120100_waiting_on`, with the catalogue and behaviour tests in `tests/integration/waiting-on.test.ts`.
+
+From 6.3 it may name the delegate's agent session instead of a member (decision 106): 6.3 adds a nullable session reference beside `waitingOnUserId`, with a CHECK that at most one of the two is set, and widens the closed-item CHECK to both. Nothing stored now is rewritten for it.
+
+### Writes and who may make them
+
+- `PUT /work-items/:id/waiting-on { userId }` (`null` clears it), or `waitingOnUserId` on a create; key `work_items.edit` (decision 104), as an item's cycle and milestone. A single-field change: `If-Match` optional, the version increases, a stale version is a 409 with the current row. Anyone who is an active member may be named (the assignee's rule, Viewers included; decision 103); another person is a 400; a closed item (or a create into a closed state) is a 409 `ITEM_CLOSED`. Audited `WORK_ITEM_WAITING_ON_CHANGED` (from, to), shown in the item's Activity; watchers are told.
+- **The bell** (decision 105): the person named gets one in-app notification, `WORK_ITEM_WAITING_ON` (`createAssignmentNotification` through `emitWaitingOnBell` in `work-item-shared.ts`, after the commit), unless they named themselves; a workspace may mute it like the other bell types. No email and no reminder until 2.7.
+- **Who else sets it** (decision 106): a repeat copy takes its source's, while that person is an active member (otherwise none, named in the copy's `skipped`); 2.8's review steps will set it. Templates and intake accept do not.
+
+### The views
+
+- **The detail** has a Waiting on row (`WaitingOnPicker`: the member roster and "Nobody"); on a closed item it says that a closed item waits on nobody. **The create dialog** has the same picker while the chosen state is open.
+- **The list** has a Waiting on column (from the column gear) and a Waiting on filter (`waitingOnId`: member ids and `none`, `docs/pagination.md`); **the board** groups lanes by waiting on, and a drop into another person's lane names them (not into a closed column, which clears it). Saved views store both (`WORK_ITEM_FILTER_KEYS`, the saved-view `FilterKey`, `BUILT_IN_LANES`).
+- My Work's "waiting on me" section is 2.7's (decision 76), on this filter.
+
 ## Settings (decision 55)
 
 A workspace admin configures work without the API on the Settings pages (`src/app/t/[tenantSlug]/(app)/settings/`, components in `src/components/settings/`), built on 2.2's routes with no new route or usecase:

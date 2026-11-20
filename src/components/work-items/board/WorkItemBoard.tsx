@@ -259,6 +259,7 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
         }
         switch (laneBy) {
             case 'assignee':
+            case 'waitingOn':
                 return members.map((m) => m.id);
             case 'priority':
                 return [...PRIORITY_ORDER];
@@ -295,6 +296,8 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
                 return '';
             case 'assignee':
                 return key ? memberLabel(memberById.get(key)) ?? tBoard('detail.formerMember') : tBoard('board.noAssignee');
+            case 'waitingOn':
+                return key ? memberLabel(memberById.get(key)) ?? tBoard('detail.formerMember') : tBoard('board.noWaitingOn');
             case 'priority':
                 return tBoard(`priority.${key}`);
             case 'type':
@@ -360,6 +363,11 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
             else if (laneBy === 'type' && laneKey) void mutations.updateFields(moved, { typeId: laneKey });
             else if (laneBy === 'cycle') void mutations.setCycle(moved, laneKey || null);
             else if (laneBy === 'milestone') void mutations.setMilestone(moved, laneKey || null);
+            else if (laneBy === 'waitingOn') {
+                // A closed column waits on nobody (2.4b): the move clears it, so no lane is set.
+                const category = config.stateById.get(stateId)?.category;
+                if (category !== 'DONE' && category !== 'CANCELLED') void mutations.setWaitingOn(moved, laneKey || null);
+            }
         }
     };
 

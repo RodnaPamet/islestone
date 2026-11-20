@@ -578,6 +578,20 @@ export async function removeTenantMember(
             });
         }
 
+        // Sub-phase 2.4b: waiting on naming them is cleared (its member FK is
+        // RESTRICT, as the assignee's), each item's version increased.
+        const clearedWaitingOn = await WorkItemRepository.clearWaitingOnAll(db, ctx, membership.userId);
+        if (clearedWaitingOn > 0) {
+            await logEvent(db, ctx, {
+                action: 'WORK_ITEMS_WAITING_ON_CLEARED_ON_MEMBER_REMOVAL',
+                entityType: 'TenantMembership',
+                entityId: membership.id,
+                details: `Cleared waiting on for ${clearedWaitingOn} work item(s) before removing a member`,
+                detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'updated', changedFields: ['waitingOnUserId'] },
+                metadata: { clearedCount: clearedWaitingOn },
+            });
+        }
+
         // Sub-phase 2.4: person custom-field values naming them go too (the
         // value's member FK is NO ACTION, as the assignee's is RESTRICT), and
         // those items' versions increase.

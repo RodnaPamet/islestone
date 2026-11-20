@@ -572,6 +572,14 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note: "Aim an item at a milestone of its project, or clear it (the version increases).",
     },
 
+    // ── Waiting on (sub-phase 2.4b; owner decision 104) ─────────────
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/waiting-on$`),
+        methods: ['PUT'],
+        permission: 'work_items.edit',
+        note: 'Name the active member an open item waits on, or nobody (the version increases).',
+    },
+
     // ── Templates (sub-phase 2.5c; owner decisions 71 and 72) ──────
     {
         path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/work-item-templates$`),

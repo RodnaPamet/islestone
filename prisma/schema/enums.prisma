@@ -90,6 +90,9 @@ enum NotificationType {
   INTAKE_REQUEST_RECEIVED
   /// Sub-phase 2.6a: a snoozed request came back, to whoever snoozed it.
   INTAKE_REQUEST_WOKEN
+  /// Sub-phase 2.4b: someone named you as the person a work item waits on
+  /// (owner decision 105).
+  WORK_ITEM_WAITING_ON
 }
 
 /// The kind of an outbound email in `NotificationOutbox` (sub-phase 1.6).

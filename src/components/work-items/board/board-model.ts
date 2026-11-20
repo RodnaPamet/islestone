@@ -10,11 +10,12 @@
  *     CATEGORY: a drop maps the item to its own team's default state of that
  *     category, as the bulk state change does (2.2), so two teams' "In
  *     review" are never mixed in one column.
- *   - **Lanes.** By assignee, priority, type, label or project, or none.
+ *   - **Lanes.** By assignee, priority, type, label, project, cycle,
+ *     milestone or waiting on (2.4b), or none.
  *     Lanes group the loaded rows; they never filter them (the server owns
  *     filtering). A row with several labels sits in the lane of its first
  *     label in the workspace's label order. Moving a card to another lane
- *     changes that field for assignee, priority and type; label and project
+ *     changes that field for assignee, priority, type and waiting on; label and project
  *     lanes are fixed (a card does not change label or project by a drop).
  *   - **Placement.** A drop at an index sends the neighbour above
  *     (`afterId`) or, at the top, the neighbour below (`beforeId`), and the
@@ -46,7 +47,7 @@ export const LANE_BY_VALUES: readonly BuiltInLaneBy[] = BUILT_IN_LANES;
  * Lanes whose value a drop may change. A milestone is a project's: its lanes
  * are movable only on a one-project board (`laneMovableInScope`).
  */
-export const MOVABLE_LANES: ReadonlySet<LaneBy> = new Set<LaneBy>(['none', 'assignee', 'priority', 'type', 'cycle', 'milestone']);
+export const MOVABLE_LANES: ReadonlySet<LaneBy> = new Set<LaneBy>(['none', 'assignee', 'priority', 'type', 'cycle', 'milestone', 'waitingOn']);
 
 /** Whether a drop may change `laneBy` on a board scoped to `projectId` (or every project). */
 export function laneMovableInScope(laneBy: LaneBy, projectId: string | undefined): boolean {
@@ -146,6 +147,8 @@ export function laneKeyOf(row: WorkItemRow, laneBy: LaneBy, ctx: LaneContext): s
             return row.cycleId ?? '';
         case 'milestone':
             return row.milestoneId ?? '';
+        case 'waitingOn':
+            return row.waitingOnUserId ?? '';
         case 'label': {
             const first = ctx.labelOrder.find((id) => row.labelIds.includes(id));
             return first ?? '';

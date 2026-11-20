@@ -1,6 +1,6 @@
 # 0006 — Vocabulary
 
-Status: Proposed — awaiting owner sign-off (2026-11-18 drafted). The role names, their order, the fallback role and the public sign-up switch were decided by the owner on 2026-11-18, the sync and collaboration words ADR 0005 added on 2026-11-19, and the planning words of sub-phase 2.5 (Milestone, Cycle schedule, Burn-up, Repeat, Transition) on 2026-11-20, and the intake words of sub-phase 2.6 on 2026-11-20; the other open questions await sign-off.
+Status: Proposed — awaiting owner sign-off (2026-11-18 drafted). The role names, their order, the fallback role and the public sign-up switch were decided by the owner on 2026-11-18, the sync and collaboration words ADR 0005 added on 2026-11-19, and the planning words of sub-phase 2.5 (Milestone, Cycle schedule, Burn-up, Repeat, Transition) on 2026-11-20, the intake words of sub-phase 2.6 on 2026-11-20, and the work-item field words of sub-phase 2.4b (Waiting on, Field set, Answer) on 2026-11-20; the other open questions await sign-off.
 
 ## Context
 
@@ -88,6 +88,9 @@ Rows for Phase 2 concepts are fixed by this ADR once signed. Rows for later phas
 | Template | A reusable starting point for a project or a work item (roadmap 2.5). | `ProjectTemplate`, `WorkItemTemplate` | Template | Blueprint, Preset |
 | Repeat | The rule on a work item that makes a new copy of it on a schedule (decided 2026-11-20). | `WorkItemRecurrence`; enum `RecurrenceFrequency` | Repeat; "Repeats weekly" | Recurring task, Recurring issue, Routine |
 | Transition | One recorded change to a work item's state, cycle, milestone, project or deletion, written by the database; read by the burn-up and by analytics (decided 2026-11-20). | `WorkItemTransition` | Not shown | History, Log, Event (each reserved: Activity, the audit log, automation), Snapshot |
+| Waiting on | Who must act next on a work item, apart from its assignee: an active member, and from roadmap 6.3 possibly the delegate's agent session. It never makes anyone or anything accountable (ADR 0003 §1 is unchanged: the assignee stays the one accountable person). Cleared when the item closes (decided 2026-11-20). | `WorkItem.waitingOnUserId` (6.3 adds a session reference beside it; at most one of the two is set) | Waiting on; "Waiting on me" | Owner, Responsible, Assignee (for this field), Next owner, Blocked by (a relation's label), Awaiting (as this field's name: `AWAITING_INPUT` is an agent session state) |
+| Field set | For one work item type, which fields are required, optional or hidden; enforced by the usecases and read by every form (decided 2026-11-20). | No model: the type's `WorkItemTypeField` rows; enum `FieldRequirement`: `REQUIRED`, `OPTIONAL`, `HIDDEN` | Fields; Required, Optional, Hidden | Field layout, Layout (a view's list, board, timeline or calendar), Form (an intake form), Property, Attribute |
+| Answer | The one comment a person marks as a work item's answer; marking it moves an open item to a Done state (decided 2026-11-20). | `WorkItem.answerCommentId` | Answer; "Mark as answer" | Accepted answer (Accept is intake's verb), Solution, Resolution, Reply (as a model) |
 
 **Planning**
 
@@ -229,6 +232,10 @@ Because "member" is also the concept "anyone with a membership", text about perm
 
 **Decided. Owner decision, 2026-11-20 (relayed to the porting session by its coordinator; `docs/porting/maps/2.6.md`, open questions 7 and 10; `docs/HANDOFF.md` decisions 91 and 94).** The triage page and its sidebar entry are called **Intake**, one entry is a **Request**, and "triage" stays a verb; the notification list of roadmap 2.7 stays **Inbox**. The "Views, intake and inbox" table gains the rows Intake form, Form field, Requester, Intake channel, Decline reason, Notify list, Intake email address, Follow-up and Blocked sender. "Accept" and "Decline" are intake's verbs: the Proposal row bans them as synonyms of Approve and Reject for proposals only. A request's states are the enum `IntakeRequestStatus` (`PENDING`, `SNOOZED`, `ACCEPTED`, `DECLINED`, `MERGED`), shown as New, Snoozed, Accepted, Declined and Merged. A form field is not called "Question", because roadmap 2.4b plans a Question work item type.
 
+### Work-item field words of sub-phase 2.4b — decided
+
+**Decided. Owner decisions 100 to 102, 2026-11-20 (relayed to the porting session by its coordinator; `docs/porting/maps/2.4b.md`, open questions 1 to 3; `docs/HANDOFF.md`).** The Work table gains the rows Waiting on, Field set and Answer. "Awaiting" stays the agent session's word (`AWAITING_INPUT`), and "Accept" stays intake's. By decision 106, waiting on may name the delegate's agent session from roadmap 6.3, through a second column beside `waitingOnUserId`; that never makes the session, or its agent, accountable. "Question" is a work item type a workspace makes (user data, like Feature), offered as a Settings preset and not seeded (decision 116).
+
 ### How Islestone avoids inflect-compliance's two-vocabulary state
 
 1. **Names are fixed before the first migration.** This ADR is signed before roadmap 1.3 and 2.1 write models.
@@ -253,7 +260,7 @@ These checks are recommendations. Roadmap 1.1 or 2.1 adds them with the first mo
 3. "Status" or "State" as the UI label for a workflow state.
 4. UI copy spelling: British or American English? The roadmap mixes both ("authorise", "Organization"). Identifiers follow this table either way.
 5. The roadmap uses "workflows" for agent engine definitions (roadmap 2.1, 6.1). This ADR reserves "workflow" for team states. Recommendation: roadmap 6.1 names the engine's definitions when it starts; "Agent profile" is the candidate, after inflect-compliance's `AgentProfile` model (`prisma/schema/agentic.prisma` line 3469). It must not be "workflow" or "task".
-6. Seeded default work item types for a new workspace. Recommendation: Feature, Bug, Chore. Avoid seeding types named Task, Issue or Ticket, so new users do not meet a banned word on day one.
+6. Seeded default work item types for a new workspace. Recommendation: Feature, Bug, Chore. Avoid seeding types named Task, Issue or Ticket, so new users do not meet a banned word on day one. Question is not seeded; Settings offers it as a preset (roadmap 2.4b, owner decision 116, 2026-11-20).
 
 ## Consequences
 

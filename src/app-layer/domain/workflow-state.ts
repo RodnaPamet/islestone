@@ -83,20 +83,25 @@ export function formatStateTransitionError(err: StateTransitionError): string {
     }
 }
 
-/** The lifecycle timestamps a state move writes. A key absent means "unchanged". */
+/** What a state move writes beside the state. A key absent means "unchanged". */
 export interface StateTransitionEffects {
     startedAt?: Date | null;
     completedAt?: Date | null;
     cancelledAt?: Date | null;
+    /** A closed item waits on nobody (2.4b, ADR 0002 §14). */
+    waitingOnUserId?: null;
 }
 
 /**
- * The timestamps a move from `from` to `to` writes (ADR 0002 §3), returned by
- * one function so every caller (single, bulk, move, duplicate) applies them
- * alike:
+ * What a move from `from` to `to` writes besides the state (ADR 0002 §3,
+ * §14), returned by one function so every caller (single, bulk, board move,
+ * duplicate, a state's delete, create) applies it alike:
  *   - the first move into STARTED sets `startedAt` (a later one keeps it);
  *   - a move into DONE sets `completedAt`, into CANCELLED `cancelledAt`;
- *   - a move out of DONE or CANCELLED clears that timestamp (reopen).
+ *   - a move out of DONE or CANCELLED clears that timestamp (reopen);
+ *   - a move into DONE or CANCELLED clears waiting on (2.4b); a reopen does
+ *     not restore it. The CHECK `WorkItem_waiting_on_open_only` refuses a
+ *     path that forgets.
  *
  * Ending a live agent session on a move into a closed category (ADR 0003)
  * arrives with agent sessions in 6.3.
@@ -113,6 +118,7 @@ export function stateTransitionEffects(
     if (to === 'CANCELLED' && from !== 'CANCELLED') effects.cancelledAt = now;
     if (from === 'DONE' && to !== 'DONE') effects.completedAt = null;
     if (from === 'CANCELLED' && to !== 'CANCELLED') effects.cancelledAt = null;
+    if (to === 'DONE' || to === 'CANCELLED') effects.waitingOnUserId = null;
     return effects;
 }
 

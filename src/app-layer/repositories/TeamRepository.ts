@@ -181,7 +181,7 @@ export class TeamRepository {
         ctx: RequestContext,
         fromStateId: string,
         to: { id: string; category: WorkflowStateCategory },
-        effects: { completedAt?: Date | null; cancelledAt?: Date | null },
+        effects: { completedAt?: Date | null; cancelledAt?: Date | null; waitingOnUserId?: null },
         stampStartedAt: Date | null,
     ): Promise<number> {
         const result = await db.workItem.updateMany({

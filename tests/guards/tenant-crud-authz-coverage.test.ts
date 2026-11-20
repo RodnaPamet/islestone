@@ -62,6 +62,8 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${T}/projects/[projectId]/milestones/route.ts`]: { GET: 'projects.view', POST: 'projects.edit' },
     [`${T}/projects/[projectId]/milestones/[milestoneId]/route.ts`]: { PATCH: 'projects.edit', DELETE: 'projects.edit' },
     [`${W}/[workItemId]/milestone/route.ts`]: { PUT: 'work_items.edit' },
+    // Sub-phase 2.4b (owner decision 104: waiting on under `work_items.edit`).
+    [`${W}/[workItemId]/waiting-on/route.ts`]: { PUT: 'work_items.edit' },
     // Sub-phase 2.5c (owner decisions 71 and 72).
     [`${T}/projects/[projectId]/work-item-templates/route.ts`]: { GET: 'projects.view', POST: 'projects.edit' },
     [`${T}/projects/[projectId]/work-item-templates/[templateId]/route.ts`]: { PATCH: 'projects.edit', DELETE: 'projects.edit' },

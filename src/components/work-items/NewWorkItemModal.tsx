@@ -36,7 +36,7 @@ import type { WorkItemDetailData, WorkItemPriority } from '@/lib/work-items/type
 import { useWorkConfig } from './data/use-work-config';
 import { useWorkItemMutations } from './data/use-work-item-mutations';
 import { useItemTemplates } from './data/use-item-templates';
-import { AssigneePicker, CyclePicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker } from './pickers';
+import { AssigneePicker, CyclePicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker, WaitingOnPicker } from './pickers';
 
 export interface NewWorkItemInitial {
     projectId?: string;
@@ -58,6 +58,8 @@ interface FormState {
     stateId: string;
     priority: WorkItemPriority;
     assigneeId: string | null;
+    /** Who the new item waits on (2.4b); not sent into a closed state. */
+    waitingOnUserId: string | null;
     labelIds: string[];
     dueDate: string | null;
     cycleId: string | null;
@@ -102,6 +104,7 @@ export function NewWorkItemModal({
             stateId,
             priority: 'NONE',
             assigneeId: null,
+            waitingOnUserId: null,
             labelIds: [],
             dueDate: null,
             cycleId: initial?.cycleId && config.cycleById.get(initial.cycleId)?.teamId === teamId ? initial.cycleId : null,
@@ -132,6 +135,9 @@ export function NewWorkItemModal({
 
     const dirty = form.title.trim() !== '' || form.description.trim() !== '';
     const teamId = config.projectById.get(form.projectId)?.teamId ?? '';
+    // A closed item waits on nobody (2.4b): the picker leaves, and its value is not sent.
+    const stateCategory = config.stateById.get(form.stateId)?.category;
+    const stateClosed = stateCategory === 'DONE' || stateCategory === 'CANCELLED';
 
     const requestClose = () => {
         if (dirty && !submitting) setConfirmDiscard(true);
@@ -202,6 +208,7 @@ export function NewWorkItemModal({
             ...(form.stateId ? { stateId: form.stateId } : {}),
             priority: form.priority,
             ...(form.assigneeId ? { assigneeId: form.assigneeId } : {}),
+            ...(form.waitingOnUserId && !stateClosed ? { waitingOnUserId: form.waitingOnUserId } : {}),
             ...(form.labelIds.length ? { labelIds: form.labelIds } : {}),
             ...(form.dueDate ? { dueDate: form.dueDate } : {}),
             ...(form.cycleId ? { cycleId: form.cycleId } : {}),
@@ -309,6 +316,11 @@ export function NewWorkItemModal({
                                 <FormField label={t('fields.assignee')}>
                                     <AssigneePicker id="work-item-assignee-input" value={form.assigneeId} onChange={(v) => set('assigneeId', v)} />
                                 </FormField>
+                                {!stateClosed && (
+                                    <FormField label={t('fields.waitingOn')}>
+                                        <WaitingOnPicker id="work-item-waiting-on-input" value={form.waitingOnUserId} onChange={(v) => set('waitingOnUserId', v)} />
+                                    </FormField>
+                                )}
                                 <FormField label={t('fields.labels')}>
                                     <LabelsPicker id="work-item-labels-input" teamId={teamId} value={form.labelIds} onChange={(v) => set('labelIds', v)} />
                                 </FormField>

@@ -201,6 +201,8 @@ const CALLS: Call[] = [
     { file: 'src/app/api/t/[tenantSlug]/project-templates/route.ts', method: 'POST', path: () => '/project-templates', params: (i) => P(i), body: (i) => ({ fromProjectId: i.project, name: `Saved ${Math.random()}` }), write: true, key: 'admin.manage' },
     { file: 'src/app/api/t/[tenantSlug]/project-templates/[templateId]/route.ts', method: 'PATCH', path: (i) => `/project-templates/${i.projectTemplate}`, params: (i) => P(i, { templateId: i.projectTemplate }), body: () => ({ archived: false }), write: true, key: 'admin.manage' },
     { file: 'src/app/api/t/[tenantSlug]/project-templates/[templateId]/route.ts', method: 'DELETE', path: () => '/project-templates/none', params: (i) => P(i, { templateId: 'none' }), write: true, key: 'admin.manage' },
+    // Sub-phase 2.4b: waiting on.
+    { file: `${W}/[workItemId]/waiting-on/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/waiting-on`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ userId: i.member }), write: true, key: 'work_items.edit' },
     // Sub-phase 2.5b: milestones.
     { file: `${W}/[workItemId]/milestone/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/milestone`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ milestoneId: i.milestone }), write: true, key: 'work_items.edit' },
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/milestones/route.ts', method: 'GET', path: (i) => `/projects/${i.project}/milestones`, params: (i) => P(i, { projectId: i.project }), write: false, key: 'projects.view' },

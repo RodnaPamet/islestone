@@ -1,6 +1,6 @@
 # 0002 — Work item model
 
-Status: Accepted (owner decisions, 2026-11-19)
+Status: Accepted (owner decisions, 2026-11-19; amended by owner decisions 100 to 119, 2026-11-20: field sets in §1 and §7, waiting on in §14, the marked answer in §15)
 
 ## Context
 
@@ -31,9 +31,18 @@ Read at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`, for their design; not
 
 ### 1. One table, configurable types
 
-Every kind of work is a row in `WorkItem`. Its kind is a `WorkItemType` row that each workspace configures (name, icon, colour, sort key, archived). Types carry no behaviour in this ADR: any type may parent any type, and every type uses its team's workflow. A workspace seeds default types at creation (ADR 0006, open question 6).
+Every kind of work is a row in `WorkItem`. Its kind is a `WorkItemType` row that each workspace configures (name, icon, colour, sort key, archived). A type carries one behaviour, its field set (below); otherwise any type may parent any type, and every type uses its team's workflow. A workspace seeds default types at creation (ADR 0006, open question 6).
 
 Why rows, not an enum: types are customer data, and an enum change is a migration and a two-deploy rollout.
+
+**Field sets** (roadmap 2.4b; owner decisions 77 and 108 to 112, 2026-11-20). For each type, a field set says which fields are required, optional or hidden. It is the type's `WorkItemTypeField` rows; a field with no row is optional, except the answer (§15), which is hidden.
+
+- The configurable built-in fields are description, assignee, waiting on (§14), priority (required means not None), labels (at least one), start date, due date, cycle, milestone and the answer (shown or hidden only). Title, type, project and state are always required.
+- A built-in field's rule belongs to the type across the workspace and is managed under `admin.manage`. A custom field's rule belongs to the type within the field's project (§7) and is managed under `projects.edit`.
+- The usecases enforce it. A create, or a write to an open item, that leaves a required field empty is refused, naming the fields; a write that sets a hidden field is refused, and a hidden field a template brings is skipped and named. A closed item is never refused for a missing field. A type change is checked against the new type's whole set. A new or tightened rule does not rewrite existing items; their gaps are shown.
+- Items the system makes (a template's sub-items, a project template's starter items, a repeat's copies) are checked like any create; a refused repeat is held with its reason.
+- Every form reads the rules from the server and evaluates them with the same function the usecases use. Agent proposals are checked against them when made and when approved (roadmap 6.2).
+- Types carry no other behaviour: per-type workflows, parent rules or review steps would each be a new decision.
 
 ### 2. The parent chain
 
@@ -133,6 +142,7 @@ Common rules: a CHECK refuses `fromId = toId`; `@@unique([tenantId, type, fromId
   - options and people need foreign keys, or a deleted option leaves values that point at nothing;
   - a JSON column is a read-modify-write of the whole object, which loses concurrent edits, as inflect-compliance's checklist shows (`TaskRepository.ts` lines 693–699).
 - **Text values are not encrypted**, because they are filterable. The field editor says so. Long or sensitive text belongs in the description.
+- A project's custom field may be required, optional or hidden for each work item type, in that project only (§1, field sets; owner decision 108). The rule goes with the field, the type or the project. An archived field is never required.
 
 ### 8. Soft delete
 
@@ -148,7 +158,7 @@ Common rules: a CHECK refuses `fromId = toId`; `@@unique([tenantId, type, fromId
 - Writes carry the expected version in an `If-Match` header. The usecase updates with `WHERE id = ? AND tenantId = ? AND version = ?`. If no row matched, it re-reads: no row is a 404; a row with another version is a **409** with the current version and row.
 - **Whether `If-Match` is required depends on the write:**
   - Required for title, description and any multi-field form save. These carry typed work a person would lose.
-  - Optional for single-field changes: state, assignee, delegate, priority, labels, cycle, milestone, one custom field. Without it, the last writer wins for that field, and the change is audited.
+  - Optional for single-field changes: state, assignee, waiting on, delegate, priority, labels, cycle, milestone, the answer, one custom field. Without it, the last writer wins for that field, and the change is audited.
   - Bulk updates (roadmap 2.2) are single-field changes over many items. They take no versions and increase each item's version.
 - **The client resolves most conflicts itself.** On a 409 it compares the fields it changed with the current row. If none of them changed underneath it, it retries with the new version. Only a real same-field conflict reaches the person. This gives field-level behaviour with one column.
 - Agent proposals that update an item record the version and field values they were based on, and approval applies the same rule (ADR 0003).
@@ -162,7 +172,9 @@ Common rules: a CHECK refuses `fromId = toId`; `@@unique([tenantId, type, fromId
   - `(stateId, teamId, stateCategory)` → `WorkflowState(id, teamId, category)`: a state of another team, or a stale category, cannot be stored;
   - `(cycleId, teamId)` → `Cycle(id, teamId)`: a cycle of another team cannot be stored;
   - `(milestoneId, projectId)` → `Milestone(id, projectId)`: a milestone of another project cannot be stored;
-  - `(parentId, projectId)` → `WorkItem(id, projectId)`: a parent in another project cannot be stored.
+  - `(parentId, projectId)` → `WorkItem(id, projectId)`: a parent in another project cannot be stored;
+  - `(tenantId, waitingOnUserId)` → `TenantMembership(tenantId, userId)`: only a member can be waited on; RESTRICT, cleared by member removal as the assignee is (§14);
+  - `(answerCommentId, id)` → `Comment(id, workItemId)`: an answer is a comment of the same item (§15).
   - Each also includes `tenantId`.
 - The parent link is `DEFERRABLE INITIALLY DEFERRED`, so a move can update a parent and its sub-items in one transaction. Prisma cannot declare that, so it goes in the migration SQL with a catalogue test.
 - **Moves.** Moving an item to a project of another team maps its state to the new team's default state of the same category, and clears its cycle. Moving to another project clears its milestone. Both are one usecase.
@@ -458,6 +470,7 @@ Each index backs a named query. H2 measures them on seeded tenants at 10,000 and
 | Board columns by state | `[tenantId, projectId, stateId, sortKey]` |
 | Team backlog across projects, by category | `[tenantId, teamId, stateCategory, sortKey]` |
 | My Work: assigned to me and open, by due date | `[tenantId, assigneeId, stateCategory, dueDate]` |
+| Waiting on: the filter, its lanes and My Work's "waiting on me" (2.7) | `[tenantId, waitingOnUserId, stateCategory, dueDate]` |
 | Items delegated to an agent | `[tenantId, delegateAgentId, stateCategory]` |
 | Cycle page and burn-up | `[tenantId, cycleId, stateCategory]` |
 | Milestone page | `[tenantId, milestoneId, stateCategory]` |
@@ -472,6 +485,19 @@ Each index backs a named query. H2 measures them on seeded tenants at 10,000 and
 Other tables: labels by `[tenantId, labelId, workItemId]`; relations by `[tenantId, type, fromId, toId]` (unique) and `[tenantId, type, toId]`; custom values by `[tenantId, fieldId, <value column>]`; comments by `[tenantId, workItemId, createdAt]`. Every foreign-key column is indexed, alone or as the second column after `tenantId`.
 
 List queries also filter `deletedAt IS NULL`. If the pinned Prisma version cannot declare partial indexes, the list indexes above are written as partial indexes in migration SQL, and the index guardrail (H2) reads the database catalogue rather than only the schema file.
+
+### 14. Waiting on
+
+- `WorkItem.waitingOnUserId` names at most one active member who must act next (roadmap 2.4b; owner decisions 76 and 103 to 107, 2026-11-20). It never makes anyone or anything accountable: the assignee stays the one accountable person (ADR 0003 §1, unchanged), and nothing routes reminders, delegation or proposals by it until a later sub-phase says so. The person named gets one in-app notification when someone else names them.
+- It is set by a person under `work_items.edit`, as a single-field change (§9); roadmap 2.8's review steps will set it too, and a repeat copy takes its source's.
+- **From roadmap 6.3 it may name the delegate's agent session instead of a member** (owner decision 106). 6.3 adds a nullable session reference beside `waitingOnUserId`, with a CHECK that at most one of the two is set, and widens the closed-item CHECK below to both. The member column keeps its name and its data; nothing is rewritten.
+- It is cleared by every move into `DONE` or `CANCELLED`: `stateTransitionEffects` returns the clear, so every state path applies it, and a CHECK refuses a closed item that names one. A reopen does not restore it.
+- Each change is recorded in `WorkItemTransition`, so time waiting is counted from recorded changes (roadmap 3.6; owner decision 107).
+
+### 15. Marked answer
+
+- `WorkItem.answerCommentId` points at one live comment of the same item (roadmap 2.4b; owner decisions 78 and 113 to 118, 2026-11-20). A person who may edit the item marks it, never an API key or an agent; marking moves an open item to the team's first live `DONE` state (a chooser when there are several) in the same versioned write. Marking or clearing the answer of a closed item changes only the pointer, and clearing never reopens.
+- It is offered only where the item's field set shows the answer (§1). While a comment is the marked answer, deleting and editing it are refused until the answer is cleared; an admin moderates by clearing, then deleting.
 
 ### Open questions for the owner
 

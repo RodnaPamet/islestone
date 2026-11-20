@@ -255,6 +255,38 @@ export async function emitAssignedBells(
     }
 }
 
+/**
+ * The waiting-on bell (2.4b, owner decision 105), after the commit: one
+ * in-app notification to the person named, unless they named themselves. No
+ * email and no reminder (2.7 decides those). Never makes them accountable.
+ */
+export async function emitWaitingOnBell(
+    ctx: RequestContext,
+    userId: string | null,
+    item: { id: string; title: string; key: string },
+): Promise<void> {
+    if (!userId || userId === ctx.userId || !ctx.tenantSlug) return;
+    const tenantSlug = ctx.tenantSlug;
+    try {
+        await runInTenantContext(ctx, async (db) => {
+            await createAssignmentNotification(db, 'WORK_ITEM_WAITING_ON', {
+                tenantId: ctx.tenantId,
+                assigneeUserId: userId,
+                entityId: item.id,
+                entityLabel: item.title,
+                entityKey: item.key,
+                linkUrl: tenantWorkItemPath(tenantSlug, item.id),
+            });
+        });
+    } catch (err) {
+        logger.warn('failed to create work-item-waiting-on notification', {
+            component: 'notifications',
+            workItemId: item.id,
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}
+
 /** The due reminder, when an assigned item's due date is on a window today. */
 export async function emitDueBell(
     ctx: RequestContext,

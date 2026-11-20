@@ -15,7 +15,8 @@
  *
  * Fire-and-forget — callers isolate the write in its own transaction so a
  * notification failure never rolls back the parent operation. Callers: the
- * work-item create, assign and bulk-assign usecases (sub-phase 2.2).
+ * work-item create, assign and bulk-assign usecases (sub-phase 2.2), and the
+ * waiting-on write and create (`WORK_ITEM_WAITING_ON`, sub-phase 2.4b).
  *
  * Copied from inflect-compliance `src/app-layer/notifications/assignment.ts`
  * at 5528464fc54a8681956f3b9ce23ca9c075f0420e: one kind,
@@ -34,7 +35,7 @@ import { isInAppTypeEnabled } from './settings';
 export interface AssignmentTarget {
     /** Workspace the item belongs to. */
     tenantId: string;
-    /** Recipient — the new assignee. */
+    /** Recipient — the new assignee (or, for `WORK_ITEM_WAITING_ON`, the person named). */
     assigneeUserId: string;
     /** Work item being assigned. */
     entityId: string;
@@ -50,7 +51,12 @@ export interface AssignmentTarget {
     linkUrl: string;
 }
 
-export type AssignmentNotificationKind = 'WORK_ITEM_ASSIGNED';
+/**
+ * `WORK_ITEM_WAITING_ON` (sub-phase 2.4b, owner decision 105): someone named
+ * the recipient as the person the item waits on. Same writer, same dedupe
+ * shape; the recipient is not made accountable (ADR 0003 §1).
+ */
+export type AssignmentNotificationKind = 'WORK_ITEM_ASSIGNED' | 'WORK_ITEM_WAITING_ON';
 
 interface AssignmentCopy {
     title: string;
@@ -65,6 +71,10 @@ export const ASSIGNMENT_COPY: Record<AssignmentNotificationKind, AssignmentCopy>
     WORK_ITEM_ASSIGNED: {
         title: 'You were assigned a work item',
         body: (label) => `${label} is now yours.`,
+    },
+    WORK_ITEM_WAITING_ON: {
+        title: 'A work item is waiting on you',
+        body: (label) => `${label} is waiting on you.`,
     },
 };
 

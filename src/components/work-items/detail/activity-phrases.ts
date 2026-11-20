@@ -32,6 +32,7 @@ export const ACTIVITY_PHRASE = {
     WORK_ITEM_CUSTOM_FIELD_SET: 'activity.customFieldSet',
     WORK_ITEM_CYCLE_CHANGED: 'activity.cycleChanged',
     WORK_ITEM_MILESTONE_CHANGED: 'activity.milestoneChanged',
+    WORK_ITEM_WAITING_ON_CHANGED: 'activity.waitingOnChanged',
 } as const;
 
 /**
@@ -45,6 +46,7 @@ export const NOT_ITEM_ACTIVITY: ReadonlySet<string> = new Set([
     'WORK_ITEM_PURGED',
     'WORK_ITEM_DUE',
     'WORK_ITEM_WATCH_UPDATE',
+    'WORK_ITEM_WAITING_ON',
 ]);
 
 export function activityPhraseKey(action: string | undefined): string {

@@ -86,6 +86,29 @@ describe('the detail as a page and as a sheet', () => {
     });
 });
 
+describe('waiting on (2.4b)', () => {
+    it('an open item offers the picker to an editor', async () => {
+        routes();
+        renderDetail('page', 'MEMBER', 'u-ada');
+        expect(await screen.findByRole('heading', { name: 'Item 1' })).toBeInTheDocument();
+        expect(screen.getByLabelText('Waiting on')).toBeEnabled();
+    });
+
+    it('a viewer sees it disabled', async () => {
+        routes();
+        renderDetail('page', 'VIEWER', 'u-viewer');
+        expect(await screen.findByRole('heading', { name: 'Item 1' })).toBeInTheDocument();
+        expect(screen.getByLabelText('Waiting on')).toBeDisabled();
+    });
+
+    it('a closed item says it waits on nobody and offers no picker', async () => {
+        routes({ 'GET /work-items/wi-1': { body: detail(row(1, { stateId: 'st-done', stateCategory: 'DONE' })) } });
+        renderDetail('page', 'MEMBER', 'u-ada');
+        expect(await screen.findByText('A closed item waits on nobody.')).toBeInTheDocument();
+        expect(screen.queryByLabelText('Waiting on')).toBeNull();
+    });
+});
+
 describe('comments (decision 53: the author edits; the author or an admin deletes)', () => {
     it('offers the author edit and delete on their own comment only', async () => {
         routes();

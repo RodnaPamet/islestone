@@ -110,8 +110,28 @@ porting maps now record them (next step 2); the last column says where.
 | 97 | 2.6 ships as three pull requests, in order: 2.6a the model, internal forms, the builder, the Intake page with all triage actions and the two jobs; 2.6b public forms; 2.6c inbound email (question 13). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.6.md` |
 | 98 | The public perimeter of 2.6b and 2.6c is approved: a new `RlsBypassReason`, `public-intake-resolve`, and new `MACHINE_CALLER_PREFIXES` entries for the public submit, the confirmation link and the inbound-email webhook, each with its contract in `tests/guards/machine-caller-paths-self-authenticate.test.ts`. Not added in 2.6a, which needs neither. Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.6.md` ("Tenant resolution and the public surface"); 2.6b, 2.6c |
 | 99 | An inbound email whose address matches a member's `emailHash` and whose sender domain authentication passes is shown as coming from that member (question 3, "Also"). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.6.md`; 2.6c |
+| 100 | The field naming who must act next is **Waiting on** (`WorkItem.waitingOnUserId`; "Waiting on me" in My Work) (question 1). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; ADR 0006 |
+| 101 | Per-type field rules are a **Field set**: a type's `WorkItemTypeField` rows, enum `FieldRequirement` (`REQUIRED`, `OPTIONAL`, `HIDDEN`), shown as a type's "Fields" (question 2). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; ADR 0006; 2.4b-b |
+| 102 | The marked comment is the **Answer** (`WorkItem.answerCommentId`; "Mark as answer") (question 3). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; ADR 0006; 2.4b-c |
+| 103 | Any active member may be waited on, the assignee's rule (Viewers included); guests from 8.4 when they can see the project (question 4). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; ADR 0002 §14; 2.4b-a |
+| 104 | Waiting on is set under `work_items.edit`, as an item's cycle and milestone are (question 5). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; 2.4b-a |
+| 105 | The person named gets one in-app bell when someone else names them (a new notification type with its own preference); no email and no reminders until 2.7 (question 6). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; 2.4b-a |
+| 106 | Who or what else sets waiting on: in 2.4b people set it by hand, 2.8's review steps will set it, and a repeat copy takes its source's value; **from 6.3 it may name the delegate's agent session**, not only a member (6.3 adds a nullable session reference with a CHECK that at most one of the two is set; no session column now). It never makes anyone or anything accountable: ADR 0003 §1 is unchanged (question 7, option C). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; ADR 0002 §14; ADR 0006; 2.4b-a, 6.3 |
+| 107 | `WorkItemTransition` records waiting-on changes from the day the column exists (the trigger fires on it), so 3.6 counts time waiting from recorded changes (question 8). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; 2.4b-a |
+| 108 | A field set's built-in rules belong to the type across the workspace; a custom field's rules belong to the type within the field's project (question 9). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; ADR 0002 §1, §7; 2.4b-b |
+| 109 | A new rule rewrites nothing: a create, a write that empties a required field of an open item, and a type change are checked; other writes pass and the item lists its gaps (question 10). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; ADR 0002 §1; 2.4b-b |
+| 110 | Configurable built-in fields: description, assignee, waiting on, priority (required = not None), labels (at least one), start date, due date, cycle, milestone, answer (shown or hidden only); title, type, project and state are fixed (question 11). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; ADR 0002 §1; 2.4b-b |
+| 111 | A hidden field is not offered and a write setting it is refused (a template's value is skipped and named); template sub-items, starter items and repeat copies are checked like any create, and a refused repeat holds with a new reason `FIELD_SET_UNMET` (question 12). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; ADR 0002 §1; 2.4b-b |
+| 112 | Built-in field rules are managed under `admin.manage`, custom-field rules under `projects.edit` (question 13). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; 2.4b-b |
+| 113 | While a comment is the marked answer, deleting and editing it are refused until the answer is cleared; an admin moderates by clearing, then deleting (question 14). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; ADR 0002 §15; 2.4b-c |
+| 114 | Marking an answer moves the item to the team's first live Done state, with a chooser when there are several (question 15). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; 2.4b-c |
+| 115 | Marking or clearing the answer of a closed item changes only the pointer; clearing never reopens (question 16). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; ADR 0002 §15; 2.4b-c |
+| 116 | Question is not seeded: Settings → Work item types offers "Add the Question type" (due date and waiting on required, answer shown) and each project's templates manager offers "Add a Question template" (due in 5 days) (question 17). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; ADR 0006 open question 6; 2.4b-c |
+| 117 | Watchers hear that a question was answered, and the creator of an item whose type shows the answer becomes a watcher (question 18). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; 2.4b-c |
+| 118 | The answer is a field-set field, hidden unless the type's field set shows it; no type flag (question 19). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md`; ADR 0002 §1, §15; 2.4b-c |
+| 119 | 2.4b ships as three pull requests, in order: 2.4b-a waiting on, 2.4b-b field sets, 2.4b-c questions (question 20). Decided 2026-11-20, relayed. | relayed | `docs/porting/maps/2.4b.md` |
 
-Rows 62 to 75 are sub-phase 2.5's decisions. Rows 85 to 99 are sub-phase 2.6's (`docs/porting/maps/2.6.md`, questions 1 to 13, then the public perimeter and the member-email rule). Rows 76 to 84 are the ideas the owner adopted from the Procore audit, all of its top ten but #8 (event triggers for delegate agents and a search skill), which 6.3 and a search skill already plan. None changes an ADR yet: each sub-phase lists the amendments it needs and its proposed words as open questions, decided when it starts.
+Rows 62 to 75 are sub-phase 2.5's decisions. Rows 85 to 99 are sub-phase 2.6's (`docs/porting/maps/2.6.md`, questions 1 to 13, then the public perimeter and the member-email rule). Rows 100 to 119 are sub-phase 2.4b's (`docs/porting/maps/2.4b.md`, questions 1 to 20 in order): every recommendation accepted except question 7, where the owner chose option C. Rows 76 to 84 are the ideas the owner adopted from the Procore audit, all of its top ten but #8 (event triggers for delegate agents and a search skill), which 6.3 and a search skill already plan. Those of 76 to 78 changed ADRs 0002 and 0006 with 2.4b's decisions (rows 100 to 119); the others change none yet: each sub-phase lists the amendments it needs and its proposed words as open questions, decided when it starts.
 
 Sub-phase 2.6b (public intake forms) applies decisions 86, 88, 89 and 98 as follows. The deployment switch of decision 86 is `INTAKE_PUBLIC_FORMS` (`1` open, `0` closed, unset closed in production), set in `.env.prod` by the operator once the release runs on both images. Decision 98's bypass reason `public-intake-resolve` and two of its three machine-caller entries (`/api/intake/forms`, `/api/intake/confirm`) are live with their contracts; the third, `/api/intake/email`, arrives with 2.6c. The outsider email types (`INTAKE_CONFIRM_ADDRESS`, `INTAKE_ACCEPTED`, `INTAKE_DECLINED`, `INTAKE_MERGED`) are added in a migration of their own; their writers ship in the same release but cannot run until the switch is opened. Blocked senders move to 2.6c. As built: `docs/intake.md`, "Public forms (2.6b)".
 
@@ -757,3 +777,20 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
      through `createWorkItemInTx` (the create core 2.6a extracted, with the repeat options) and `templateToCreateInput`;
      holds written as the system user.
    - UI: the detail's Repeat control, the list's series mark.
+8. **2.4b (waiting on, field sets, questions) is decided** (decisions 100 to 119: every
+   recommendation of `docs/porting/maps/2.4b.md` accepted except question 7, where the owner
+   chose C: from 6.3, waiting on may name the delegate's agent session). ADR 0002 §1, §7, §9,
+   §10, §13, §14 and §15 and ADR 0006's Waiting on, Field set and Answer rows are amended.
+   It ships as three pull requests. **2.4b-a (waiting on) is built** on branch `wt/p24b`,
+   per `docs/work-items.md`, "Waiting on (2.4b-a)" and `PROVENANCE.md`, "Waiting on":
+   - Schema: `WorkItem.waitingOnUserId` (member FK, RESTRICT; the closed-item CHECK),
+     `WorkItemTransition.waitingOnUserId` (the trigger fires on it),
+     `NotificationType.WORK_ITEM_WAITING_ON`. Migrations
+     `20261128120000_notification_type_waiting_on` and `20261128120100_waiting_on`.
+   - Domain: `stateTransitionEffects` clears it on every move into a closed category.
+   - API: `PUT /work-items/:id/waiting-on` (`work_items.edit`, versioned), `waitingOnUserId`
+     on create, the `waitingOnId` list filter (ids, `none`). Member removal clears it; a
+     repeat copy takes its source's.
+   - UI: the detail's and the create dialog's Waiting on picker, the column, the filter, the
+     board's lanes; the in-app bell to the person named.
+   - Next: 2.4b-b (field sets), then 2.4b-c (questions), per the map.

@@ -10,6 +10,7 @@ import {
     bySortKey,
     categoryColumns,
     laneKeyOf,
+    laneMovableInScope,
     lanesOf,
     nextTarget,
     placementFor,
@@ -81,6 +82,12 @@ describe('lanes', () => {
         const rows = [row('a', { assigneeId: 'u2' }), row('b'), row('c', { assigneeId: 'u1' })];
         expect(lanesOf(rows, 'assignee', ctx, ['u1', 'u2'])).toEqual(['u1', 'u2', '']);
         expect(lanesOf(rows, 'none', ctx, [])).toEqual(['']);
+    });
+
+    it('groups by waiting on (2.4b), a drop may change it on any board', () => {
+        expect(laneKeyOf(row('a', { waitingOnUserId: 'u1' }), 'waitingOn', ctx)).toBe('u1');
+        expect(laneKeyOf(row('b'), 'waitingOn', ctx)).toBe('');
+        expect(laneMovableInScope('waitingOn', undefined)).toBe(true);
     });
 
     it('puts a row with several labels in the lane of its first label in the workspace order', () => {

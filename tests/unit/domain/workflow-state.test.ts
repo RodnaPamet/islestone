@@ -64,13 +64,24 @@ describe('stateTransitionEffects', () => {
     const cases: Array<[WorkflowStateCategory, WorkflowStateCategory, { startedAt?: Date | null }, Record<string, Date | null>]> = [
         ['UNSTARTED', 'STARTED', {}, { startedAt: NOW }],
         ['UNSTARTED', 'STARTED', { startedAt: new Date(0) }, {}],
-        ['STARTED', 'DONE', { startedAt: new Date(0) }, { completedAt: NOW }],
-        ['STARTED', 'CANCELLED', {}, { cancelledAt: NOW }],
+        ['STARTED', 'DONE', { startedAt: new Date(0) }, { completedAt: NOW, waitingOnUserId: null }],
+        ['STARTED', 'CANCELLED', {}, { cancelledAt: NOW, waitingOnUserId: null }],
         ['DONE', 'STARTED', { startedAt: new Date(0) }, { completedAt: null }],
-        ['CANCELLED', 'DONE', {}, { cancelledAt: null, completedAt: NOW }],
+        ['CANCELLED', 'DONE', {}, { cancelledAt: null, completedAt: NOW, waitingOnUserId: null }],
         ['BACKLOG', 'UNSTARTED', {}, {}],
     ];
     it.each(cases)('%s → %s', (from, to, item, expected) => {
         expect(stateTransitionEffects(from, to, item, NOW)).toEqual(expected);
+    });
+});
+
+describe('stateTransitionEffects clears waiting on into a closed category (2.4b)', () => {
+    const ALL: WorkflowStateCategory[] = ['BACKLOG', 'UNSTARTED', 'STARTED', 'DONE', 'CANCELLED'];
+    const pairs = ALL.flatMap((from) => ALL.map((to) => [from, to] as const));
+    it.each(pairs)('%s → %s', (from, to) => {
+        const effects = stateTransitionEffects(from, to, {}, NOW);
+        const closes = to === 'DONE' || to === 'CANCELLED';
+        expect('waitingOnUserId' in effects).toBe(closes);
+        if (closes) expect(effects.waitingOnUserId).toBeNull();
     });
 });

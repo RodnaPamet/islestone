@@ -28,6 +28,7 @@ import type { RecurrenceHold } from '@prisma/client';
 
 import { logEvent } from '../events/audit';
 import { resolveMemberContext } from '../context-system';
+import { MembershipRepository } from '../repositories/MembershipRepository';
 import { RecurrenceRepository, type RecurrenceRow } from '../repositories/RecurrenceRepository';
 import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import { mayCreateWorkItems } from '../policies/recurrence.policies';
@@ -119,6 +120,11 @@ async function makeOccurrenceInTx(db: PrismaTx, owner: RequestContext, rule: Rec
         source.startDate && source.dueDate
             ? dayKey(addDays(plan.make.on, -daysBetween(new Date(`${source.startDate}T00:00:00Z`), new Date(`${source.dueDate}T00:00:00Z`))))
             : null;
+    // Waiting on (2.4b, owner decision 106): the copy takes its source's,
+    // while that person is an active member; otherwise none, named in `skipped`.
+    const waiting = source.waitingOnUserId;
+    const waitingActive = waiting ? (await MembershipRepository.listActiveUserIds(db, owner, [waiting])).has(waiting) : false;
+    const skipped = waiting && !waitingActive ? [...projected.skipped, `waitingOn:${waiting}`] : projected.skipped;
     const item = await createWorkItemInTx(
         db,
         owner,
@@ -134,6 +140,7 @@ async function makeOccurrenceInTx(db: PrismaTx, owner: RequestContext, rule: Rec
             startDate,
             milestoneId: projected.milestoneId,
             customFields: projected.customFields,
+            waitingOnUserId: waitingActive ? waiting : null,
         },
         {
             recurrenceId: rule.id,
@@ -142,7 +149,7 @@ async function makeOccurrenceInTx(db: PrismaTx, owner: RequestContext, rule: Rec
             metadata: {
                 recurrenceId: rule.id,
                 occurrenceOn,
-                ...(projected.skipped.length ? { skipped: [...projected.skipped] } : {}),
+                ...(skipped.length ? { skipped: [...skipped] } : {}),
                 ...(plan.skipped ? { skippedOccurrences: plan.skipped } : {}),
             },
         },
