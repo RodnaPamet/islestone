@@ -37,6 +37,7 @@ import { addDays, dayKey, daysBetween } from '../domain/cycle';
 import { numberOf, planDue, RECURRENCE_LIMITS } from '../domain/recurrence';
 import { templateToCreateInput } from '../domain/work-item-template';
 import { createWorkItemInTx, emitCreatedItemBells } from './work-item';
+import { isFieldSetRefusal } from './field-set';
 import { peopleNamedBy, templateUseContextInTx } from './work-item-template';
 import { ruleOf } from './recurrence';
 import { toWorkItemDto } from './work-item-shared';
@@ -143,6 +144,8 @@ async function makeOccurrenceInTx(db: PrismaTx, owner: RequestContext, rule: Rec
             waitingOnUserId: waitingActive ? waiting : null,
         },
         {
+            // Every value is the source's (2.4b-b, decision 111): a hidden one is skipped and named.
+            projected: 'all',
             recurrenceId: rule.id,
             occurrenceOn,
             subItems: projected.subItems,
@@ -174,7 +177,17 @@ export async function runRecurrenceRule(sys: RequestContext, rule: RecurrenceRow
     if (!owner) outcome = { kind: 'hold', reason: 'OWNER_NOT_ACTIVE' };
     else if (!mayCreateWorkItems(owner)) outcome = { kind: 'hold', reason: 'OWNER_NOT_PERMITTED' };
     // The copy's sub-items (up to 50) are made in the claim's transaction.
-    else outcome = await runInTenantContext(owner, (db) => makeOccurrenceInTx(db, owner, rule, today), { timeout: 20_000 });
+    else {
+        try {
+            outcome = await runInTenantContext(owner, (db) => makeOccurrenceInTx(db, owner, rule, today), { timeout: 20_000 });
+        } catch (err) {
+            // A copy that would break its type's field set holds the repeat with
+            // its reason (2.4b-b, decision 111) instead of failing every night;
+            // the claim rolled back with it, so a resume makes this occurrence.
+            if (!isFieldSetRefusal(err)) throw err;
+            outcome = { kind: 'hold', reason: 'FIELD_SET_UNMET' };
+        }
+    }
     if (outcome.kind === 'hold') await holdRule(sys, rule, outcome.reason);
     if (outcome.kind === 'created') await emitCreatedItemBells(outcome.owner, outcome.item);
     return outcome;

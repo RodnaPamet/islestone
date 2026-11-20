@@ -203,6 +203,11 @@ const CALLS: Call[] = [
     { file: 'src/app/api/t/[tenantSlug]/project-templates/[templateId]/route.ts', method: 'DELETE', path: () => '/project-templates/none', params: (i) => P(i, { templateId: 'none' }), write: true, key: 'admin.manage' },
     // Sub-phase 2.4b: waiting on.
     { file: `${W}/[workItemId]/waiting-on/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/waiting-on`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ userId: i.member }), write: true, key: 'work_items.edit' },
+    // Sub-phase 2.4b-b: field sets (OPTIONAL removes a rule, so the calls leave nothing behind).
+    { file: 'src/app/api/t/[tenantSlug]/work-item-types/[typeId]/fields/route.ts', method: 'GET', path: (i) => `/work-item-types/${i.type}/fields`, params: (i) => P(i, { typeId: i.type }), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/work-item-types/[typeId]/fields/route.ts', method: 'PUT', path: (i) => `/work-item-types/${i.type}/fields`, params: (i) => P(i, { typeId: i.type }), body: () => ({ field: 'dueDate', requirement: 'OPTIONAL' }), write: true, key: 'admin.manage' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/type-fields/route.ts', method: 'GET', path: (i) => `/projects/${i.project}/type-fields`, params: (i) => P(i, { projectId: i.project }), write: false, key: 'projects.view' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/type-fields/route.ts', method: 'PUT', path: (i) => `/projects/${i.project}/type-fields`, params: (i) => P(i, { projectId: i.project }), body: (i) => ({ typeId: i.type, customFieldId: i.field, requirement: 'OPTIONAL' }), write: true, key: 'projects.edit' },
     // Sub-phase 2.5b: milestones.
     { file: `${W}/[workItemId]/milestone/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/milestone`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ milestoneId: i.milestone }), write: true, key: 'work_items.edit' },
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/milestones/route.ts', method: 'GET', path: (i) => `/projects/${i.project}/milestones`, params: (i) => P(i, { projectId: i.project }), write: false, key: 'projects.view' },

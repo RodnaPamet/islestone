@@ -47,6 +47,7 @@ export const NOT_ITEM_ACTIVITY: ReadonlySet<string> = new Set([
     'WORK_ITEM_DUE',
     'WORK_ITEM_WATCH_UPDATE',
     'WORK_ITEM_WAITING_ON',
+    'WORK_ITEM_TYPE_FIELD_SET',
 ]);
 
 export function activityPhraseKey(action: string | undefined): string {

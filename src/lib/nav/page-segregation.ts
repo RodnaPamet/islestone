@@ -78,6 +78,8 @@ export const SUBPAGES: readonly string[] = [
     '/settings/teams',
     '/settings/teams/[teamId]',
     '/settings/work-item-types',
+    // Sub-phase 2.4b-b: a type's fields.
+    '/settings/work-item-types/[typeId]',
     '/settings/labels',
     '/settings/projects',
     // Sub-phase 2.5c.

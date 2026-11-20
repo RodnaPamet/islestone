@@ -39,6 +39,8 @@ import type { WorkItemRow } from '@/lib/work-items/types';
 import { PriorityBadge, StateBadge } from './badges';
 import { useListOrder } from './data/list-order';
 import { useProjectCustomFields } from './data/use-custom-fields';
+import { useFieldSet } from './data/use-field-sets';
+import { fieldSetGaps, isClosedCategory, isFieldEmpty, requirementOf, type FieldKey, type FieldValues } from '@/lib/work-items/field-sets';
 import { useWorkConfig } from './data/use-work-config';
 import { useWorkItem, useWorkItemCollab } from './data/use-work-item-collab';
 import { toRow, useWorkItemMutations } from './data/use-work-item-mutations';
@@ -60,15 +62,25 @@ export interface WorkItemDetailProps {
     onDeleted?: () => void;
 }
 
-function PropertyRow({ label, htmlFor, children }: { label: string; htmlFor?: string; children: ReactNode }) {
+function PropertyRow({ label, htmlFor, required, children }: { label: string; htmlFor?: string; required?: string; children: ReactNode }) {
+    // `required` is the screen-reader word for a field the type requires (2.4b-b).
+    const text = required ? (
+        <>
+            {label}
+            <span aria-hidden="true"> *</span>
+            <span className="sr-only"> ({required})</span>
+        </>
+    ) : (
+        label
+    );
     return (
         <div className="grid grid-cols-[7rem_1fr] items-center gap-2">
             {htmlFor ? (
                 <label htmlFor={htmlFor} className="text-xs text-content-muted">
-                    {label}
+                    {text}
                 </label>
             ) : (
-                <span className="text-xs text-content-muted">{label}</span>
+                <span className="text-xs text-content-muted">{text}</span>
             )}
             <div className="min-w-0">{children}</div>
         </div>
@@ -86,6 +98,36 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
     const collab = useWorkItemCollab(workItemId);
     const { data: item, error, isLoading } = useWorkItem(workItemId);
     const projectFields = useProjectCustomFields(item?.projectId);
+    // The type's field set (2.4b-b), from the server's rules: a hidden field
+    // with no value is not offered, a required one is marked, and an open
+    // item lists what it lacks.
+    const liveFieldIds = useMemo(
+        () => projectFields.filter((f) => !f.archived && f.projectId === item?.projectId).map((f) => f.id),
+        [projectFields, item?.projectId],
+    );
+    const fieldSet = useFieldSet(item?.typeId, item?.projectId, liveFieldIds);
+    const fieldValues = useMemo<FieldValues>(
+        () =>
+            item
+                ? {
+                      description: item.description,
+                      assigneeId: item.assigneeId,
+                      waitingOnUserId: item.waitingOnUserId ?? null,
+                      priority: item.priority,
+                      labelIds: item.labelIds,
+                      startDate: item.startDate,
+                      dueDate: item.dueDate,
+                      cycleId: item.cycleId ?? null,
+                      milestoneId: item.milestoneId ?? null,
+                      customFields: item.customFields ?? {},
+                  }
+                : {},
+        [item],
+    );
+    const offers = (key: FieldKey) => requirementOf(fieldSet, key) !== 'HIDDEN' || !isFieldEmpty(key, fieldValues);
+    const requiredMark = (key: FieldKey) => (requirementOf(fieldSet, key) === 'REQUIRED' ? t('fieldSet.required') : undefined);
+    const gaps = item && !isClosedCategory(item.stateCategory) ? fieldSetGaps(fieldSet, fieldValues) : [];
+    const fieldName = (key: FieldKey) => (key.startsWith('cf:') ? (projectFields.find((f) => f.id === key.slice(3))?.name ?? key) : t(`fieldSet.field.${key}`));
     const [tab, setTab] = useState<DetailTab>('overview');
     const now = useHydratedNow();
     const order = useListOrder(tenantSlug);
@@ -161,78 +203,104 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                     onChange={(stateId) => void mutations.setState(row, stateId)}
                 />
             </PropertyRow>
-            <PropertyRow label={t('fields.assignee')} htmlFor={`assignee-${item.id}`}>
-                <AssigneePicker
-                    id={`assignee-${item.id}`}
-                    value={item.assigneeId}
-                    disabled={!perms.assign}
-                    onChange={(assigneeId) => void mutations.assign(row, assigneeId)}
-                />
-            </PropertyRow>
-            <PropertyRow label={t('fields.waitingOn')} htmlFor={item.stateCategory === 'DONE' || item.stateCategory === 'CANCELLED' ? undefined : `waiting-on-${item.id}`}>
-                {item.stateCategory === 'DONE' || item.stateCategory === 'CANCELLED' ? (
-                    <span className="text-content-muted">
-                        {t('detail.waitingOnClosed')}
-                    </span>
-                ) : (
-                    <WaitingOnPicker
-                        id={`waiting-on-${item.id}`}
-                        value={item.waitingOnUserId ?? null}
-                        disabled={!perms.edit}
-                        onChange={(userId) => void mutations.setWaitingOn(row, userId)}
+            {offers('assignee') && (
+                <PropertyRow label={t('fields.assignee')} required={requiredMark('assignee')} htmlFor={`assignee-${item.id}`}>
+                    <AssigneePicker
+                        id={`assignee-${item.id}`}
+                        value={item.assigneeId}
+                        disabled={!perms.assign}
+                        onChange={(assigneeId) => void mutations.assign(row, assigneeId)}
                     />
-                )}
-            </PropertyRow>
-            <PropertyRow label={t('fields.priority')} htmlFor={`priority-${item.id}`}>
-                <PriorityPicker
-                    id={`priority-${item.id}`}
-                    value={item.priority}
-                    disabled={!perms.edit}
-                    onChange={(priority) => void mutations.updateFields(row, { priority })}
-                />
-            </PropertyRow>
+                </PropertyRow>
+            )}
+            {offers('waitingOn') && (
+                <PropertyRow label={t('fields.waitingOn')} required={requiredMark('waitingOn')} htmlFor={item.stateCategory === 'DONE' || item.stateCategory === 'CANCELLED' ? undefined : `waiting-on-${item.id}`}>
+                    {item.stateCategory === 'DONE' || item.stateCategory === 'CANCELLED' ? (
+                        <span className="text-content-muted">
+                            {t('detail.waitingOnClosed')}
+                        </span>
+                    ) : (
+                        <WaitingOnPicker
+                            id={`waiting-on-${item.id}`}
+                            value={item.waitingOnUserId ?? null}
+                            disabled={!perms.edit}
+                            onChange={(userId) => void mutations.setWaitingOn(row, userId)}
+                        />
+                    )}
+                </PropertyRow>
+            )}
+            {offers('priority') && (
+                <PropertyRow label={t('fields.priority')} required={requiredMark('priority')} htmlFor={`priority-${item.id}`}>
+                    <PriorityPicker
+                        id={`priority-${item.id}`}
+                        value={item.priority}
+                        disabled={!perms.edit}
+                        onChange={(priority) => void mutations.updateFields(row, { priority })}
+                    />
+                </PropertyRow>
+            )}
             <PropertyRow label={t('fields.type')} htmlFor={`type-${item.id}`}>
                 <TypePicker id={`type-${item.id}`} value={item.typeId} disabled={!perms.edit} onChange={(typeId) => void mutations.updateFields(row, { typeId })} />
             </PropertyRow>
-            <PropertyRow label={t('fields.cycle')} htmlFor={`cycle-${item.id}`}>
-                <CyclePicker
-                    id={`cycle-${item.id}`}
-                    teamId={item.teamId}
-                    value={item.cycleId ?? null}
-                    disabled={!perms.edit}
-                    onChange={(cycleId) => void mutations.setCycle(row, cycleId)}
-                />
-            </PropertyRow>
-            <PropertyRow label={t('fields.milestone')} htmlFor={`milestone-${item.id}`}>
-                <MilestonePicker
-                    id={`milestone-${item.id}`}
-                    projectId={item.projectId}
-                    value={item.milestoneId ?? null}
-                    disabled={!perms.edit}
-                    onChange={(milestoneId) => void mutations.setMilestone(row, milestoneId)}
-                />
-            </PropertyRow>
+            {offers('cycle') && (
+                <PropertyRow label={t('fields.cycle')} required={requiredMark('cycle')} htmlFor={`cycle-${item.id}`}>
+                    <CyclePicker
+                        id={`cycle-${item.id}`}
+                        teamId={item.teamId}
+                        value={item.cycleId ?? null}
+                        disabled={!perms.edit}
+                        onChange={(cycleId) => void mutations.setCycle(row, cycleId)}
+                    />
+                </PropertyRow>
+            )}
+            {offers('milestone') && (
+                <PropertyRow label={t('fields.milestone')} required={requiredMark('milestone')} htmlFor={`milestone-${item.id}`}>
+                    <MilestonePicker
+                        id={`milestone-${item.id}`}
+                        projectId={item.projectId}
+                        value={item.milestoneId ?? null}
+                        disabled={!perms.edit}
+                        onChange={(milestoneId) => void mutations.setMilestone(row, milestoneId)}
+                    />
+                </PropertyRow>
+            )}
             <PropertyRow label={t('fields.repeat')}>
                 <RepeatControl itemId={item.id} hasDueDate={item.dueDate !== null} archived={Boolean(item.project.archivedAt)} />
             </PropertyRow>
-            <PropertyRow label={t('fields.labels')} htmlFor={`labels-${item.id}`}>
-                <LabelsPicker id={`labels-${item.id}`} teamId={item.teamId} value={item.labelIds} disabled={!perms.edit} onChange={changeLabels} />
-            </PropertyRow>
-            <PropertyRow label={t('fields.dueDate')} htmlFor={`due-${item.id}`}>
-                <DatePicker
-                    id={`due-${item.id}`}
-                    value={parseYMD(item.dueDate)}
-                    disabled={!perms.edit}
-                    clearable
-                    onChange={(d) => void mutations.updateFields(row, { dueDate: toYMD(d) })}
-                />
-            </PropertyRow>
+            {offers('labels') && (
+                <PropertyRow label={t('fields.labels')} required={requiredMark('labels')} htmlFor={`labels-${item.id}`}>
+                    <LabelsPicker id={`labels-${item.id}`} teamId={item.teamId} value={item.labelIds} disabled={!perms.edit} onChange={changeLabels} />
+                </PropertyRow>
+            )}
+            {offers('dueDate') && (
+                <PropertyRow label={t('fields.dueDate')} required={requiredMark('dueDate')} htmlFor={`due-${item.id}`}>
+                    <DatePicker
+                        id={`due-${item.id}`}
+                        value={parseYMD(item.dueDate)}
+                        disabled={!perms.edit}
+                        clearable
+                        onChange={(d) => void mutations.updateFields(row, { dueDate: toYMD(d) })}
+                    />
+                </PropertyRow>
+            )}
             {overdue && <p className="text-xs text-content-error">{t('detail.overdue')}</p>}
+            {/* Sub-phase 2.4b-b: a start date the type requires, or one the item holds. */}
+            {(requiredMark('startDate') || item.startDate) && offers('startDate') && (
+                <PropertyRow label={t('fields.startDate')} htmlFor={`start-${item.id}`} required={requiredMark('startDate')}>
+                    <DatePicker
+                        id={`start-${item.id}`}
+                        value={parseYMD(item.startDate)}
+                        disabled={!perms.edit}
+                        clearable
+                        onChange={(d) => void mutations.updateFields(row, { startDate: toYMD(d) })}
+                    />
+                </PropertyRow>
+            )}
             {/* Sub-phase 2.4: the item's project's live custom fields. */}
             {projectFields
-                .filter((f) => !f.archived && f.projectId === item.projectId)
+                .filter((f) => !f.archived && f.projectId === item.projectId && offers(`cf:${f.id}`))
                 .map((field) => (
-                    <PropertyRow key={field.id} label={field.name} htmlFor={`cf-${field.id}-${item.id}`}>
+                    <PropertyRow key={field.id} label={field.name} htmlFor={`cf-${field.id}-${item.id}`} required={requiredMark(`cf:${field.id}`)}>
                         <CustomFieldInput
                             id={`cf-${field.id}-${item.id}`}
                             field={field}
@@ -242,6 +310,11 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                         />
                     </PropertyRow>
                 ))}
+            {gaps.length > 0 && (
+                <p className="text-xs text-content-warning" role="status">
+                    {t('fieldSet.missing', { fields: gaps.map(fieldName).join(', ') })}
+                </p>
+            )}
         </div>
     );
 
@@ -253,30 +326,32 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                     <div className="space-y-section">
                         {variant === 'sheet' && properties}
                         {perms.edit && <div className="space-y-tight">{titleEditor}</div>}
-                        <section aria-labelledby={`description-${item.id}`} className="space-y-tight">
-                            <h2 id={`description-${item.id}`} className="text-sm font-semibold text-content-emphasis">
-                                {t('fields.description')}
-                            </h2>
-                            {perms.edit ? (
-                                <>
-                                    <Textarea
-                                        aria-label={t('fields.description')}
-                                        value={description}
-                                        onChange={(e) => setDescription(e.target.value)}
-                                        rows={6}
-                                    />
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        text={t('detail.saveDescription')}
-                                        disabled={(item.description ?? '') === description}
-                                        onClick={saveDescription}
-                                    />
-                                </>
-                            ) : (
-                                <p className="whitespace-pre-wrap text-sm">{item.description || t('detail.noDescription')}</p>
-                            )}
-                        </section>
+                        {offers('description') && (
+                            <section aria-labelledby={`description-${item.id}`} className="space-y-tight">
+                                <h2 id={`description-${item.id}`} className="text-sm font-semibold text-content-emphasis">
+                                    {t('fields.description')}
+                                </h2>
+                                {perms.edit ? (
+                                    <>
+                                        <Textarea
+                                            aria-label={t('fields.description')}
+                                            value={description}
+                                            onChange={(e) => setDescription(e.target.value)}
+                                            rows={6}
+                                        />
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            text={t('detail.saveDescription')}
+                                            disabled={(item.description ?? '') === description}
+                                            onClick={saveDescription}
+                                        />
+                                    </>
+                                ) : (
+                                    <p className="whitespace-pre-wrap text-sm">{item.description || t('detail.noDescription')}</p>
+                                )}
+                            </section>
+                        )}
                         <WatchersPanel workItemId={item.id} />
                     </div>
                 );

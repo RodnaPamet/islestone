@@ -96,6 +96,9 @@ jest.mock('@/app-layer/repositories/MembershipRepository', () => ({
     },
 }));
 jest.mock('@/app-layer/repositories/LabelRepository', () => ({ LabelRepository: { attach: jest.fn(), getMany: jest.fn(async () => []) } }));
+// The field set (2.4b-b): no entries, no project fields.
+jest.mock('@/app-layer/repositories/FieldSetRepository', () => ({ FieldSetRepository: { listForTypesInProject: jest.fn(async () => []) } }));
+jest.mock('@/app-layer/repositories/CustomFieldRepository', () => ({ CustomFieldRepository: { listFields: jest.fn(async () => []) } }));
 jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
     LIST_ORDERS: { manual: { column: 'sortKey', direction: 'asc', kind: 'string' } },
     CommentRepository: {},

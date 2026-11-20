@@ -22,6 +22,7 @@
 import type { CustomFieldType } from '@prisma/client';
 
 import { logEvent } from '../events/audit';
+import { assertFieldWrite } from './field-set';
 import { CustomFieldRepository, type CustomFieldRow, type CustomFieldValueData } from '../repositories/CustomFieldRepository';
 import { MembershipRepository } from '../repositories/MembershipRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
@@ -436,6 +437,8 @@ export async function setWorkItemCustomFieldValue(
         const parsed = parseCustomFieldValue(field.type, sanitizedRaw(field.type, rawValue));
         const held = CUSTOM_FIELD_TYPE_SPECS[field.type].hasOptions ? await CustomFieldRepository.heldOptionIds(db, ctx, item.id, field.id) : new Set<string>();
         const rows = await valueRows(db, ctx, field, parsed, held);
+        // The type's field set (2.4b-b): a hidden field takes no value, a required one is not cleared on an open item.
+        await assertFieldWrite(db, ctx, item, { customFields: { [field.id]: rows.length > 0 ? 'set' : null } });
         // The version first: its WHERE is the version check (ADR 0002 §9).
         const count = await WorkItemRepository.updateVersioned(db, ctx, v, item.id, expectedVersion, {});
         if (count === 0) await throwWriteConflict(db, ctx, v, item.id);

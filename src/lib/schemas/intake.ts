@@ -79,6 +79,11 @@ export const AcceptIntakeRequestSchema = z
         assigneeId: Id.nullable().optional(),
         labelIds: z.array(Id).max(50).optional(),
         cycleId: Id.nullable().optional(),
+        /** The fields a type's field set may require (2.4b-b). */
+        milestoneId: Id.nullable().optional(),
+        waitingOnUserId: Id.nullable().optional(),
+        startDate: DateOnly.nullable().optional(),
+        dueDate: DateOnly.nullable().optional(),
         title: z.string().min(1).max(INTAKE_LIMITS.title).optional(),
         description: z.string().max(INTAKE_LIMITS.body * 2).nullable().optional(),
     })

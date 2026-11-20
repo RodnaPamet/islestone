@@ -20,6 +20,7 @@
 import type { CycleRollover, WorkflowStateCategory } from '@prisma/client';
 
 import { logEvent } from '../events/audit';
+import { assertFieldWrite } from './field-set';
 import { CycleRepository, BURN_UP_ITEM_CAP, type CycleRow, type CycleScheduleRow } from '../repositories/CycleRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
 import { TeamRepository } from '../repositories/TeamRepository';
@@ -508,6 +509,7 @@ export async function setWorkItemCycle(ctx: RequestContext, id: string, input: {
         const v = await visibleProjects(ctx, db);
         const item = await loadWritableItem(db, ctx, v, id);
         if (item.cycleId === input.cycleId) return { changed: false as const };
+        await assertFieldWrite(db, ctx, item, { cycleId: input.cycleId });
         const to = input.cycleId ? await assertCycleTakesItems(db, ctx, input.cycleId, item.teamId) : null;
         const count = await WorkItemRepository.updateVersioned(db, ctx, v, id, expectedVersion, { cycleId: to?.id ?? null });
         if (count === 0) await throwWriteConflict(db, ctx, v, id);

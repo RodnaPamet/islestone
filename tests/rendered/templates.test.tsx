@@ -115,6 +115,23 @@ describe("the project's item-templates manager", () => {
         expect(await axe(baseElement)).toHaveNoViolations();
     });
 
+    it("does not offer a field the chosen type's field set hides (2.4b-b)", async () => {
+        routes({ [`GET /projects/${PROJECT}/type-fields`]: { body: [] } });
+        const config = {
+            ...CONFIG,
+            fieldSetEntries: [
+                { typeId: TYPE, projectId: null, builtInField: 'priority', customFieldId: null, requirement: 'HIDDEN' as const },
+                { typeId: TYPE, projectId: null, builtInField: 'dueDate', customFieldId: null, requirement: 'HIDDEN' as const },
+            ],
+        };
+        renderWorkspace(manager(), { config });
+        const dialog = await screen.findByRole('dialog', { name: 'Item templates for Islands' });
+        expect(await within(dialog).findByLabelText(/^Work item title/)).toBeInTheDocument();
+        expect(within(dialog).queryByLabelText(/^Due in days/)).toBeNull();
+        expect(within(dialog).queryByText('Priority')).toBeNull();
+        expect(within(dialog).getByLabelText(/^Assignee/)).toBeInTheDocument();
+    });
+
     it('refuses a due offset that is not a whole number, without sending', async () => {
         const { calls } = routes();
         renderWorkspace(manager());

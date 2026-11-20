@@ -12,6 +12,7 @@
 import type { CustomFieldType, WorkflowStateCategory, WorkItemPriority } from '@prisma/client';
 
 import type { CustomFieldValueData } from './custom-fields';
+import type { FieldSetEntry } from './field-sets';
 
 export type { CustomFieldType, WorkflowStateCategory, WorkItemPriority };
 
@@ -155,6 +156,12 @@ export interface WorkItemViewConfig {
     cycles: ViewCycle[];
     /** The visible projects' milestones, in each project's order (2.5b). */
     milestones: ViewMilestone[];
+    /**
+     * Field-set rules (2.4b-b): every type's built-in rules, and the page's
+     * project's custom-field rules (none on a workspace-wide page). Evaluate
+     * them with `src/lib/work-items/field-sets.ts`, never by hand.
+     */
+    fieldSetEntries: FieldSetEntry[];
 }
 
 /** What the views menu offers its viewer (2.4), asked on the server. */
@@ -367,7 +374,7 @@ export interface ProjectTemplateSummary {
 }
 
 export type RecurrenceFrequencyName = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
-export type RecurrenceHoldName = 'OWNER_NOT_ACTIVE' | 'OWNER_NOT_PERMITTED' | 'SOURCE_DELETED' | 'PROJECT_ARCHIVED' | 'ENDED' | 'HELD_BY_MEMBER';
+export type RecurrenceHoldName = 'OWNER_NOT_ACTIVE' | 'OWNER_NOT_PERMITTED' | 'SOURCE_DELETED' | 'PROJECT_ARCHIVED' | 'ENDED' | 'HELD_BY_MEMBER' | 'FIELD_SET_UNMET';
 
 /** A repeat as `GET /work-items/:id/recurrence` returns it (2.5d). Dates are `YYYY-MM-DD`. */
 export interface RecurrenceData {

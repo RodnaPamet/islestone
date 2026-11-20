@@ -81,8 +81,8 @@ describe('enum member order — migrations vs prisma/schema', () => {
         // A parser that suddenly reads 3 migrations and 0 enums would satisfy
         // every `toEqual([])` in this file.
         expect(r.migrationsReplayed).toBeGreaterThanOrEqual(1);
-        expect(r.declared.length).toBe(23);
-        expect(r.reconstructed.size).toBe(23);
+        expect(r.declared.length).toBe(24);
+        expect(r.reconstructed.size).toBe(24);
         // The comparison actually reached every declared enum: nothing was
         // skipped into silence between parsing and comparing.
         const compared =

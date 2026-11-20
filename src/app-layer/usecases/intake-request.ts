@@ -458,6 +458,11 @@ export interface AcceptIntakeInput {
     assigneeId?: string | null;
     labelIds?: string[];
     cycleId?: string | null;
+    /** Fields a type's field set may require (2.4b-b): a milestone of the target project, who it waits on, dates. */
+    milestoneId?: string | null;
+    waitingOnUserId?: string | null;
+    startDate?: string | null;
+    dueDate?: string | null;
     /** Overrides the request's title or text for the item. */
     title?: string;
     description?: string | null;
@@ -506,9 +511,15 @@ export async function acceptIntakeRequest(ctx: RequestContext, id: string, input
                 assigneeId: input.assigneeId ?? null,
                 labelIds: input.labelIds,
                 cycleId: input.cycleId ?? null,
+                milestoneId: input.milestoneId ?? null,
+                waitingOnUserId: input.waitingOnUserId ?? null,
+                startDate: input.startDate ?? null,
+                dueDate: input.dueDate ?? null,
                 customFields: plan.customFields,
             },
-            { metadata: { intakeRequestId: r.id, intakeChannel: r.channel } },
+            // The answers mapped to fields were the requester's, not the triager's:
+            // a hidden one is skipped and named rather than refused (2.4b-b, decision 111).
+            { metadata: { intakeRequestId: r.id, intakeChannel: r.channel }, projected: 'customFields' },
         );
 
         await claim(db, ctx, r, 'accept', { decidedAt: new Date(), decidedByUserId: ctx.userId, workItemId: created.id, snoozedUntil: null, snoozedByUserId: null });

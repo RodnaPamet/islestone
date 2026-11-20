@@ -23,15 +23,79 @@ import { Textarea } from '@/components/ui/textarea';
 import { CUSTOM_FIELD_TYPES, CUSTOM_FIELD_TYPE_SPECS, type CustomFieldType } from '@/lib/work-items/custom-fields';
 
 import { useCustomFields, type ManagedField } from '../data/use-custom-fields';
+import { useProjectFieldSet } from '../data/use-field-sets';
+import { useWorkItemTypes } from '@/components/settings/settings-data';
+import { useToast } from '@/components/ui/hooks';
+import { ApiClientError } from '@/lib/data/api-client';
+import { FIELD_REQUIREMENTS, type FieldRequirementValue } from '@/lib/work-items/field-sets';
+
+/**
+ * A field's rule per work item type in this project (2.4b-b, decision 108):
+ * Required, Optional or Hidden, through `PUT /projects/:id/type-fields`.
+ */
+function FieldRules({ field, rules }: { field: ManagedField; rules: ReturnType<typeof useProjectFieldSet> }) {
+    const tRules = useTranslations('workItems.fieldSet');
+    const { data: types } = useWorkItemTypes();
+    const toast = useToast();
+    const [open, setOpen] = useState(false);
+    const options: ComboboxOption[] = FIELD_REQUIREMENTS.map((r) => ({ value: r, label: tRules(`requirement.${r}`) }));
+    const current = (typeId: string): FieldRequirementValue =>
+        rules.rules.find((r) => r.typeId === typeId && r.customFieldId === field.id)?.requirement ?? 'OPTIONAL';
+    const change = async (typeId: string, requirement: FieldRequirementValue) => {
+        if (requirement === current(typeId)) return;
+        try {
+            await rules.setRule(typeId, field.id, requirement);
+        } catch (err) {
+            toast.error(err instanceof ApiClientError && err.message ? err.message : tRules('failed'));
+        }
+    };
+    return (
+        <div className="space-y-tight pl-2">
+            <Button
+                variant="ghost"
+                size="sm"
+                text={tRules('rules')}
+                aria-expanded={open}
+                aria-label={tRules('rulesFor', { field: field.name })}
+                onClick={() => setOpen((v) => !v)}
+            />
+            {open && (
+                <div className="space-y-tight">
+                    <p className="text-xs text-content-muted">{tRules('rulesHint')}</p>
+                    <ul className="space-y-tight" aria-label={tRules('rulesFor', { field: field.name })}>
+                        {(types ?? [])
+                            .filter((ty) => !ty.archivedAt)
+                            .map((ty) => (
+                                <li key={ty.id} className="flex items-center gap-tight text-sm">
+                                    <span className="min-w-[8rem]">{ty.name}</span>
+                                    <Combobox
+                                        id={`cf-rule-${field.id}-${ty.id}`}
+                                        selected={options.find((o) => o.value === current(ty.id)) ?? null}
+                                        setSelected={(o) => o && void change(ty.id, o.value as FieldRequirementValue)}
+                                        options={options}
+                                        hideSearch
+                                        caret
+                                        buttonProps={{ 'aria-label': tRules('ruleFor', { field: field.name, type: ty.name }) }}
+                                    />
+                                </li>
+                            ))}
+                    </ul>
+                </div>
+            )}
+        </div>
+    );
+}
 
 function FieldRow({
     field,
     fields,
     api,
+    rules,
 }: {
     field: ManagedField;
     fields: ManagedField[];
     api: ReturnType<typeof useCustomFields>;
+    rules: ReturnType<typeof useProjectFieldSet>;
 }) {
     const tRow = useTranslations('workItems.customFields');
     const [name, setName] = useState(field.name);
@@ -65,6 +129,7 @@ function FieldRow({
                     onClick={() => void api.updateField(field.id, { archived: !field.archived })}
                 />
             </div>
+            {!field.archived && <FieldRules field={field} rules={rules} />}
             {CUSTOM_FIELD_TYPE_SPECS[field.type].hasOptions && !field.archived && (
                 <div className="space-y-tight pl-2">
                     <ul className="space-y-tight" aria-label={tRow('optionsOf', { name: field.name })}>
@@ -113,6 +178,7 @@ export function CustomFieldsManager({
 }) {
     const tManager = useTranslations('workItems.customFields');
     const api = useCustomFields(projectId, open);
+    const rules = useProjectFieldSet(open ? projectId : undefined);
     const [name, setName] = useState('');
     const [type, setType] = useState<CustomFieldType>('TEXT');
     const [options, setOptions] = useState('');
@@ -162,7 +228,7 @@ export function CustomFieldsManager({
                         ) : (
                             <ul className="space-y-default">
                                 {ordered.map((f) => (
-                                    <FieldRow key={f.id} field={f} fields={api.fields} api={api} />
+                                    <FieldRow key={f.id} field={f} fields={api.fields} api={api} rules={rules} />
                                 ))}
                             </ul>
                         )}

@@ -36,6 +36,7 @@ import {
 } from '../policies/work-item.policies';
 import { visibleProjects } from '../policies/project-visibility';
 import { assertLabelsUsable } from './work-item';
+import { assertFieldWrite } from './field-set';
 import { emitWatcherActivity, keyOf, loadVisibleItem, loadWritableItem } from './work-item-shared';
 import type { RequestContext } from '../types';
 import { appendAuditEntryOrQueue } from '@/lib/audit';
@@ -324,6 +325,8 @@ export async function addWorkItemLabels(ctx: RequestContext, workItemId: string,
         const v = await visibleProjects(ctx, db);
         const item = await loadWritableItem(db, ctx, v, workItemId);
         await assertLabelsUsable(db, ctx, ids, item.teamId);
+        // The type's field set (2.4b-b): hidden labels take none.
+        await assertFieldWrite(db, ctx, item, { labelIds: ids });
         const result = await LabelRepository.attach(db, ctx, workItemId, ids);
         if (result.count > 0) {
             await WorkItemRepository.bumpVersion(db, ctx, v, [workItemId]);
@@ -347,6 +350,9 @@ export async function removeWorkItemLabel(ctx: RequestContext, workItemId: strin
         const item = await loadWritableItem(db, ctx, v, workItemId);
         const result = await LabelRepository.detach(db, ctx, workItemId, [labelId]);
         if (result.count === 0) throw notFound('Label not on this work item');
+        // Required labels (2.4b-b): the last one of an open item stays (the throw undoes the detach).
+        const left = await LabelRepository.listForItem(db, ctx, workItemId);
+        if (left.length === 0) await assertFieldWrite(db, ctx, item, { labelIds: [] });
         await WorkItemRepository.bumpVersion(db, ctx, v, [workItemId]);
         await logEvent(db, ctx, {
             action: 'WORK_ITEM_LABELS_CHANGED',

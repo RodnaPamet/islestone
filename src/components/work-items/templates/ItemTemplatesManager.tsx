@@ -20,7 +20,9 @@ import { Modal } from '@/components/ui/modal';
 import { Textarea } from '@/components/ui/textarea';
 import type { WorkItemPriority, WorkItemTemplateData } from '@/lib/work-items/types';
 
+import { useFieldSet } from '../data/use-field-sets';
 import { useWorkConfig } from '../data/use-work-config';
+import { requirementOf, type FieldKey } from '@/lib/work-items/field-sets';
 import { useItemTemplateManager } from '../data/use-item-templates';
 import { AssigneePicker, LabelsPicker, PriorityPicker, TypePicker } from '../pickers';
 
@@ -71,6 +73,9 @@ export function ItemTemplatesManager({
     const [draft, setDraft] = useState<Draft>(() => draftOf(null, defaultTypeId));
     const [error, setError] = useState<string | null>(null);
     const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }));
+    // Field sets (2.4b-b): a field the chosen type hides is not offered; a template's value for it would be skipped at use.
+    const fieldSet = useFieldSet(draft.typeId || undefined, projectId, []);
+    const offered = (key: FieldKey) => requirementOf(fieldSet, key) !== 'HIDDEN';
 
     const startEdit = (t: WorkItemTemplateData | null) => {
         setEditing(t);
@@ -171,25 +176,35 @@ export function ItemTemplatesManager({
                         <FormField label={tManager('itemTitle')} required>
                             <Input id="tpl-title" value={draft.title} maxLength={500} onChange={(e) => set('title', e.target.value)} />
                         </FormField>
-                        <FormField label={tManager('itemDescription')}>
-                            <Textarea id="tpl-description" value={draft.description} rows={3} onChange={(e) => set('description', e.target.value)} />
-                        </FormField>
+                        {offered('description') && (
+                            <FormField label={tManager('itemDescription')}>
+                                <Textarea id="tpl-description" value={draft.description} rows={3} onChange={(e) => set('description', e.target.value)} />
+                            </FormField>
+                        )}
                         <div className="grid grid-cols-1 gap-default sm:grid-cols-2">
                             <FormField label={tManager('type')}>
                                 <TypePicker id="tpl-type" value={draft.typeId} onChange={(v) => set('typeId', v)} />
                             </FormField>
-                            <FormField label={tManager('priority')}>
-                                <PriorityPicker id="tpl-priority" value={draft.priority} onChange={(v) => set('priority', v)} />
-                            </FormField>
-                            <FormField label={tManager('assignee')}>
-                                <AssigneePicker id="tpl-assignee" value={draft.assigneeId} onChange={(v) => set('assigneeId', v)} />
-                            </FormField>
-                            <FormField label={tManager('labels')}>
-                                <LabelsPicker id="tpl-labels" teamId={teamId} value={draft.labelIds} onChange={(v) => set('labelIds', v)} />
-                            </FormField>
-                            <FormField label={tManager('dueInDays')} hint={tManager('dueInDaysHint')}>
-                                <Input id="tpl-due" inputMode="numeric" value={draft.dueInDays} maxLength={4} onChange={(e) => set('dueInDays', e.target.value)} />
-                            </FormField>
+                            {offered('priority') && (
+                                <FormField label={tManager('priority')}>
+                                    <PriorityPicker id="tpl-priority" value={draft.priority} onChange={(v) => set('priority', v)} />
+                                </FormField>
+                            )}
+                            {offered('assignee') && (
+                                <FormField label={tManager('assignee')}>
+                                    <AssigneePicker id="tpl-assignee" value={draft.assigneeId} onChange={(v) => set('assigneeId', v)} />
+                                </FormField>
+                            )}
+                            {offered('labels') && (
+                                <FormField label={tManager('labels')}>
+                                    <LabelsPicker id="tpl-labels" teamId={teamId} value={draft.labelIds} onChange={(v) => set('labelIds', v)} />
+                                </FormField>
+                            )}
+                            {offered('dueDate') && (
+                                <FormField label={tManager('dueInDays')} hint={tManager('dueInDaysHint')}>
+                                    <Input id="tpl-due" inputMode="numeric" value={draft.dueInDays} maxLength={4} onChange={(e) => set('dueInDays', e.target.value)} />
+                                </FormField>
+                            )}
                         </div>
                         <FormField label={tManager('subItems')} hint={tManager('subItemsHint')}>
                             <Textarea id="tpl-subitems" value={draft.subItems} rows={3} onChange={(e) => set('subItems', e.target.value)} />

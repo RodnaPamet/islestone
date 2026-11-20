@@ -108,6 +108,8 @@ import { assertMilestoneOfProject } from './milestone';
 import { loadUsableTemplate, peopleNamedBy, templateSource, templateUseContextInTx } from './work-item-template';
 import { templateToCreateInput, type TemplateOverrides, type TemplateProjection } from '../domain/work-item-template';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { isClosedCategory, type FieldKey, type FieldValues } from '@/lib/work-items/field-sets';
+import { assertFieldWrite, checkCreate, checkTypeChange, checkWrite, loadFieldSet, loadFieldSets, type LoadedFieldSet } from './field-set';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────
 
@@ -145,10 +147,6 @@ async function assertActiveMember(db: PrismaTx, ctx: RequestContext, userId: str
     if (!active.has(userId)) throw badRequest(`${who} must be an active member of this workspace.`);
 }
 
-/** A closed item waits on nobody (2.4b, ADR 0002 §14; the CHECK `WorkItem_waiting_on_open_only` backs it). */
-function isClosedCategory(category: WorkflowStateCategory): boolean {
-    return category === 'DONE' || category === 'CANCELLED';
-}
 
 function refuseWaitingOnClosed(): ConflictError {
     return new ConflictError('A closed work item waits on nobody. Reopen it first.', { reason: 'ITEM_CLOSED' });
@@ -433,6 +431,94 @@ export interface CreateInTxOptions {
     occurrenceOn?: string;
     /** Sub-items to make with the item when no template brings them (a repeat's copy of its source's). */
     subItems?: ReadonlyArray<{ title: string }>;
+    /**
+     * Which values came from a projection rather than from a person (2.4b-b,
+     * decision 111): a hidden field among them is skipped and named, not
+     * refused. `all` (a repeat's copy of its source) or `customFields` (an
+     * intake request's answers mapped to fields). A template's projected
+     * fields are known without it.
+     */
+    projected?: 'all' | 'customFields';
+}
+
+/** Does the create request name `key` itself (rather than take it from a template)? */
+function requestNames(input: CreateWorkItemInput, key: FieldKey): boolean {
+    if (key.startsWith('cf:')) return input.customFields !== undefined && Object.prototype.hasOwnProperty.call(input.customFields, key.slice(3));
+    switch (key) {
+        case 'description':
+            return input.description !== undefined;
+        case 'assignee':
+            return input.assigneeId !== undefined;
+        case 'waitingOn':
+            return input.waitingOnUserId !== undefined;
+        case 'priority':
+            return input.priority !== undefined;
+        case 'labels':
+            return input.labelIds !== undefined;
+        case 'startDate':
+            return input.startDate !== undefined;
+        case 'dueDate':
+            return input.dueDate !== undefined;
+        case 'cycle':
+            return input.cycleId !== undefined;
+        case 'milestone':
+            return input.milestoneId !== undefined;
+        default:
+            return true;
+    }
+}
+
+/**
+ * A bulk write's field-set check (2.4b-b, decision 109): every item against
+ * its own type's set in its own project, all or nothing, the refusal naming
+ * the item. One read per project of the batch.
+ */
+async function assertBulkFieldWrite(
+    db: PrismaTx,
+    ctx: RequestContext,
+    items: ReadonlyArray<{ number: number; typeId: string; projectId: string; stateCategory: WorkflowStateCategory; project: { keyPrefix: string } }>,
+    named: FieldValues,
+): Promise<void> {
+    const byProject = new Map<string, typeof items[number][]>();
+    for (const item of items) byProject.set(item.projectId, [...(byProject.get(item.projectId) ?? []), item]);
+    for (const [projectId, group] of byProject) {
+        // guardrail-allow: n+1 — one field-set read per project of the batch (at most BULK_MAX items).
+        const sets = await loadFieldSets(db, ctx, group.map((i) => i.typeId), projectId);
+        for (const item of group) checkWrite(sets.get(item.typeId)!, named, { open: !isClosedCategory(item.stateCategory), subject: keyOf(item) });
+    }
+}
+
+/** An existing item's values as the field set reads them (a type change checks them all). */
+function itemFieldValues(row: NonNullable<Awaited<ReturnType<typeof WorkItemRepository.getById>>>): FieldValues {
+    const dto = toWorkItemDto(row);
+    return {
+        description: row.description,
+        assigneeId: dto.assigneeId,
+        waitingOnUserId: dto.waitingOnUserId,
+        priority: dto.priority,
+        labelIds: dto.labelIds,
+        startDate: dto.startDate,
+        dueDate: dto.dueDate,
+        cycleId: dto.cycleId,
+        milestoneId: dto.milestoneId,
+        customFields: dto.customFields,
+    };
+}
+
+/** A create's values as the field set reads them. */
+function createValues(plan: CreateWorkItemInput): FieldValues {
+    return {
+        description: plan.description ?? null,
+        assigneeId: plan.assigneeId ?? null,
+        waitingOnUserId: plan.waitingOnUserId ?? null,
+        priority: plan.priority ?? 'NONE',
+        labelIds: plan.labelIds ?? [],
+        startDate: plan.startDate ?? null,
+        dueDate: plan.dueDate ?? null,
+        cycleId: plan.cycleId ?? null,
+        milestoneId: plan.milestoneId ?? null,
+        customFields: plan.customFields ?? {},
+    };
 }
 
 /**
@@ -484,8 +570,6 @@ export async function createWorkItemInTx(
     }
     const title = sanitizePlainText(plan.title ?? '').trim();
     if (!title) throw badRequest('A work item needs a title.');
-    const description = plan.description ? sanitizePlainText(plan.description) : null;
-    const labelIds = uniqueIds(plan.labelIds ?? []);
     if (!plan.typeId) throw badRequest('A work item needs a type.');
 
     const type = await WorkItemTypeRepository.getById(db, ctx, plan.typeId);
@@ -501,6 +585,33 @@ export async function createWorkItemInTx(
     if (!state) throw input.stateId ? notFound('Workflow state not found') : new ConflictError('The team has no default state.', { reason: 'NO_DEFAULT_STATE' });
     if (state.teamId !== project.teamId) throw badRequest(`${state.name} belongs to another team's workflow.`);
     if (state.archivedAt) throw badRequest(`${state.name} is archived and takes no work items.`);
+
+    // The type's field set (2.4b-b, decisions 109 to 111): a hidden value a
+    // template or a source brought is skipped and named; one the request
+    // named is refused; an open item fills every required field.
+    const fieldSet = await loadFieldSet(db, ctx, type.id, project.id);
+    const projected = (key: FieldKey): boolean =>
+        opts.projected === 'all' || (opts.projected === 'customFields' && key.startsWith('cf:')) || (fromTemplate !== null && !requestNames(input, key));
+    const checked = checkCreate(fieldSet, createValues(plan), { open: !isClosedCategory(state.category), projected });
+    if (checked.skipped.length > 0) {
+        const v2 = checked.values;
+        plan = {
+            ...plan,
+            description: v2.description ?? null,
+            assigneeId: v2.assigneeId ?? null,
+            waitingOnUserId: v2.waitingOnUserId ?? null,
+            priority: (v2.priority ?? 'NONE') as WorkItemPriority,
+            labelIds: [...(v2.labelIds ?? [])],
+            startDate: (v2.startDate as string | null | undefined) ?? null,
+            dueDate: (v2.dueDate as string | null | undefined) ?? null,
+            cycleId: v2.cycleId ?? null,
+            milestoneId: v2.milestoneId ?? null,
+            customFields: v2.customFields ?? {},
+        };
+    }
+    const fieldSkipped = checked.skipped;
+    const description = plan.description ? sanitizePlainText(plan.description) : null;
+    const labelIds = uniqueIds(plan.labelIds ?? []);
 
     if (plan.assigneeId) await assertActiveMember(db, ctx, plan.assigneeId);
     if (plan.waitingOnUserId) {
@@ -540,7 +651,7 @@ export async function createWorkItemInTx(
         recurrenceId: opts.recurrenceId ?? null,
         occurrenceOn: parseDateOnly(opts.occurrenceOn ?? null),
         sortKey,
-        startDate: parseDateOnly(input.startDate),
+        startDate: parseDateOnly(plan.startDate),
         dueDate: parseDateOnly(plan.dueDate),
         startedAt: effects.startedAt ?? null,
         completedAt: effects.completedAt ?? null,
@@ -566,13 +677,17 @@ export async function createWorkItemInTx(
             ...(row.waitingOnUserId ? { waitingOnUserId: row.waitingOnUserId } : {}),
             ...(customFieldIds.length ? { customFieldIds } : {}),
             ...(fromTemplate ? { templateId: input.templateId, ...(fromTemplate.skipped.length ? { templateSkipped: fromTemplate.skipped } : {}) } : {}),
+            ...(fieldSkipped.length ? { fieldSetSkipped: fieldSkipped } : {}),
         ...(opts.metadata ?? {}),
         },
     });
     // The template's sub-items, in its order, in this transaction.
+    // Each is checked against the type's field set like any create (decision 111).
+    const subSkipped: string[] = [];
     for (const sub of subItems) {
         // guardrail-allow: n+1 — a template's sub-items, at most TEMPLATE_LIMITS.subItems (50), each claiming its number in order.
-        await insertTemplateItemInTx(db, ctx, project, { parentId: row.id, typeId: type.id, title: sub.title, milestoneId: row.milestoneId, templateId: input.templateId ?? null });
+        const made = await insertTemplateItemInTx(db, ctx, project, { parentId: row.id, typeId: type.id, title: sub.title, milestoneId: row.milestoneId, templateId: input.templateId ?? null }, fieldSet);
+        subSkipped.push(...made.skipped);
     }
 
     await emitAutomationEvent(ctx, {
@@ -599,7 +714,8 @@ export async function createWorkItemInTx(
         await enqueueAssignedEmail(db, ctx, row.assigneeId, [{ id: row.id, title, key, typeName: type.name }]);
     }
     const withLabels = labelIds.length > 0 ? { ...row, labels: labelIds.map((labelId) => ({ labelId })) } : row;
-    const skipped = fromTemplate && fromTemplate.skipped.length > 0 ? { templateSkipped: fromTemplate.skipped } : {};
+    const allSkipped = [...new Set([...(fromTemplate?.skipped ?? []), ...fieldSkipped, ...subSkipped])];
+    const skipped = allSkipped.length > 0 ? { templateSkipped: allSkipped } : {};
     if (customFieldIds.length === 0) return { ...toWorkItemDto(withLabels), ...skipped };
     const reread = await WorkItemRepository.getById(db, ctx, v, row.id);
     return { ...toWorkItemDto({ ...withLabels, customFieldValues: reread?.customFieldValues ?? [] }), ...skipped };
@@ -651,9 +767,37 @@ export async function insertTemplateItemInTx(
         templateId: string | null;
         projectTemplateId?: string;
     },
+    /** The type's field set in the project, when the caller has read it (it reads it otherwise). */
+    fieldSet?: LoadedFieldSet,
 ) {
     const state = await TeamRepository.defaultState(db, ctx, project.teamId);
     if (!state) throw new ConflictError('The team has no default state.', { reason: 'NO_DEFAULT_STATE' });
+    // The type's field set (2.4b-b, decision 111): checked like any create;
+    // every value here came from a template, so a hidden one is skipped and named.
+    const checked = checkCreate(
+        fieldSet ?? (await loadFieldSet(db, ctx, sub.typeId, project.id)),
+        {
+            description: sub.description ?? null,
+            priority: sub.priority ?? 'NONE',
+            labelIds: sub.labelIds ?? [],
+            dueDate: sub.dueDate ?? null,
+            milestoneId: sub.milestoneId,
+            assigneeId: null,
+            waitingOnUserId: null,
+            startDate: null,
+            cycleId: null,
+            customFields: {},
+        },
+        { open: !isClosedCategory(state.category), projected: () => true, subject: `The item "${sanitizePlainText(sub.title).trim()}" a template makes` },
+    );
+    sub = {
+        ...sub,
+        description: checked.values.description ?? null,
+        priority: (checked.values.priority ?? 'NONE') as WorkItemPriority,
+        labelIds: checked.values.labelIds ?? [],
+        dueDate: (checked.values.dueDate as string | null | undefined) ?? null,
+        milestoneId: checked.values.milestoneId ?? null,
+    };
     const number = await ProjectRepository.claimNumber(db, ctx, project.id);
     const sortKey = await sortKeyForPosition(db, ctx, project.id, undefined);
     const effects = stateTransitionEffects('BACKLOG', state.category, {}, new Date());
@@ -694,6 +838,7 @@ export async function insertTemplateItemInTx(
             parentId: sub.parentId,
             ...(sub.templateId ? { templateId: sub.templateId } : {}),
             ...(sub.projectTemplateId ? { projectTemplateId: sub.projectTemplateId } : {}),
+            ...(checked.skipped.length ? { fieldSetSkipped: checked.skipped } : {}),
         },
     });
     await emitAutomationEvent(ctx, {
@@ -704,7 +849,7 @@ export async function insertTemplateItemInTx(
         stableKey: row.id,
         data: { key, title, projectId: project.id, teamId: project.teamId, typeId: sub.typeId, stateId: state.id, stateCategory: state.category, priority: row.priority, assigneeId: null, parentId: sub.parentId },
     });
-    return { row, key };
+    return { row, key, skipped: checked.skipped };
 }
 
 async function assertLabelsUsable(db: PrismaTx, ctx: RequestContext, labelIds: readonly string[], teamId: string) {
@@ -763,6 +908,20 @@ export async function updateWorkItem(ctx: RequestContext, id: string, input: Upd
         }
         const changedFields = Object.keys(patch);
         if (changedFields.length === 0) return { item: before, changedFields, dueChanged: false, startChanged: false };
+        // The field set (2.4b-b, decision 109): of the item's type, or of the
+        // new type, whose whole set the item must then fill.
+        const open = !isClosedCategory(before.stateCategory);
+        const named: FieldValues = {};
+        if (patch.description !== undefined) named.description = patch.description;
+        if (patch.priority !== undefined) named.priority = patch.priority;
+        if (patch.startDate !== undefined) named.startDate = patch.startDate;
+        if (patch.dueDate !== undefined) named.dueDate = patch.dueDate;
+        const fieldSet = await loadFieldSet(db, ctx, patch.typeId ?? before.typeId, before.projectId);
+        checkWrite(fieldSet, named, { open });
+        if (patch.typeId) {
+            const current = await WorkItemRepository.getById(db, ctx, v, id);
+            if (current) checkTypeChange(fieldSet, { ...itemFieldValues(current), ...named }, { open });
+        }
         const count = await WorkItemRepository.updateVersioned(db, ctx, v, id, expectedVersion, patch);
         if (count === 0) await throwWriteConflict(db, ctx, v, id);
         await logEvent(db, ctx, {
@@ -910,6 +1069,7 @@ export async function assignWorkItem(ctx: RequestContext, id: string, input: { a
         const v = await visibleProjects(ctx, db);
         const item = await loadWritableItem(db, ctx, v, id);
         if (item.assigneeId === input.assigneeId) return { item, changed: false, typeName: null as string | null };
+        await assertFieldWrite(db, ctx, item, { assigneeId: input.assigneeId });
         if (input.assigneeId) await assertActiveMember(db, ctx, input.assigneeId);
         const count = await WorkItemRepository.updateVersioned(db, ctx, v, id, expectedVersion, { assigneeId: input.assigneeId });
         if (count === 0) await throwWriteConflict(db, ctx, v, id);
@@ -961,6 +1121,7 @@ export async function setWorkItemWaitingOn(ctx: RequestContext, id: string, inpu
         const v = await visibleProjects(ctx, db);
         const item = await loadWritableItem(db, ctx, v, id);
         if (item.waitingOnUserId === input.userId) return { changed: false };
+        await assertFieldWrite(db, ctx, item, { waitingOnUserId: input.userId });
         if (input.userId) {
             if (isClosedCategory(item.stateCategory)) throw refuseWaitingOnClosed();
             await assertActiveMember(db, ctx, input.userId, 'The person it waits on');
@@ -1096,6 +1257,7 @@ export async function bulkAssignWorkItems(ctx: RequestContext, input: { workItem
         for (const item of items) assertProjectWritable(item.project);
         if (input.assigneeId) await assertActiveMember(db, ctx, input.assigneeId);
         const changed = items.filter((i) => i.assigneeId !== input.assigneeId);
+        await assertBulkFieldWrite(db, ctx, changed, { assigneeId: input.assigneeId });
         await WorkItemRepository.bulkUpdate(db, ctx, v, changed.map((i) => i.id), { assigneeId: input.assigneeId });
         for (const item of changed) {
             await logEvent(db, ctx, {
@@ -1188,6 +1350,7 @@ export async function bulkSetWorkItemDueDate(ctx: RequestContext, input: { workI
         const v = await visibleProjects(ctx, db);
         const items = await WorkItemRepository.listByIds(db, ctx, v, ids);
         for (const item of items) assertProjectWritable(item.project);
+        await assertBulkFieldWrite(db, ctx, items, { dueDate: input.dueDate });
         await WorkItemRepository.bulkUpdate(db, ctx, v, items.map((i) => i.id), { dueDate });
         for (const item of items) {
             await logEvent(db, ctx, {

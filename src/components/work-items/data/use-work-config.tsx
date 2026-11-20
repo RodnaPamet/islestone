@@ -30,7 +30,7 @@ export interface WorkConfigIndex extends WorkItemViewConfig {
     defaultStateOf: (teamId: string, category: WorkflowStateCategory) => ViewState | undefined;
 }
 
-const EMPTY: WorkItemViewConfig = { projects: [], teams: [], states: [], types: [], labels: [], customFields: [], cycles: [], milestones: [] };
+const EMPTY: WorkItemViewConfig = { projects: [], teams: [], states: [], types: [], labels: [], customFields: [], cycles: [], milestones: [], fieldSetEntries: [] };
 
 export function indexConfig(config: WorkItemViewConfig): WorkConfigIndex {
     const byTeam = new Map<string, ViewState[]>();

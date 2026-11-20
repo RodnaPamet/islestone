@@ -27,7 +27,7 @@ jest.mock('next/navigation', () => ({
 import { __resetPendingUndoToastsForTest } from '@/components/ui/hooks/use-toast-with-undo';
 import { WorkItemDetail } from '@/components/work-items/WorkItemDetail';
 
-import { detail, installFetch, MEMBERS, page, renderWorkspace, row } from '../helpers/work-items-harness';
+import { CONFIG, detail, installFetch, MEMBERS, page, renderWorkspace, row } from '../helpers/work-items-harness';
 
 const COMMENTS = {
     items: [
@@ -106,6 +106,33 @@ describe('waiting on (2.4b)', () => {
         renderDetail('page', 'MEMBER', 'u-ada');
         expect(await screen.findByText('A closed item waits on nobody.')).toBeInTheDocument();
         expect(screen.queryByLabelText('Waiting on')).toBeNull();
+    });
+});
+
+describe('the field set (2.4b-b)', () => {
+    const withEntries = {
+        ...CONFIG,
+        fieldSetEntries: [
+            { typeId: 'ty-feature', projectId: null, builtInField: 'dueDate', customFieldId: null, requirement: 'REQUIRED' as const },
+            { typeId: 'ty-feature', projectId: null, builtInField: 'priority', customFieldId: null, requirement: 'HIDDEN' as const },
+        ],
+    };
+
+    it('marks a required field, leaves out a hidden empty one, and lists what an open item lacks', async () => {
+        routes();
+        renderWorkspace(<WorkItemDetail workItemId="wi-1" variant="page" />, { role: 'MEMBER', userId: 'u-ada', config: withEntries });
+        expect(await screen.findByRole('heading', { name: 'Item 1' })).toBeInTheDocument();
+        expect(screen.getByLabelText(/Due date/)).toBeInTheDocument();
+        expect(screen.getByText('(required)', { exact: false })).toBeInTheDocument();
+        expect(screen.queryByLabelText('Priority')).toBeNull();
+        expect(screen.getByRole('status')).toHaveTextContent('Required fields not filled yet: Due date.');
+    });
+
+    it('a closed item lists nothing missing', async () => {
+        routes({ 'GET /work-items/wi-1': { body: detail(row(1, { stateId: 'st-done', stateCategory: 'DONE' })) } });
+        renderWorkspace(<WorkItemDetail workItemId="wi-1" variant="page" />, { role: 'MEMBER', userId: 'u-ada', config: withEntries });
+        expect(await screen.findByRole('heading', { name: 'Item 1' })).toBeInTheDocument();
+        expect(screen.queryByText(/Required fields not filled yet/)).toBeNull();
     });
 });
 

@@ -110,6 +110,14 @@ export const ProjectTemplateContentSchema = z
         items: z
             .array(z.object({ ...ContentItemBase, milestoneIndex: z.number().int().min(0).max(TEMPLATE_LIMITS.milestones - 1).nullable() }).strict())
             .max(TEMPLATE_LIMITS.items),
+        /**
+         * The project's custom-field rules (2.4b-b, owner decision 108), by
+         * type name and field name. Optional: content saved before has none.
+         */
+        fieldSetEntries: z
+            .array(z.object({ typeName: Name, fieldName: Name, requirement: z.enum(['REQUIRED', 'HIDDEN']) }).strict())
+            .max(TEMPLATE_LIMITS.fields * 20)
+            .optional(),
     })
     .strict()
     .superRefine((c, ctx) => {

@@ -239,4 +239,16 @@ enum RecurrenceHold {
   ENDED
   /// A person put it on hold.
   HELD_BY_MEMBER
+  /// The copy would break its type's field set (sub-phase 2.4b-b, owner
+  /// decision 111): a required field it cannot fill, or a hidden one.
+  FIELD_SET_UNMET
+}
+
+/// A field's rule in a work item type's field set (ADR 0002 §1, ADR 0006
+/// "Field set"; sub-phase 2.4b-b). With no rule a field is OPTIONAL, except
+/// the answer, which is HIDDEN.
+enum FieldRequirement {
+  REQUIRED
+  OPTIONAL
+  HIDDEN
 }

@@ -37,6 +37,11 @@ import { useWorkConfig } from './data/use-work-config';
 import { useWorkItemMutations } from './data/use-work-item-mutations';
 import { useItemTemplates } from './data/use-item-templates';
 import { AssigneePicker, CyclePicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker, WaitingOnPicker } from './pickers';
+import { useProjectCustomFields } from './data/use-custom-fields';
+import { useFieldSet } from './data/use-field-sets';
+import { CustomFieldInput } from './fields/CustomFieldInput';
+import type { CustomFieldValueData } from '@/lib/work-items/custom-fields';
+import { fieldSetGaps, requirementOf, type FieldKey } from '@/lib/work-items/field-sets';
 
 export interface NewWorkItemInitial {
     projectId?: string;
@@ -60,6 +65,10 @@ interface FormState {
     assigneeId: string | null;
     /** Who the new item waits on (2.4b); not sent into a closed state. */
     waitingOnUserId: string | null;
+    /** A start date, offered when the type requires it (2.4b-b). */
+    startDate: string | null;
+    /** The type's required custom fields (2.4b-b): field id → value. */
+    customFields: Record<string, CustomFieldValueData>;
     labelIds: string[];
     dueDate: string | null;
     cycleId: string | null;
@@ -105,6 +114,8 @@ export function NewWorkItemModal({
             priority: 'NONE',
             assigneeId: null,
             waitingOnUserId: null,
+            startDate: null,
+            customFields: {},
             labelIds: [],
             dueDate: null,
             cycleId: initial?.cycleId && config.cycleById.get(initial.cycleId)?.teamId === teamId ? initial.cycleId : null,
@@ -138,6 +149,15 @@ export function NewWorkItemModal({
     // A closed item waits on nobody (2.4b): the picker leaves, and its value is not sent.
     const stateCategory = config.stateById.get(form.stateId)?.category;
     const stateClosed = stateCategory === 'DONE' || stateCategory === 'CANCELLED';
+    // The type's field set (2.4b-b), from the server's rules: a hidden field
+    // is not offered, a required one is marked, and a create that leaves one
+    // empty is stopped here with the same check the server makes.
+    const projectFields = useProjectCustomFields(form.projectId || undefined);
+    const liveFields = useMemo(() => projectFields.filter((f) => !f.archived && f.projectId === form.projectId), [projectFields, form.projectId]);
+    const fieldSet = useFieldSet(form.typeId || undefined, form.projectId || undefined, liveFields.map((f) => f.id));
+    const offered = (key: FieldKey) => requirementOf(fieldSet, key) !== 'HIDDEN';
+    const isRequired = (key: FieldKey) => requirementOf(fieldSet, key) === 'REQUIRED';
+    const requiredFields = liveFields.filter((f) => isRequired(`cf:${f.id}`));
 
     const requestClose = () => {
         if (dirty && !submitting) setConfirmDiscard(true);
@@ -198,6 +218,25 @@ export function NewWorkItemModal({
             setError(t('new.titleRequired'));
             return;
         }
+        if (!stateClosed) {
+            const gaps = fieldSetGaps(fieldSet, {
+                description: form.description,
+                assigneeId: form.assigneeId,
+                waitingOnUserId: form.waitingOnUserId,
+                priority: form.priority,
+                labelIds: form.labelIds,
+                startDate: form.startDate,
+                dueDate: form.dueDate,
+                cycleId: form.cycleId,
+                milestoneId: form.milestoneId,
+                customFields: form.customFields,
+            });
+            if (gaps.length > 0) {
+                const name = (k: FieldKey) => (k.startsWith('cf:') ? (liveFields.find((f) => f.id === k.slice(3))?.name ?? k) : t(`fieldSet.field.${k}`));
+                setError(t('fieldSet.missingBeforeCreate', { fields: gaps.map(name).join(', ') }));
+                return;
+            }
+        }
         setSubmitting(true);
         setError(null);
         const full: Record<string, unknown> = {
@@ -211,6 +250,8 @@ export function NewWorkItemModal({
             ...(form.waitingOnUserId && !stateClosed ? { waitingOnUserId: form.waitingOnUserId } : {}),
             ...(form.labelIds.length ? { labelIds: form.labelIds } : {}),
             ...(form.dueDate ? { dueDate: form.dueDate } : {}),
+            ...(form.startDate && offered('startDate') ? { startDate: form.startDate } : {}),
+            ...(Object.keys(form.customFields).length ? { customFields: form.customFields } : {}),
             ...(form.cycleId ? { cycleId: form.cycleId } : {}),
             ...(form.milestoneId ? { milestoneId: form.milestoneId } : {}),
             ...(initial?.parentId ? { parentId: initial.parentId } : {}),
@@ -289,9 +330,11 @@ export function NewWorkItemModal({
                                     maxLength={500}
                                 />
                             </FormField>
-                            <FormField label={t('fields.description')}>
-                                <Textarea id="work-item-description-input" value={form.description} onChange={(e) => set('description', e.target.value)} rows={3} />
-                            </FormField>
+                            {offered('description') && (
+                                <FormField label={t('fields.description')} required={isRequired('description')}>
+                                    <Textarea id="work-item-description-input" value={form.description} onChange={(e) => set('description', e.target.value)} rows={3} />
+                                </FormField>
+                            )}
                             {!initial?.projectId && (
                                 <FormField label={t('fields.project')}>
                                     <Combobox
@@ -310,35 +353,68 @@ export function NewWorkItemModal({
                                 <FormField label={t('fields.state')}>
                                     <StatePicker id="work-item-state-input" teamId={teamId} value={form.stateId} onChange={(v) => set('stateId', v)} />
                                 </FormField>
-                                <FormField label={t('fields.priority')}>
-                                    <PriorityPicker id="work-item-priority-input" value={form.priority} onChange={(v) => set('priority', v)} />
-                                </FormField>
-                                <FormField label={t('fields.assignee')}>
-                                    <AssigneePicker id="work-item-assignee-input" value={form.assigneeId} onChange={(v) => set('assigneeId', v)} />
-                                </FormField>
-                                {!stateClosed && (
-                                    <FormField label={t('fields.waitingOn')}>
+                                {offered('priority') && (
+                                    <FormField label={t('fields.priority')} required={isRequired('priority')}>
+                                        <PriorityPicker id="work-item-priority-input" value={form.priority} onChange={(v) => set('priority', v)} />
+                                    </FormField>
+                                )}
+                                {offered('assignee') && (
+                                    <FormField label={t('fields.assignee')} required={isRequired('assignee')}>
+                                        <AssigneePicker id="work-item-assignee-input" value={form.assigneeId} onChange={(v) => set('assigneeId', v)} />
+                                    </FormField>
+                                )}
+                                {!stateClosed && offered('waitingOn') && (
+                                    <FormField label={t('fields.waitingOn')} required={isRequired('waitingOn')}>
                                         <WaitingOnPicker id="work-item-waiting-on-input" value={form.waitingOnUserId} onChange={(v) => set('waitingOnUserId', v)} />
                                     </FormField>
                                 )}
-                                <FormField label={t('fields.labels')}>
-                                    <LabelsPicker id="work-item-labels-input" teamId={teamId} value={form.labelIds} onChange={(v) => set('labelIds', v)} />
-                                </FormField>
-                                <FormField label={t('fields.dueDate')}>
-                                    <DatePicker
-                                        id="work-item-due-input"
-                                        value={parseYMD(form.dueDate)}
-                                        onChange={(d) => set('dueDate', toYMD(d))}
-                                        clearable
-                                    />
-                                </FormField>
-                                {config.openCyclesOfTeam(teamId).length > 0 && (
-                                    <FormField label={t('fields.cycle')}>
+                                {offered('labels') && (
+                                    <FormField label={t('fields.labels')} required={isRequired('labels')}>
+                                        <LabelsPicker id="work-item-labels-input" teamId={teamId} value={form.labelIds} onChange={(v) => set('labelIds', v)} />
+                                    </FormField>
+                                )}
+                                {offered('dueDate') && (
+                                    <FormField label={t('fields.dueDate')} required={isRequired('dueDate')}>
+                                        <DatePicker
+                                            id="work-item-due-input"
+                                            value={parseYMD(form.dueDate)}
+                                            onChange={(d) => set('dueDate', toYMD(d))}
+                                            clearable
+                                        />
+                                    </FormField>
+                                )}
+                                {isRequired('startDate') && (
+                                    <FormField label={t('fields.startDate')} required>
+                                        <DatePicker
+                                            id="work-item-start-input"
+                                            value={parseYMD(form.startDate)}
+                                            onChange={(d) => set('startDate', toYMD(d))}
+                                            clearable
+                                        />
+                                    </FormField>
+                                )}
+                                {config.openCyclesOfTeam(teamId).length > 0 && offered('cycle') && (
+                                    <FormField label={t('fields.cycle')} required={isRequired('cycle')}>
                                         <CyclePicker id="work-item-cycle-input" teamId={teamId} value={form.cycleId} onChange={(v) => set('cycleId', v)} />
                                     </FormField>
                                 )}
-                                {config.milestonesOfProject(form.projectId).length > 0 && (
-                                    <FormField label={t('fields.milestone')}>
+                                {requiredFields.map((field) => (
+                                    <FormField key={field.id} label={field.name} required>
+                                        <CustomFieldInput
+                                            id={`work-item-cf-${field.id}-input`}
+                                            field={field}
+                                            value={form.customFields[field.id]}
+                                            onChange={(value) => {
+                                                const next = { ...form.customFields };
+                                                if (value === null || value === false || value === '' || (Array.isArray(value) && value.length === 0)) delete next[field.id];
+                                                else next[field.id] = value;
+                                                set('customFields', next);
+                                            }}
+                                        />
+                                    </FormField>
+                                ))}
+                                {config.milestonesOfProject(form.projectId).length > 0 && offered('milestone') && (
+                                    <FormField label={t('fields.milestone')} required={isRequired('milestone')}>
                                         <MilestonePicker
                                             id="work-item-milestone-input"
                                             projectId={form.projectId}
