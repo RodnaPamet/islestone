@@ -180,6 +180,36 @@ Counts (`GET /cycles`, `GET /cycles/:id`) and the burn-up (`GET /cycles/:id/burn
 - **A cycle** (`/cycles/<id>`): the stats, the burn-up (`BurnUpChart`, the shared `@inflect/ui` time-series chart, with a table of the same points behind "Show as table"), and the cycle's items in the shared list and board (`WorkItemsView` scoped to the cycle; a new item there joins the cycle).
 - **The detail** has a Cycle picker (the team's cycles that take items, and "No cycle").
 
+## Milestones (2.5b)
+
+Built by [`docs/porting/maps/2.5.md`](porting/maps/2.5.md) under owner decisions 62 and 72 (`docs/HANDOFF.md`) and ADR 0006 ("Milestone"; its date is the due date, because the ADR bans "Target"). Nothing was copied (`PROVENANCE.md`).
+
+### The table
+
+| Table | Holds | Notes |
+|---|---|---|
+| `Milestone` | A project's dated group: `name` (unique in the project, plaintext, sanitised, at most 100 characters), optional `dueDate` (date-only), `sortKey` (the project's milestone order, a fractional index, `COLLATE "C"`) | Belongs to one project and goes with it (cascade). No stored status: progress and "late" are derived. |
+
+`WorkItem.milestoneId` references `Milestone(id, projectId, tenantId)`: an item can only be aimed at a milestone of its own project. A move to another project clears it in the same `UPDATE` (`moveWorkItemToProject`). The foreign key is `NO ACTION`: deleting a milestone an item still names is refused, so the delete usecase clears the items first, while a workspace's or project's cascading delete, which removes items and milestones in one statement, passes. The transition trigger now also records a change of milestone (`WorkItemTransition.milestoneId`), for 3.6's analytics. Migration `20261122120000_milestones`, with its catalogue test (`tests/integration/milestones.test.ts`).
+
+### Writes and who may make them
+
+- **Keys** (decision 72, no new key): `projects.view` reads a project's milestones and their progress; `projects.edit` creates, renames, re-dates, reorders and deletes them (Members hold it). Aiming an item at a milestone is `work_items.edit`. The pages offer what `milestoneAffordances` returns (`milestone.policies.ts`, the predicates the usecases assert), asked on the server. An archived project's milestones are read-only (409 `PROJECT_ARCHIVED`).
+- **Milestones:** `GET`/`POST /projects/:projectId/milestones`, `PATCH`/`DELETE /projects/:projectId/milestones/:milestoneId`. A new one is appended to the project's order; `PATCH` takes `name`, `dueDate` (`null` clears it) and `position { afterId | beforeId }`, computed under the project's row lock. A name taken in the project is a 409 `MILESTONE_NAME_TAKEN`. Deleting one takes it off every item that names it (deleted items too; each version increased, each audited `WORK_ITEM_MILESTONE_CHANGED`), then deletes it. Each write is audited (`MILESTONE_CREATED`, `MILESTONE_UPDATED`, `MILESTONE_DELETED`).
+- **An item's milestone:** `PUT /work-items/:id/milestone { milestoneId }` (`null` clears it), or `milestoneId` on a create. A single-field change: `If-Match` optional, the version increases, a stale version is a 409 with the current row. Another project's milestone is a 400. Audited `WORK_ITEM_MILESTONE_CHANGED` (from, to), shown in the item's Activity; watchers are told.
+- **The cycle rollover never touches milestones.**
+
+### Progress
+
+Progress (`listMilestones`, `getMilestone`) counts live items in projects the caller can see (an archived project's included, so its milestones keep their numbers): scope is every such item not cancelled, done the ones in a Done state. A milestone is **late** when its due date is before today (in `NOTIFICATIONS_TZ`) and open items remain; one whose items are all done shows as complete.
+
+### The pages and the views
+
+- **A project's milestones** (`/projects/<prefix>/milestones`, a subpage of the project, linked from its header): each milestone in order with its due date, a "late" or "complete" mark and a progress bar (done of scope); for a viewer offered `manageMilestones`, "Milestone" (create), and per row Move up, Move down, Edit (name and due date) and Delete through the undo toast.
+- **A milestone** (`/projects/<prefix>/milestones/<id>`): its due date, scope, done and percentage, and its items in the shared list and board (`WorkItemsView` scoped to the project and the milestone; a new item there is aimed at it).
+- **Items:** the detail and the create dialog have a Milestone picker (the project's milestones, and "No milestone"); the list a Milestone column (from the column gear) and a Milestone filter (`milestoneId`: ids and `none`, `docs/pagination.md`; on the Work items page the options name each milestone's project); the board groups lanes by milestone, and a drop into another milestone's lane sets it on a board of one project (on a board of several, milestone lanes take no drops, since a milestone is one project's).
+- Saved views store the milestone filter and lanes, as they store the cycle ones (both were refused by the saved-view schema before 2.5b; `BUILT_IN_LANES` in `src/lib/work-items/list-sorts.ts` is now the one list the board and the schema read).
+
 ## Settings (decision 55)
 
 A workspace admin configures work without the API on the Settings pages (`src/app/t/[tenantSlug]/(app)/settings/`, components in `src/components/settings/`), built on 2.2's routes with no new route or usecase:
