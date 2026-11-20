@@ -93,6 +93,9 @@ enum NotificationType {
   /// Sub-phase 2.4b: someone named you as the person a work item waits on
   /// (owner decision 105).
   WORK_ITEM_WAITING_ON
+  /// Sub-phase 2.7d: someone mentioned you in a comment or a description
+  /// (owner decisions 127 to 130).
+  WORK_ITEM_MENTIONED
 }
 
 /// The kind of an outbound email in `NotificationOutbox` (sub-phase 1.6).
@@ -122,6 +125,9 @@ enum EmailNotificationType {
   /// Sub-phase 2.7c: the one daily email with the day's notifications and due
   /// work items (owner decision 133). Replaces `DUE_DIGEST`.
   NOTIFICATION_DIGEST
+  /// Sub-phase 2.7d: someone mentioned you, mailed at once when your
+  /// preference says so (owner decisions 128 and 130; the default).
+  WORK_ITEM_MENTIONED
 }
 
 /// A member's email choice for one notification type (sub-phase 2.7c, owner

@@ -796,6 +796,7 @@
             "subItemOf": "Sub-item of",
             "deleteItem": "Delete work item",
             "saveDescription": "Save description",
+            "editDescription": "Edit description",
             "noDescription": "No description.",
             "unassigned": "Unassigned",
             "waitingOnNobody": "Nobody",
@@ -878,7 +879,14 @@
             "milestoneChanged": "changed the milestone",
             "waitingOnChanged": "changed who the item waits on",
             "answerMarked": "marked an answer",
-            "answerCleared": "cleared the answer"
+            "answerCleared": "cleared the answer",
+            "mentioned": "mentioned someone",
+            "mentionsRemoved": "removed a mention"
+        },
+        "mentions": {
+            "hint": "Type @ to mention a member.",
+            "pickerLabel": "Mention a member",
+            "formerMember": "a former member"
         },
         "subItems": {
             "title": "Sub-items",
@@ -1924,6 +1932,7 @@
             "GENERAL": "General",
             "WORK_ITEM_ASSIGNED": "Assigned to you",
             "WORK_ITEM_WAITING_ON": "Waiting on you",
+            "WORK_ITEM_MENTIONED": "Mentions",
             "WORK_ITEM_WATCH_UPDATE": "Watched work items",
             "WORK_ITEM_DUE": "Due dates",
             "INTAKE_REQUEST_RECEIVED": "New intake requests",
@@ -1986,7 +1995,7 @@
             "BELL_OFF": "The daily digest lists this kind from your Inbox, so it needs the Inbox and bell on."
         },
         "digestHelp": "The daily digest arrives at 08:10 with your work items due soon and the day's unread notifications you chose to receive daily. It never quotes descriptions or comments.",
-        "immediateHelp": "Email at once is offered for work assigned to you and work waiting on you.",
+        "immediateHelp": "Email at once is offered for work assigned to you, work waiting on you, and mentions.",
         "saved": "Preferences saved",
         "failed": "Your preferences could not be saved. Try again.",
         "loadFailed": "Your preferences could not be loaded. Try again.",

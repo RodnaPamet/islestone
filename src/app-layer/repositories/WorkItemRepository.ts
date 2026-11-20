@@ -1522,6 +1522,26 @@ export class WorkItemWatcherRepository {
         return db.workItemWatcher.createMany({ data: [{ tenantId: ctx.tenantId, workItemId, userId }], skipDuplicates: true });
     }
 
+    /**
+     * Add several watchers at once and say which of them were not watching
+     * before (2.7d: the people a mention adds), for one audit entry each.
+     */
+    static async addMany(db: PrismaTx, ctx: RequestContext, workItemId: string, userIds: readonly string[]): Promise<string[]> {
+        const ids = [...new Set(userIds)];
+        if (ids.length === 0) return [];
+        const already = await db.workItemWatcher.findMany({
+            where: { tenantId: ctx.tenantId, workItemId, userId: { in: ids } },
+            take: ids.length,
+            select: { userId: true },
+        });
+        const watching = new Set(already.map((w) => w.userId));
+        const added = ids.filter((id) => !watching.has(id));
+        if (added.length > 0) {
+            await db.workItemWatcher.createMany({ data: added.map((userId) => ({ tenantId: ctx.tenantId, workItemId, userId })), skipDuplicates: true });
+        }
+        return added;
+    }
+
     static async remove(db: PrismaTx, ctx: RequestContext, workItemId: string, userId: string) {
         return db.workItemWatcher.deleteMany({ where: { tenantId: ctx.tenantId, workItemId, userId } });
     }

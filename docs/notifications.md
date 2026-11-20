@@ -17,6 +17,8 @@ reminders arrived in 2.2; the bell UI came with the application shell in 1.7
 Inbox, per-member preferences, the waiting-on email, the daily digest that
 replaced 1.6's unwired due digest, retention and Settings → Notifications
 (see "The Inbox", "Preferences", "The daily digest" and "Retention" below).
+Sub-phase 2.7d (owner decisions 127 to 130) added the mention bell and email
+(see "Mentions" below).
 
 ## Tables
 
@@ -28,7 +30,7 @@ a two-workspace test (`tests/integration/notification-tables-isolation.test.ts`;
 | Table | What | `app_user` |
 |---|---|---|
 | `Notification` | One bell row: `type`, `title`, `body`, `linkUrl`, `read`, a unique `dedupeKey`; since 2.7c `readAt`, `archivedAt` (the Inbox's Done) and `workItemId` (`(workItemId, tenantId)` → `WorkItem`, `ON DELETE SET NULL ("workItemId")`: a purged item leaves the row and its link). | SELECT, INSERT, UPDATE, DELETE |
-| `NotificationPreference` | 2.7c: one row per member and type (`@@id([tenantId, userId, type])`): `inApp`, `emailDelivery` (`OFF`, `IMMEDIATE`, `DAILY`; a CHECK allows `IMMEDIATE` only for `WORK_ITEM_ASSIGNED` and `WORK_ITEM_WAITING_ON`). `(tenantId, userId)` → `TenantMembership`, cascade: a removed member's rows go. No row is the type's default. | SELECT, INSERT, UPDATE, DELETE |
+| `NotificationPreference` | 2.7c: one row per member and type (`@@id([tenantId, userId, type])`): `inApp`, `emailDelivery` (`OFF`, `IMMEDIATE`, `DAILY`; a CHECK allows `IMMEDIATE` only for `WORK_ITEM_ASSIGNED`, `WORK_ITEM_WAITING_ON` and, since 2.7d, `WORK_ITEM_MENTIONED`). `(tenantId, userId)` → `TenantMembership`, cascade: a removed member's rows go. No row is the type's default. | SELECT, INSERT, UPDATE, DELETE |
 | `NotificationOutbox` | One email: recipient, subject, text and HTML body, `status` (`PENDING` / `SENT` / `FAILED`), `attempts`, `sendAfter`, `lastError`, a unique `dedupeKey`. | SELECT, INSERT, UPDATE |
 | `TenantNotificationSettings` | Per workspace: email on or off, sender name and address, a BCC mailbox, the muted bell types. | SELECT, INSERT, UPDATE |
 
@@ -45,13 +47,14 @@ in identifiers), and the settings' BCC column is `bccMailbox`, inflect's
 
 ## The bell
 
-Four writers, all in `src/app-layer/notifications/`:
+Five writers, all in `src/app-layer/notifications/`:
 
 | Writer | Type | Dedupe key |
 |---|---|---|
 | `createAssignmentNotification` (`assignment.ts`) | `WORK_ITEM_ASSIGNED`; `WORK_ITEM_WAITING_ON` (2.4b: the person an item now waits on, unless they named themselves) | `tenant:TYPE:item:user:YYYY-MM-DD` |
 | `createWatcherNotifications` (`watcher.ts`) | `WORK_ITEM_WATCH_UPDATE` | per watcher, item, kind, discriminator and day |
 | `createWorkItemDueNotification(s)` (`work-item-due.ts`, 2.2) | `WORK_ITEM_DUE` | `tenant:WORK_ITEM_DUE:window:item:user:YYYY-MM-DD` (the run day in `NOTIFICATIONS_TZ`) |
+| `createMentionNotifications` (`mention.ts`, 2.7d) | `WORK_ITEM_MENTIONED` (a person newly mentioned in a comment or a description, never the author) | `tenant:WORK_ITEM_MENTIONED:item:<commentId or description>:user:YYYY-MM-DD` |
 | `createIntakeNotifications` (`intake.ts`, 2.6a) | `INTAKE_REQUEST_RECEIVED` (the project's notify list, never the sender), `INTAKE_REQUEST_WOKEN` (whoever snoozed it) | `tenant:TYPE:request:user` (WOKEN also per wake day); recipients re-checked for `intake.view` ([docs/intake.md](intake.md)) |
 
 Each one, in order:
@@ -134,6 +137,8 @@ plain-text twin (`templates.ts`, `email/`):
 - `WORK_ITEM_WAITING_ON` (2.7c): the person an item now waits on, and who
   set it.
 - `NOTIFICATION_DIGEST` (2.7c): the daily digest (see "The daily digest").
+- `WORK_ITEM_MENTIONED` (2.7d): who mentioned the person, on which item, with
+  a link; never the text (see "Mentions").
 
 `DUE_DIGEST` is retired (2.7c, owner decision 133): it never had a caller, its
 dispatcher and template are gone, and its payload type is `never`, so nothing
@@ -141,9 +146,11 @@ can enqueue one. The enum value stays because Postgres cannot drop it.
 
 The immediate emails ask the member's preference first (`emailDeliveryFor`,
 the same resolution as the bell's): `enqueueAssignedEmail` (inside the
-assigning transaction) and the waiting-on email (in the waiting-on bell's
-short transaction after the commit) are written only while the choice, under
-the workspace's email switch, is `IMMEDIATE` (the default for both). A DAILY
+assigning transaction), the waiting-on email (in the waiting-on bell's
+short transaction after the commit) and the mention email (in the mention
+bell's, 2.7d, one batch read for its recipients through `memberDeliveries`)
+are written only while the choice, under the workspace's email switch, is
+`IMMEDIATE` (the default for all three). A DAILY
 choice leaves the bell row to the digest.
 
 Every link goes through `appLink` (`app-link.ts`), absolute against
@@ -276,10 +283,10 @@ rules, `src/lib/notifications/preferences.ts`:
 - `PREFERENCE_TYPES`: the types a bell writer emits (held equal to
   `listInAppNotificationTypes`); `GENERAL` has no row.
 - `PREFERENCE_DEFAULTS`, exhaustive over `NotificationType`: the bell on for
-  every type; email `IMMEDIATE` for assigned and waiting on, `DAILY` for due
-  dates and watched items, `OFF` for intake.
-- `IMMEDIATE_EMAIL_TYPES`: assigned and waiting on (mentions join in 2.7d;
-  the migration's CHECK holds the same list).
+  every type; email `IMMEDIATE` for assigned, waiting on and mentions,
+  `DAILY` for due dates and watched items, `OFF` for intake.
+- `IMMEDIATE_EMAIL_TYPES`: assigned, waiting on and, since 2.7d, mentioned
+  (the CHECK, widened in `20261205120200_mentions`, holds the same list).
 - `resolveDelivery`: the member's row (or the default) under the workspace's
   `TenantNotificationSettings`, the ceiling: a type the workspace muted rings
   nobody, and with its email switch off nobody is mailed. A member's choice
@@ -322,6 +329,30 @@ the rest. The email carries keys, titles, due dates and the bell rows' stored
 copy, never a description or a comment. It is deduplicated per workspace,
 address and day (`enqueueEmail`), so a retry mails nobody twice
 (`tests/integration/notification-digest.test.ts`).
+
+## Mentions (2.7d)
+
+Owner decisions 128 and 130 ([docs/work-items.md](work-items.md), "Mentions
+(2.7d)"). A person's own comment or description that newly mentions an
+active member who can see the project records a `Mention` row in the write's
+transaction; after the commit `emitMentionBells` (`work-item-shared.ts`)
+rings them, never the author, in one short transaction:
+
+- the bell, `WORK_ITEM_MENTIONED`, through `createMentionNotifications`
+  (`mention.ts`), which asks `isInAppTypeEnabled` first like every writer:
+  "Ada Lovelace mentioned you in a comment on ISL-12 "Title"." (or "in the
+  description of"), linked to the item;
+- the email, `WORK_ITEM_MENTIONED` (`email/work-item-mentioned.tsx`), when the
+  person's mention preference resolves to `IMMEDIATE` (the default), deduped
+  per address, source and day by `enqueueEmail`; with `DAILY` the bell row is
+  listed in the digest instead.
+
+Neither carries the comment's or the description's text (decision 130):
+both are encrypted, and the bell's `body` and the outbox are plaintext. The
+comment's watcher fan-out skips the people it just mentioned, who were added
+as watchers in the same write (decision 128), so they get one notification,
+not two. Machine-made text (intake accept, templates, repeat copies) records
+and rings nobody (decision 129).
 
 ## Retention (2.7c)
 

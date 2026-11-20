@@ -34,6 +34,7 @@ import { logEvent } from '../events/audit';
 import { ActivityRepository, ACTIVITY_ORDER } from '../repositories/ActivityRepository';
 import { LabelRepository } from '../repositories/LabelRepository';
 import { MembershipRepository } from '../repositories/MembershipRepository';
+import { MentionRepository } from '../repositories/MentionRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
 import { TeamRepository } from '../repositories/TeamRepository';
 import { WorkItemTypeRepository } from '../repositories/WorkItemTypeRepository';
@@ -66,10 +67,12 @@ import {
 } from '../domain/workflow-state';
 import { todayInTz } from '../notifications/work-item-due';
 import { lockWorkItemGraph } from './work-item-graph-lock';
+import { recordMentionsInTx } from './mention';
 import {
     assertProjectWritable,
     emitAssignedBells,
     emitDueBell,
+    emitMentionBells,
     emitWaitingOnBell,
     emitWatcherActivity,
     enqueueAssignedEmail,
@@ -327,10 +330,16 @@ export async function getWorkItem(ctx: RequestContext, id: string) {
         if (!item) throw notFound('Work item not found');
         // The marked answer's comment (2.4b-c), pinned on the detail; live by the trigger.
         const answer = item.answerCommentId ? await CommentRepository.getWithBody(db, ctx, item.id, item.answerCommentId) : null;
+        // Who the description and the answer mention (2.7d): the renderer's authority.
+        const descriptionMentions = await MentionRepository.listForSource(db, ctx, { workItemId: item.id, commentId: null });
+        const answerMentions = answer ? await MentionRepository.listForSource(db, ctx, { workItemId: item.id, commentId: answer.id }) : new Set<string>();
         return {
             ...toWorkItemDto(item),
-            answer: answer ? { id: answer.id, authorUserId: answer.authorUserId, body: answer.body, editedAt: answer.editedAt, createdAt: answer.createdAt } : null,
+            answer: answer
+                ? { id: answer.id, authorUserId: answer.authorUserId, body: answer.body, editedAt: answer.editedAt, createdAt: answer.createdAt, mentions: [...answerMentions] }
+                : null,
             description: item.description,
+            descriptionMentions: [...descriptionMentions],
             createdByUserId: item.createdByUserId,
             project: item.project,
             state: item.state,
@@ -444,6 +453,14 @@ export interface CreateInTxOptions {
      * fields are known without it.
      */
     projected?: 'all' | 'customFields';
+    /**
+     * A person's own create (`createWorkItem`; 2.7d, decision 129): when
+     * given, a description the REQUEST names records its mentions, and the
+     * people to ring after the commit are put in `notify`. Intake accept, a
+     * repeat copy and a template's projected description never pass it, so
+     * their text mentions nobody.
+     */
+    mentions?: { notify: string[] };
 }
 
 /** Does the create request name `key` itself (rather than take it from a template)? */
@@ -700,6 +717,10 @@ export async function createWorkItemInTx(
             ...(opts.metadata ?? {}),
         },
     });
+    if (opts.mentions && input.description !== undefined && description) {
+        const m = await recordMentionsInTx(db, ctx, { workItemId: row.id, projectId: project.id, key, commentId: null }, description);
+        opts.mentions.notify.push(...m.notify);
+    }
     // The template's sub-items, in its order, in this transaction.
     // Each is checked against the type's field set like any create (decision 111).
     const subSkipped: string[] = [];
@@ -752,13 +773,16 @@ export async function emitCreatedItemBells(ctx: RequestContext, result: WorkItem
 export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemInput): Promise<WorkItemDto & { templateSkipped?: string[] }> {
     assertCanCreateWorkItem(ctx);
     // A template's sub-items (up to 50) are made in the same transaction.
-    const result = await runInTenantContext(ctx, (db) => createWorkItemInTx(db, ctx, input), input.templateId ? { timeout: 20_000 } : undefined);
-    // After the commit: the due reminder, the assignment bell and the waiting-on bell (2.4b).
+    const mentions = { notify: [] as string[] };
+    const result = await runInTenantContext(ctx, (db) => createWorkItemInTx(db, ctx, input, { mentions }), input.templateId ? { timeout: 20_000 } : undefined);
+    // After the commit: the due reminder, the assignment bell and the waiting-on bell (2.4b),
+    // then the people the description mentions (2.7d).
     await emitDueBell(ctx, { ...result, dueDate: parseDateOnly(result.dueDate) });
     if (result.assigneeId) {
         await emitAssignedBells(ctx, result.assigneeId, [{ id: result.id, title: result.title, key: result.key }]);
     }
     await emitWaitingOnBell(ctx, result.waitingOnUserId, { id: result.id, title: result.title, key: result.key });
+    await emitMentionBells(ctx, { id: result.id, title: result.title, key: result.key }, { commentId: null }, mentions.notify);
     return result;
 }
 
@@ -929,7 +953,7 @@ export async function updateWorkItem(ctx: RequestContext, id: string, input: Upd
             patch.typeId = type.id;
         }
         const changedFields = Object.keys(patch);
-        if (changedFields.length === 0) return { item: before, changedFields, dueChanged: false, startChanged: false };
+        if (changedFields.length === 0) return { item: before, changedFields, dueChanged: false, startChanged: false, mentioned: [] as string[] };
         // The field set (2.4b-b, decision 109): of the item's type, or of the
         // new type, whose whole set the item must then fill.
         const open = !isClosedCategory(before.stateCategory);
@@ -956,10 +980,15 @@ export async function updateWorkItem(ctx: RequestContext, id: string, input: Upd
         });
         const dueChanged = input.dueDate !== undefined && (before.dueDate?.getTime() ?? null) !== (patch.dueDate?.getTime() ?? null);
         const startChanged = input.startDate !== undefined;
-        return { item: before, changedFields, dueChanged, startChanged };
+        // The description's mentions (2.7d): only people the edit adds are notified.
+        const mentioned = patch.description !== undefined
+            ? (await recordMentionsInTx(db, ctx, { workItemId: id, projectId: before.projectId, key: keyOf(before), commentId: null }, patch.description)).notify
+            : [];
+        return { item: before, changedFields, dueChanged, startChanged, mentioned };
     });
 
     const after = await getWorkItem(ctx, id);
+    await emitMentionBells(ctx, { id, title: after.title, key: after.key }, { commentId: null }, result.mentioned);
     if (result.changedFields.length > 0) {
         // Material edits only: a title or description edit rings no bell.
         const material: string[] = [];

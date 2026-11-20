@@ -362,6 +362,33 @@ Nothing is seeded: Feature, Bug and Chore stay the only seeded types.
 - **Activity** shows "marked an answer" and "cleared the answer".
 - No list filter or column in 2.4b.
 
+## Mentions (2.7d)
+
+Built by [`docs/porting/maps/2.7.md`](porting/maps/2.7.md), part 5, under owner decisions 127 to 131 (`docs/HANDOFF.md`) and ADR 0006 ("Mention"). Written fresh; nothing was copied (inflect-compliance has no mention feature).
+
+### The text and the rows
+
+Comments and descriptions stay plain text (decision 127): a mention is the token `<@userId>`, which the `@` picker puts in the text; `sanitizePlainText` keeps it as typed. The grammar is the pure, property-tested `src/app-layer/domain/mention.ts` (client-safe): `parseMentionIds` (each person once, in order, at most `MAX_MENTIONS_PER_TEXT`, 20; a prefixed `<@agent:…>` is refused until 6.3), `planMentionChange`, `segmentText` (for display), and the picker's `mentionQueryAt` / `insertMention`.
+
+**The `Mention` rows are the authority, not the text.** `Mention` (`tenantId`, `workItemId`, `commentId`, NULL for the description, `mentionedUserId`, `mentionedById`, an actor stamp with no FK, `createdAt`): one row per source and person (two partial uniques), cascading with the item, the comment and the membership (a removed member's mentions go and render as text). Index `[tenantId, mentionedUserId, createdAt]`; RLS, grants, and the two-tenant test `tests/integration/mentions.test.ts`. Migrations `20261205120000_notification_type_mentioned`, `20261205120100_email_type_mentioned` (each enum value alone) and `20261205120200_mentions`. A token renders as a chip only when its source has a row for that person, so a token an intake requester typed, a template or a repeat copied, or somebody pasted names nobody and notifies nobody.
+
+### Writes
+
+- **Who records** (decision 129). `recordMentionsInTx` (`src/app-layer/usecases/mention.ts`) runs in the transaction of a person's own write, on the sanitised text: `addComment` and `editComment`, `updateWorkItem` when the description changes, and `createWorkItem` when the request itself names the description. Intake accept, a template's projected description, template sub-items and repeat copies call the create core without asking for mentions and record none; an API key (5.2), an agent and the workspace system user record nothing (`writesAsPerson`). A person's later edit of such a text does record.
+- **Who may be mentioned.** A newly named person is recorded only while an ACTIVE member whose permissions read work items and whose role sees the item's project (`mentionableAmong`: Viewers yes; a GUEST none until 8.4); anyone else, an unknown id or another workspace's person is dropped silently and their token stays text.
+- **Edits.** Only the people an edit adds are recorded and notified; a token removed removes its row (audited `WORK_ITEM_MENTIONS_REMOVED`) and notifies nobody; a deleted comment's rows are removed with it. The author may mention themselves (the chip shows), and is never notified or added as a watcher for it.
+- **Watching** (decision 128). Each newly mentioned person (never the author) becomes a watcher in the same transaction, audited `WORK_ITEM_WATCHER_ADDED` with `metadata.reason: 'mentioned'`.
+- **Audit.** `WORK_ITEM_MENTIONED` on the item, with the people's ids and the comment's id, never the text; Activity shows "mentioned someone" and "removed a mention".
+- **Notifications** (decision 130), after the commit, through `emitMentionBells` (`work-item-shared.ts`): the `WORK_ITEM_MENTIONED` bell (`createMentionNotifications`, `src/app-layer/notifications/mention.ts`) and, when the person's preference is `IMMEDIATE` (the default), the `WORK_ITEM_MENTIONED` email. Both say who mentioned them, on which item, with a link; never the comment's or the description's text. The comment's watcher fan-out then skips the people it just mentioned (`skipUserIds`). Order: `tests/unit/usecases/work-item-sequence-order.test.ts`.
+- No new route and no new key: the comment and item routes carry it.
+
+### The views
+
+- **The `@` picker** (`src/components/work-items/mentions/MentionTextarea.tsx`) on the comment box, the comment editor, the description editor and the create dialog's description: `@` at the start or after a space lists the workspace's active members (`GET /users/assignable`), narrowed by what follows; arrows move, Enter or Tab chooses, Escape closes; the keys are the text box's own `onKeyDown`, which keeps its textbox role (`aria-autocomplete`, `aria-activedescendant`).
+- **Display** (`MentionText.tsx`): a comment's body, the description and the pinned answer show a recorded person's token as a chip with their current name, from the source's rows the server returns (`mentions` on each comment, `descriptionMentions` and `answer.mentions` on the detail). A work-item key in the text (`ISL-123`, upper case, a prefix of one of the workspace's projects) is a link to the item at display time (decision 131); nothing is stored for it, and the item page reads it through the authorised API. Everything is React text.
+- **The description** is shown with its chips and links, and edited on request ("Edit description", then Save or Cancel).
+- Copy is `workItems.mentions.*`, `workItems.detail.editDescription` and `workItems.activity.mentioned*`.
+
 ## Settings (decision 55)
 
 A workspace admin configures work without the API on the Settings pages (`src/app/t/[tenantSlug]/(app)/settings/`, components in `src/components/settings/`), built on 2.2's routes with no new route or usecase:

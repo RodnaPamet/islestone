@@ -36,6 +36,9 @@ describe('preference defaults and types', () => {
     it('defaults: at once for the direct types, daily for due and watched, off for intake (the map\'s table)', () => {
         expect(PREFERENCE_DEFAULTS.WORK_ITEM_ASSIGNED.email).toBe('IMMEDIATE');
         expect(PREFERENCE_DEFAULTS.WORK_ITEM_WAITING_ON.email).toBe('IMMEDIATE');
+        // Mentions (2.7d): at once by default, and offered at once (decision 132).
+        expect(PREFERENCE_DEFAULTS.WORK_ITEM_MENTIONED).toEqual({ inApp: true, email: 'IMMEDIATE' });
+        expect(IMMEDIATE_EMAIL_TYPES as readonly string[]).toContain('WORK_ITEM_MENTIONED');
         expect(PREFERENCE_DEFAULTS.WORK_ITEM_DUE.email).toBe('DAILY');
         expect(PREFERENCE_DEFAULTS.WORK_ITEM_WATCH_UPDATE.email).toBe('DAILY');
         expect(PREFERENCE_DEFAULTS.INTAKE_REQUEST_RECEIVED.email).toBe('OFF');

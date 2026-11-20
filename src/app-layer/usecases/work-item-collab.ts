@@ -17,12 +17,18 @@
  *     usecases keep their asserts for callers that are not routes;
  *   - links are `WorkItemLink` rows (a URL, pull request or commit), with no
  *     polymorphic entity targets;
- *   - attaching or detaching a label increases the item's version (ADR 0002 §9).
+ *   - attaching or detaching a label increases the item's version (ADR 0002 §9);
+ *   - a comment's mentions (2.7d, decisions 127 to 130) are recorded in the
+ *     write's transaction (`recordMentionsInTx`) and rung after the commit
+ *     (`emitMentionBells`), before the watcher fan-out, which skips them; a
+ *     page of comments carries each comment's recorded people (`mentions`),
+ *     the only tokens the renderer shows as chips.
  */
 import { logEvent } from '../events/audit';
 import { commentDeleteBasis, isMarkedAnswer, mayEditComment } from '../policies/comment.policies';
 import { LabelRepository } from '../repositories/LabelRepository';
 import { MembershipRepository } from '../repositories/MembershipRepository';
+import { MentionRepository } from '../repositories/MentionRepository';
 import {
     CommentRepository,
     WorkItemLinkRepository,
@@ -37,7 +43,8 @@ import {
 import { visibleProjects } from '../policies/project-visibility';
 import { assertLabelsUsable } from './work-item';
 import { assertFieldWrite } from './field-set';
-import { emitWatcherActivity, keyOf, loadVisibleItem, loadWritableItem } from './work-item-shared';
+import { recordMentionsInTx } from './mention';
+import { emitMentionBells, emitWatcherActivity, keyOf, loadVisibleItem, loadWritableItem } from './work-item-shared';
 import type { RequestContext } from '../types';
 import { appendAuditEntryOrQueue } from '@/lib/audit';
 import { runInTenantContext } from '@/lib/db-context';
@@ -75,7 +82,15 @@ export async function listComments(ctx: RequestContext, workItemId: string, quer
     return runInTenantContext(ctx, async (db) => {
         await loadVisibleItem(db, ctx, await visibleProjects(ctx, db), workItemId);
         const rows = await CommentRepository.list(db, ctx, workItemId, { limit, cursor });
-        return computeKeysetPage(rows, limit, COMMENT_ORDER);
+        const page = computeKeysetPage(rows, limit, COMMENT_ORDER);
+        // Each comment's recorded people (2.7d): the renderer's authority.
+        const mentions = await MentionRepository.listForComments(db, ctx, workItemId, page.items.map((c) => c.id));
+        const byComment = new Map<string, string[]>();
+        for (const m of mentions) {
+            if (!m.commentId) continue;
+            byComment.set(m.commentId, [...(byComment.get(m.commentId) ?? []), m.mentionedUserId]);
+        }
+        return { ...page, items: page.items.map((c) => ({ ...c, mentions: byComment.get(c.id) ?? [] })) };
     });
 }
 
@@ -88,7 +103,7 @@ function cleanBody(body: string): string {
 export async function addComment(ctx: RequestContext, workItemId: string, input: { body: string }) {
     assertCanCommentOnWorkItems(ctx);
     const body = cleanBody(input.body);
-    const comment = await runInTenantContext(ctx, async (db) => {
+    const { comment, item, mentioned, mentions } = await runInTenantContext(ctx, async (db) => {
         const item = await loadWritableItem(db, ctx, await visibleProjects(ctx, db), workItemId);
         const created = await CommentRepository.create(db, ctx, workItemId, body);
         await logEvent(db, ctx, {
@@ -99,10 +114,13 @@ export async function addComment(ctx: RequestContext, workItemId: string, input:
             detailsJson: { category: 'entity_lifecycle', entityName: 'Comment', operation: 'created' },
             metadata: { workItemId },
         });
-        return created;
+        const m = await recordMentionsInTx(db, ctx, { workItemId, projectId: item.projectId, key: keyOf(item), commentId: created.id }, body);
+        return { comment: created, item, mentioned: m.notify, mentions: m.recorded };
     });
-    await emitWatcherActivity(ctx, [{ workItemId, kind: 'commented', discriminator: comment.id, detail: 'new comment' }]);
-    return comment;
+    // After the commit: the mention bells, then the watchers (not the people just mentioned).
+    await emitMentionBells(ctx, { id: workItemId, title: item.title, key: keyOf(item) }, { commentId: comment.id }, mentioned);
+    await emitWatcherActivity(ctx, [{ workItemId, kind: 'commented', discriminator: comment.id, detail: 'new comment', skipUserIds: mentioned }]);
+    return { ...comment, mentions };
 }
 
 /**
@@ -135,7 +153,7 @@ async function refuseComment(ctx: RequestContext, commentId: string, verb: 'edit
 export async function editComment(ctx: RequestContext, workItemId: string, commentId: string, input: { body: string }) {
     assertCanCommentOnWorkItems(ctx);
     const body = cleanBody(input.body);
-    return runInTenantContext(ctx, async (db) => {
+    const outcome = await runInTenantContext(ctx, async (db) => {
         const item = await loadWritableItem(db, ctx, await visibleProjects(ctx, db), workItemId);
         const comment = await CommentRepository.get(db, ctx, workItemId, commentId);
         if (!comment) throw notFound('Comment not found');
@@ -152,8 +170,13 @@ export async function editComment(ctx: RequestContext, workItemId: string, comme
             detailsJson: { category: 'entity_lifecycle', entityName: 'Comment', operation: 'updated', changedFields: ['body'] },
             metadata: { workItemId },
         });
-        return { id: commentId, edited: true };
+        // Only people the edit adds are recorded and notified (2.7d).
+        const source = { workItemId, projectId: item.projectId, key: keyOf(item), commentId };
+        const m = await recordMentionsInTx(db, ctx, source, body);
+        return { item, mentioned: m.notify, mentions: m.recorded };
     });
+    await emitMentionBells(ctx, { id: workItemId, title: outcome.item.title, key: keyOf(outcome.item) }, { commentId }, outcome.mentioned);
+    return { id: commentId, edited: true, mentions: outcome.mentions };
 }
 
 export async function deleteComment(ctx: RequestContext, workItemId: string, commentId: string) {
@@ -168,6 +191,8 @@ export async function deleteComment(ctx: RequestContext, workItemId: string, com
         }
         if (isMarkedAnswer(comment, item)) throw answerLocked('delete');
         await CommentRepository.softDelete(db, ctx, commentId);
+        // A deleted comment mentions nobody (2.7d); its text stays until the purge.
+        await MentionRepository.removeForComment(db, ctx, workItemId, commentId);
         // An admin removing someone else's comment is moderation, and the
         // trail says so: its own action, and the author it acted on.
         const moderation = basis === 'moderation';

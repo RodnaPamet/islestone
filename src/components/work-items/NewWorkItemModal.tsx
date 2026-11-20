@@ -26,13 +26,13 @@ import { parseYMD, toYMD } from '@/components/ui/date-picker/date-utils';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
-import { Textarea } from '@/components/ui/textarea';
 import { Combobox } from '@/components/ui/combobox';
 import { useMayOpenSettings } from '@/components/layout/nav-config';
 import { ApiClientError } from '@/lib/data/api-client';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import type { WorkItemDetailData, WorkItemPriority } from '@/lib/work-items/types';
 
+import { MentionTextarea } from './mentions/MentionTextarea';
 import { useWorkConfig } from './data/use-work-config';
 import { useWorkItemMutations } from './data/use-work-item-mutations';
 import { useItemTemplates } from './data/use-item-templates';
@@ -332,7 +332,7 @@ export function NewWorkItemModal({
                             </FormField>
                             {offered('description') && (
                                 <FormField label={t('fields.description')} required={isRequired('description')}>
-                                    <Textarea id="work-item-description-input" value={form.description} onChange={(e) => set('description', e.target.value)} rows={3} />
+                                    <MentionTextarea id="work-item-description-input" value={form.description} onValueChange={(v) => set('description', v)} rows={3} />
                                 </FormField>
                             )}
                             {!initial?.projectId && (

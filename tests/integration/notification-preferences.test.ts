@@ -113,6 +113,10 @@ describeFn('notification preferences', () => {
             await expect(
                 prisma.notificationPreference.create({ data: { tenantId: tenantA, userId: userB, type: 'WORK_ITEM_WAITING_ON', inApp: true, emailDelivery: 'IMMEDIATE' } }),
             ).resolves.toBeDefined();
+            // Mentions joined the list in 2.7d (migration 20261205120200_mentions).
+            await expect(
+                prisma.notificationPreference.create({ data: { tenantId: tenantA, userId: userB, type: 'WORK_ITEM_MENTIONED', inApp: true, emailDelivery: 'IMMEDIATE' } }),
+            ).resolves.toBeDefined();
         });
 
         it("a removed membership takes the member's preferences with it", async () => {

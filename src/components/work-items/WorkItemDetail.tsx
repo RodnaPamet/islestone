@@ -28,7 +28,6 @@ import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import { parseYMD, toYMD } from '@/components/ui/date-picker/date-utils';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { useHydratedNow } from '@/lib/hooks/use-hydrated-now';
 import { usePermissions, useTenantContext, useTenantHref } from '@/lib/tenant-context-provider';
@@ -46,6 +45,8 @@ import { useWorkItem, useWorkItemCollab } from './data/use-work-item-collab';
 import { toRow, useWorkItemMutations } from './data/use-work-item-mutations';
 import { ActivityPanel, CommentsPanel, LinksPanel, RelationsPanel, WatchersPanel } from './detail/collab-panels';
 import { SubItemsPanel } from './detail/SubItemsPanel';
+import { MentionText } from './mentions/MentionText';
+import { MentionTextarea } from './mentions/MentionTextarea';
 import { CustomFieldInput } from './fields/CustomFieldInput';
 import { RepeatControl } from './detail/RepeatControl';
 import { PinnedAnswer, useMarkAnswer } from './detail/AnswerControls';
@@ -138,6 +139,8 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
 
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
+    // The description is shown with its chips and key links (2.7d) and edited on request.
+    const [editingDescription, setEditingDescription] = useState(false);
     useEffect(() => {
         // Follow the server's text when it changes (another edit, a rollback).
         // eslint-disable-next-line react-hooks/set-state-in-effect -- the editable copy tracks the cached item
@@ -176,10 +179,14 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
         }
         void mutations.updateFields(row, { title: next });
     };
-    const saveDescription = () => {
+    const saveDescription = async () => {
         if (!row || !item) return;
-        if ((item.description ?? '') === description) return;
-        void mutations.updateFields(row, { description: description || null });
+        if ((item.description ?? '') === description) {
+            setEditingDescription(false);
+            return;
+        }
+        const saved = await mutations.updateFields(row, { description: description || null });
+        if (saved) setEditingDescription(false);
     };
     const changeLabels = (next: string[]) => {
         if (!item) return;
@@ -336,24 +343,45 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                                 <h2 id={`description-${item.id}`} className="text-sm font-semibold text-content-emphasis">
                                     {t('fields.description')}
                                 </h2>
-                                {perms.edit ? (
+                                {perms.edit && editingDescription ? (
                                     <>
-                                        <Textarea
+                                        <MentionTextarea
                                             aria-label={t('fields.description')}
                                             value={description}
-                                            onChange={(e) => setDescription(e.target.value)}
+                                            onValueChange={setDescription}
                                             rows={6}
+                                            autoFocus
                                         />
-                                        <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            text={t('detail.saveDescription')}
-                                            disabled={(item.description ?? '') === description}
-                                            onClick={saveDescription}
-                                        />
+                                        <div className="flex gap-tight">
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                text={t('detail.saveDescription')}
+                                                disabled={(item.description ?? '') === description}
+                                                onClick={() => void saveDescription()}
+                                            />
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                text={t('detail.cancel')}
+                                                onClick={() => {
+                                                    setDescription(item.description ?? '');
+                                                    setEditingDescription(false);
+                                                }}
+                                            />
+                                        </div>
                                     </>
                                 ) : (
-                                    <p className="whitespace-pre-wrap text-sm">{item.description || t('detail.noDescription')}</p>
+                                    <>
+                                        {item.description ? (
+                                            <MentionText text={item.description} mentions={item.descriptionMentions} />
+                                        ) : (
+                                            <p className="text-sm text-content-muted">{t('detail.noDescription')}</p>
+                                        )}
+                                        {perms.edit && (
+                                            <Button variant="ghost" size="sm" text={t('detail.editDescription')} onClick={() => setEditingDescription(true)} />
+                                        )}
+                                    </>
                                 )}
                             </section>
                         )}

@@ -12,7 +12,10 @@
  *     person named, then the watcher fan-out;
  *   - marking an answer (2.4b-c): the answer's and the state change's audit
  *     inside; then COMMIT, the state change's automation and fan-out, then
- *     the watchers told the item was answered.
+ *     the watchers told the item was answered;
+ *   - a mention (2.7d): the comment's or the edit's audit, then the mention's
+ *     and the auto-watch's inside; then COMMIT, the mention bell, then the
+ *     watcher fan-out (which skips the people just mentioned).
  *
  * Copied in shape from inflect-compliance's
  * `tests/unit/usecases/task-status-sequence-order.test.ts`, with the create
@@ -99,6 +102,7 @@ jest.mock('@/app-layer/repositories/TeamRepository', () => ({
 jest.mock('@/app-layer/repositories/MembershipRepository', () => ({
     MembershipRepository: {
         listActiveUserIds: jest.fn(async (_db: unknown, _ctx: unknown, ids: string[]) => new Set(ids)),
+        activeMembershipsWithRoles: jest.fn(async (_db: unknown, _ctx: unknown, ids: string[]) => ids.map((userId) => ({ userId, role: 'MEMBER', customRole: null }))),
         contactsOf: jest.fn(async () => []),
     },
 }));
@@ -106,11 +110,26 @@ jest.mock('@/app-layer/repositories/LabelRepository', () => ({ LabelRepository: 
 // The field set (2.4b-b): no entries, no project fields.
 jest.mock('@/app-layer/repositories/FieldSetRepository', () => ({ FieldSetRepository: { listForTypesInProject: jest.fn(async () => fieldSetRows) } }));
 jest.mock('@/app-layer/repositories/CustomFieldRepository', () => ({ CustomFieldRepository: { listFields: jest.fn(async () => []) } }));
+// Mentions (2.7d): nobody recorded before; adds and removes succeed.
+jest.mock('@/app-layer/repositories/MentionRepository', () => ({
+    MentionRepository: {
+        listForSource: jest.fn(async () => new Set()),
+        listForComments: jest.fn(async () => []),
+        add: jest.fn(async (_db: unknown, _ctx: unknown, _s: unknown, ids: string[]) => ({ count: ids.length })),
+        remove: jest.fn(async () => ({ count: 0 })),
+        removeForComment: jest.fn(async () => ({ count: 0 })),
+    },
+}));
 jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
     LIST_ORDERS: { manual: { column: 'sortKey', direction: 'asc', kind: 'string' } },
     CommentRepository: {
         get: jest.fn(async (_db: unknown, _ctx: unknown, workItemId: string, id: string) => ({ id, workItemId, authorUserId: 'u2', createdAt: new Date() })),
         getWithBody: jest.fn(async () => null),
+        create: jest.fn(async (_db: unknown, _ctx: unknown, workItemId: string, body: string) => ({ id: 'c-new', workItemId, authorUserId: 'u1', body, editedAt: null, createdAt: new Date() })),
+        edit: jest.fn(async () => ({ count: 1 })),
+    },
+    WorkItemWatcherRepository: {
+        addMany: jest.fn(async (_db: unknown, _ctx: unknown, _id: string, ids: string[]) => ids),
     },
     WorkItemRepository: {
         lastSortKey: jest.fn(async () => null),
@@ -138,13 +157,17 @@ jest.mock('@/app-layer/usecases/work-item-shared', () => {
         emitWaitingOnBell: jest.fn(async (_ctx: unknown, userId: string | null) => {
             if (userId) events.push('bell:waiting-on');
         }),
-        emitWatcherActivity: jest.fn(async () => {
-            events.push('watchers:fan-out');
+        emitWatcherActivity: jest.fn(async (_ctx: unknown, e: Array<{ skipUserIds?: string[] }>) => {
+            events.push(e[0]?.skipUserIds?.length ? `watchers:fan-out(skip ${e[0].skipUserIds.join(',')})` : 'watchers:fan-out');
+        }),
+        emitMentionBells: jest.fn(async (_ctx: unknown, _item: unknown, _source: unknown, userIds: string[]) => {
+            if (userIds.length > 0) events.push(`bell:mentioned(${userIds.join(',')})`);
         }),
     };
 });
 
-import { bulkSetWorkItemState, createWorkItem, setWorkItemState, setWorkItemWaitingOn } from '@/app-layer/usecases/work-item';
+import { bulkSetWorkItemState, createWorkItem, setWorkItemState, setWorkItemWaitingOn, updateWorkItem } from '@/app-layer/usecases/work-item';
+import { addComment, editComment } from '@/app-layer/usecases/work-item-collab';
 import { markWorkItemAnswer } from '@/app-layer/usecases/work-item-answer';
 
 import { makeRequestContext } from '../../helpers/make-context';
@@ -220,6 +243,55 @@ describe('work-item side-effect order', () => {
             'tx:commit',
             'watchers:fan-out',
         ]);
+    });
+
+    it('a comment mentioning someone: its audits inside; then COMMIT, the mention bell, then the watchers without them', async () => {
+        await addComment(ctx, 'w1', { body: 'Can you look, <@u-ada>?' });
+        expect(events).toEqual([
+            'tx:begin',
+            'audit:COMMENT_ADDED',
+            'audit:WORK_ITEM_MENTIONED',
+            'audit:WORK_ITEM_WATCHER_ADDED',
+            'tx:commit',
+            'bell:mentioned(u-ada)',
+            'watchers:fan-out(skip u-ada)',
+        ]);
+    });
+
+    it('a comment edit adding a mention: audits inside; then COMMIT, the mention bell', async () => {
+        // The mocked comment's author is u2: only they edit it.
+        const own = { ...ctx, userId: 'u2' };
+        await editComment(own, 'w1', 'c1', { body: 'Also <@u-bob>' });
+        expect(events).toEqual(['tx:begin', 'audit:COMMENT_EDITED', 'audit:WORK_ITEM_MENTIONED', 'audit:WORK_ITEM_WATCHER_ADDED', 'tx:commit', 'bell:mentioned(u-bob)']);
+    });
+
+    it('a description edit mentioning someone: audits inside; then COMMIT, the mention bell', async () => {
+        await updateWorkItem(ctx, 'w1', { description: 'For <@u-ada>' }, 1);
+        const commit = events.indexOf('tx:commit');
+        expect(events.slice(0, commit + 1)).toEqual(['tx:begin', 'audit:WORK_ITEM_UPDATED', 'audit:WORK_ITEM_MENTIONED', 'audit:WORK_ITEM_WATCHER_ADDED', 'tx:commit']);
+        expect(events.filter((e) => e.startsWith('bell:'))).toEqual(['bell:mentioned(u-ada)']);
+        expect(events.indexOf('bell:mentioned(u-ada)')).toBeGreaterThan(commit);
+    });
+
+    it('a create whose description mentions someone rings them after the commit, last', async () => {
+        await createWorkItem(ctx, { projectId: 'p1', typeId: 'ty1', title: 'New', description: 'Ask <@u-ada>' });
+        expect(events).toEqual([
+            'tx:begin',
+            'audit:WORK_ITEM_CREATED',
+            'audit:WORK_ITEM_MENTIONED',
+            'audit:WORK_ITEM_WATCHER_ADDED',
+            'automation:WORK_ITEM_CREATED',
+            'email:enqueued',
+            'tx:commit',
+            'bell:due',
+            'bell:assigned',
+            'bell:mentioned(u-ada)',
+        ]);
+    });
+
+    it('the author mentioning themselves records the mention and rings nobody', async () => {
+        await addComment(ctx, 'w1', { body: `Note to self <@${ctx.userId}>` });
+        expect(events).toEqual(['tx:begin', 'audit:COMMENT_ADDED', 'audit:WORK_ITEM_MENTIONED', 'tx:commit', 'watchers:fan-out']);
     });
 
     it('a refused transition writes nothing and emits nothing', async () => {

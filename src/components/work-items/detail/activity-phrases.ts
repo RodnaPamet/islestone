@@ -35,6 +35,8 @@ export const ACTIVITY_PHRASE = {
     WORK_ITEM_WAITING_ON_CHANGED: 'activity.waitingOnChanged',
     WORK_ITEM_ANSWER_MARKED: 'activity.answerMarked',
     WORK_ITEM_ANSWER_CLEARED: 'activity.answerCleared',
+    WORK_ITEM_MENTIONED: 'activity.mentioned',
+    WORK_ITEM_MENTIONS_REMOVED: 'activity.mentionsRemoved',
 } as const;
 
 /**
