@@ -46,8 +46,10 @@ test.describe('cycles', () => {
         // The item joins the current cycle from its page.
         await page.goto(`/t/${slug}/work-items/${item.key}`);
         await page.getByRole('combobox', { name: 'No cycle' }).click();
+        const saved = page.waitForResponse((r) => r.url().endsWith(`/work-items/${item.id}/cycle`) && r.request().method() === 'PUT');
         await page.getByRole('option', { name: /\(current\)$/ }).click();
-        await expect(page.getByRole('combobox', { name: /\(current\)$|^Cycle \d+$/ })).toBeVisible();
+        expect((await saved).status()).toBe(200);
+        await expect(page.getByRole('combobox', { name: /\(current\)$/ })).toBeVisible();
 
         // Done, through the API (the state picker is 2.3's, tested there).
         const fresh = (await (await page.request.get(`/api/t/${slug}/work-items/${item.id}`)).json()) as { version: number; cycleId: string };
