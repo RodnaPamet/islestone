@@ -74,10 +74,13 @@ describe('in-app mute list (#2564)', () => {
         typeof SettingsModule;
 
     /** A settings table holding exactly one row (or none). */
-    function dbWithRow(row: Record<string, unknown> | null) {
+    function dbWithRow(row: Record<string, unknown> | null, prefs: Array<Record<string, unknown>> = []) {
         return {
             tenantNotificationSettings: {
                 findUnique: async () => row,
+            },
+            notificationPreference: {
+                findMany: async ({ where }: any) => prefs.filter((p) => p.type === where.type && where.userId.in.includes(p.userId)),
             },
         } as any;
     }
@@ -139,17 +142,31 @@ describe('in-app mute list (#2564)', () => {
         expect(out.mutedInAppTypes).toEqual(['WORK_ITEM_ASSIGNED']);
     });
 
-    it('isInAppTypeEnabled is false for a muted type and true for any other', async () => {
+    it('isInAppTypeEnabled rings nobody for a type the workspace muted, and everybody for any other', async () => {
         const db = dbWithRow({ mutedInAppTypes: ['WORK_ITEM_ASSIGNED'] });
-        expect(await actual.isInAppTypeEnabled(db, 't1', 'WORK_ITEM_ASSIGNED')).toBe(false);
-        // The paired positive: without it, a function that returned false for
+        expect([...(await actual.isInAppTypeEnabled(db, 't1', 'WORK_ITEM_ASSIGNED', ['u1', 'u2']))]).toEqual([]);
+        // The paired positive: without it, a function that returned nobody for
         // everything would pass the line above.
-        expect(await actual.isInAppTypeEnabled(db, 't1', 'WORK_ITEM_WATCH_UPDATE')).toBe(true);
+        expect([...(await actual.isInAppTypeEnabled(db, 't1', 'WORK_ITEM_WATCH_UPDATE', ['u1', 'u2']))].sort()).toEqual(['u1', 'u2']);
     });
 
     it('isInAppTypeEnabled fails OPEN when the tenant has no settings row', async () => {
-        expect(
-            await actual.isInAppTypeEnabled(dbWithRow(null), 't1', 'WORK_ITEM_ASSIGNED'),
-        ).toBe(true);
+        expect([...(await actual.isInAppTypeEnabled(dbWithRow(null), 't1', 'WORK_ITEM_ASSIGNED', ['u1']))]).toEqual(['u1']);
+    });
+
+    it('isInAppTypeEnabled leaves out a member who switched the type off (2.7c), and only them', async () => {
+        const db = dbWithRow(null, [{ userId: 'u1', type: 'WORK_ITEM_DUE', inApp: false, emailDelivery: 'DAILY' }]);
+        expect([...(await actual.isInAppTypeEnabled(db, 't1', 'WORK_ITEM_DUE', ['u1', 'u2']))]).toEqual(['u2']);
+        // Another type's row is not theirs for this one.
+        expect([...(await actual.isInAppTypeEnabled(db, 't1', 'WORK_ITEM_ASSIGNED', ['u1']))]).toEqual(['u1']);
+    });
+
+    it('emailDeliveryFor caps a member\'s choice by the workspace\'s email switch', async () => {
+        const on = dbWithRow({ enabled: true, mutedInAppTypes: [] });
+        expect(await actual.emailDeliveryFor(on, 't1', 'WORK_ITEM_ASSIGNED', 'u1')).toBe('IMMEDIATE');
+        const off = dbWithRow({ enabled: false, mutedInAppTypes: [] });
+        expect(await actual.emailDeliveryFor(off, 't1', 'WORK_ITEM_ASSIGNED', 'u1')).toBe('OFF');
+        const chose = dbWithRow(null, [{ userId: 'u1', type: 'WORK_ITEM_ASSIGNED', inApp: true, emailDelivery: 'OFF' }]);
+        expect(await actual.emailDeliveryFor(chose, 't1', 'WORK_ITEM_ASSIGNED', 'u1')).toBe('OFF');
     });
 });

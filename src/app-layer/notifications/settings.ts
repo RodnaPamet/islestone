@@ -12,7 +12,9 @@
  * Islestone's callers.
  */
 
-import type { NotificationType } from '@prisma/client';
+import type { EmailDelivery, NotificationType } from '@prisma/client';
+
+import { resolveDelivery, type ResolvedDelivery } from '@/lib/notifications/preferences';
 
 import type { PrismaTx } from '@/lib/db-context';
 import type { RequestContext } from '../types';
@@ -204,38 +206,79 @@ export async function updateTenantNotificationSettings(
     return after;
 }
 
+/** The client surface the delivery reads need (the writers declare narrow fakes in tests). */
+export type DeliveryDb = Pick<PrismaTx, 'tenantNotificationSettings' | 'notificationPreference'>;
+
 /**
- * Is this in-app notification type switched on for this tenant?
+ * What each named member gets for one notification type: the bell and the
+ * email channel, after the workspace's ceiling (sub-phase 2.7c, owner
+ * decision 132; `resolveDelivery` in `src/lib/notifications/preferences.ts`).
  *
- * The bell-side twin of `isNotificationsEnabled` above, and deliberately a
- * SEPARATE question rather than an extra clause inside it. `enabled` is read
- * only by email paths (`enqueue`, `digest-dispatcher` and `processOutbox`),
- * and
- * folding the bell into it would make one switch mean two things — a tenant
- * that wanted to stop one noisy bell would also stop every email.
+ * TWO reads for the whole batch, never one per member: the workspace's
+ * settings row and the members' preference rows for this type. The writers run
+ * inside other people's transactions, so a per-recipient read would turn a
+ * watcher fan-out into an N+1.
  *
- * Fails OPEN, on both arms: no settings row, or a row whose list is NULL
- * because an old container inserted it, both mean "notify". A notification
- * subsystem that goes silent because a row is missing is the failure mode
- * nobody notices, and the two types this currently governs are the work-item
- * assignment and watch bells.
+ * Fails OPEN on the workspace arm (no settings row, or a NULL mute list an old
+ * container wrote, both mean "notify") and to the type's default on the member
+ * arm (no row): a notification subsystem that goes silent because a row is
+ * missing is the failure nobody notices.
  */
-export async function isInAppTypeEnabled(
-    // Narrower than `isNotificationsEnabled`'s `PrismaTx` on purpose: the bell
-    // emitters that call this declare their own `Pick<PrismaClient, …>` db so
-    // a test can hand them a fake, and a full `PrismaTx` here would force
-    // every one of them to widen to the whole client. A real `PrismaTx`
-    // satisfies this, so existing call shapes are unaffected.
-    db: Pick<PrismaTx, 'tenantNotificationSettings'>,
+export async function memberDeliveries(
+    db: DeliveryDb,
     tenantId: string,
     type: NotificationType,
-): Promise<boolean> {
+    userIds: readonly string[],
+): Promise<Map<string, ResolvedDelivery>> {
+    const ids = [...new Set(userIds)];
+    const out = new Map<string, ResolvedDelivery>();
+    if (ids.length === 0) return out;
+    const [settings, rows] = await Promise.all([
+        db.tenantNotificationSettings.findUnique({
+            where: { tenantId },
+            select: { enabled: true, mutedInAppTypes: true },
+        }),
+        db.notificationPreference.findMany({
+            where: { tenantId, type, userId: { in: ids } },
+            take: ids.length,
+            select: { userId: true, inApp: true, emailDelivery: true },
+        }),
+    ]);
+    const ceiling = { emailEnabled: settings?.enabled ?? true, mutedInAppTypes: settings?.mutedInAppTypes ?? [] };
+    const stored = new Map(rows.map((r) => [r.userId, r]));
+    for (const id of ids) out.set(id, resolveDelivery(type, stored.get(id) ?? null, ceiling));
+    return out;
+}
 
-    const row = await db.tenantNotificationSettings.findUnique({
-        where: { tenantId },
-        select: { mutedInAppTypes: true },
-    });
-    return !(row?.mutedInAppTypes ?? []).includes(type);
+/**
+ * The members, of those named, whose bell this type may ring: the one seam
+ * every bell writer asks BEFORE it writes (`assignment.ts`, `watcher.ts`,
+ * `work-item-due.ts`, `intake.ts`). A member not in the set gets no row, so the
+ * type reaches neither their bell list, nor the badge, nor the stream.
+ *
+ * Until 2.7c it asked only the workspace's mute list and answered for the
+ * whole workspace; it now asks each member's preference under that ceiling
+ * (`memberDeliveries`), in one batch. The workspace's `enabled` switch stays
+ * out of it: that switch is email's, and folding the bell into it would make
+ * one switch mean two things.
+ */
+export async function isInAppTypeEnabled(
+    db: DeliveryDb,
+    tenantId: string,
+    type: NotificationType,
+    userIds: readonly string[],
+): Promise<ReadonlySet<string>> {
+    const deliveries = await memberDeliveries(db, tenantId, type, userIds);
+    return new Set([...deliveries].filter(([, d]) => d.inApp).map(([id]) => id));
+}
+
+/**
+ * One member's email channel for one type, after the ceiling: what an email
+ * writer asks before it enqueues (`IMMEDIATE` mails now; `DAILY` waits for the
+ * digest; `OFF` sends nothing).
+ */
+export async function emailDeliveryFor(db: DeliveryDb, tenantId: string, type: NotificationType, userId: string): Promise<EmailDelivery> {
+    return (await memberDeliveries(db, tenantId, type, [userId])).get(userId)?.email ?? 'OFF';
 }
 
 /**

@@ -163,6 +163,7 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
             'AuditOutboxStatus',
             'CustomFieldType',
             'CycleRollover',
+            'EmailDelivery',
             'EmailNotificationType',
             'EmailOutboxStatus',
             'FieldRequirement',
@@ -205,8 +206,9 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
         // RecurrenceHold 6 (2.5d), EmailNotificationType +4 (2.6b),
         // NotificationType +1 (2.4b-a), FieldRequirement 3 and
         // RecurrenceHold +1 (2.4b-b), EmailNotificationType +1, IntakeSenderCheck 3
-        // and IntakeInboundStatus 4 (2.6c).
-        expect(values).toBe(109);
+        // and IntakeInboundStatus 4 (2.6c), EmailNotificationType +2 and
+        // EmailDelivery 3 (2.7c).
+        expect(values).toBe(114);
 
         // No `@@map`ed enum: ADR 0006 rule 3. The mapping half is proved with
         // planted inputs below instead.

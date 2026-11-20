@@ -13,7 +13,8 @@
  *   - `db.notification.createMany({ skipDuplicates: true })` so a repeated
  *     dedupeKey collapses with NO exception (raw create throws P2002 and
  *     poisons interactive PG transactions).
- *   - the workspace's in-app mute list is asked before any write.
+ *   - each watcher's preference under the workspace's mute list is asked
+ *     before any write (`isInAppTypeEnabled`, one batch, 2.7c).
  *   - Fire-and-forget — the caller isolates this in its own transaction
  *     AFTER the item write commits, so a notification failure never rolls
  *     back the item.
@@ -82,7 +83,7 @@ export function buildWatcherDedupeKey(a: WatcherActivity, watcherUserId: string)
 }
 
 export async function createWatcherNotifications(
-    db: Pick<PrismaClient, 'notification' | 'tenantNotificationSettings'>,
+    db: Pick<PrismaClient, 'notification' | 'tenantNotificationSettings' | 'notificationPreference'>,
     watcherUserIds: string[],
     a: WatcherActivity,
     // Kept for the source's call shape; the watcher key carries no date.
@@ -91,21 +92,22 @@ export async function createWatcherNotifications(
     if (watcherUserIds.length === 0) return { created: 0 };
     // Above the write, not filtered after it: a muted row would still reach
     // the bell list, the badge and the SSE stream.
-    if (!(await isInAppTypeEnabled(db, a.tenantId, WATCHER_NOTIFICATION_TYPE))) {
-        return { created: 0 };
-    }
+    const enabled = await isInAppTypeEnabled(db, a.tenantId, WATCHER_NOTIFICATION_TYPE, watcherUserIds);
+    const recipients = [...new Set(watcherUserIds)].filter((id) => enabled.has(id));
+    if (recipients.length === 0) return { created: 0 };
 
     const label = a.workItemKey ? `${a.workItemKey} "${a.workItemTitle}"` : `"${a.workItemTitle}"`;
     const title = WATCHER_NOTIFICATION_TITLE;
     const linkUrl = a.linkUrl;
 
-    const rows = watcherUserIds.map((userId) => ({
+    const rows = recipients.map((userId) => ({
         tenantId: a.tenantId,
         userId,
         type: WATCHER_NOTIFICATION_TYPE,
         title,
         body: `${label}: ${a.detail}`,
         linkUrl,
+        workItemId: a.workItemId,
         dedupeKey: buildWatcherDedupeKey(a, userId),
     }));
 

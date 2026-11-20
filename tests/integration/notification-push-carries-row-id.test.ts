@@ -13,7 +13,8 @@
  * Copied from inflect-compliance `tests/integration/notification-push-carries-row-id.test.ts`
  * at 5528464fc54a8681956f3b9ce23ca9c075f0420e: DB-gated, over Islestone's two
  * bell writers (assignment and watcher; the due reminder is 2.2), with the
- * caller's link and `resetDatabase`.
+ * caller's link and `resetDatabase`. Since 2.7c a bell row names its work item
+ * (a foreign key), so the items are real rows (`seedWorkItem`).
  */
 import type { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'crypto';
@@ -27,6 +28,7 @@ import {
 } from '@/lib/notifications/notification-bus';
 
 import { prismaTestClient, resetDatabase } from '../helpers/db';
+import { seedWorkItem, seedWorkWorld } from '../helpers/work-fixture';
 import { DB_AVAILABLE } from './db-helper';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
@@ -36,14 +38,16 @@ describeFn('an SSE-pushed bell row carries its real Notification id', () => {
     const SUITE = randomUUID().slice(0, 8);
     const T = `notif-push-${SUITE}`;
     let userId = '';
+    let assignedId = '';
+    let watchedId = '';
     let received: NotificationEvent[] = [];
     const target = () => ({
         tenantId: T,
         assigneeUserId: userId,
-        entityId: `wi-${SUITE}`,
+        entityId: assignedId,
         entityLabel: 'Patch the firewall',
         entityKey: 'ISL-1',
-        linkUrl: `/t/${T}/work-items/wi-${SUITE}`,
+        linkUrl: `/t/${T}/work-items/${assignedId}`,
     });
 
     beforeAll(async () => {
@@ -52,6 +56,9 @@ describeFn('an SSE-pushed bell row carries its real Notification id', () => {
         await prisma.tenant.create({ data: { id: T, name: T, slug: T } });
         userId = (await prisma.user.create({ data: { email: `bell@${SUITE}.test` } })).id;
         await prisma.tenantMembership.create({ data: { tenantId: T, userId, role: 'MEMBER', status: 'ACTIVE' } });
+        const world = await seedWorkWorld(prisma, T, { keyPrefix: 'ISL' });
+        assignedId = (await seedWorkItem(prisma, T, world, { title: 'Patch the firewall', createdByUserId: userId, sortKey: 'V' })).id;
+        watchedId = (await seedWorkItem(prisma, T, world, { title: 'Review access', createdByUserId: userId, sortKey: 'W' })).id;
     });
 
     beforeEach(() => {
@@ -80,10 +87,10 @@ describeFn('an SSE-pushed bell row carries its real Notification id', () => {
     it('a watched work-item update', async () => {
         await createWatcherNotifications(prisma, [userId], {
             tenantId: T,
-            workItemId: `watched-${SUITE}`,
-            workItemKey: 'ISL-3',
+            workItemId: watchedId,
+            workItemKey: 'ISL-2',
             workItemTitle: 'Review access',
-            linkUrl: `/t/${T}/work-items/watched-${SUITE}`,
+            linkUrl: `/t/${T}/work-items/${watchedId}`,
             kind: 'commented',
             discriminator: 'comment-1',
             detail: 'new comment added',

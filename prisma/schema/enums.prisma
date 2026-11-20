@@ -98,6 +98,9 @@ enum NotificationType {
 /// The kind of an outbound email in `NotificationOutbox` (sub-phase 1.6).
 enum EmailNotificationType {
   WORK_ITEM_ASSIGNED
+  /// Retired in sub-phase 2.7c (owner decision 133): nothing writes it; the
+  /// daily `NOTIFICATION_DIGEST` replaced it. The value stays because Postgres
+  /// cannot drop an enum value without recreating the type.
   DUE_DIGEST
   /// Sub-phase 2.6b: the one email asking a public form's requester to
   /// confirm their address (owner decision 89).
@@ -113,6 +116,21 @@ enum EmailNotificationType {
   /// Sub-phase 2.6c: an emailed request was received; only to a sender whose
   /// domain authentication passed (decision 123).
   INTAKE_RECEIVED_ACK
+  /// Sub-phase 2.7c: someone named you as the person a work item waits on,
+  /// mailed at once when your preference says so (owner decision 132).
+  WORK_ITEM_WAITING_ON
+  /// Sub-phase 2.7c: the one daily email with the day's notifications and due
+  /// work items (owner decision 133). Replaces `DUE_DIGEST`.
+  NOTIFICATION_DIGEST
+}
+
+/// A member's email choice for one notification type (sub-phase 2.7c, owner
+/// decision 132). Not inflect-compliance's `NotificationDelivery`, whose
+/// `DISABLED` would also govern the bell: the bell is `inApp`.
+enum EmailDelivery {
+  OFF
+  IMMEDIATE
+  DAILY
 }
 
 /// The state of a `NotificationOutbox` row.

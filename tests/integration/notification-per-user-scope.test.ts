@@ -15,6 +15,10 @@
  *   • A's own mark-read does take effect, so the negative cases are not
  *     passing because marking is broken.
  *
+ * Sub-phase 2.7c adds the Inbox's usecases (`listInbox`,
+ * `updateMyNotification`, `bulkUpdateMyNotifications`): the views, read and
+ * unread, Done and back, "mark all read", each held to the caller's own rows.
+ *
  * Copied from inflect-compliance `tests/integration/notification-per-user-scope.test.ts`
  * at 5528464fc54a8681956f3b9ce23ca9c075f0420e: Islestone's roles, the `body`
  * column, the PII-extended test client and `resetDatabase`.
@@ -22,7 +26,13 @@
 import { MembershipStatus, Role } from '@prisma/client';
 import { randomUUID } from 'crypto';
 
-import { listMyNotifications, markNotificationRead } from '@/app-layer/usecases/notification';
+import {
+    bulkUpdateMyNotifications,
+    listInbox,
+    listMyNotifications,
+    markNotificationRead,
+    updateMyNotification,
+} from '@/app-layer/usecases/notification';
 
 import { prismaTestClient, resetDatabase } from '../helpers/db';
 import { makeRequestContext } from '../helpers/make-context';
@@ -119,5 +129,86 @@ describeFn('notifications are scoped to their own user (integration)', () => {
     it('user A can mark their own notification read', async () => {
         await markNotificationRead(ctxFor(TENANT_A, userA), NOTE_A);
         expect(await isRead(NOTE_A)).toBe(true);
+    });
+});
+
+describeFn('the Inbox: views, read and Done, each the caller\'s own (2.7c)', () => {
+    const INBOX_TENANT = `t-${TAG}-inbox`;
+    let owner = '';
+    let other = '';
+    const ids: Record<string, string> = {};
+
+    beforeAll(async () => {
+        await globalPrisma.tenant.create({ data: { id: INBOX_TENANT, name: INBOX_TENANT, slug: INBOX_TENANT } });
+        owner = await makeUser('inbox-owner');
+        other = await makeUser('inbox-other');
+        await globalPrisma.tenantMembership.createMany({
+            data: [
+                { tenantId: INBOX_TENANT, userId: owner, role: Role.MEMBER, status: MembershipStatus.ACTIVE },
+                { tenantId: INBOX_TENANT, userId: other, role: Role.ADMIN, status: MembershipStatus.ACTIVE },
+            ],
+        });
+        for (const [key, data] of Object.entries({
+            unread1: { read: false },
+            unread2: { read: false },
+            read: { read: true, readAt: new Date() },
+            done: { read: true, archivedAt: new Date() },
+        })) {
+            ids[key] = (await globalPrisma.notification.create({ data: { tenantId: INBOX_TENANT, userId: owner, title: key, body: 'b', ...data } })).id;
+        }
+        ids.others = (await notify(INBOX_TENANT, other, 'someone else')).id;
+    });
+
+    const ctx = () => ctxFor(INBOX_TENANT, owner, Role.MEMBER);
+    const titles = async (view: 'unread' | 'all' | 'done') => (await listInbox(ctx(), { view })).items.map((i) => i.title).sort();
+
+    it('lists Unread, All (not Done) and Done, with the unread count, and never another member\'s row', async () => {
+        expect(await titles('unread')).toEqual(['unread1', 'unread2']);
+        expect(await titles('all')).toEqual(['read', 'unread1', 'unread2']);
+        expect(await titles('done')).toEqual(['done']);
+        expect((await listInbox(ctx(), { view: 'all' })).unreadCount).toBe(2);
+        // The bell's list leaves Done out too.
+        expect((await listMyNotifications(ctx())).map((n) => n.title).sort()).toEqual(['read', 'unread1', 'unread2']);
+    });
+
+    it('pages by cursor without skipping or repeating a row', async () => {
+        const first = await listInbox(ctx(), { view: 'all', limit: 2 });
+        expect(first.items).toHaveLength(2);
+        expect(first.pageInfo.hasNextPage).toBe(true);
+        const second = await listInbox(ctx(), { view: 'all', limit: 2, cursor: first.pageInfo.nextCursor });
+        expect([...first.items, ...second.items].map((i) => i.title).sort()).toEqual(['read', 'unread1', 'unread2']);
+        await expect(listInbox(ctx(), { view: 'all', cursor: 'not-a-cursor' })).rejects.toMatchObject({ status: 400 });
+    });
+
+    it('marks read and unread, and Done (which reads it) and back', async () => {
+        await updateMyNotification(ctx(), ids.unread1!, { read: true });
+        let row = await globalPrisma.notification.findUniqueOrThrow({ where: { id: ids.unread1! } });
+        expect([row.read, row.readAt !== null]).toEqual([true, true]);
+        await updateMyNotification(ctx(), ids.unread1!, { read: false });
+        row = await globalPrisma.notification.findUniqueOrThrow({ where: { id: ids.unread1! } });
+        expect([row.read, row.readAt]).toEqual([false, null]);
+
+        await updateMyNotification(ctx(), ids.unread1!, { done: true });
+        row = await globalPrisma.notification.findUniqueOrThrow({ where: { id: ids.unread1! } });
+        expect([row.read, row.archivedAt !== null]).toEqual([true, true]);
+        await updateMyNotification(ctx(), ids.unread1!, { done: false, read: false });
+        row = await globalPrisma.notification.findUniqueOrThrow({ where: { id: ids.unread1! } });
+        expect([row.read, row.archivedAt]).toEqual([false, null]);
+    });
+
+    it("another member's Done, read or bulk write changes nothing of the owner's", async () => {
+        const otherCtx = ctxFor(INBOX_TENANT, other, Role.ADMIN);
+        expect(await updateMyNotification(otherCtx, ids.unread2!, { done: true })).toEqual({ updated: 0 });
+        expect(await bulkUpdateMyNotifications(otherCtx, { action: 'update', ids: [ids.unread2!], read: true })).toEqual({ updated: 0 });
+        expect(await bulkUpdateMyNotifications(otherCtx, { action: 'mark-all-read' })).toEqual({ updated: 1 });
+        const row = await globalPrisma.notification.findUniqueOrThrow({ where: { id: ids.unread2! } });
+        expect([row.read, row.archivedAt]).toEqual([false, null]);
+    });
+
+    it('"mark all read" reads every unread row still in the Inbox, and only the caller\'s', async () => {
+        const r = await bulkUpdateMyNotifications(ctx(), { action: 'mark-all-read' });
+        expect(r.updated).toBe(2);
+        expect((await listInbox(ctx(), { view: 'unread' })).items).toEqual([]);
+        expect(await titles('done')).toEqual(['done']);
     });
 });

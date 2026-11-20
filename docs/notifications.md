@@ -12,18 +12,23 @@ Copied and edited from inflect-compliance's notification modules at
 `5528464fc54a8681956f3b9ce23ca9c075f0420e` and from its
 `docs/scheduled-notification-system.md` (`PROVENANCE.md`, "Copied: jobs,
 notifications and observability"). Only the work-item kinds are ported; due
-reminders arrive in 2.2 and the per-user preference page in 2.7; the bell UI
-came with the application shell in 1.7 (`docs/app-shell.md`).
+reminders arrived in 2.2; the bell UI came with the application shell in 1.7
+(`docs/app-shell.md`). Sub-phase 2.7c (owner decisions 132 to 136) added the
+Inbox, per-member preferences, the waiting-on email, the daily digest that
+replaced 1.6's unwired due digest, retention and Settings → Notifications
+(see "The Inbox", "Preferences", "The daily digest" and "Retention" below).
 
 ## Tables
 
-All three are workspace tables with the usual row-level security
+All four are workspace tables with the usual row-level security
 (`tenant_isolation`, `tenant_isolation_insert`, `superuser_bypass`, FORCE) and
-a two-workspace test (`tests/integration/notification-tables-isolation.test.ts`).
+a two-workspace test (`tests/integration/notification-tables-isolation.test.ts`;
+`tests/integration/notification-preferences.test.ts` for the preferences).
 
 | Table | What | `app_user` |
 |---|---|---|
-| `Notification` | One bell row: `type`, `title`, `body`, `linkUrl`, `read`, a unique `dedupeKey`. | SELECT, INSERT, UPDATE, DELETE |
+| `Notification` | One bell row: `type`, `title`, `body`, `linkUrl`, `read`, a unique `dedupeKey`; since 2.7c `readAt`, `archivedAt` (the Inbox's Done) and `workItemId` (`(workItemId, tenantId)` → `WorkItem`, `ON DELETE SET NULL ("workItemId")`: a purged item leaves the row and its link). | SELECT, INSERT, UPDATE, DELETE |
+| `NotificationPreference` | 2.7c: one row per member and type (`@@id([tenantId, userId, type])`): `inApp`, `emailDelivery` (`OFF`, `IMMEDIATE`, `DAILY`; a CHECK allows `IMMEDIATE` only for `WORK_ITEM_ASSIGNED` and `WORK_ITEM_WAITING_ON`). `(tenantId, userId)` → `TenantMembership`, cascade: a removed member's rows go. No row is the type's default. | SELECT, INSERT, UPDATE, DELETE |
 | `NotificationOutbox` | One email: recipient, subject, text and HTML body, `status` (`PENDING` / `SENT` / `FAILED`), `attempts`, `sendAfter`, `lastError`, a unique `dedupeKey`. | SELECT, INSERT, UPDATE |
 | `TenantNotificationSettings` | Per workspace: email on or off, sender name and address, a BCC mailbox, the muted bell types. | SELECT, INSERT, UPDATE |
 
@@ -51,8 +56,12 @@ Four writers, all in `src/app-layer/notifications/`:
 
 Each one, in order:
 
-1. asks `isInAppTypeEnabled` (`settings.ts`) and writes nothing when the
-   workspace muted the type: not a row, not an event;
+1. asks `isInAppTypeEnabled` (`settings.ts`) which of its recipients the type
+   may ring, and writes no row for the others: not a row, not an event. Since
+   2.7c that is each recipient's preference under the workspace's mute list
+   (`memberDeliveries`: the settings row and the batch's preference rows, two
+   reads for the whole batch, never one per recipient). It is the only check
+   a bell writer makes; there is no second path;
 2. inserts with `createMany({ skipDuplicates: true })`, so a repeat the same
    day collapses and the caller's transaction is never aborted by a unique
    violation;
@@ -60,6 +69,9 @@ Each one, in order:
    (`inserted-ids.ts`) and publishes it to the in-process bus
    (`src/lib/notifications/notification-bus.ts`), filtered by workspace AND
    user. The event carries the row id, which the bell needs to mark it read.
+
+The work-item writers fill `workItemId` (2.7c); the intake bells leave it
+NULL.
 
 `in-app-types.ts` lists the mutable types, built from the writers' copy
 tables, so a listed type always has a writer that honours its mute
@@ -85,12 +97,17 @@ by a zone; only "today" is computed in `NOTIFICATIONS_TZ`.
 
 | Route | Method | What |
 |---|---|---|
-| `/api/t/<slug>/notifications` | GET | The caller's own bell rows in this workspace, the newest 50. |
-| `/api/t/<slug>/notifications/<id>` | PATCH | Mark one read; a row that is not the caller's is a silent no-op. |
+| `/api/t/<slug>/notifications` | GET | Without `view`: the caller's own bell rows in this workspace not marked Done, the newest 50 (the bell). With `view=unread\|all\|done` (2.7c): one Inbox page, cursor-paginated (`limit`, `cursor`; docs/pagination.md), optionally of one `type`, with `unreadCount`. |
+| `/api/t/<slug>/notifications/<id>` | PUT | Mark one read (body `{}`, the bell's call); a row that is not the caller's is a silent no-op. |
+| `/api/t/<slug>/notifications/<id>` | PATCH | 2.7c: `{ read?, done? }`: read or unread, Done or back in the Inbox; Done also marks it read. Another member's row is a silent no-op. |
+| `/api/t/<slug>/notifications/bulk` | POST | 2.7c: `{ action: 'mark-all-read' }`, or `{ action: 'update', ids (≤ 200), read?, done? }`; only the caller's rows change. |
+| `/api/t/<slug>/notification-preferences` | GET, PUT | 2.7c: the caller's preferences (see "Preferences"). |
 | `/api/t/<slug>/notifications/stream` | GET | The SSE stream: subscribes on connect, a heartbeat comment every 25 s, unsubscribes on abort. Node runtime, never cached. |
 
-Every role may read its own bell (`assertCanRead`); the repository filters by
-user and workspace (`tests/integration/notification-per-user-scope.test.ts`).
+Every role may read and change its own bell and Inbox (`assertCanRead`); no
+route takes a permission key, because nobody acts on anybody else's rows: the
+repository filters every read and write by user and workspace
+(`tests/integration/notification-per-user-scope.test.ts`).
 The stream authenticates at connect only: a session revoked while a stream is
 open keeps receiving that user's events until the connection drops (a known
 limitation, ADR 0005). The bus is in-process, so with several web processes a
@@ -110,29 +127,28 @@ the key holds no personal data, and a repeat the same day is skipped without
 aborting the caller's transaction
 (`tests/integration/notification-enqueue-duplicate-in-transaction.test.ts`).
 
-Two templates, react-email components rendered to HTML with a plain-text
-twin (`templates.ts`, `email/`):
+The member templates, react-email components rendered to HTML with a
+plain-text twin (`templates.ts`, `email/`):
 
 - `WORK_ITEM_ASSIGNED`: the assignee's notice.
-- `DUE_DIGEST`: the daily list of due work items. An assignee's digest says
-  the items are theirs; an admin's says they are unassigned and why the admin
-  is reading it.
+- `WORK_ITEM_WAITING_ON` (2.7c): the person an item now waits on, and who
+  set it.
+- `NOTIFICATION_DIGEST` (2.7c): the daily digest (see "The daily digest").
+
+`DUE_DIGEST` is retired (2.7c, owner decision 133): it never had a caller, its
+dispatcher and template are gone, and its payload type is `never`, so nothing
+can enqueue one. The enum value stays because Postgres cannot drop it.
+
+The immediate emails ask the member's preference first (`emailDeliveryFor`,
+the same resolution as the bell's): `enqueueAssignedEmail` (inside the
+assigning transaction) and the waiting-on email (in the waiting-on bell's
+short transaction after the commit) are written only while the choice, under
+the workspace's email switch, is `IMMEDIATE` (the default for both). A DAILY
+choice leaves the bell row to the digest.
 
 Every link goes through `appLink` (`app-link.ts`), absolute against
 `NEXT_PUBLIC_APP_URL`: a relative link opens nothing in a mail client
 (`tests/unit/notification-templates.test.ts`).
-
-### The digest dispatcher
-
-`dispatchDigest` (`digest-dispatcher.ts`) turns a list of due items into one
-digest per recipient and workspace. It mails only an ACTIVE member of the
-item's workspace, resolved per workspace (a person active in another
-workspace is not mailed this one's items), routes an unassigned item to the
-workspace's OWNERs and ADMINs (at most ten), and skips a workspace that is
-soft-deleted: memberships survive a delete, so the dispatcher checks liveness
-itself (`tests/guards/cross-tenant-recipient-liveness.test.ts`). An item
-whose assignee is no longer a member is counted `unroutable`, not mailed.
-Its caller, the due-reminder job, arrives in 2.2.
 
 ### The drain
 
@@ -158,8 +174,8 @@ The job `notification-outbox-flush` runs it every ten minutes (see
 
 ### Outsiders as recipients (2.6b)
 
-A public intake form's requester is not a member, so the digest
-dispatcher's membership resolution does not apply. Four email types are
+A public intake form's requester is not a member, so no member's
+preference or membership applies to them. Four email types are
 written for them, each from inside the transaction that decides it, with the
 decrypted address passed to `enqueueEmail`: `INTAKE_CONFIRM_ADDRESS` (when
 they ask for updates; deduplicated per address and form a day, so one form
@@ -224,6 +240,95 @@ the outbox counts by status, and the list of mutable types. A change is
 sanitised (`sanitizePlainText` on the sender name) and audited
 (`NOTIFICATION_SETTINGS_UPDATED`).
 
-`POST /api/t/<slug>/notification-settings/run-job` with `{ "job": "processOutbox" }`
+`POST /api/t/<slug>/notification-settings/run-job` with `{ "jobType": "processOutbox" }`
 (`admin.manage`) drains this workspace's outbox now, at most 100 rows, and
 writes a `NOTIFICATION_OUTBOX_PROCESSED` audit entry with the counts.
+
+Settings → Notifications (`/t/<slug>/settings/notifications`, 2.7c, owner
+decision 136) is the page over these routes: the email switch, the sender,
+the BCC mailbox, the in-app mutes, the outbox counts and "Send queued email
+now". It is behind the Settings gate (`settingsPageAccess`), and offers the
+settings only to a caller the API admits (`mayManageNotificationSettings`,
+asked on the server: `admin.manage` and the admin tier); anybody else is told
+so and nothing is read. These settings are the ceiling members' preferences
+show.
+
+## The Inbox (2.7c)
+
+`/t/<slug>/inbox` (owner decision 134; `src/components/inbox/`): the member's
+own notifications as the tabs Unread, All (not Done) and Done (ADR 0006: Done
+is the Inbox's archive verb), optionally of one kind, newest first, with
+"Load more". Each row opens (marking it read and following its link), is
+marked read or unread, and is marked Done, or on the Done tab moved back;
+Done goes through the undo toast (`SITE_CONTRACTS` in
+`tests/guards/undo-toast-coverage.test.ts`). "Mark all read" clears the
+unread count. While focus is in the list, J and K move the selection, E marks
+it Done and U toggles read (`useKeyboardShortcut` with `within`: a bare key is
+never bound for the whole page). The bell's list leaves Done rows out, and its
+"View all" link opens the Inbox.
+
+## Preferences (2.7c)
+
+Owner decision 132. Per member and notification type, the bell on or off and
+email off, at once or in the daily digest. One client-safe module holds the
+rules, `src/lib/notifications/preferences.ts`:
+
+- `PREFERENCE_TYPES`: the types a bell writer emits (held equal to
+  `listInAppNotificationTypes`); `GENERAL` has no row.
+- `PREFERENCE_DEFAULTS`, exhaustive over `NotificationType`: the bell on for
+  every type; email `IMMEDIATE` for assigned and waiting on, `DAILY` for due
+  dates and watched items, `OFF` for intake.
+- `IMMEDIATE_EMAIL_TYPES`: assigned and waiting on (mentions join in 2.7d;
+  the migration's CHECK holds the same list).
+- `resolveDelivery`: the member's row (or the default) under the workspace's
+  `TenantNotificationSettings`, the ceiling: a type the workspace muted rings
+  nobody, and with its email switch off nobody is mailed. A member's choice
+  only narrows. The digest lists a type's unread bell rows, so `DAILY` with
+  the bell off sends nothing (`BELL_OFF`), except for due dates, which the
+  digest reads from the items (`DIGEST_READS_ITEMS`).
+
+`GET /notification-preferences` returns one row per type: the choice, whether
+it is the default, what the writers do, the cap and its reason, and the email
+choices the type offers. `PUT { rows }` changes some types, or `{ type, reset:
+true }` returns one to its default (its row is deleted); `IMMEDIATE` where it is
+not offered is a 400 `IMMEDIATE_NOT_OFFERED`, `DAILY` with the bell off a 400
+`DAILY_NEEDS_IN_APP`; a change is audited `NOTIFICATION_PREFERENCES_UPDATED`
+with the changed types, before and after. The page is
+`/t/<slug>/inbox/preferences`: the grid from the server, a capped cell
+disabled with its reason.
+
+## The daily digest (2.7c)
+
+Owner decision 133. The job `notification-digest`
+(`src/app-layer/jobs/notification-digest.ts`) runs at 08:10 in
+`NOTIFICATIONS_TZ`, after the 08:00 due bells. For each LIVE workspace (a
+soft-deleted one keeps its memberships, so it resolves the live workspaces
+itself: `tests/guards/cross-tenant-recipient-liveness.test.ts`) whose email is
+on, for each ACTIVE member with something `DAILY`, in pages of 200 members, it
+writes one `NOTIFICATION_DIGEST` email through `enqueueEmail` with:
+
+- their open work items due soon (overdue, today, or within `DUE_SOON_DAYS`),
+  assigned to them or waiting on them, when their due-date email is `DAILY`;
+- the unread notifications still in their Inbox, created in the last 24
+  hours, of the other types they receive daily (the due bells are never
+  listed: the due section replaces them).
+
+Everything is re-checked when the digest is built: the item is live, in a live
+and unarchived project, and visible to the member's role
+(`resolveProjectVisibility`; a GUEST sees none until 8.4); a notification
+whose item is gone is dropped; an intake notification goes only to a member
+who still holds `intake.view`. Each section shows at most 50 lines and counts
+the rest. The email carries keys, titles, due dates and the bell rows' stored
+copy, never a description or a comment. It is deduplicated per workspace,
+address and day (`enqueueEmail`), so a retry mails nobody twice
+(`tests/integration/notification-digest.test.ts`).
+
+## Retention (2.7c)
+
+Owner decision 135. The nightly `notification-purge` (03:10 UTC) deletes, per
+live workspace and as its system user, the notifications marked Done more than
+90 days ago and the read ones read more than 180 days ago (from `createdAt`
+for a row read before `readAt` existed). Unread rows still in the Inbox are
+kept however old. Bounded batches, each with a counts-only audit entry
+(`NOTIFICATIONS_PURGED`; `purgeExpiredNotifications` in
+`src/app-layer/usecases/notification-retention.ts`).

@@ -9,10 +9,12 @@
  * imports and calls `isNotificationsEnabled`.
  *
  * WHY THIS EXISTS:
- *   Three separate send paths bypassed tenant notification settings:
- *     1. digest-dispatcher.ts  (fixed)
- *     2. retention-notifications.ts  (fixed)
- *     3. Future files — this guard catches them at CI time
+ *   Three separate send paths bypassed tenant notification settings in
+ *   inflect-compliance (its digest dispatcher, its retention notices, and
+ *   the next file this guard catches at CI time). In Islestone every email
+ *   goes through `enqueueEmail` (enqueue.ts), the one outbox writer; the
+ *   daily digest (2.7c, `jobs/notification-digest.ts`, which replaced the
+ *   unwired digest dispatcher) writes through it too.
  *
  * HOW TO READ FAILURES:
  *   If this test fails, a file writes to notificationOutbox without
@@ -67,9 +69,10 @@ describe('GUARDRAIL: notification eligibility enforced at every outbox write sit
         return content.includes('notificationOutbox.create');
     });
 
-    test('at least 2 outbox write sites exist (sanity check)', () => {
-        // If this drops to 0, the test is no longer guarding anything
-        expect(outboxWriters.length).toBeGreaterThanOrEqual(2);
+    test('the outbox has exactly one writer, enqueue.ts (sanity check)', () => {
+        // If this drops to 0, the test is no longer guarding anything; a second
+        // writer is a new send path that must be gated and listed here.
+        expect(outboxWriters.map((f) => relative(SRC_ROOT, f))).toEqual(['app-layer/notifications/enqueue.ts']);
     });
 
     test.each(outboxWriters.map(f => [relative(SRC_ROOT, f), f]))(
@@ -142,26 +145,22 @@ describe('GUARDRAIL: isNotificationsEnabled is defined in settings.ts only', () 
 });
 
 // ═════════════════════════════════════════════════════════════════════
-// 3. STRUCTURAL: digest-dispatcher uses shared eligibility path
+// 3. STRUCTURAL: the daily digest writes through the gated writer
 // ═════════════════════════════════════════════════════════════════════
 
-describe('GUARDRAIL: digest-dispatcher uses shared eligibility', () => {
-    test('digest-dispatcher imports isNotificationsEnabled from settings', () => {
-        const content = readFileSync(
-            resolve(SRC_ROOT, 'app-layer/notifications/digest-dispatcher.ts'),
-            'utf8',
-        );
-        expect(content).toContain("import { isNotificationsEnabled } from './settings'");
+describe('GUARDRAIL: the daily digest uses the shared eligibility path (2.7c)', () => {
+    const digest = () => readFileSync(resolve(SRC_ROOT, 'app-layer/jobs/notification-digest.ts'), 'utf8');
+
+    test('it enqueues through enqueueEmail and never writes the outbox itself', () => {
+        expect(digest()).toContain("import { enqueueEmail } from '../notifications/enqueue'");
+        expect(digest()).not.toContain('notificationOutbox.');
     });
 
-    test('digest-dispatcher checks eligibility per tenant', () => {
-        const content = readFileSync(
-            resolve(SRC_ROOT, 'app-layer/notifications/digest-dispatcher.ts'),
-            'utf8',
-        );
-        // Must check eligibility and skip disabled tenants
-        expect(content).toContain('eligibleTenants');
-        expect(content).toContain('isNotificationsEnabled(prisma, tenantId)');
+    test('it skips a workspace whose email is switched off before reading its members', () => {
+        const src = digest();
+        const skip = src.indexOf('if (!settings.enabled)');
+        expect(skip).toBeGreaterThan(-1);
+        expect(skip).toBeLessThan(src.indexOf('await memberPage('));
     });
 });
 
@@ -207,36 +206,6 @@ describe('GUARDRAIL: EmailNotificationType schema-migration alignment', () => {
                 unmigrated.map(v => `  - ${v}`).join('\n') + '\n' +
                 `Run: npx prisma migrate dev --name add_<value>_enum\n` +
                 `Or manually add: ALTER TYPE "EmailNotificationType" ADD VALUE IF NOT EXISTS '<value>';`
-            );
-        }
-    });
-
-    test('DigestCategory type in code is a subset of schema EmailNotificationType', () => {
-        const schema = readPrismaSchema();
-        const dispatcher = readFileSync(
-            resolve(SRC_ROOT, 'app-layer/notifications/digest-dispatcher.ts'),
-            'utf8',
-        );
-
-        const enumMatch = schema.match(
-            /enum\s+EmailNotificationType\s*\{([^}]+)\}/,
-        );
-        const schemaValues = new Set(
-            enumMatch![1].split('\n').map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith('//')),
-        );
-
-        const categoryMatch = dispatcher.match(
-            /type\s+DigestCategory\s*=\s*([^;]+);/,
-        );
-        const codeValues = (categoryMatch![1].match(/'([^']+)'/g) || [])
-            .map(v => v.replace(/'/g, ''));
-
-        const notInSchema = codeValues.filter(v => !schemaValues.has(v));
-        if (notInSchema.length > 0) {
-            fail(
-                `DigestCategory values not in EmailNotificationType enum:\n` +
-                notInSchema.map(v => `  - ${v}`).join('\n') + '\n' +
-                `Add these to the schema enum and create a migration.`
             );
         }
     });

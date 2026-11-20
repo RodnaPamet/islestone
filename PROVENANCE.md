@@ -1425,10 +1425,10 @@ The BullMQ queue, worker and scheduler with two jobs, the notification outbox, d
 | `src/app-layer/notifications/templates.ts` | `src/app-layer/notifications/templates.ts` | REWRITE | Two react-email templates (`WORK_ITEM_ASSIGNED`, `DUE_DIGEST`), async, every link through `appLink`; the compliance templates not taken. |
 | `src/app-layer/notifications/email/layout.tsx` | — | Islestone-owned | The shared react-email layout. |
 | `src/app-layer/notifications/email/work-item-assigned.tsx` | — | Islestone-owned | The assignment template. |
-| `src/app-layer/notifications/email/due-digest.tsx` | `src/app-layer/notifications/digest-templates.ts` (`buildDeadlineDigestEmail`) | REWRITE | The digest as a react-email component; the two audiences' copy (#3651) kept, singular and plural. |
+| `src/app-layer/notifications/email/due-digest.tsx` | `src/app-layer/notifications/digest-templates.ts` (`buildDeadlineDigestEmail`) | REWRITE | The digest as a react-email component; the two audiences' copy (#3651) kept, singular and plural. **Removed in 2.7c** (owner decision 133): the due digest had no caller, and the daily `notification-digest` replaced it. |
 | `src/app-layer/notifications/enqueue.ts` | `src/app-layer/notifications/enqueue.ts` | COPY+EDIT | A discriminated payload per `EmailNotificationType`, exhaustive; async build. |
 | `src/app-layer/notifications/processOutbox.ts` | `src/app-layer/notifications/processOutbox.ts` | COPY+EDIT | Comments; the row's type passed to the mailer as the template name for its log line. |
-| `src/app-layer/notifications/digest-dispatcher.ts` | `src/app-layer/notifications/digest-dispatcher.ts` | COPY+EDIT | `DUE_DIGEST` only; the dedupe key hashes the address (`hashForLookup`); `createMany({ skipDuplicates })`; async build; docblocks re-pointed at work items. |
+| `src/app-layer/notifications/digest-dispatcher.ts` | `src/app-layer/notifications/digest-dispatcher.ts` | COPY+EDIT | `DUE_DIGEST` only; the dedupe key hashes the address (`hashForLookup`); `createMany({ skipDuplicates })`; async build; docblocks re-pointed at work items. **Removed in 2.7c** (owner decision 133): the due digest had no caller, and the daily `notification-digest` replaced it. |
 | `src/app-layer/notifications/assignment.ts` | `src/app-layer/notifications/assignment.ts` | COPY+EDIT | One kind, `WORK_ITEM_ASSIGNED`; the link is the caller's; the in-app mute is asked before the write (new, map); `body`. |
 | `src/app-layer/notifications/watcher.ts` | `src/app-layer/notifications/watcher.ts` | COPY+EDIT | Work-item fields; the link is the caller's; the mute check (new); `body`. |
 | `src/app-layer/notifications/in-app-types.ts` | `src/app-layer/notifications/agentic.ts` (`listInAppNotificationTypes`) | REWRITE | Built from the two writers' copy tables. |
@@ -1489,7 +1489,7 @@ The BullMQ queue, worker and scheduler with two jobs, the notification outbox, d
 | `tests/guards/worker-heartbeat-wiring.test.ts` | `tests/guards/worker-heartbeat-wiring.test.ts` | COPY+EDIT | Parts 4a/4b (compliance jobs) cut. |
 | `tests/guards/worker-import-graph.test.ts` | `tests/guards/worker-import-graph.test.ts`; `tests/guards/worker-safe-imports.test.ts` | REWRITE | One walk from the three worker scripts on `tests/helpers/import-graph.ts`, every edge for the NextAuth seam, static edges for `next/headers`; a planted repository. |
 | `tests/helpers/outbox-double.ts` | `tests/helpers/outbox-double.ts` | COPY | None. |
-| `tests/integration/digest-recipient-membership.test.ts` | `tests/integration/digest-recipient-membership.test.ts` | COPY+EDIT | `DUE_DIGEST`, `WORK_ITEM`, MEMBER; the PII test client; `resetDatabase`. |
+| `tests/integration/digest-recipient-membership.test.ts` | `tests/integration/digest-recipient-membership.test.ts` | COPY+EDIT | `DUE_DIGEST`, `WORK_ITEM`, MEMBER; the PII test client; `resetDatabase`. **Removed in 2.7c** (owner decision 133): the due digest had no caller, and the daily `notification-digest` replaced it. |
 | `tests/integration/initiator-context-deleted-tenant.test.ts` | `tests/integration/initiator-context-deleted-tenant.test.ts` | COPY+EDIT | DB-gated; MEMBER; `resetDatabase`. |
 | `tests/integration/jobs-queue-roundtrip.test.ts` | — | Islestone-owned | Enqueue to a real Redis, a Worker on the registry, both jobs, and `closeQueue` quitting its connection. |
 | `tests/integration/notification-enqueue-duplicate-in-transaction.test.ts` | `tests/integration/notification-enqueue-duplicate-in-transaction.test.ts` | COPY+EDIT | The `WORK_ITEM_ASSIGNED` payload; `resetDatabase`. |
@@ -1505,8 +1505,8 @@ The BullMQ queue, worker and scheduler with two jobs, the notification outbox, d
 | `tests/guards/next-auth-email-provider-unused.test.ts` | — | Islestone-owned | ADR 0004 question 7: the `next-auth` → `nodemailer` override holds only while nothing imports next-auth's email provider; population from git, a planted repository. |
 | `tests/rendered/web-vitals-reporter-subscribes-once.test.tsx` | `tests/rendered/web-vitals-reporter-subscribes-once.test.tsx` | COPY | None. |
 | `tests/unit/csp-reporting.test.ts` | `tests/unit/csp-reporting.test.ts` | COPY+EDIT | A `no-require-imports` disable line. |
-| `tests/unit/digest-enum-schema-alignment.test.ts` | `tests/unit/digest-enum-schema-alignment.test.ts` | REWRITE | A type-level check over `DUE_DIGEST`; migrations from git. |
-| `tests/unit/digest-tenant-eligibility.test.ts` | `tests/unit/digest-tenant-eligibility.test.ts` | COPY+EDIT | `DUE_DIGEST`, `WORK_ITEM`; the `createMany` mock; Islestone copy. |
+| `tests/unit/digest-enum-schema-alignment.test.ts` | `tests/unit/digest-enum-schema-alignment.test.ts` | REWRITE | A type-level check over `DUE_DIGEST`; migrations from git. **Removed in 2.7c** (owner decision 133): the due digest had no caller, and the daily `notification-digest` replaced it. |
+| `tests/unit/digest-tenant-eligibility.test.ts` | `tests/unit/digest-tenant-eligibility.test.ts` | COPY+EDIT | `DUE_DIGEST`, `WORK_ITEM`; the `createMany` mock; Islestone copy. **Removed in 2.7c** (owner decision 133): the due digest had no caller, and the daily `notification-digest` replaced it. |
 | `tests/unit/drain-pages.test.ts` | `tests/unit/drain-pages.test.ts` | COPY | None. |
 | `tests/unit/executor-registry.test.ts` | `tests/unit/executor-registry.test.ts` | COPY+EDIT | Two registrations; `NonRetryableJobError` cases; the integration mocks cut. |
 | `tests/unit/initiator-context.test.ts` | `tests/unit/initiator-context.test.ts` | COPY+EDIT | Five roles and `grantsJson`; the pre-#4362 projections and `buildDelegatedJobContext` blocks cut. |
@@ -1518,14 +1518,14 @@ The BullMQ queue, worker and scheduler with two jobs, the notification outbox, d
 | `tests/unit/jobs/notification-outbox-flush-wiring.test.ts` | `tests/unit/jobs/notification-outbox-flush-wiring.test.ts` | COPY+EDIT | Paths. |
 | `tests/unit/jobs/register-schedules.test.ts` | `tests/unit/jobs/register-schedules.test.ts` | COPY+EDIT | Planted retired names through a mock. |
 | `tests/unit/mailer.test.ts` | same | COPY+EDIT | Islestone's domain; the env through the `@/env` mock; new: the lazy init, the password never logged, and no log line carrying an address or the body. |
-| `tests/unit/notification-eligibility-guardrail.test.ts` | `tests/unit/notification-eligibility-guardrail.test.ts` | COPY | None. |
+| `tests/unit/notification-eligibility-guardrail.test.ts` | `tests/unit/notification-eligibility-guardrail.test.ts` | COPY | None. 2.7c: the digest dispatcher's cases replaced by the daily digest's. |
 | `tests/unit/notification-enqueue.test.ts` | `tests/unit/notification-enqueue.test.ts` | COPY | None. |
 | `tests/unit/notification-outbox.test.ts` | `tests/unit/notification-outbox.test.ts` | COPY | None. |
 | `tests/unit/notification-sender-fallback.test.ts` | `tests/unit/notification-sender-fallback.test.ts` | COPY+EDIT | The Islestone placeholder; `bccMailbox`; the single-owner scan over Islestone's files. |
 | `tests/unit/notification-settings-audit.test.ts` | `tests/unit/notification-settings-audit.test.ts` | COPY+EDIT | `bccMailbox`; the audit mock; the work-item types. |
 | `tests/unit/notification-settings-route-authz.test.ts` | `tests/unit/notification-settings-route-authz.test.ts` | COPY+EDIT | The usecase layer. |
 | `tests/unit/notification-settings.test.ts` | `tests/unit/notification-settings.test.ts` | COPY+EDIT | `bccMailbox`; the work-item types in the mute cases. |
-| `tests/unit/notification-templates.test.ts` | `tests/unit/notification-templates.test.ts`; `tests/unit/notification-email-links-absolute.test.ts` | REWRITE | The two templates' copy, absolute links and escaping. |
+| `tests/unit/notification-templates.test.ts` | `tests/unit/notification-templates.test.ts`; `tests/unit/notification-email-links-absolute.test.ts` | REWRITE | The two templates' copy, absolute links and escaping. 2.7c: the digest dispatcher's cases replaced by the daily digest's. |
 | `tests/unit/notifications-mark-read-route.test.ts` | `tests/unit/notifications-mark-read-route.test.ts` | COPY | None. |
 | `tests/unit/notifications/assignment.test.ts` | `tests/unit/notifications/assignment.test.ts` | COPY+EDIT | One kind; the caller's link; the muted case (new). |
 | `tests/unit/notifications/in-app-types.test.ts` | — | Islestone-owned | Map "new tests": the catalogue is the writers' copy, and each writer mutes before it writes. |
@@ -2090,6 +2090,15 @@ Built by [`docs/porting/maps/2.7.md`](docs/porting/maps/2.7.md) ("Part 2") under
 | `tests/rendered/command-palette-entity-search.test.tsx` | `tests/rendered/command-palette-entity-search.test.tsx` | COPY+EDIT | Work-item and project hits; the framework case and the fan-out comments gone; the switch, a failed search and the minimum length asserted. |
 | `src/components/command-palette/use-entity-search.ts`, `command-palette.tsx`, `src/lib/search/types.ts` (1.7's copies) | same | COPY+EDIT | `ENTITY_SEARCH_AVAILABLE = true`; `MAX_PER_TYPE_LIMIT`; the headers say the route exists. |
 | `prisma/migrations/20261203120000_search_titles/`, `src/lib/search/query.ts`, `src/lib/schemas/search.ts`, `projectVisibilitySql` (`project-visibility.ts`), `WorkItemRepository.searchTitles`, `ProjectRepository.searchNames`, the escaped `q` in `_buildWhere`, `mayReadWorkItems`; `tests/integration/search.test.ts`, `tests/unit/repositories/search-repository-predicates.test.ts`, `tests/unit/search/search-query.test.ts` | — | Islestone-owned | Written fresh. inflect's search has no index and no full-text query (`grep` for `pg_trgm` / `to_tsvector` at the commit finds none). |
+
+## Inbox, preferences and the digest (sub-phase 2.7c)
+
+Built by [`docs/porting/maps/2.7.md`](docs/porting/maps/2.7.md) ("Part 4") under owner decisions 132 to 136; see [`docs/notifications.md`](docs/notifications.md). Nothing is copied.
+
+| File | Source | Action | Changes |
+|---|---|---|---|
+| `NotificationPreference`, `EmailDelivery` (`prisma/schema/notifications.prisma`, `enums.prisma`), `src/lib/notifications/preferences.ts` | inflect-compliance at `5528464fc54a8681956f3b9ce23ca9c075f0420e`: `prisma/schema/automation.prisma` lines 116–128 (`UserNotificationPreference`) and `enums.prisma` line 848 (`NotificationDelivery`), BUSL-1.1 | Pattern only, no code copied | inflect's model is read and written by nothing; its shape (one row per user and type, a delivery enum) was the starting point. Islestone's row is per workspace member (`TenantMembership` FK, cascade), separates the bell (`inApp`) from email (`OFF`, `IMMEDIATE`, `DAILY`; inflect's `DISABLED` would have governed both), allows IMMEDIATE only for the direct types (a CHECK), and is capped by the workspace's settings in one pure resolution. |
+| `src/components/inbox/`, `src/app-layer/jobs/notification-digest.ts`, `notification-purge.ts`, `src/app-layer/usecases/notification-preferences.ts`, `notification-retention.ts`, the Inbox's additions to `NotificationRepository.ts` and `usecases/notification.ts`, the notification routes' 2.7c methods, `src/components/settings/NotificationSettings.tsx`, the waiting-on and digest email templates, migrations `20261204120000`–`20261204120200`, and their tests | — | Islestone-owned | Written fresh. inflect has no inbox page, no member preferences in use and only compliance digests (`src/app-layer/notifications/digest-templates.ts`, not taken). 1.6's copied digest dispatcher (`digest-dispatcher.ts`, the due-digest template) had no caller and was removed. |
 
 ## Adopted
 

@@ -18,15 +18,17 @@ import { isNotificationsEnabled } from './settings';
 import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
 import {
-    buildDueDigestEmail,
     buildIntakeRequesterEmail,
+    buildNotificationDigestEmail,
     buildWorkItemAssignedEmail,
-    type DueDigestPayload,
+    buildWorkItemWaitingOnEmail,
     type EmailTemplateResult,
     type IntakeConfirmAddressPayload,
     type IntakeDeclinedPayload,
     type IntakeRequesterPayload,
+    type NotificationDigestPayload,
     type WorkItemAssignedPayload,
+    type WorkItemWaitingOnPayload,
 } from './templates';
 
 /**
@@ -36,7 +38,13 @@ import {
  */
 export interface EmailPayloadByType {
     WORK_ITEM_ASSIGNED: WorkItemAssignedPayload;
-    DUE_DIGEST: DueDigestPayload;
+    /**
+     * Retired (2.7c, owner decision 133): the daily `NOTIFICATION_DIGEST`
+     * replaced it and nothing may write it. `never` makes an input of this
+     * type unconstructible; the enum value stays only because Postgres
+     * cannot drop it.
+     */
+    DUE_DIGEST: never;
     /** Sub-phase 2.6b: a public form's requester (outsiders; owner decision 89). */
     INTAKE_CONFIRM_ADDRESS: IntakeConfirmAddressPayload;
     INTAKE_ACCEPTED: IntakeRequesterPayload;
@@ -44,6 +52,10 @@ export interface EmailPayloadByType {
     INTAKE_MERGED: IntakeRequesterPayload;
     /** Sub-phase 2.6c: an emailed request received, to an authenticated sender only (decision 123). */
     INTAKE_RECEIVED_ACK: IntakeRequesterPayload;
+    /** Sub-phase 2.7c: the person an item now waits on, when their preference is IMMEDIATE. */
+    WORK_ITEM_WAITING_ON: WorkItemWaitingOnPayload;
+    /** Sub-phase 2.7c: the one daily digest (owner decision 133). */
+    NOTIFICATION_DIGEST: NotificationDigestPayload;
 }
 
 type EmailPayloadMap = { [K in EmailNotificationType]: EmailPayloadByType[K] };
@@ -180,7 +192,11 @@ async function buildEmailContent(input: EnqueueEmailInput): Promise<EmailTemplat
         case 'WORK_ITEM_ASSIGNED':
             return buildWorkItemAssignedEmail(input.payload);
         case 'DUE_DIGEST':
-            return buildDueDigestEmail(input.payload);
+            throw new Error('DUE_DIGEST is retired (sub-phase 2.7c): the daily NOTIFICATION_DIGEST replaced it');
+        case 'WORK_ITEM_WAITING_ON':
+            return buildWorkItemWaitingOnEmail(input.payload);
+        case 'NOTIFICATION_DIGEST':
+            return buildNotificationDigestEmail(input.payload);
         case 'INTAKE_CONFIRM_ADDRESS':
             return buildIntakeRequesterEmail('CONFIRM', input.payload);
         case 'INTAKE_ACCEPTED':

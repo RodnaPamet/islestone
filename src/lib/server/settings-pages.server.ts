@@ -4,13 +4,15 @@
  * membership whose built-in role opens the admin console), asked through
  * `getTenantServerContext` (membership and the workspace MFA gate), and the
  * writes the page offers, `workConfigAffordances` (the predicates the work
- * configuration usecases assert). Anybody the gate refuses gets a 404, as
+ * configuration usecases assert), and whether the notification settings are
+ * the caller's to see (2.7c). Anybody the gate refuses gets a 404, as
  * for a workspace they are not in.
  *
  * Written fresh for Islestone.
  */
 import { notFound } from 'next/navigation';
 
+import { mayManageNotificationSettings } from '@/app-layer/policies/notification-settings.policies';
 import { templateAffordances } from '@/app-layer/policies/template.policies';
 import { workConfigAffordances } from '@/app-layer/policies/work-config.policies';
 import { mayOpenSettings } from '@/components/layout/nav-config';
@@ -19,7 +21,9 @@ import { isAppError } from '@/lib/errors/types';
 import { getTenantServerContext } from '@/lib/server/tenant-context.server';
 import type { TemplateAffordances, WorkConfigAffordances } from '@/lib/work-items/types';
 
-export async function settingsPageAccess(tenantSlug: string): Promise<{ affordances: WorkConfigAffordances; templates: TemplateAffordances }> {
+export async function settingsPageAccess(
+    tenantSlug: string,
+): Promise<{ affordances: WorkConfigAffordances; templates: TemplateAffordances; manageNotificationSettings: boolean }> {
     const session = await getSessionOrThrow();
     let ctx;
     try {
@@ -36,5 +40,10 @@ export async function settingsPageAccess(tenantSlug: string): Promise<{ affordan
         throw err;
     }
     if (!mayOpenSettings(ctx.appPermissions, ctx.membershipRole)) notFound();
-    return { affordances: workConfigAffordances(ctx), templates: templateAffordances(ctx) };
+    return {
+        affordances: workConfigAffordances(ctx),
+        templates: templateAffordances(ctx),
+        // Settings → Notifications (2.7c): the 1.6 API's own gate.
+        manageNotificationSettings: mayManageNotificationSettings(ctx),
+    };
 }

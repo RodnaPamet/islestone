@@ -37,6 +37,7 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     Notification: 'tests/integration/notification-tables-isolation.test.ts',
     NotificationOutbox: 'tests/integration/notification-tables-isolation.test.ts',
     TenantNotificationSettings: 'tests/integration/notification-tables-isolation.test.ts',
+    NotificationPreference: 'tests/integration/notification-preferences.test.ts',
     // Sub-phases 2.1–2.2.
     Team: 'tests/integration/work-tables-isolation.test.ts',
     WorkflowState: 'tests/integration/work-tables-isolation.test.ts',

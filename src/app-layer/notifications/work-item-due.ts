@@ -40,7 +40,9 @@
  * date-only due day, the workspace's in-app mute list asked before any write
  * (as 1.6 does for the other two bells), the link through `workItemPath`, and
  * a batch form for the job's page write (one `createMany` and one id
- * read-back per page, where the source wrote and read back per item).
+ * read-back per page, where the source wrote and read back per item). From
+ * 2.7c each recipient's preference is asked too (`isInAppTypeEnabled`, one
+ * batch per page) and the row names its item (`workItemId`).
  */
 import type { PrismaClient } from '@prisma/client';
 
@@ -152,7 +154,7 @@ export interface WorkItemDueOutcome {
     window: WorkItemDueWindow | null;
 }
 
-type DueDb = Pick<PrismaClient, 'notification' | 'tenantNotificationSettings'>;
+type DueDb = Pick<PrismaClient, 'notification' | 'tenantNotificationSettings' | 'notificationPreference'>;
 
 function rowFor(
     target: WorkItemDueTarget,
@@ -170,6 +172,7 @@ function rowFor(
         title: copy.title,
         body: `${label} ${copy.phrase}.`,
         linkUrl: tenantWorkItemPath(target.tenantSlug, target.id),
+        workItemId: target.id,
         dedupeKey: buildWorkItemDueDedupeKey(target.tenantId, window, target.id, recipient.userId, now, tz),
     };
 }
@@ -186,7 +189,7 @@ export async function createWorkItemDueNotifications(
     now: Date = new Date(),
     tz: string = 'UTC',
 ): Promise<{ created: number; candidates: number; muted: boolean }> {
-    const rows = [] as ReturnType<typeof rowFor>[];
+    let rows = [] as ReturnType<typeof rowFor>[];
     for (const t of targets) {
         if (t.tenantId !== tenantId) continue;
         const window = classifyDueWindow(t.dueDate, now, tz);
@@ -196,9 +199,12 @@ export async function createWorkItemDueNotifications(
     if (rows.length === 0) return { created: 0, candidates: 0, muted: false };
     // Above the write, not filtered after it: a muted row would still reach
     // the bell list, the badge and the SSE stream.
-    if (!(await isInAppTypeEnabled(db, tenantId, WORK_ITEM_DUE_NOTIFICATION_TYPE))) {
-        return { created: 0, candidates: rows.length, muted: true };
-    }
+    // One batch read for the page's recipients (2.7c: each member's
+    // preference under the workspace's mute list).
+    const candidates = rows.length;
+    const enabled = await isInAppTypeEnabled(db, tenantId, WORK_ITEM_DUE_NOTIFICATION_TYPE, rows.map((r) => r.userId));
+    rows = rows.filter((r) => enabled.has(r.userId));
+    if (rows.length === 0) return { created: 0, candidates, muted: true };
     const result = await db.notification.createMany({ data: rows, skipDuplicates: true });
     if (result.count > 0) {
         const inserted = await insertedNotificationIds(db, tenantId, rows.map((r) => r.dedupeKey));
@@ -216,7 +222,7 @@ export async function createWorkItemDueNotifications(
             });
         }
     }
-    return { created: result.count, candidates: rows.length, muted: false };
+    return { created: result.count, candidates, muted: false };
 }
 
 /** The single form, for the usecases' post-commit call. */

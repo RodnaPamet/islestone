@@ -5,7 +5,8 @@
  *     project's notify list (never the person who sent it);
  *   - `INTAKE_REQUEST_WOKEN`: a snoozed request came back, to whoever snoozed it.
  *
- * Mirrors `work-item-due.ts`: the workspace's in-app mute list is asked before
+ * Mirrors `work-item-due.ts`: each recipient's preference under the
+ * workspace's in-app mute list is asked before
  * any write, one `createMany({ skipDuplicates })` per batch, one read-back of
  * the inserted ids, then a push per inserted row. The title is the stored
  * English the settings API lists (2.7 decides about stored keys). The body
@@ -40,7 +41,7 @@ export interface IntakeBellTarget {
     recipientUserIds: readonly string[];
 }
 
-type IntakeDb = Pick<PrismaClient, 'notification' | 'tenantNotificationSettings'>;
+type IntakeDb = Pick<PrismaClient, 'notification' | 'tenantNotificationSettings' | 'notificationPreference'>;
 
 /** One bell per request and recipient (`WOKEN` also per wake day, so a second snooze can ring again). */
 export function buildIntakeDedupeKey(tenantId: string, type: IntakeNotificationType, requestId: string, userId: string, day?: string): string {
@@ -56,7 +57,7 @@ export async function createIntakeNotifications(
     opts: { day?: string } = {},
 ): Promise<{ created: number; muted: boolean }> {
     const copy = INTAKE_NOTIFICATION_COPY[type];
-    const rows = targets.flatMap((t) =>
+    const all = targets.flatMap((t) =>
         [...new Set(t.recipientUserIds)].map((userId) => ({
             tenantId,
             userId,
@@ -67,9 +68,13 @@ export async function createIntakeNotifications(
             dedupeKey: buildIntakeDedupeKey(tenantId, type, t.requestId, userId, opts.day),
         })),
     );
-    if (rows.length === 0) return { created: 0, muted: false };
-    // Above the write: a muted row would still reach the bell list and the stream.
-    if (!(await isInAppTypeEnabled(db, tenantId, type))) return { created: 0, muted: true };
+    if (all.length === 0) return { created: 0, muted: false };
+    // Above the write: a muted row would still reach the bell list and the
+    // stream. One batch read: each recipient's preference under the
+    // workspace's mute list (2.7c).
+    const enabled = await isInAppTypeEnabled(db, tenantId, type, all.map((r) => r.userId));
+    const rows = all.filter((r) => enabled.has(r.userId));
+    if (rows.length === 0) return { created: 0, muted: true };
     const result = await db.notification.createMany({ data: rows, skipDuplicates: true });
     if (result.count > 0) {
         const inserted = await insertedNotificationIds(db, tenantId, rows.map((r) => r.dedupeKey));

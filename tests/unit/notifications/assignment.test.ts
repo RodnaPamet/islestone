@@ -55,7 +55,7 @@ const insertedRows = () =>
         })),
     );
 
-function makeDb(opts: { count?: number; muted?: string[] } = {}) {
+function makeDb(opts: { count?: number; muted?: string[]; prefs?: Array<{ userId: string; type: string; inApp: boolean; emailDelivery: string }> } = {}) {
     return {
         notification: {
             createMany: jest.fn(async () => ({ count: opts.count ?? 1 })),
@@ -63,6 +63,12 @@ function makeDb(opts: { count?: number; muted?: string[] } = {}) {
         },
         tenantNotificationSettings: {
             findUnique: jest.fn(async () => (opts.muted ? { mutedInAppTypes: opts.muted } : null)),
+        },
+        // Sub-phase 2.7c: the member's own preference, read in the same seam.
+        notificationPreference: {
+            findMany: jest.fn(async ({ where }: { where: { type: string; userId: { in: string[] } } }) =>
+                (opts.prefs ?? []).filter((p) => p.type === where.type && where.userId.in.includes(p.userId)),
+            ),
         },
     };
 }
@@ -110,6 +116,7 @@ describe('createAssignmentNotification', () => {
             title: 'You were assigned a work item',
             body: 'ISL-42 "Patch firewall" is now yours.',
             linkUrl: '/t/acme/work-items/wi-1',
+            workItemId: 'wi-1',
             dedupeKey: 'tenant-1:WORK_ITEM_ASSIGNED:wi-1:assignee-9:2026-05-28',
         });
     });
@@ -134,6 +141,16 @@ describe('createAssignmentNotification', () => {
         expect(db.tenantNotificationSettings.findUnique).toHaveBeenCalledWith(
             expect.objectContaining({ where: { tenantId: 'tenant-1' } }),
         );
+    });
+
+    it('writes nothing when the recipient switched the type off (2.7c), and names the item otherwise', async () => {
+        const off = makeDb({ prefs: [{ userId: 'user-1', type: 'WORK_ITEM_ASSIGNED', inApp: false, emailDelivery: 'IMMEDIATE' }] });
+        expect(await createAssignmentNotification(off as never, 'WORK_ITEM_ASSIGNED', makeTarget(), NOW)).toEqual({ status: 'muted' });
+        expect(off.notification.createMany).not.toHaveBeenCalled();
+        const on = makeDb();
+        await createAssignmentNotification(on as never, 'WORK_ITEM_ASSIGNED', makeTarget(), NOW);
+        const data = (on.notification.createMany.mock.calls[0] as unknown as [{ data: Array<{ workItemId: string }> }])[0].data;
+        expect(data[0]!.workItemId).toBe(makeTarget().entityId);
     });
 
     it('a mute of ANOTHER type does not silence this one', async () => {
