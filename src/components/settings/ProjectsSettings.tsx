@@ -5,7 +5,8 @@
  * create (a team, a name and a key prefix), rename, archive behind a typed
  * confirmation (its work items stop taking changes), and unarchive. Delete,
  * restore and a key-prefix change stay API-only for now (the coordinator's
- * decision for this pull request). With no team yet, the dialog sends the
+ * decision for this pull request). The create dialog is `ProjectCreateDialog`,
+ * shared with the Projects page (decision 57); with no team yet, it sends the
  * person to Teams first.
  *
  * Written fresh for Islestone.
@@ -17,7 +18,6 @@ import { useMemo, useState } from 'react';
 import { Button } from '@inflect/ui/components/ui/button';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { EntityListPage } from '@/components/layout/EntityListPage';
-import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { useToast } from '@/components/ui/hooks';
 import { Input } from '@/components/ui/input';
@@ -25,11 +25,10 @@ import { createColumns } from '@/components/ui/table';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import type { WorkConfigAffordances } from '@/lib/work-items/types';
 
+import { ProjectCreateDialog } from './ProjectCreateDialog';
 import { refusalText, SETTINGS_PATHS, type SettingsProject, useProjects, useSettingsApi, useTeams } from './settings-data';
 import { SettingsFormModal } from './SettingsFormModal';
 import { TypedConfirmModal } from './TypedConfirmModal';
-
-type Editing = { mode: 'create' } | { mode: 'rename'; project: SettingsProject } | null;
 
 const projectPath = (id: string) => `/projects/${encodeURIComponent(id)}`;
 
@@ -40,16 +39,11 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
     const { data, error, isLoading } = useProjects();
     const { data: teams } = useTeams();
     const { send, revalidate } = useSettingsApi();
-    const [editing, setEditing] = useState<Editing>(null);
+    const [creating, setCreating] = useState(false);
+    const [renaming, setRenaming] = useState<SettingsProject | null>(null);
     const [archiving, setArchiving] = useState<SettingsProject | null>(null);
     const [name, setName] = useState('');
-    const [teamId, setTeamId] = useState('');
-    const [keyPrefix, setKeyPrefix] = useState('');
     const teamName = useMemo(() => new Map((teams ?? []).map((x) => [x.id, x.name])), [teams]);
-    const noTeams = teams !== undefined && teams.length === 0;
-    // The first team until the person picks one, also when the teams arrive
-    // after the dialog opened.
-    const chosenTeamId = teamId || teams?.[0]?.id || '';
 
     const columns = useMemo(() => {
         const unarchive = async (project: SettingsProject) => {
@@ -92,7 +86,7 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
                                               aria-label={t('common.renameNamed', { name: project.name })}
                                               onClick={() => {
                                                   setName(project.name);
-                                                  setEditing({ mode: 'rename', project });
+                                                  setRenaming(project);
                                               }}
                                           />
                                       )}
@@ -123,19 +117,13 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
         ]);
     }, [t, tenantHref, teamName, affordances, send, revalidate, toast]);
 
-    const teamOptions: ComboboxOption[] = (teams ?? []).map((team) => ({ value: team.id, label: team.name }));
-
-    const submit = async (): Promise<string | null> => {
-        if (!editing) return null;
+    const rename = async (): Promise<string | null> => {
+        const project = renaming;
+        if (!project) return null;
         const value = name.trim();
         if (!value) return t('common.nameRequired');
         try {
-            if (editing.mode === 'create') {
-                await send('POST', '/projects', { teamId: chosenTeamId, name: value, keyPrefix: keyPrefix.trim().toUpperCase() });
-                toast.success(t('projects.created', { name: value }));
-            } else {
-                await send('PATCH', projectPath(editing.project.id), { name: value });
-            }
+            await send('PATCH', projectPath(project.id), { name: value });
             await revalidate(SETTINGS_PATHS.projects);
             return null;
         } catch (err) {
@@ -156,7 +144,6 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
         }
     };
 
-    const creating = editing?.mode === 'create';
     return (
         <EntityListPage<SettingsProject>
             header={{
@@ -169,12 +156,7 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
                         variant="primary"
                         icon={<Plus />}
                         text={t('projects.create')}
-                        onClick={() => {
-                            setName('');
-                            setKeyPrefix('');
-                            setTeamId('');
-                            setEditing({ mode: 'create' });
-                        }}
+                        onClick={() => setCreating(true)}
                     />
                 ) : undefined,
             }}
@@ -190,48 +172,23 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
                 'data-testid': 'settings-projects-table',
             }}
         >
+            <ProjectCreateDialog
+                open={creating}
+                onOpenChange={setCreating}
+                onCreated={async () => {
+                    await revalidate(SETTINGS_PATHS.projects);
+                }}
+            />
             <SettingsFormModal
-                open={editing !== null}
-                onOpenChange={(v) => !v && setEditing(null)}
-                title={editing?.mode === 'rename' ? t('projects.renameTitle') : t('projects.createTitle')}
-                submitLabel={editing?.mode === 'rename' ? t('common.save') : t('projects.createSubmit')}
-                submitDisabled={creating && (noTeams || !chosenTeamId)}
-                onSubmit={submit}
+                open={renaming !== null}
+                onOpenChange={(v) => !v && setRenaming(null)}
+                title={t('projects.renameTitle')}
+                submitLabel={t('common.save')}
+                onSubmit={rename}
             >
-                {creating && noTeams && (
-                    <p role="status" className="text-sm text-content-muted">
-                        {t('projects.noTeams')}{' '}
-                        <Link href={tenantHref('/settings/teams')} className="text-content-emphasis underline">
-                            {t('projects.goTeams')}
-                        </Link>
-                    </p>
-                )}
                 <FormField label={t('common.name')} required>
                     <Input id="project-name-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} autoFocus />
                 </FormField>
-                {creating && (
-                    <>
-                        <FormField label={t('projects.team')} required>
-                            <Combobox
-                                id="project-team-input"
-                                selected={teamOptions.find((o) => o.value === chosenTeamId) ?? null}
-                                setSelected={(o) => o && setTeamId(o.value)}
-                                options={teamOptions}
-                                caret
-                            />
-                        </FormField>
-                        <FormField label={t('projects.keyPrefix')} description={t('projects.keyPrefixHint')} required>
-                            <Input
-                                id="project-key-prefix-input"
-                                value={keyPrefix}
-                                onChange={(e) => setKeyPrefix(e.target.value.toUpperCase())}
-                                maxLength={10}
-                                autoComplete="off"
-                                className="font-mono"
-                            />
-                        </FormField>
-                    </>
-                )}
             </SettingsFormModal>
             <TypedConfirmModal
                 open={archiving !== null}

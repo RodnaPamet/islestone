@@ -1020,6 +1020,7 @@
             "keyPrefixHint": "2 to 10 letters or digits, starting with a letter.",
             "noTeams": "A project belongs to a team, and this workspace has none yet.",
             "goTeams": "Create a team first",
+            "noTeamsAskAdmin": "Ask a workspace admin to create one.",
             "empty": "No projects yet.",
             "col": {
                 "name": "Name",
