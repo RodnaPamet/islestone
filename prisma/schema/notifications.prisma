@@ -59,6 +59,10 @@ model NotificationOutbox {
   subject   String
   bodyText  String
   bodyHtml  String?
+  /// A Reply-To for the message (2.6c: an emailed request's acknowledgement
+  /// carries its reply address, so a reply threads onto the request). Our
+  /// own intake address, not personal data.
+  replyTo   String?
   status    EmailOutboxStatus     @default(PENDING)
   /// The claim's optimistic-concurrency token as well as the retry count.
   attempts  Int                   @default(0)

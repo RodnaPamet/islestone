@@ -123,6 +123,11 @@ export const MACHINE_CALLER_PREFIXES: readonly string[] = [
     // daily caps, or the confirmation token), and the edge meters both.
     '/api/intake/forms',
     '/api/intake/confirm',
+    // Sub-phase 2.6c (decision 98): Resend's inbound email webhook. POST only,
+    // gated by `acceptResendWebhook` (the Svix signature over the capped raw
+    // body, refused outside five minutes); it records the delivery and fetches
+    // nothing inline.
+    '/api/intake/email',
     // Sub-phase 8.3 adds `/api/scim` (bearer SCIM token,
     // `authenticateScimRequest`); later sub-phases add their webhook receivers
     // and the platform-operator `/api/admin` routes, each with the in-handler

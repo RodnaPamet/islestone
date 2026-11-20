@@ -169,7 +169,8 @@ export async function buildDueDigestEmail(payload: DueDigestPayload): Promise<Em
 
 /** What every requester email names: the form and the short reference, never the request's own text. */
 export interface IntakeRequesterPayload {
-    formName: string;
+    /** `null` for a request that arrived by email (2.6c). */
+    formName: string | null;
     reference: string;
 }
 export interface IntakeConfirmAddressPayload extends IntakeRequesterPayload {
@@ -187,10 +188,11 @@ function oneLine(s: string): string {
 }
 
 const INTAKE_SUBJECT: Record<IntakeRequesterEmailKind, (p: IntakeRequesterPayload) => string> = {
-    CONFIRM: (p) => `Confirm your email address for ${oneLine(p.formName)}`,
+    CONFIRM: (p) => `Confirm your email address for ${oneLine(p.formName ?? 'a form')}`,
     ACCEPTED: (p) => `Request ${p.reference} accepted`,
     DECLINED: (p) => `Request ${p.reference} declined`,
     MERGED: (p) => `Request ${p.reference} is being handled with another`,
+    RECEIVED: (p) => `Request ${p.reference} received`,
 };
 
 export async function buildIntakeRequesterEmail(

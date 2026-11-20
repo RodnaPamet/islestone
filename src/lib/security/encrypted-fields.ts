@@ -94,6 +94,9 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // Never searched; sanitised before they are stored. The title stays
     // plaintext, like a work item's.
     IntakeRequest: ['body', 'answersJson', 'declineExplanation', 'internalRemark'],
+    // A follow-up email's text (sub-phase 2.6c, decision 96), sanitised before
+    // it is stored.
+    IntakeFollowUp: ['body'],
 } as const;
 
 /** Set of model names with at least one encrypted field. Fast-path check. */

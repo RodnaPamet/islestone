@@ -16,11 +16,15 @@ export function payloadTooLarge(maxBytes: number): AppError {
     return new AppError(`The request is larger than ${maxBytes} bytes.`, 'PAYLOAD_TOO_LARGE', 413);
 }
 
-export async function readCappedBody(req: Request, maxBytes: number): Promise<string> {
-    const declared = req.headers.get('content-length');
+/** Anything with a header list and a body stream: a request, or a fetched response (2.6c). */
+export type BodySource = Pick<Request, 'headers' | 'body'>;
+
+/** The body's bytes, refused (413) the moment they pass `maxBytes`. */
+export async function readCappedBytes(source: BodySource, maxBytes: number): Promise<Uint8Array> {
+    const declared = source.headers.get('content-length');
     if (declared !== null && /^\d+$/.test(declared) && Number(declared) > maxBytes) throw payloadTooLarge(maxBytes);
-    if (!req.body) return '';
-    const reader = req.body.getReader();
+    if (!source.body) return new Uint8Array(0);
+    const reader = source.body.getReader();
     const chunks: Uint8Array[] = [];
     let total = 0;
     for (;;) {
@@ -39,11 +43,15 @@ export async function readCappedBody(req: Request, maxBytes: number): Promise<st
         all.set(c, at);
         at += c.byteLength;
     }
-    return new TextDecoder('utf-8', { fatal: false }).decode(all);
+    return all;
+}
+
+export async function readCappedBody(source: BodySource, maxBytes: number): Promise<string> {
+    return new TextDecoder('utf-8', { fatal: false }).decode(await readCappedBytes(source, maxBytes));
 }
 
 /** A capped body parsed as JSON; anything else is a 400. */
-export async function readCappedJson(req: Request, maxBytes: number): Promise<unknown> {
+export async function readCappedJson(req: BodySource, maxBytes: number): Promise<unknown> {
     const text = await readCappedBody(req, maxBytes);
     try {
         return JSON.parse(text) as unknown;

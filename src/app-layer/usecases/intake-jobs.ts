@@ -18,12 +18,13 @@
 import { logEvent } from '../events/audit';
 import { IntakeRepository, INTAKE_JOB_BATCH } from '../repositories/IntakeRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
-import { INTAKE_PURGE_DAYS, INTAKE_SPAM_PURGE_DAYS } from '../domain/intake';
+import { INBOUND_RETENTION_DAYS, INTAKE_PURGE_DAYS, INTAKE_SPAM_PURGE_DAYS } from '../domain/intake';
 import { createIntakeNotifications } from '../notifications/intake';
 import { intakeReaders } from './intake-request';
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { resolveProjectVisibility } from '../policies/project-visibility';
+import { IntakeEmailRepository } from '../repositories/IntakeEmailRepository';
 
 const MS_PER_DAY = 86_400_000;
 /** At most this many batches per workspace per run: the next run continues. */
@@ -114,5 +115,19 @@ export async function purgeDecidedRequests(ctx: RequestContext, now: Date = new 
             if (n < INTAKE_JOB_BATCH) break;
         }
     }
+    // Settled inbound email deliveries (2.6c): a sender's lookup hash and
+    // codes, kept 30 days for the throttle and for diagnosis.
+    await runInTenantContext(ctx, async (db) => {
+        const count = await IntakeEmailRepository.purgeInbound(db, ctx, new Date(now.getTime() - INBOUND_RETENTION_DAYS * MS_PER_DAY));
+        if (count > 0) {
+            await logEvent(db, ctx, {
+                action: 'INTAKE_INBOUND_EMAILS_PURGED',
+                entityType: 'IntakeInboundEmail',
+                entityId: ctx.tenantId,
+                details: `Purged ${count} settled inbound email deliveries`,
+                detailsJson: { category: 'data_lifecycle', operation: 'purged', recordCount: count, model: 'IntakeInboundEmail', reason: 'inbound_retention', graceDays: INBOUND_RETENTION_DAYS },
+            });
+        }
+    });
     return { purged };
 }

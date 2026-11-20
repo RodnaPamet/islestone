@@ -217,6 +217,8 @@ const CALLS: Call[] = [
     { file: 'src/app/api/t/[tenantSlug]/teams/[teamId]/cycle-schedule/route.ts', method: 'PUT', path: (i) => `/teams/${i.team}/cycle-schedule`, params: (i) => P(i, { teamId: i.team }), body: () => ({ enabled: false, lengthWeeks: 2, firstStartsOn: '2040-02-06', upcomingCount: 2, rollover: 'NEXT_CYCLE' }), write: true, key: 'cycles.manage' },
     // Sub-phase 2.6a: a project's intake (its other routes are driven in intake-api.test.ts).
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/intake/route.ts', method: 'PUT', path: (i) => `/projects/${i.project}/intake`, params: (i) => P(i, { projectId: i.project }), body: () => ({ enabled: false }), write: true, key: 'intake.manage' },
+    // Sub-phase 2.6c: a new address for the project's intake (409 while it has none; the flow is in intake-email.test.ts).
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/intake/email-address/route.ts', method: 'POST', path: (i) => `/projects/${i.project}/intake/email-address`, params: (i) => P(i, { projectId: i.project }), write: true, key: 'intake.manage' },
 ];
 
 function request(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): NextRequest {

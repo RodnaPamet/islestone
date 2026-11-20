@@ -1443,7 +1443,44 @@
             "accessMembers": "Members",
             "accessPublic": "Public",
             "copyLinkNamed": "Copy the link to {name}",
-            "linkCopied": "Link copied."
+            "linkCopied": "Link copied.",
+            "email": {
+                "title": "Email address",
+                "enabledFor": "Take requests by email for {project}",
+                "closed": "Inbound email is switched off on this deployment, so an address cannot be turned on.",
+                "copyFor": "Copy the email address of {project}",
+                "copied": "Address copied.",
+                "rotate": "Generate a new address",
+                "rotateFor": "Generate a new email address for {project}",
+                "rotateWarning": "The current address, and every reply address built on it, stops working at once.",
+                "rotateConfirm": "Replace the address",
+                "rotateCancel": "Keep it",
+                "rotateConfirmLabel": "Confirm a new address",
+                "rotated": "{project} has a new email address.",
+                "hint": "An email to this address becomes a request. Only a sender whose domain vouches for it gets a reply."
+            },
+            "blocked": {
+                "title": "Blocked senders",
+                "description": "Emails and public-form requests from a blocked address are dropped. Only a fingerprint of the address is kept, so type an address to find its blocks.",
+                "address": "Email address",
+                "scope": "Block on",
+                "workspace": "The whole workspace",
+                "unknownProject": "A project you cannot see",
+                "block": "Block",
+                "find": "Find",
+                "blockedToast": "Address blocked.",
+                "unblockedToast": "Unblocked on {scope}.",
+                "failed": "That did not work.",
+                "blockedOn": "blocked on {date} by {who}",
+                "formerMember": "a former member",
+                "unblock": "Unblock",
+                "unblockNamed": "Unblock on {scope}",
+                "notBlocked": "{email} is not blocked.",
+                "foundCount": "{count, plural, one {{email} is blocked in # place.} other {{email} is blocked in # places.}}",
+                "foundLabel": "Blocks of the address you typed",
+                "listLabel": "Every block",
+                "none": "No sender is blocked."
+            }
         }
     },
     "views": {
@@ -1679,7 +1716,10 @@
             "actions": "Triage",
             "outsider": "Someone outside the workspace",
             "email": "Email address",
-            "updates": "Email updates"
+            "updates": "Email updates",
+            "senderCheck": "Sender check",
+            "attachmentsDropped": "{count, plural, one {# attachment was not kept.} other {# attachments were not kept.}}",
+            "followUps": "{count, plural, one {# follow-up} other {# follow-ups}}"
         },
         "actions": {
             "accept": "Accept",
@@ -1723,7 +1763,9 @@
             "explanation": "Explanation for the requester",
             "explanationHint": "Sent to an outside requester who confirmed their address.",
             "remark": "Internal remark",
-            "remarkHint": "Only people who triage see it."
+            "remarkHint": "Only people who triage see it.",
+            "blockSender": "Block this sender",
+            "blockSenderHint": "Later emails and form requests from this address to this project are dropped. Unblock it in Settings → Intake."
         },
         "merge": {
             "title": "Merge the request",
@@ -1793,6 +1835,11 @@
             "done": "Thank you. Your address is confirmed: you will get updates about your request.",
             "invalid": "This link is not valid or has expired.",
             "failed": "The address could not be confirmed. Try again."
+        },
+        "senderCheck": {
+            "VERIFIED": "Verified: the sender’s domain vouched for it",
+            "FAILED": "Failed: the sender’s domain refused it",
+            "NONE": "Not checked: the sender could not be verified"
         }
     }
 }

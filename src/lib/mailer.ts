@@ -37,6 +37,8 @@ export interface EmailMessage {
     from?: string;
     /** The workspace's BCC mailbox. */
     bcc?: string;
+    /** A Reply-To (2.6c: an emailed request's reply address). */
+    replyTo?: string;
     attachments?: EmailAttachment[];
     /**
      * Which template built the message (the outbox row's type), for the log
@@ -129,6 +131,7 @@ export class NodemailerProvider implements EmailProvider {
             text: msg.text,
             ...(msg.html ? { html: msg.html } : {}),
             ...(msg.bcc ? { bcc: msg.bcc } : {}),
+            ...(msg.replyTo ? { replyTo: msg.replyTo } : {}),
             ...(msg.attachments ? { attachments: msg.attachments } : {}),
         });
     }

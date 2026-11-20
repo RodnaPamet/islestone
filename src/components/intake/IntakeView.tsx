@@ -17,6 +17,7 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useMemo, useState } from 'react';
 
 import { Button } from '@inflect/ui/components/ui/button';
+import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { useToast } from '@/components/ui/hooks';
 import { memberLabel, useMembers, useWorkConfig } from '@/components/work-items/data/use-work-config';
@@ -103,9 +104,34 @@ function RequestDetail({
                             <dd className="text-content-emphasis">{tDetail(`updates.${request.requesterUpdates}`)}</dd>
                         </div>
                     )}
+                    {request.senderCheck && (
+                        <div className="col-span-2">
+                            <dt className="text-xs text-content-muted">{tDetail('detail.senderCheck')}</dt>
+                            <dd className="text-content-emphasis">{tDetail(`senderCheck.${request.senderCheck}`)}</dd>
+                        </div>
+                    )}
                 </dl>
             </div>
             {request.body && <p className="whitespace-pre-wrap text-sm text-content-default">{request.body}</p>}
+            {request.attachmentsDropped > 0 && <p className="text-sm text-content-muted">{tDetail('detail.attachmentsDropped', { count: request.attachmentsDropped })}</p>}
+            {request.followUps.length > 0 && (
+                <section aria-labelledby="intake-follow-ups" className="space-y-tight">
+                    <h3 id="intake-follow-ups" className="text-sm font-semibold text-content-emphasis">
+                        {tDetail('detail.followUps', { count: request.followUps.length })}
+                    </h3>
+                    <ol className="space-y-tight">
+                        {request.followUps.map((f) => (
+                            <li key={f.id} className="rounded-md border border-border-subtle p-compact text-sm">
+                                <p className="text-xs text-content-muted">
+                                    <time dateTime={f.createdAt}>{formatDateTime(f.createdAt)}</time>
+                                    {f.attachmentsDropped > 0 ? ` · ${tDetail('detail.attachmentsDropped', { count: f.attachmentsDropped })}` : ''}
+                                </p>
+                                <p className="whitespace-pre-wrap text-content-default">{f.body}</p>
+                            </li>
+                        ))}
+                    </ol>
+                </section>
+            )}
             {request.answers.length > 0 && (
                 <dl className="space-y-tight text-sm" aria-label={tDetail('detail.answers')}>
                     {request.answers.map((a) => (
@@ -170,6 +196,7 @@ function RequestDetail({
                     open
                     onOpenChange={(v) => !v && setDialog(null)}
                     openRequests={openRequests}
+                    mayBlockSender={affordances.manage}
                     onDone={(next) => {
                         setDialog(null);
                         toast.success(tDetail(`toast.${dialog}`));

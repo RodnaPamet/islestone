@@ -11,7 +11,8 @@
  *     the requester's name and address encrypted and the address hashed, its
  *     text sanitised, and nothing personal or typed in its audit entry; the
  *     notify list is rung;
- *   - the bot defence: a replayed token, a filled trap, a token too fast or
+ *   - the bot defence: a replayed token, a filled trap, a blocked address
+ *     (2.6c), a token too fast or
  *     for an older version of the form, a wrong proof-of-work;
  *   - the caps: the form's daily cap and the workspace's, counted in the
  *     database; the per-IP limit; the 64 KB body cap; JSON only; a
@@ -33,6 +34,7 @@ import { POST as confirmRoute } from '@/app/api/intake/confirm/route';
 import { POST as submitRoute } from '@/app/api/intake/forms/[publicId]/route';
 import { tenantSystemUserId } from '@/lib/tenant-system-user';
 import type { RequestContext } from '@/app-layer/types';
+import { blockSender, unblockSender } from '@/app-layer/usecases/intake-blocked-senders';
 import { createIntakeForm, listIntakeForms, updateIntakeForm } from '@/app-layer/usecases/intake-form';
 import { acceptIntakeRequest, declineIntakeRequest, getIntakeRequest, mergeIntakeRequest } from '@/app-layer/usecases/intake-request';
 import { getPublicIntakeForm, submitPublicIntakeRequest, WORKSPACE_PUBLIC_DAILY_CAP } from '@/app-layer/usecases/intake-public';
@@ -249,6 +251,19 @@ describeFn('public intake forms', () => {
             expect(await res.json()).toMatchObject({ updates: 'CONFIRM_PENDING', confirmation: 'We read every request.' });
             expect(await countRequests()).toBe(1);
             expect(await prisma.notificationOutbox.count({ where: { tenantId, type: 'INTAKE_CONFIRM_ADDRESS' } })).toBe(1);
+        });
+
+        it('a blocked address (2.6c) is answered like the trap: the success screen, nothing stored or sent; unblocked, it is taken again', async () => {
+            const { row } = await blockSender(owner, { email: 'Blocked@Example.com', projectId });
+            const res = await submit(publicId, await envelope({ title: 'Again', requesterEmail: 'blocked@example.com', wantsUpdates: true }));
+            expect(res.status).toBe(201);
+            expect(await res.json()).toMatchObject({ updates: 'CONFIRM_PENDING', confirmation: 'We read every request.' });
+            expect(await countRequests()).toBe(1);
+            expect(await prisma.notificationOutbox.count({ where: { tenantId, type: 'INTAKE_CONFIRM_ADDRESS' } })).toBe(1);
+            await unblockSender(owner, row.id);
+            expect((await submit(publicId, await envelope({ title: 'Again', requesterEmail: 'blocked@example.com' }))).status).toBe(201);
+            expect(await countRequests()).toBe(2);
+            await prisma.intakeRequest.deleteMany({ where: { tenantId, title: 'Again' } });
         });
 
         it('refuses a token too fast, a wrong proof, a token for another form, and an older form version', async () => {

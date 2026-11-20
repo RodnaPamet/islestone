@@ -108,6 +108,11 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${T}/intake/open-forms/route.ts`]: { GET: 'projects.view' },
     [`${T}/intake/projects/route.ts`]: { GET: 'intake.manage' },
     [`${T}/projects/[projectId]/intake/route.ts`]: { PUT: 'intake.manage' },
+    // Sub-phase 2.6c: the email address and blocked senders (decision 92).
+    [`${T}/projects/[projectId]/intake/email-address/route.ts`]: { POST: 'intake.manage' },
+    [`${T}/intake/blocked-senders/route.ts`]: { GET: 'intake.manage', POST: 'intake.manage' },
+    [`${T}/intake/blocked-senders/find/route.ts`]: { POST: 'intake.manage' },
+    [`${T}/intake/blocked-senders/[blockedId]/route.ts`]: { DELETE: 'intake.manage' },
 };
 
 /** The key each exported method passes to requirePermission, from comment-masked code. */

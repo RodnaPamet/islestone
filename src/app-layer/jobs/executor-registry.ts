@@ -626,6 +626,21 @@ executorRegistry.register('intake-snooze-wake', async (payload) => {
     return makeResult('intake-snooze-wake', startedAt, startMs, r.tenants, r.tenants - r.failedTenants, r.failedTenants, { woken: r.count });
 });
 
+// ── intake-email-fetch (sub-phase 2.6c) ──────────────────────────────
+//
+// Enqueued by the inbound email webhook (`receiveInboundEmailEvent`), one per
+// delivery, never scheduled. A retryable failure throws for the queue's
+// backoff; the last attempt settles the delivery itself.
+
+executorRegistry.register('intake-email-fetch', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processInboundEmail } = await import('../usecases/intake-email');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId, inboundId: payload.inboundId };
+    const outcome = await processInboundEmail(forwarded);
+    return makeResult('intake-email-fetch', startedAt, startMs, 1, outcome === 'FAILED' ? 0 : 1, outcome === 'FAILED' ? 1 : 0, { outcome });
+});
+
 executorRegistry.register('intake-purge', async (payload) => {
     const startedAt = new Date().toISOString();
     const startMs = performance.now();

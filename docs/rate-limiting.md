@@ -219,6 +219,19 @@ form's traffic spend another's. The daily caps are counted from
 `IntakeRequest` rows, not by a limiter, because production's in-memory
 counters (decision 50) forget on every deploy.
 
+## Inbound email webhook (2.6c)
+
+`POST /api/intake/email/resend` (`docs/intake.md`, "Inbound email (2.6c)")
+is called by Resend, from a few addresses shared by every Resend customer,
+so it is not metered at the edge: the read tier's 120 a minute per IP would
+cut real deliveries at a busy minute. The handler meters it per IP
+(`INTAKE_EMAIL_WEBHOOK_LIMIT`, 300 a minute, scope `intake-email-webhook`)
+before reading the body, and the route turns the mutation tier off. Then the
+signature check refuses anything Resend did not sign. The real abuse bounds
+are counted in the database from `IntakeInboundEmail` rows: per intake
+address 30 emails an hour and 300 a day, per sender per address 10 an hour;
+past them a delivery is recorded and dropped, never fetched.
+
 ## Later callers
 
 API keys (5.2) reach the edge with no session cookie, so they cannot be

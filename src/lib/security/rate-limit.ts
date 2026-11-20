@@ -350,6 +350,17 @@ export const INTAKE_PUBLIC_SUBMIT_HOURLY_LIMIT: RateLimitConfig = {
 };
 
 /**
+ * The inbound email webhook (sub-phase 2.6c): 300 per minute per IP, an abuse
+ * bound in front of the signature check. Resend delivers from a few
+ * addresses, so the bound is generous; the per-address throttle that counts
+ * real mail is in the database.
+ */
+export const INTAKE_EMAIL_WEBHOOK_LIMIT: RateLimitConfig = {
+    maxAttempts: 300,
+    windowMs: 60 * 1000,
+};
+
+/**
  * A requester confirming their address (sub-phase 2.6b): 10 per minute per
  * IP. The token is 256 bits, so guessing is not the threat; the limit keeps
  * each attempt from being free.

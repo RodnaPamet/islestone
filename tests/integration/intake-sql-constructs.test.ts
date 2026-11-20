@@ -5,7 +5,10 @@
  * the archive-only privilege on forms and project intake. And what
  * `20261127120100_intake_public` adds (sub-phase 2.6b): the CHECKs that keep a
  * public request's requester columns in step with its channel, and the
- * per-workspace uniqueness of a form token's nonce.
+ * per-workspace uniqueness of a form token's nonce. And what
+ * `20261201120100_intake_email` adds (sub-phase 2.6c): the CHECKs on a
+ * project's address, an emailed request's sender check, follow-ups and
+ * inbound deliveries, and the one-workspace-block-per-address partial index.
  */
 import type { Prisma, PrismaClient } from '@prisma/client';
 
@@ -41,6 +44,54 @@ describeFn('intake: SQL constructs', () => {
             data: { tenantId, projectId: world.projectId, channel: 'INTERNAL_FORM', title: 'A request', requesterUserId: userId, ...data },
         });
 
+    it('the catalogue holds every 2.6c CHECK', async () => {
+        const rows = await prisma.$queryRaw<Array<{ conname: string }>>`
+            SELECT conname::text AS conname FROM pg_constraint
+             WHERE conrelid IN ('"ProjectIntake"'::regclass, '"IntakeFollowUp"'::regclass, '"IntakeInboundEmail"'::regclass) AND contype = 'c'`;
+        expect(rows.map((r) => r.conname).sort()).toEqual([
+            'IntakeFollowUp_attachments_dropped_nonnegative',
+            'IntakeFollowUp_body_length',
+            'IntakeInboundEmail_dropped_has_outcome',
+            'IntakeInboundEmail_pending_has_no_outcome',
+            'ProjectIntake_email_needs_token',
+        ]);
+        const partial = await prisma.$queryRaw<Array<{ indexdef: string }>>`
+            SELECT indexdef FROM pg_indexes WHERE indexname = 'IntakeBlockedSender_workspace_unique'`;
+        expect(partial[0]?.indexdef).toMatch(/UNIQUE INDEX .* \("tenantId", "emailHash"\) WHERE \("projectId" IS NULL\)/);
+    });
+
+    it('2.6c: the CHECKs bite, and a workspace block is one per address', async () => {
+        // An address takes mail only with a token.
+        await prisma.projectIntake.upsert({ where: { projectId_tenantId: { projectId: world.projectId, tenantId } }, create: { tenantId, projectId: world.projectId }, update: {} });
+        await expect(prisma.projectIntake.update({ where: { projectId_tenantId: { projectId: world.projectId, tenantId } }, data: { emailEnabled: true } })).rejects.toThrow(
+            /ProjectIntake_email_needs_token/,
+        );
+        // The sender check is set exactly on the EMAIL channel.
+        await expect(request({ senderCheck: 'VERIFIED' })).rejects.toThrow(/IntakeRequest_sender_check_with_email/);
+        await expect(request({ channel: 'EMAIL', requesterUserId: null })).rejects.toThrow(/IntakeRequest_sender_check_with_email/);
+        await expect(request({ attachmentsDropped: -1 })).rejects.toThrow(/IntakeRequest_attachments_dropped_nonnegative/);
+        const emailed = await request({ channel: 'EMAIL', requesterUserId: null, senderCheck: 'NONE', sourceDedupeHash: `${TAG}-msg` });
+        await expect(request({ channel: 'EMAIL', requesterUserId: null, senderCheck: 'NONE', sourceDedupeHash: `${TAG}-msg` })).rejects.toThrow(/Unique constraint|sourceDedupeHash/);
+        // A follow-up has text and counts no negative attachments.
+        await expect(prisma.intakeFollowUp.create({ data: { tenantId, requestId: emailed.id, body: '', sourceDedupeHash: `${TAG}-f0` } })).rejects.toThrow(/IntakeFollowUp_body_length/);
+        await expect(
+            prisma.intakeFollowUp.create({ data: { tenantId, requestId: emailed.id, body: 'x', sourceDedupeHash: `${TAG}-f1`, attachmentsDropped: -1 } }),
+        ).rejects.toThrow(/IntakeFollowUp_attachments_dropped_nonnegative/);
+        // A delivery: dropped names why, pending names nothing.
+        const inbound = (data: Partial<Prisma.IntakeInboundEmailUncheckedCreateInput>) =>
+            prisma.intakeInboundEmail.create({ data: { tenantId, projectId: world.projectId, svixId: `${TAG}-${Math.random()}`, emailId: `${TAG}-${Math.random()}`, ...data } });
+        await expect(inbound({ status: 'DROPPED' })).rejects.toThrow(/IntakeInboundEmail_dropped_has_outcome/);
+        await expect(inbound({ status: 'FAILED' })).rejects.toThrow(/IntakeInboundEmail_dropped_has_outcome/);
+        await expect(inbound({ outcome: 'BLOCKED' })).rejects.toThrow(/IntakeInboundEmail_pending_has_no_outcome/);
+        await expect(inbound({ status: 'DROPPED', outcome: 'BLOCKED' })).resolves.toBeTruthy();
+        // One workspace-wide block per address (NULL projects are not distinct here), and a project block beside it.
+        await prisma.intakeBlockedSender.create({ data: { tenantId, projectId: null, emailHash: `${TAG}-h`, createdByUserId: userId } });
+        await expect(prisma.intakeBlockedSender.create({ data: { tenantId, projectId: null, emailHash: `${TAG}-h`, createdByUserId: userId } })).rejects.toThrow(
+            /Unique constraint|workspace_unique/,
+        );
+        await expect(prisma.intakeBlockedSender.create({ data: { tenantId, projectId: world.projectId, emailHash: `${TAG}-h`, createdByUserId: userId } })).resolves.toBeTruthy();
+    });
+
     it('the catalogue holds every CHECK', async () => {
         const rows = await prisma.$queryRaw<Array<{ conname: string }>>`
             SELECT conname::text AS conname FROM pg_constraint
@@ -49,6 +100,7 @@ describeFn('intake: SQL constructs', () => {
             'IntakeForm_daily_cap_range',
             'IntakeForm_name_length',
             'IntakeRequest_accepted_has_item',
+            'IntakeRequest_attachments_dropped_nonnegative',
             'IntakeRequest_confirmed_asked',
             'IntakeRequest_decided_when_decided',
             'IntakeRequest_declined_has_reason',
@@ -58,6 +110,7 @@ describeFn('intake: SQL constructs', () => {
             'IntakeRequest_merged_has_one_target',
             'IntakeRequest_not_merged_into_itself',
             'IntakeRequest_public_has_form',
+            'IntakeRequest_sender_check_with_email',
             'IntakeRequest_snoozed_has_date',
             'IntakeRequest_title_length',
             'IntakeRequest_updates_need_email',
@@ -129,6 +182,10 @@ describeFn('intake: SQL constructs', () => {
         expect(await held('IntakeForm', 'UPDATE')).toBe(true);
         expect(await held('IntakeRequest', 'DELETE')).toBe(true);
         expect(await held('IntakeNotifyMember', 'DELETE')).toBe(true);
+        // 2.6c: the purge removes deliveries and follow-ups go with requests; unblocking deletes.
+        expect(await held('IntakeInboundEmail', 'DELETE')).toBe(true);
+        expect(await held('IntakeFollowUp', 'DELETE')).toBe(true);
+        expect(await held('IntakeBlockedSender', 'DELETE')).toBe(true);
     });
 
     it("a project's purge removes its forms and requests in one statement (NO ACTION on the form link)", async () => {

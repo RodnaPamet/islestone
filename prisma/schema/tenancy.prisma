@@ -112,6 +112,9 @@ model Tenant {
   intakeNotifyMembers    IntakeNotifyMember[]
   intakeForms            IntakeForm[]
   intakeRequests         IntakeRequest[]
+  intakeFollowUps        IntakeFollowUp[]
+  intakeBlockedSenders   IntakeBlockedSender[]
+  intakeInboundEmails    IntakeInboundEmail[]
 
   @@index([organizationId])
 }

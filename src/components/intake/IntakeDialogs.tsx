@@ -17,6 +17,7 @@ import { useMemo, useState } from 'react';
 import { Combobox } from '@/components/ui/combobox';
 import { DatePicker } from '@/components/ui/date-picker/date-picker';
 import { parseYMD, toYMD } from '@/components/ui/date-picker/date-utils';
+import { Checkbox } from '@/components/ui/checkbox';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -151,13 +152,16 @@ function AcceptDialog({ request, open, onOpenChange, onDone }: DialogProps) {
     );
 }
 
-function DeclineDialog({ request, open, onOpenChange, onDone }: DialogProps) {
+function DeclineDialog({ request, open, onOpenChange, onDone, mayBlockSender }: DialogProps & { mayBlockSender: boolean }) {
     const tDecline = useTranslations('intake.decline');
     const tReason = useTranslations('intake.reason');
     const { send } = useIntakeApi();
     const [reason, setReason] = useState<IntakeDeclineReason>('NOT_PLANNED');
     const [explanation, setExplanation] = useState('');
     const [remark, setRemark] = useState('');
+    const [blockSender, setBlockSender] = useState(false);
+    // "Block this sender" (2.6c): a spam decline of a request with an address, offered under `intake.manage`.
+    const offerBlock = reason === 'SPAM' && mayBlockSender && request.senderBlockable;
     const options = INTAKE_DECLINE_REASONS.map((r) => ({ value: r, label: tReason(r) }));
     return (
         <SettingsFormModal
@@ -171,7 +175,7 @@ function DeclineDialog({ request, open, onOpenChange, onDone }: DialogProps) {
                     const next = await send<IntakeRequestDetail>(
                         'POST',
                         `/intake/requests/${encodeURIComponent(request.id)}/decline`,
-                        { reason, explanation: explanation.trim() || null, remark: remark.trim() || null },
+                        { reason, explanation: explanation.trim() || null, remark: remark.trim() || null, ...(offerBlock && blockSender ? { blockSender: true } : {}) },
                         request.version,
                     );
                     onDone(next);
@@ -198,6 +202,17 @@ function DeclineDialog({ request, open, onOpenChange, onDone }: DialogProps) {
             <FormField label={tDecline('remark')} description={tDecline('remarkHint')}>
                 <Textarea id="intake-decline-remark" rows={2} maxLength={2000} value={remark} onChange={(e) => setRemark(e.target.value)} />
             </FormField>
+            {offerBlock && (
+                <div className="flex items-start gap-tight">
+                    <Checkbox id="intake-decline-block" checked={blockSender} onCheckedChange={(v) => setBlockSender(v === true)} />
+                    <div className="space-y-tight">
+                        <label htmlFor="intake-decline-block" className="text-sm text-content-emphasis">
+                            {tDecline('blockSender')}
+                        </label>
+                        <p className="text-xs text-content-muted">{tDecline('blockSenderHint')}</p>
+                    </div>
+                </div>
+            )}
         </SettingsFormModal>
     );
 }
@@ -325,12 +340,12 @@ function MoveDialog({ request, open, onOpenChange, onDone }: DialogProps) {
     );
 }
 
-export function IntakeDialog({ kind, openRequests, ...props }: DialogProps & { kind: IntakeDialogKind; openRequests: IntakeRequestRow[] }) {
+export function IntakeDialog({ kind, openRequests, mayBlockSender, ...props }: DialogProps & { kind: IntakeDialogKind; openRequests: IntakeRequestRow[]; mayBlockSender: boolean }) {
     switch (kind) {
         case 'accept':
             return <AcceptDialog {...props} />;
         case 'decline':
-            return <DeclineDialog {...props} />;
+            return <DeclineDialog {...props} mayBlockSender={mayBlockSender} />;
         case 'merge':
             return <MergeDialog {...props} openRequests={openRequests} />;
         case 'snooze':

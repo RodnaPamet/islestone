@@ -20,7 +20,8 @@
  * Copied from inflect-compliance `tests/guards/ssrf-egress-coverage.test.ts`
  * at 5528464fc54a8681956f3b9ce23ca9c075f0420e, cut to Islestone's one sink
  * (docs/porting/maps/1.5.md): the bot seam, MCP transport, OIDC and
- * in-deployment-service blocks go with their subsystems.
+ * in-deployment-service blocks go with their subsystems. Sub-phase 2.6c adds
+ * the inbound email download (a URL the email provider's API answers with).
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -88,6 +89,10 @@ const SINKS: { file: string; reason: string }[] = [
     {
         file: 'src/app-layer/events/audit-stream.ts',
         reason: 'Tenant-controlled auditStreamUrl (the metadata-SSRF hole in inflect-compliance).',
+    },
+    {
+        file: 'src/lib/intake/email/resend-download.ts',
+        reason: "The received email's signed download URL (2.6c): a third party's value, host-pinned and then fetched through safeFetch.",
     },
 ];
 

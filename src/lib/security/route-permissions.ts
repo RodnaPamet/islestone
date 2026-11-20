@@ -722,6 +722,30 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'intake.manage',
         note: "Turn a project's intake on or off and set its notify list.",
     },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/intake\\/email-address$`),
+        methods: ['POST'],
+        permission: 'intake.manage',
+        note: "Generate a new email address for a project's intake (2.6c); the old one stops working.",
+    },
+    {
+        path: new RegExp(`^${T}\\/intake\\/blocked-senders$`),
+        methods: ['GET', 'POST'],
+        permission: 'intake.manage',
+        note: 'The blocked senders of the workspace and the visible projects; block an address (2.6c).',
+    },
+    {
+        path: new RegExp(`^${T}\\/intake\\/blocked-senders\\/[^\\/]+$`),
+        methods: ['DELETE'],
+        permission: 'intake.manage',
+        note: 'Unblock a sender (2.6c).',
+    },
+    {
+        path: new RegExp(`^${T}\\/intake\\/blocked-senders\\/find$`),
+        methods: ['POST'],
+        permission: 'intake.manage',
+        note: "Find one address's blocks by the address typed (2.6c; a body, never a URL).",
+    },
     // ── Repeats (sub-phase 2.5d; owner decisions 70 and 72) ────────
     {
         path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/recurrence$`),

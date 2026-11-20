@@ -146,6 +146,45 @@ export const env = createEnv({
          * (src/lib/intake/public-switch.ts).
          */
         INTAKE_PUBLIC_FORMS: z.enum(['0', '1']).optional(),
+        /**
+         * Inbound email intake (sub-phase 2.6c, owner decisions 120 to 123):
+         * "1" opens it, "0" closes it; unset, closed in production and open
+         * otherwise (`isInboundEmailOpen`, src/lib/intake/email/switch.ts).
+         * Inbound mail counts toward the provider's sending quota, so this is
+         * also the kill switch. Opened in production, both Resend values
+         * below are required: refused here and again at startup
+         * (src/lib/security/startup-intake-email-check.ts).
+         */
+        INTAKE_EMAIL: z
+            .enum(['0', '1'])
+            .optional()
+            .superRefine((val, ctx) => {
+                if (process.env.NODE_ENV !== 'production') return;
+                if (process.env.NEXT_TEST_MODE === '1') return;
+                if (val !== '1') return;
+                const missing = ['RESEND_API_KEY', 'RESEND_WEBHOOK_SECRET'].filter((key) => !process.env[key]);
+                if (missing.length === 0) return;
+                ctx.addIssue({
+                    code: 'custom',
+                    message: `INTAKE_EMAIL=1 needs ${missing.join(' and ')}: without them inbound email can neither be verified nor fetched.`,
+                });
+            }),
+        /** The domain of the projects' intake addresses (2.6c); `in.islestone.cloud` when unset. */
+        INTAKE_EMAIL_DOMAIN: z
+            .string()
+            .regex(/^[a-z0-9.-]+\.[a-z]{2,}$/)
+            .optional(),
+        /** Resend's API key (2.6c): fetches received emails; also the SMTP password (decision 120). */
+        RESEND_API_KEY: z.string().min(1).optional(),
+        /** Resend's webhook signing secret, `whsec_…` (2.6c): verifies `email.received` deliveries. */
+        RESEND_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
+        /**
+         * The `authserv-id` of the receiving MTA's `Authentication-Results`
+         * header (2.6c, decision 123). Only a header carrying it is believed;
+         * unset, every sender is unauthenticated (no acknowledgement, no
+         * member attribution), because a sender can write that header too.
+         */
+        INTAKE_EMAIL_AUTHSERV_ID: z.string().min(1).optional(),
         /** Platform-operator key (and its predecessor during a rotation). */
         PLATFORM_ADMIN_API_KEY: z.string().min(32).optional(),
         PLATFORM_ADMIN_API_KEY_PREVIOUS: z.string().min(32).optional(),
@@ -407,6 +446,11 @@ export const env = createEnv({
         AUTH_CREDENTIALS_UI_HIDDEN: process.env.AUTH_CREDENTIALS_UI_HIDDEN,
         AUTH_PUBLIC_SIGNUP: process.env.AUTH_PUBLIC_SIGNUP,
         INTAKE_PUBLIC_FORMS: process.env.INTAKE_PUBLIC_FORMS,
+        INTAKE_EMAIL: process.env.INTAKE_EMAIL,
+        INTAKE_EMAIL_DOMAIN: process.env.INTAKE_EMAIL_DOMAIN,
+        RESEND_API_KEY: process.env.RESEND_API_KEY,
+        RESEND_WEBHOOK_SECRET: process.env.RESEND_WEBHOOK_SECRET,
+        INTAKE_EMAIL_AUTHSERV_ID: process.env.INTAKE_EMAIL_AUTHSERV_ID,
         PLATFORM_ADMIN_API_KEY: process.env.PLATFORM_ADMIN_API_KEY,
         PLATFORM_ADMIN_API_KEY_PREVIOUS: process.env.PLATFORM_ADMIN_API_KEY_PREVIOUS,
         RATE_LIMIT_MODE: process.env.RATE_LIMIT_MODE,

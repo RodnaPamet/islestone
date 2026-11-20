@@ -73,6 +73,10 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     IntakeNotifyMember: 'tests/integration/intake-tables-isolation.test.ts',
     IntakeForm: 'tests/integration/intake-tables-isolation.test.ts',
     IntakeRequest: 'tests/integration/intake-tables-isolation.test.ts',
+    // Sub-phase 2.6c.
+    IntakeFollowUp: 'tests/integration/intake-tables-isolation.test.ts',
+    IntakeBlockedSender: 'tests/integration/intake-tables-isolation.test.ts',
+    IntakeInboundEmail: 'tests/integration/intake-tables-isolation.test.ts',
 };
 
 /** Models proven only structurally, pending a two-tenant test. Empty, and should stay so. */

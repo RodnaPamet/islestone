@@ -133,6 +133,41 @@ default; owner decision 86). The layers, each with its own test
   of control and bidirectional-override characters, rendered as text; the
   requester's name and address encrypted in place as personal data; no
   requester email repeats what they typed.
+
+## Inbound email (2.6c)
+
+The second anonymous write, behind `INTAKE_EMAIL` (closed in production by
+default; owner decisions 120 to 123). Resend posts a webhook for each email
+to an intake address (`docs/intake.md`, "Inbound email (2.6c)"):
+
+- **One machine-caller route**, `POST /api/intake/email/resend` under the
+  `/api/intake/email` entry (decision 98; its contract is in
+  `tests/guards/machine-caller-paths-self-authenticate.test.ts`), gated by
+  `acceptResendWebhook`: a per-IP bound, a 256 KB body read through the
+  stream before anything parses it, and the Svix signature verified by hand
+  over the raw bytes (HMAC-SHA256 under the `whsec_` secret, a five-minute
+  window, constant-time comparison). Production refuses to start with
+  `INTAKE_EMAIL=1` and no `RESEND_WEBHOOK_SECRET` or `RESEND_API_KEY`.
+- **One pre-tenant read**: the address token, under the existing
+  `webhook-ingest` bypass reason; an unknown or disabled address stores
+  nothing and answers the same 200. Everything after runs in the workspace's
+  context as its system user.
+- **No fetch in the request.** The route records a pending delivery and
+  enqueues a job. The job calls Resend's API at a fixed host with the API key
+  and downloads the raw message from the signed URL the API returns: that
+  host is pinned to Resend's domains and AWS storage, and the request goes
+  through `safeFetch` (private, loopback and metadata addresses refused, DNS
+  pinned), with a 10 MB capped read (`tests/guards/ssrf-egress-coverage.test.ts`
+  lists the sink).
+- **Sender authentication** is believed only from an `Authentication-Results`
+  header whose authserv-id is the configured `INTAKE_EMAIL_AUTHSERV_ID`
+  (anyone can write the header); only a `VERIFIED` sender is answered or
+  attributed to a member. Auto-replies and bounces are never answered (no
+  mail loops), per-address and per-sender throttles are counted in the
+  database, and blocked senders are kept only as a lookup hash.
+- **Content.** The text is parsed in-house (no mail library), sanitised and
+  encrypted; attachments and the raw message are never stored; the
+  acknowledgement names the reference only.
 - **Not an embed.** `frame-ancestors 'none'` stays: a public form is a link.
 
 ## CORS

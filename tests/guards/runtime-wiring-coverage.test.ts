@@ -44,6 +44,9 @@ const ON_DEMAND_JOBS: Readonly<Record<string, string>> = {
     'tenant-dek-rotation':
         "OWNER-triggered after a suspected compromise: dispatched by rotateTenantDek, " +
         'which swaps the DEK and enqueues the sweep (POST /api/t/:slug/admin/tenant-dek-rotation).',
+    'intake-email-fetch':
+        'One per inbound email delivery: dispatched by receiveInboundEmailEvent behind ' +
+        'POST /api/intake/email/resend (sub-phase 2.6c).',
 };
 
 function registeredExecutorJobsIn(src: string): string[] {

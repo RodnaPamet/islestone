@@ -4,19 +4,27 @@
 // creates the work item through the ordinary create path.
 //
 // What Prisma cannot declare (the status CHECKs, the caps) lives in migration
-// `20261125120100_intake_core` (2.6a) and `20261127120100_intake_public`
-// (2.6b), each with a catalogue test
+// `20261125120100_intake_core` (2.6a), `20261127120100_intake_public`
+// (2.6b) and `20261201120100_intake_email` (2.6c), each with a catalogue test
 // (tests/integration/intake-sql-constructs.test.ts).
 
-/// A project's intake: whether it takes requests (sub-phase 2.6a). The email
-/// address arrives with 2.6c. Turned off, never deleted.
+/// A project's intake: whether it takes requests (sub-phase 2.6a), and its
+/// email address (2.6c). Turned off, never deleted.
 model ProjectIntake {
-  id        String   @id @default(cuid())
-  tenantId  String
-  projectId String
-  enabled   Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                  String    @id @default(cuid())
+  tenantId            String
+  projectId           String
+  enabled             Boolean   @default(true)
+  /// Whether the project's email address takes mail (2.6c; CHECK: only with
+  /// a token).
+  emailEnabled        Boolean   @default(false)
+  /// The address's local part, `<token>@<INTAKE_EMAIL_DOMAIN>`: 12 characters
+  /// of an unambiguous alphabet. Global, because an inbound email is resolved
+  /// before any workspace is known. A new one retires the old for good.
+  emailToken          String?   @unique
+  emailTokenRotatedAt DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project Project @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
@@ -123,6 +131,18 @@ model IntakeRequest {
   /// The signed form token's nonce (2.6b): unique per workspace, so a token
   /// makes at most one request (decision 88).
   formTokenNonce        String?
+  /// An emailed request's sender authentication, read from the receiving
+  /// MTA's `Authentication-Results` (2.6c, decision 123; CHECK: set exactly
+  /// on the EMAIL channel). Only VERIFIED is acknowledged or attributed to a
+  /// member.
+  senderCheck           IntakeSenderCheck?
+  /// An emailed request's reply token: `<address token>+r<replyToken>@…`
+  /// threads a reply onto it (2.6c). Global, resolved before any workspace.
+  replyToken            String?              @unique
+  /// sha256 of the email's Message-ID (2.6c): one request per message.
+  sourceDedupeHash      String?
+  /// Attachments an email carried, counted and never stored (until 4.4).
+  attachmentsDropped    Int                  @default(0)
   /// Date-only; back to PENDING on this day at 08:00 in `NOTIFICATIONS_TZ`.
   snoozedUntil          DateTime?            @db.Date
   snoozedByUserId       String?
@@ -143,12 +163,14 @@ model IntakeRequest {
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
 
-  tenant  Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project Project     @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
-  form    IntakeForm? @relation(fields: [formId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project   Project          @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  form      IntakeForm?      @relation(fields: [formId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  followUps IntakeFollowUp[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, formTokenNonce])
+  @@unique([tenantId, sourceDedupeHash])
   /// The Intake list, per project and across the workspace.
   @@index([tenantId, projectId, status, createdAt])
   @@index([tenantId, status, createdAt])
@@ -166,4 +188,86 @@ model IntakeRequest {
   @@index([tenantId, workItemId])
   @@index([tenantId, mergedIntoWorkItemId])
   @@index([tenantId, mergedIntoRequestId])
+}
+
+/// A later email on a new or snoozed emailed request (ADR 0006 "Follow-up";
+/// sub-phase 2.6c). Goes with its request.
+model IntakeFollowUp {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  requestId          String
+  /// ENCRYPTED (manifest), sanitised plain text, at most 10,000.
+  body               String
+  /// sha256 of the email's Message-ID: one follow-up per message.
+  sourceDedupeHash   String
+  attachmentsDropped Int      @default(0)
+  createdAt          DateTime @default(now())
+
+  tenant  Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  request IntakeRequest @relation(fields: [requestId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, sourceDedupeHash])
+  @@index([tenantId, requestId, createdAt])
+}
+
+/// An address a project, or the whole workspace, takes no intake from (ADR
+/// 0006 "Blocked sender"; sub-phase 2.6c): its emails are dropped and its
+/// public-form requests answered without being stored. Kept ONLY as the
+/// address's lookup hash (`hashForLookup`), as ADR 0006 defines it: the
+/// address itself is never stored. Removed by unblocking.
+model IntakeBlockedSender {
+  id              String   @id @default(cuid())
+  tenantId        String
+  /// The project it applies to; NULL is the whole workspace (one row per
+  /// address, held by a partial unique index in the migration).
+  projectId       String?
+  emailHash       String
+  /// An actor stamp: a plain column, no FK.
+  createdByUserId String
+  createdAt       DateTime @default(now())
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([tenantId, projectId, emailHash])
+  /// The drop check, the project's and the workspace's rows at once.
+  @@index([tenantId, emailHash])
+  @@index([tenantId, projectId, createdAt])
+}
+
+/// One inbound email delivery (sub-phase 2.6c, decision 122): written by the
+/// webhook when an address resolves, then claimed by the `intake-email-fetch`
+/// job, which fetches the message and makes the request or follow-up. Holds
+/// no address or text: the sender's lookup hash only. Purged after 30 days.
+model IntakeInboundEmail {
+  id          String              @id @default(cuid())
+  tenantId    String
+  projectId   String
+  /// The webhook delivery's id (`svix-id`): global, a repeat is a no-op.
+  svixId      String              @unique
+  /// The received email's id at the provider (`email_id`): global.
+  emailId     String              @unique
+  status      IntakeInboundStatus @default(PENDING)
+  /// Why a DROPPED or FAILED row stopped, a code (CHECK: with DROPPED).
+  outcome     String?
+  /// `hashForLookup` of the envelope sender, for the per-sender throttle.
+  senderHash  String?
+  /// The reply token the address carried, when it was a reply address.
+  replyToken  String?
+  attempts    Int                 @default(0)
+  requestId   String?
+  followUpId  String?
+  createdAt   DateTime            @default(now())
+  processedAt DateTime?
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  /// The per-address throttle.
+  @@index([tenantId, projectId, createdAt])
+  /// The per-sender throttle.
+  @@index([tenantId, projectId, senderHash, createdAt])
+  /// The purge.
+  @@index([tenantId, createdAt])
 }

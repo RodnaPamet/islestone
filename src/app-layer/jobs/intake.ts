@@ -24,7 +24,7 @@ import { runJob } from '@/lib/observability/job-runner';
 /** A sweep over every workspace; bounded far above any deployment. */
 const TENANT_SWEEP_TAKE = 100_000;
 
-async function tenantsWith(statuses: ('SNOOZED' | 'ACCEPTED' | 'DECLINED' | 'MERGED')[], tenantId: string | undefined) {
+async function tenantsWith(statuses: ('SNOOZED' | 'ACCEPTED' | 'DECLINED' | 'MERGED')[], tenantId: string | undefined, opts: { inbound?: boolean } = {}) {
     return runWithoutRls({ reason: 'cross-tenant-sweep' }, async (db) => {
         const rows = await db.intakeRequest.findMany({
             where: { ...(tenantId ? { tenantId } : {}), status: { in: statuses }, tenant: { deletedAt: null } },
@@ -32,9 +32,19 @@ async function tenantsWith(statuses: ('SNOOZED' | 'ACCEPTED' | 'DECLINED' | 'MER
             take: TENANT_SWEEP_TAKE,
             select: { tenantId: true },
         });
-        if (rows.length === 0) return [];
+        // The purge also visits the workspaces with settled inbound deliveries (2.6c).
+        const inbound = opts.inbound
+            ? await db.intakeInboundEmail.findMany({
+                  where: { ...(tenantId ? { tenantId } : {}), status: { not: 'PENDING' }, tenant: { deletedAt: null } },
+                  distinct: ['tenantId'],
+                  take: TENANT_SWEEP_TAKE,
+                  select: { tenantId: true },
+              })
+            : [];
+        const ids = [...new Set([...rows, ...inbound].map((r) => r.tenantId))];
+        if (ids.length === 0) return [];
         return db.tenant.findMany({
-            where: { id: { in: rows.map((r) => r.tenantId) }, deletedAt: null },
+            where: { id: { in: ids }, deletedAt: null },
             orderBy: { id: 'asc' },
             take: TENANT_SWEEP_TAKE,
             select: { id: true, slug: true },
@@ -84,7 +94,7 @@ export async function processIntakePurge(options: IntakeJobOptions = {}): Promis
     return runJob('intake-purge', async () => {
         const now = options.now ?? new Date();
         const result: IntakeJobResult = { tenants: 0, failedTenants: 0, count: 0 };
-        for (const tenant of await tenantsWith(['ACCEPTED', 'DECLINED', 'MERGED'], options.tenantId)) {
+        for (const tenant of await tenantsWith(['ACCEPTED', 'DECLINED', 'MERGED'], options.tenantId, { inbound: true })) {
             try {
                 const ctx = await buildTenantSystemJobContext({ tenantId: tenant.id, tenantSlug: tenant.slug, job: 'intake-purge' });
                 result.count += (await purgeDecidedRequests(ctx, now)).purged;

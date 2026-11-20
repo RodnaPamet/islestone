@@ -262,7 +262,10 @@ describe('the schema speaks ADR 0006', () => {
             'CustomFieldValue',
             'Cycle',
             'CycleSchedule',
+            'IntakeBlockedSender',
+            'IntakeFollowUp',
             'IntakeForm',
+            'IntakeInboundEmail',
             'IntakeNotifyMember',
             'IntakeRequest',
             'Label',
@@ -305,7 +308,7 @@ describe('the schema speaks ADR 0006', () => {
             'WorkItemWatcher',
             'WorkflowState',
         ]);
-        expect(ids.filter((i) => i.kind === 'enum').length).toBe(24);
+        expect(ids.filter((i) => i.kind === 'enum').length).toBe(26);
         expect(ids).toEqual(expect.arrayContaining([{ kind: 'value', name: 'MEMBER', where: 'Role.MEMBER' }]));
     });
 });

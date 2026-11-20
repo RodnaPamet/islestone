@@ -1,7 +1,8 @@
 /**
  * Two-tenant isolation for the four tenant tables of sub-phase 2.6a
  * (roadmap section 4): ProjectIntake, IntakeNotifyMember, IntakeForm and
- * IntakeRequest.
+ * IntakeRequest; and the three of 2.6c: IntakeFollowUp, IntakeBlockedSender
+ * and IntakeInboundEmail.
  *
  * Every operation runs through `runInTenantContext` as tenant B, i.e. as
  * `app_user` with `app.tenant_id` = B: none may read, count, change or remove
@@ -33,6 +34,7 @@ interface Side {
     userId: string;
     world: WorkWorld;
     formId: string;
+    requestId: string;
 }
 
 type Delegate = {
@@ -92,6 +94,28 @@ const TABLES: ReadonlyArray<{
             requesterUserId: s.userId,
         }),
     },
+    // Sub-phase 2.6c.
+    {
+        model: 'IntakeFollowUp',
+        delegate: 'intakeFollowUp',
+        update: { attachmentsDropped: 3 },
+        deletable: true,
+        insert: (s) => ({ tenantId: s.tenantId, requestId: s.requestId, body: 'planted', sourceDedupeHash: `planted-${s.tenantId}` }),
+    },
+    {
+        model: 'IntakeBlockedSender',
+        delegate: 'intakeBlockedSender',
+        update: { createdByUserId: 'someone' },
+        deletable: true,
+        insert: (s) => ({ tenantId: s.tenantId, projectId: null, emailHash: `planted-${s.tenantId}`, createdByUserId: s.userId }),
+    },
+    {
+        model: 'IntakeInboundEmail',
+        delegate: 'intakeInboundEmail',
+        update: { attempts: 4 },
+        deletable: true,
+        insert: (s) => ({ tenantId: s.tenantId, projectId: s.world.projectId, svixId: `planted-svix-${s.tenantId}`, emailId: `planted-email-${s.tenantId}` }),
+    },
 ];
 
 describeFn('intake tables — two-tenant isolation as app_user', () => {
@@ -109,10 +133,15 @@ describeFn('intake tables — two-tenant isolation as app_user', () => {
         const form = await prisma.intakeForm.create({
             data: { tenantId: tenant.id, projectId: world.projectId, name: `${tag} form`, publicId: `${tag}-${SUFFIX}`, definitionJson: {}, createdByUserId: user.id },
         });
-        await prisma.intakeRequest.create({
+        const request = await prisma.intakeRequest.create({
             data: { tenantId: tenant.id, projectId: world.projectId, channel: 'INTERNAL_FORM', formId: form.id, title: `${tag} request`, requesterUserId: user.id },
         });
-        return { tenantId: tenant.id, userId: user.id, world, formId: form.id };
+        await prisma.intakeFollowUp.create({ data: { tenantId: tenant.id, requestId: request.id, body: `${tag} follow-up`, sourceDedupeHash: `${tag}-${SUFFIX}` } });
+        await prisma.intakeBlockedSender.create({ data: { tenantId: tenant.id, projectId: world.projectId, emailHash: `${tag}-${SUFFIX}`, createdByUserId: user.id } });
+        await prisma.intakeInboundEmail.create({
+            data: { tenantId: tenant.id, projectId: world.projectId, svixId: `${tag}-svix-${SUFFIX}`, emailId: `${tag}-email-${SUFFIX}` },
+        });
+        return { tenantId: tenant.id, userId: user.id, world, formId: form.id, requestId: request.id };
     }
 
     const delegateOf = (db: unknown, name: string) => (db as Record<string, Delegate>)[name]!;
@@ -190,6 +219,12 @@ describeFn('intake tables — two-tenant isolation as app_user', () => {
         ).rejects.toThrow();
         await expect(
             prisma.intakeNotifyMember.create({ data: { tenantId: b.tenantId, projectId: b.world.projectId, userId: a.userId } }),
+        ).rejects.toThrow();
+        // 2.6c: a follow-up on A's request, a block on A's project, a delivery to A's project.
+        await expect(prisma.intakeFollowUp.create({ data: { tenantId: b.tenantId, requestId: a.requestId, body: 'x', sourceDedupeHash: `x-${SUFFIX}` } })).rejects.toThrow();
+        await expect(prisma.intakeBlockedSender.create({ data: { tenantId: b.tenantId, projectId: a.world.projectId, emailHash: `x-${SUFFIX}`, createdByUserId: b.userId } })).rejects.toThrow();
+        await expect(
+            prisma.intakeInboundEmail.create({ data: { tenantId: b.tenantId, projectId: a.world.projectId, svixId: `x-svix-${SUFFIX}`, emailId: `x-email-${SUFFIX}` } }),
         ).rejects.toThrow();
     });
 });

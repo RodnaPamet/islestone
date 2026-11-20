@@ -71,6 +71,20 @@ async function refuseUnsafeProductionStart(env: ServerEnv): Promise<void> {
         process.exit(1);
     }
 
+    // ── Sub-phase 2.6c: inbound email opened needs its Resend secrets ──
+    const { checkProductionIntakeEmail } = await import('@/lib/security/startup-intake-email-check');
+    const intakeEmail = checkProductionIntakeEmail({
+        NODE_ENV: env.NODE_ENV,
+        NEXT_TEST_MODE: env.NEXT_TEST_MODE,
+        INTAKE_EMAIL: env.INTAKE_EMAIL,
+        RESEND_API_KEY: env.RESEND_API_KEY,
+        RESEND_WEBHOOK_SECRET: env.RESEND_WEBHOOK_SECRET,
+    });
+    if (!intakeEmail.ok) {
+        console.error('[startup] FATAL: ' + intakeEmail.reason);
+        process.exit(1);
+    }
+
     // ── GAP-03: DATA_ENCRYPTION_KEY is required in production ──
     // The config check catches a missing, short or dev-fallback key; the
     // sentinel round-trips a fixed plaintext so a key that is structurally

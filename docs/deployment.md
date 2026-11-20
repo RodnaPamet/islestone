@@ -235,6 +235,10 @@ only once the release that added them runs on both `islestone-app` and
 `islestone-worker` (the worker sends the requester's emails), and empty the
 value to close them again; closed, every public form answers 404.
 
+Inbound email (sub-phase 2.6c) is closed in production until an operator
+sets `INTAKE_EMAIL=1` with the Resend values and applies; see "Email
+(Resend)" below for the order.
+
 Never `cat` or copy `.env.prod`; to see which names it holds:
 `sudo grep -oE '^[A-Z_]+=' /opt/islestone/.env.prod`.
 
@@ -317,6 +321,69 @@ GitHub and at the DNS provider; this repository cannot do them.
    backup (`deploy/backup.sh`; it reports the upload), run the restore drill
    from the bucket (`RESTORE_DRILL=1 BACKUP_SOURCE=gcs deploy/backup.sh`), and
    record it below. Schedule the backup (below).
+
+## Email (Resend)
+
+Owner decisions 120 and 121. Resend sends Islestone's mail and receives the
+inbound intake email; it is a sub-processor
+([`docs/sub-processors.md`](sub-processors.md)). The facts about Resend here
+come from search summaries, not a live page: **re-check each against
+resend.com before go-live** (marked "(re-check)").
+
+**Domains, in eu-west-1.** In Resend, create both the sending domain and
+`in.islestone.cloud` in the **eu-west-1** region; the region is fixed when a
+domain is created and cannot be moved (re-check). Add the DNS records Resend
+shows for the sending domain (SPF, DKIM; a DMARC record for the domain is the
+operator's), and for receiving:
+
+| Record | Name | Value |
+|---|---|---|
+| MX | `in.islestone.cloud` | the inbound host Resend shows for the domain, priority as Resend gives it (re-check) |
+
+`in.islestone.cloud` is a subdomain on purpose: the apex domain's mail, if it
+ever has any, is untouched.
+
+**Outbound SMTP** (configuration only, no code). In `.env.prod`:
+`SMTP_HOST=smtp.resend.com`, `SMTP_PORT=465` (or 587), `SMTP_USER=resend`,
+`SMTP_PASS=` the Resend API key, `SMTP_FROM=` an address on the verified
+sending domain (re-check the host, ports and user). The mailer sends through
+nodemailer whenever `SMTP_HOST` is set (`docs/notifications.md`).
+
+**Inbound** (sub-phase 2.6c, decision 122; `docs/intake.md`, "Inbound email
+(2.6c)"):
+
+1. Create an API key for the workspace's Resend account and put it in
+   `RESEND_API_KEY` (the fetch job retrieves each received email with it; the
+   same key may serve `SMTP_PASS`).
+2. Add a webhook in Resend for the `email.received` event to
+   `https://islestone.cloud/api/intake/email/resend`, and put its signing
+   secret (`whsec_…`) in `RESEND_WEBHOOK_SECRET` (re-check the event name and
+   the secret's form).
+3. Leave `INTAKE_EMAIL_DOMAIN` at `in.islestone.cloud` unless the MX above
+   names another domain.
+4. Send one test email to an address on the domain before opening intake (it
+   is dropped: no project has an address yet), read the raw message Resend
+   keeps, and if it carries an `Authentication-Results` header written by
+   Resend's receiving server, set `INTAKE_EMAIL_AUTHSERV_ID` to that header's
+   first word (its authserv-id). Unset, every email is treated as
+   unauthenticated: stored, never acknowledged, never attributed to a member
+   (decision 123).
+5. Set `INTAKE_EMAIL=1` and apply, only once the release that added inbound
+   email runs on both `islestone-app` (the webhook) and `islestone-worker`
+   (the fetch job and the acknowledgements). Production refuses
+   `INTAKE_EMAIL=1` without both Resend values. Empty it to close inbound
+   email again: the webhook then answers 200 and reads nothing.
+
+Caddy already accepts the path; the app trusts the first `X-Forwarded-For`
+entry Caddy sets, which the webhook's per-IP bound reads.
+
+**Data held at Resend** (decision 121). Received mail and Resend's logs are
+very likely stored in the US for 30 days, and no API to delete them was found
+(re-check). The owner accepted this on the Standard Contractual Clauses
+(Resend's DPA, resend.com/legal/dpa) and the EU–US Data Privacy Framework.
+**Operator step:** ask Resend whether received mail and logs can be deleted
+on request or kept for zero days, and record the answer in
+`docs/sub-processors.md`.
 
 ## Backups and the restore drill
 

@@ -55,6 +55,7 @@ describe('GUARD: executors read their payload', () => {
             'audit-outbox-flush',
             'cycle-rollover',
             'health-check',
+            'intake-email-fetch',
             'intake-purge',
             'intake-snooze-wake',
             'key-rotation',
