@@ -48,6 +48,10 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // milestone to its project's milestones.
     '/projects/[projectKey]/milestones': { href: '/projects/[projectKey]', label: 'Project' },
     '/projects/[projectKey]/milestones/[milestoneId]': { href: '/projects/[projectKey]/milestones', label: 'Milestones' },
+    // Sub-phase 2.6a.
+    '/projects/[projectKey]/intake': { href: '/intake', label: 'Intake' },
+    '/forms/[formId]': { href: '/forms', label: 'Forms' },
+    '/settings/intake': { href: '/settings', label: 'Settings' },
     // Decision 55. Each Settings section falls back to Settings; a team's
     // workflow to the teams list.
     '/settings/teams': { href: '/settings', label: 'Settings' },

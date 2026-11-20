@@ -16,9 +16,10 @@
 import type { Role } from '@prisma/client';
 import { useTranslations } from 'next-intl';
 
-import { Bell, CalendarRefresh, Folder, GridLayoutRows, UserCheck, Views } from '@inflect/ui/components/ui/icons/nucleo';
+import { Bell, CalendarRefresh, EnvelopeArrowRight, Folder, GridLayoutRows, InputField, UserCheck, Views } from '@inflect/ui/components/ui/icons/nucleo';
 import { membershipOpensAdminConsole } from '@/lib/auth/edge-admin-roles';
 import type { PermissionSet } from '@/lib/permissions';
+import { usePendingIntakeCount } from '@/components/intake/data/intake-data';
 import { usePermissions, useTenantContext, useTenantHref } from '@/lib/tenant-context-provider';
 
 import type { NavGlyph } from './nav-item';
@@ -30,6 +31,8 @@ export const NAV_PATHS = {
     workItems: '/work-items',
     projects: '/projects',
     cycles: '/cycles',
+    intake: '/intake',
+    forms: '/forms',
     views: '/views',
     settings: '/settings',
 } as const;
@@ -69,7 +72,7 @@ export interface NavSectionDef {
  * The sidebar's sections.
  *
  *   (untitled)   My Work, Inbox — the member's own work and notifications
- *   Workspace    Work items, Projects, Cycles (2.5a), Views
+ *   Workspace    Work items, Projects, Cycles (2.5a), Intake and Forms (2.6a), Views
  *
  * Settings is the footer gear, not a row. Work items (the workspace-wide
  * list and board) and Projects arrived with 2.3; the Inbox unread badge
@@ -78,6 +81,11 @@ export interface NavSectionDef {
 export function useNavSections(): NavSectionDef[] {
     const tenantHref = useTenantHref();
     const t = useTranslations('nav');
+    const perms = usePermissions();
+    // Sub-phase 2.6a: Intake for readers of intake, with the count of new
+    // requests (owner decision 95); the page asks the key on the server.
+    const readsIntake = perms.intake?.view === true;
+    const pending = usePendingIntakeCount(readsIntake).data?.total ?? 0;
 
     const sections: NavSectionDef[] = [
         {
@@ -93,6 +101,16 @@ export function useNavSections(): NavSectionDef[] {
                 { key: 'projects', href: tenantHref(NAV_PATHS.projects), label: t('projects'), icon: Folder },
                 // Sub-phase 2.5a. Every role reads cycles (`cycles.view`); the page asks the key on the server.
                 { key: 'cycles', href: tenantHref(NAV_PATHS.cycles), label: t('cycles'), icon: CalendarRefresh },
+                {
+                    key: 'intake',
+                    href: tenantHref(NAV_PATHS.intake),
+                    label: t('intake'),
+                    icon: EnvelopeArrowRight,
+                    visible: readsIntake,
+                    ...(pending > 0 ? { badge: pending, badgeLabel: t('intakeBadge', { count: pending }) } : {}),
+                },
+                // Every member who sees projects may send a request through an open form.
+                { key: 'forms', href: tenantHref(NAV_PATHS.forms), label: t('forms'), icon: InputField },
                 { key: 'views', href: tenantHref(NAV_PATHS.views), label: t('views'), icon: Views },
             ],
         },

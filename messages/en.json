@@ -169,7 +169,9 @@
             "projects": "Projects",
             "settings": "Settings",
             "workItems": "Work items",
-            "cycles": "Cycles"
+            "cycles": "Cycles",
+            "intake": "Intake",
+            "forms": "Forms"
         }
     },
     "ui": {
@@ -507,7 +509,10 @@
         "settings": "Settings",
         "workspace": "Workspace",
         "workItems": "Work items",
-        "cycles": "Cycles"
+        "cycles": "Cycles",
+        "intake": "Intake",
+        "forms": "Forms",
+        "intakeBadge": "{count, plural, one {# new request} other {# new requests}}"
     },
     "commandPalette": {
         "title": "Command palette",
@@ -537,7 +542,8 @@
             "toggleTheme": "Toggle theme",
             "signOut": "Sign out",
             "goToWorkItems": "Go to Work items",
-            "goToCycles": "Go to Cycles"
+            "goToCycles": "Go to Cycles",
+            "goToForms": "Go to Forms"
         }
     },
     "shortcuts": {
@@ -1023,6 +1029,11 @@
                 "title": "Project templates",
                 "body": "Starting points for new projects, saved from an existing project.",
                 "open": "Manage project templates"
+            },
+            "intake": {
+                "title": "Intake",
+                "body": "Turn on intake per project, choose who is told about new requests, and build the forms people send them through.",
+                "open": "Open Intake settings"
             }
         },
         "firstProject": {
@@ -1205,6 +1216,85 @@
             "renameTitle": "Rename project template",
             "name": "Template name",
             "deleted": "Project template {name} deleted."
+        },
+        "intake": {
+            "title": "Intake",
+            "description": "Per project: whether it takes requests, who is told about new ones, and its forms.",
+            "readOnly": "You can see these settings but not change them.",
+            "failed": "The change could not be saved.",
+            "noProjects": "There are no projects yet.",
+            "saved": "Saved the intake of {project}.",
+            "openIntake": "{count, plural, =0 {Open intake} one {Open intake (# new)} other {Open intake (# new)}}",
+            "enabledFor": "{project} takes requests",
+            "on": "Takes requests",
+            "off": "Off",
+            "notify": "Notify list",
+            "notifyHint": "These members are told about each new request.",
+            "notifyNone": "Nobody",
+            "notifyFor": "Notify list of {project}",
+            "forms": "Forms",
+            "newForm": "New form",
+            "noForms": "No forms yet.",
+            "archived": "Archived",
+            "published": "Published",
+            "draft": "Draft",
+            "fieldCount": "{count, plural, =0 {no fields} one {# field} other {# fields}}",
+            "edit": "Edit",
+            "editNamed": "Edit {name}",
+            "publish": "Publish",
+            "publishNamed": "Publish {name}",
+            "unpublish": "Unpublish",
+            "unpublishNamed": "Unpublish {name}",
+            "archive": "Archive",
+            "archiveNamed": "Archive {name}",
+            "restore": "Restore",
+            "restoreNamed": "Restore {name}",
+            "kind": {
+                "SHORT_TEXT": "Short text",
+                "LONG_TEXT": "Long text",
+                "SELECT": "Choice",
+                "MULTI_SELECT": "Choices",
+                "DATE": "Date",
+                "NUMBER": "Number",
+                "URL": "Web address",
+                "CHECKBOX": "Checkbox"
+            },
+            "builder": {
+                "createTitle": "New form",
+                "editTitle": "Edit {name}",
+                "create": "Create form",
+                "save": "Save form",
+                "failed": "The form could not be saved.",
+                "name": "Name",
+                "published": "Published (members can send requests through it)",
+                "intro": "Introduction",
+                "confirmation": "Confirmation",
+                "confirmationHint": "Shown after a request is sent.",
+                "fields": "Form fields",
+                "fieldsHint": "Every form asks for a title and a description; add the questions after them.",
+                "untitled": "Field {n}",
+                "label": "Label",
+                "kind": "Kind",
+                "kindOf": "Kind of {label}",
+                "help": "Help text",
+                "options": "Options",
+                "optionsHint": "One per line.",
+                "customField": "Fills the field",
+                "customFieldHint": "When the request is accepted, the answer fills this field of the project.",
+                "customFieldOf": "Field {label} fills",
+                "noCustomField": "None",
+                "required": "Required",
+                "up": "Up",
+                "upNamed": "Move {label} up",
+                "down": "Down",
+                "downNamed": "Move {label} down",
+                "remove": "Remove",
+                "removeNamed": "Remove {label}",
+                "addField": "Add a field",
+                "preview": "Preview",
+                "hidePreview": "Hide the preview",
+                "previewLabel": "Preview of the form"
+            }
         }
     },
     "views": {
@@ -1379,6 +1469,147 @@
             "dueDateHint": "Optional. After it passes with work still open, the milestone shows as late.",
             "saved": "Milestone saved.",
             "created": "Milestone created."
+        }
+    },
+    "intake": {
+        "description": "Requests waiting to become work: accept, decline, merge or snooze each one.",
+        "projectTitle": "Intake: {project}",
+        "formsLink": "Forms",
+        "loadFailed": "The requests could not be loaded.",
+        "views": {
+            "label": "Requests to show",
+            "new": "New",
+            "snoozed": "Snoozed",
+            "spam": "Spam",
+            "decided": "Decided"
+        },
+        "empty": {
+            "new": "No new requests.",
+            "snoozed": "No snoozed requests.",
+            "spam": "No requests declined as spam.",
+            "decided": "No decided requests."
+        },
+        "status": {
+            "PENDING": "New",
+            "SNOOZED": "Snoozed",
+            "ACCEPTED": "Accepted",
+            "DECLINED": "Declined",
+            "MERGED": "Merged"
+        },
+        "channel": {
+            "INTERNAL_FORM": "Form",
+            "PUBLIC_FORM": "Public form",
+            "EMAIL": "Email"
+        },
+        "reason": {
+            "NOT_PLANNED": "Not planned",
+            "OUT_OF_SCOPE": "Out of scope",
+            "SPAM": "Spam",
+            "OTHER": "Other"
+        },
+        "detail": {
+            "label": "Selected request",
+            "loading": "Loading the request…",
+            "none": "Select a request to see it here.",
+            "status": "Status",
+            "project": "Project",
+            "from": "From",
+            "channel": "Came through",
+            "answers": "Answers",
+            "yes": "Yes",
+            "no": "No",
+            "unknownMember": "A former member",
+            "noRequester": "Unknown",
+            "snoozedUntil": "Snoozed until {date}.",
+            "acceptedAs": "Accepted as",
+            "declinedFor": "Declined: {reason}.",
+            "mergedIntoItem": "Merged into",
+            "mergedIntoRequest": "Merged into another request.",
+            "mergedCount": "{count, plural, one {# request is merged into this one.} other {# requests are merged into this one.}}",
+            "remark": "Internal remark",
+            "actions": "Triage"
+        },
+        "actions": {
+            "accept": "Accept",
+            "decline": "Decline",
+            "merge": "Merge",
+            "snooze": "Snooze",
+            "move": "Move",
+            "reopen": "Reopen"
+        },
+        "toast": {
+            "accept": "Request accepted.",
+            "decline": "Request declined.",
+            "merge": "Request merged.",
+            "snooze": "Request snoozed.",
+            "move": "Request moved.",
+            "reopened": "Request reopened.",
+            "failed": "That did not work."
+        },
+        "accept": {
+            "title": "Accept the request",
+            "description": "\"{title}\" becomes a work item.",
+            "submit": "Accept",
+            "failed": "The request could not be accepted.",
+            "project": "Project",
+            "type": "Type",
+            "state": "Status",
+            "stateHint": "A backlog or unstarted status.",
+            "priority": "Priority",
+            "assignee": "Assignee"
+        },
+        "decline": {
+            "title": "Decline the request",
+            "description": "\"{title}\" will not become a work item.",
+            "submit": "Decline",
+            "failed": "The request could not be declined.",
+            "reason": "Reason",
+            "explanation": "Explanation for the requester",
+            "explanationHint": "Sent to an outside requester who asked for updates.",
+            "remark": "Internal remark",
+            "remarkHint": "Only people who triage see it."
+        },
+        "merge": {
+            "title": "Merge the request",
+            "description": "\"{title}\" is a duplicate.",
+            "submit": "Merge",
+            "failed": "The request could not be merged.",
+            "key": "Work item key",
+            "keyHint": "The key of the work item it duplicates, such as ISL-12.",
+            "request": "Or another open request",
+            "notFound": "No work item has that key.",
+            "keyPlaceholder": "ISL-123"
+        },
+        "snooze": {
+            "title": "Snooze the request",
+            "description": "\"{title}\" comes back on the day you choose.",
+            "submit": "Snooze",
+            "failed": "The request could not be snoozed.",
+            "until": "Until"
+        },
+        "move": {
+            "title": "Move the request",
+            "description": "\"{title}\" moves to another project that takes requests.",
+            "submit": "Move",
+            "failed": "The request could not be moved.",
+            "project": "Project"
+        },
+        "form": {
+            "aria": "Request form",
+            "title": "Title",
+            "body": "Description",
+            "choose": "Choose…",
+            "send": "Send request",
+            "sent": "Your request was sent.",
+            "reference": "Reference: {reference}",
+            "another": "Send another",
+            "allForms": "All forms",
+            "failed": "The request could not be sent.",
+            "in": "A request to {project}"
+        },
+        "forms": {
+            "description": "Send a request to a project through one of its forms.",
+            "none": "No project takes requests through a form yet."
         }
     }
 }
