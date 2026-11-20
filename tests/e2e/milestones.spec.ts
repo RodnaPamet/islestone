@@ -71,12 +71,12 @@ test.describe('milestones', () => {
 
         // The milestones page counts it; the milestone's page lists the item.
         await page.goto(`/t/${slug}/projects/SUM/milestones`);
-        const row = page.getByTestId(`milestone-${fresh.milestoneId}`);
+        const row = page.getByRole('main').getByTestId(`milestone-${fresh.milestoneId}`);
         await expect(row.getByText('1 of 1 done')).toBeVisible();
         await expect(row.getByText('Complete')).toBeVisible();
         await row.getByRole('link', { name: 'Base camp' }).click();
         await expect(page).toHaveURL(new RegExp(`/projects/SUM/milestones/${fresh.milestoneId}$`));
-        const summary = page.getByTestId('milestone-summary');
+        const summary = page.getByRole('main').getByTestId('milestone-summary');
         await expect(summary.locator('dd').nth(1)).toHaveText('1');
         await expect(summary.locator('dd').nth(2)).toHaveText('1');
         await expect(page.getByRole('main').getByText('Reach base camp')).toBeVisible();
