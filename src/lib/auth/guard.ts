@@ -40,6 +40,12 @@ const PUBLIC_PATH_PREFIXES = [
     '/api/org/invite/',  // Org invite API (public) — preview/redeem + start-signin cookie setter, mirrors /api/invites/
     '/api/livez',        // Liveness probe (no auth)
     '/api/readyz',       // Readiness probe (no auth)
+    // Sub-phase 2.6b: a public intake form (`/f/<publicId>`) and a requester's
+    // confirmation page (`/f/confirm/<token>`). Both read no session; the
+    // page answers one 404 unless the form is open to the public
+    // (`resolvePublicIntakeForm`), and the edge meters every method at
+    // `intakeform:<id>` / `intakeconfirm` before this allowlist returns.
+    '/f/',
     '/_next',            // Next.js internals
 ];
 
@@ -109,6 +115,14 @@ export const MACHINE_CALLER_PREFIXES: readonly string[] = [
     // that may not yet have a session. POST only, always 204, rate-limited in
     // the handler (`acceptVitalBeacon`).
     '/api/telemetry/vitals',
+    // Sub-phase 2.6b (owner decision 98): a public intake form's submit and a
+    // requester's address confirmation. Nobody who sends one has a session.
+    // POST only; each gates itself (`acceptPublicIntakeRequest`,
+    // `confirmRequesterAddress`: per-IP limits, a cross-site refusal, JSON
+    // only, a capped body, then the signed form token, proof-of-work and
+    // daily caps, or the confirmation token), and the edge meters both.
+    '/api/intake/forms',
+    '/api/intake/confirm',
     // Sub-phase 8.3 adds `/api/scim` (bearer SCIM token,
     // `authenticateScimRequest`); later sub-phases add their webhook receivers
     // and the platform-operator `/api/admin` routes, each with the in-handler
@@ -139,6 +153,23 @@ export function isPublicPath(pathname: string): boolean {
     if (STATIC_EXTENSIONS.test(pathname)) return true;
 
     return false;
+}
+
+const INTAKE_PUBLIC_ID = /^[A-Za-z0-9_-]{22}$/;
+
+/**
+ * The edge's read-tier key for a public intake path (sub-phase 2.6b), or
+ * `null` for any other path: `intakeform:<publicId>` for a form's page and
+ * its submit (IP and form), `intakeconfirm` for the confirmation page and
+ * POST (IP alone). An id that is not a public id's shape shares one
+ * `intakeform:invalid` bucket, so guessing ids cannot mint fresh budgets.
+ */
+export function publicIntakeRateKey(pathname: string): string | null {
+    if (pathname === '/api/intake/confirm' || pathname.startsWith('/f/confirm/')) return 'intakeconfirm';
+    const m = /^\/f\/([^/]+)\/?$/.exec(pathname) ?? /^\/api\/intake\/forms\/([^/]+)\/?$/.exec(pathname);
+    if (m) return `intakeform:${INTAKE_PUBLIC_ID.test(m[1]!) ? m[1] : 'invalid'}`;
+    if (pathname.startsWith('/f/') || pathname === '/api/intake/forms' || pathname.startsWith('/api/intake/forms/')) return 'intakeform:invalid';
+    return null;
 }
 
 /**

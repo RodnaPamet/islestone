@@ -28,7 +28,10 @@
  *
  * Copied from inflect-compliance at 5528464fc54a8681956f3b9ce23ca9c075f0420e.
  * Sub-phase 1.6 adds the first entries, the credential-less beacons: the CSP
- * report sink and its legacy alias, and the web-vitals beacon. SCIM (8.3),
+ * report sink and its legacy alias, and the web-vitals beacon. Sub-phase 2.6b
+ * adds the public intake submit and the address confirmation (owner decision
+ * 98), each POST-only and gated by its own function in
+ * `src/lib/intake/public/http.ts`. SCIM (8.3),
  * the webhook receivers, MCP, A2A and the platform-operator `/api/admin`
  * routes have not arrived, so the parent's contracts and directory sweeps for
  * them are not ported. Each entry's contract names, per exported METHOD, the
@@ -76,6 +79,18 @@ const CONTRACTS: ReadonlyArray<{
         methods: { POST: /acceptVitalBeacon\s*\(/ },
         why: 'The web-vitals beacon: per-IP limited, size-capped, always 204.',
     },
+    {
+        prefix: '/api/intake/forms',
+        handler: 'api/intake/forms/[publicId]/route.ts',
+        methods: { POST: /acceptPublicIntakeRequest\s*\(/ },
+        why: 'A public intake form\'s submit (2.6b, decision 98): per-IP and per-form limits, cross-site refusal, JSON only, a 64 KB capped body, then the signed form token, proof-of-work, trap and daily caps.',
+    },
+    {
+        prefix: '/api/intake/confirm',
+        handler: 'api/intake/confirm/route.ts',
+        methods: { POST: /confirmRequesterAddress\s*\(/ },
+        why: 'A requester confirming their address (2.6b, decision 98): a per-IP limit, cross-site refusal, JSON only, a 4 KB capped body, then the 256-bit confirmation token.',
+    },
 ];
 
 const HTTP_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
@@ -118,9 +133,11 @@ describe('machine-caller paths authenticate themselves', () => {
         expect(CONTRACTS.filter((c) => !MACHINE_CALLER_PREFIXES.includes(c.prefix))).toEqual([]);
     });
 
-    it('the list holds exactly the sub-phase 1.6 beacons — a new entry is a reviewed edit here', () => {
+    it('the list holds exactly the sub-phase 1.6 beacons and the 2.6b public intake routes — a new entry is a reviewed edit here', () => {
         expect([...MACHINE_CALLER_PREFIXES].sort()).toEqual([
             '/api/csp-report',
+            '/api/intake/confirm',
+            '/api/intake/forms',
             '/api/security/csp-report',
             '/api/telemetry/vitals',
         ]);
@@ -139,8 +156,24 @@ describe('the allowlist opens what it means to open, and nothing else', () => {
             '/api/security/csp-report-admin',
             '/api/telemetry/vitals-dump',
             '/api/stripe/webhook',
+            // Sub-phase 2.6b: the public intake entries open their own paths only.
+            '/api/intake',
+            '/api/intake/requests',
+            '/api/intake/forms-admin',
+            '/api/intake/confirmations',
+            '/api/t/acme/intake/forms',
+            '/api/t/acme/intake/requests',
+            '/forms',
+            '/forms/abc',
+            '/f',
         ]) {
             expect({ p, public: isPublicPath(p) }).toEqual({ p, public: false });
+        }
+    });
+
+    it('opens the public intake form, its submit and the confirmation (2.6b)', () => {
+        for (const p of ['/f/AbCdEfGhIjKlMnOpQrStUv', '/f/confirm/token', '/api/intake/forms/AbCdEfGhIjKlMnOpQrStUv', '/api/intake/confirm']) {
+            expect({ p, public: isPublicPath(p) }).toEqual({ p, public: true });
         }
     });
 });

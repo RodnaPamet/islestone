@@ -68,6 +68,11 @@ export interface IntakeRequestDetail extends IntakeRequestRow {
     mergedIntoWorkItemKey: string | null;
     /** Requests merged into this one. */
     mergedRequestCount: number;
+    /** A public request's requester as they gave it (2.6b): personal data, shown to people who triage. */
+    requesterName: string | null;
+    requesterEmail: string | null;
+    /** Whether a public requester asked for email updates and confirmed their address. */
+    requesterUpdates: 'NONE' | 'ASKED' | 'CONFIRMED';
 }
 
 export interface IntakeRequestPage {
@@ -80,6 +85,8 @@ export interface IntakeFormSummary {
     projectId: string;
     name: string;
     access: IntakeFormAccess;
+    /** A public form's link id (`/f/<publicId>`, 2.6b); `null` for a members' form. */
+    publicId: string | null;
     published: boolean;
     archived: boolean;
     definitionVersion: number;

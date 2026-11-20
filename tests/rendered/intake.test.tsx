@@ -36,6 +36,7 @@ const DEFINITION: IntakeFormDefinition = {
         { id: 'f1', kind: 'SELECT', label: 'Area', required: true, options: ['Billing', 'Search'] },
         { id: 'f2', kind: 'CHECKBOX', label: 'Urgent', required: false },
     ],
+    requester: { name: 'OFF', email: 'OFF' },
 };
 
 const ALL: IntakeAffordances = { view: true, triage: true, createItems: true, manage: true };
@@ -68,6 +69,9 @@ function detail(over: Partial<IntakeRequestDetail> = {}): IntakeRequestDetail {
         workItemKey: null,
         mergedIntoWorkItemKey: null,
         mergedRequestCount: 0,
+        requesterName: null,
+        requesterEmail: null,
+        requesterUpdates: 'NONE',
         ...over,
     };
 }

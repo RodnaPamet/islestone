@@ -42,6 +42,11 @@ const ALLOWED_ROOT_PAGES = new Set([
     'no-tenant', // Landing for a person with no workspace
     'tenants', // The workspace picker: the person's own memberships
     'account', // The person's own profile and password, account-wide
+    // Sub-phase 2.6b: a public intake form (`/f/<publicId>`) and a requester's
+    // confirmation page (`/f/confirm/<token>`). Reached with no session; the
+    // form resolves its workspace from its random public id alone
+    // (`resolvePublicIntakeForm`), and the confirmation page reads nothing.
+    'f',
 ]);
 
 /** Top-level directories of src/app/api that may hold routes outside /api/t/. */
@@ -70,6 +75,11 @@ const ALLOWED_API_DIRS = new Set([
     // The web-vitals beacon: a credential-less sendBeacon from any page,
     // recording route-shaped metrics with no tenant or user attached.
     'telemetry',
+    // Sub-phase 2.6b (owner decision 98): the public intake submit and the
+    // address confirmation (`intake/forms/<publicId>`, `intake/confirm`),
+    // machine-caller paths that gate themselves; the workspace comes from the
+    // form's public id or the confirmation token, never from a session.
+    'intake',
 ]);
 
 /** Global (non-tenant-scoped) API prefixes a tenant page may fetch with a flat path. */

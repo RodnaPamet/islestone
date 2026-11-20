@@ -22,6 +22,12 @@ import type { DueItem } from '../jobs/types';
 
 import { appLink } from './app-link';
 import { DueDigestEmail, digestLede, summaryLine, URGENCY_LABEL, URGENCY_ORDER } from './email/due-digest';
+import {
+    INTAKE_REQUESTER_HEADING,
+    IntakeRequesterEmail,
+    intakeRequesterLines,
+    type IntakeRequesterEmailKind,
+} from './email/intake-requester';
 import type { DigestAudience } from './email/due-digest';
 import { PRODUCT_NAME } from './email/layout';
 import { WorkItemAssignedEmail, workItemLabel } from './email/work-item-assigned';
@@ -156,5 +162,52 @@ export async function buildDueDigestEmail(payload: DueDigestPayload): Promise<Em
             `— ${PRODUCT_NAME}`,
         ].join('\n'),
         bodyHtml: await render(element),
+    };
+}
+
+// ─── A public form's requester (2.6b) ───
+
+/** What every requester email names: the form and the short reference, never the request's own text. */
+export interface IntakeRequesterPayload {
+    formName: string;
+    reference: string;
+}
+export interface IntakeConfirmAddressPayload extends IntakeRequesterPayload {
+    /** The confirmation page, absolute (`publicIntakeLink`). */
+    confirmUrl: string;
+}
+export interface IntakeDeclinedPayload extends IntakeRequesterPayload {
+    reasonLabel: string;
+    explanation: string | null;
+}
+
+/** One line, for a subject: no CR, LF or other control character can reach a header. */
+function oneLine(s: string): string {
+    return s.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+}
+
+const INTAKE_SUBJECT: Record<IntakeRequesterEmailKind, (p: IntakeRequesterPayload) => string> = {
+    CONFIRM: (p) => `Confirm your email address for ${oneLine(p.formName)}`,
+    ACCEPTED: (p) => `Request ${p.reference} accepted`,
+    DECLINED: (p) => `Request ${p.reference} declined`,
+    MERGED: (p) => `Request ${p.reference} is being handled with another`,
+};
+
+export async function buildIntakeRequesterEmail(
+    kind: IntakeRequesterEmailKind,
+    payload: IntakeRequesterPayload & Partial<Omit<IntakeConfirmAddressPayload, keyof IntakeRequesterPayload>> & Partial<Omit<IntakeDeclinedPayload, keyof IntakeRequesterPayload>>,
+): Promise<EmailTemplateResult> {
+    const props = { kind, ...payload };
+    const lines = intakeRequesterLines(props);
+    return {
+        subject: INTAKE_SUBJECT[kind](payload),
+        bodyText: [
+            'Hello,',
+            '',
+            ...lines.flatMap((l) => [l, '']),
+            ...(kind === 'CONFIRM' && payload.confirmUrl ? [`Confirm my address: ${payload.confirmUrl}`, ''] : []),
+            `— ${INTAKE_REQUESTER_HEADING[kind]}`,
+        ].join('\n'),
+        bodyHtml: await render(createElement(IntakeRequesterEmail, props)),
     };
 }

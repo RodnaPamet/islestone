@@ -4,7 +4,8 @@
 // creates the work item through the ordinary create path.
 //
 // What Prisma cannot declare (the status CHECKs, the caps) lives in migration
-// `20261122120100_intake_core`, with a catalogue test
+// `20261125120100_intake_core` (2.6a) and `20261127120100_intake_public`
+// (2.6b), each with a catalogue test
 // (tests/integration/intake-sql-constructs.test.ts).
 
 /// A project's intake: whether it takes requests (sub-phase 2.6a). The email
@@ -104,6 +105,24 @@ model IntakeRequest {
   /// The member who sent it (an internal form). An actor stamp: no FK, so
   /// the request outlives the membership.
   requesterUserId       String?
+  /// A public form's requester (2.6b), when the form asks: personal data,
+  /// encrypted in place by the PII extension (`PII_FIELD_MAP`).
+  requesterName         String?
+  /// A public form's requester's address (2.6b): personal data, encrypted in
+  /// place; matched only through `requesterEmailHash` (`hashForLookup`).
+  requesterEmail        String?
+  requesterEmailHash    String?
+  /// The requester ticked "Email me about this request" (2.6b).
+  updatesRequested      Boolean              @default(false)
+  /// The requester confirmed their address from the emailed link; notices
+  /// are sent only after this (owner decision 89).
+  updatesConfirmedAt    DateTime?
+  /// sha256 of the confirmation link's token; cleared once used. Global:
+  /// the link is resolved before any workspace is known.
+  confirmTokenHash      String?              @unique
+  /// The signed form token's nonce (2.6b): unique per workspace, so a token
+  /// makes at most one request (decision 88).
+  formTokenNonce        String?
   /// Date-only; back to PENDING on this day at 08:00 in `NOTIFICATIONS_TZ`.
   snoozedUntil          DateTime?            @db.Date
   snoozedByUserId       String?
@@ -129,6 +148,7 @@ model IntakeRequest {
   form    IntakeForm? @relation(fields: [formId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([id, tenantId])
+  @@unique([tenantId, formTokenNonce])
   /// The Intake list, per project and across the workspace.
   @@index([tenantId, projectId, status, createdAt])
   @@index([tenantId, status, createdAt])
@@ -139,6 +159,10 @@ model IntakeRequest {
   /// The per-form daily cap (2.6b) and the form's own list.
   @@index([tenantId, formId, createdAt])
   @@index([tenantId, requesterUserId, createdAt])
+  /// A requester's other requests on a form (an address confirmed once).
+  @@index([tenantId, requesterEmailHash, createdAt])
+  /// The workspace's daily cap on public requests (2.6b).
+  @@index([tenantId, channel, createdAt])
   @@index([tenantId, workItemId])
   @@index([tenantId, mergedIntoWorkItemId])
   @@index([tenantId, mergedIntoRequestId])

@@ -2,9 +2,11 @@
  * Intake forms (sub-phase 2.6a; owner decisions 86, 92 and 93). Built in
  * Settings → Intake under `intake.manage`; read under `intake.view`; the
  * open forms a member may send a request through are read by anyone who sees
- * projects. Every form is for signed-in members in 2.6a: public access
- * (`IntakeFormAccess.PUBLIC`) arrives with 2.6b behind its deployment switch,
- * and nothing here can set it.
+ * projects. A form is for signed-in members (`MEMBERS`) or, from 2.6b, for
+ * anyone with its link (`PUBLIC`, owner decision 86): a form can be made
+ * public only while public forms are open on the deployment
+ * (`isPublicIntakeOpen`); a public form's link is its `publicId`, shown only
+ * for a public form.
  *
  * - The definition is validated by `IntakeFormDefinitionSchema` and every
  *   piece of its text is sanitised before it is stored.
@@ -18,7 +20,7 @@
  */
 import { randomBytes } from 'node:crypto';
 
-import type { Prisma } from '@prisma/client';
+import type { IntakeFormAccess, Prisma } from '@prisma/client';
 
 import { logEvent } from '../events/audit';
 import { CustomFieldRepository } from '../repositories/CustomFieldRepository';
@@ -38,6 +40,7 @@ import {
     type IntakeFormDefinition,
 } from '@/lib/intake/form-definition';
 import type { IntakeFormData, IntakeFormSummary, OpenIntakeForm } from '@/lib/intake/types';
+import { isPublicIntakeOpen } from '@/lib/intake/public-switch';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
 function toSummary(f: IntakeFormRow): IntakeFormSummary {
@@ -46,6 +49,7 @@ function toSummary(f: IntakeFormRow): IntakeFormSummary {
         projectId: f.projectId,
         name: f.name,
         access: f.access,
+        publicId: f.access === 'PUBLIC' ? f.publicId : null,
         published: f.publishedAt !== null,
         archived: f.archivedAt !== null,
         definitionVersion: f.definitionVersion,
@@ -60,6 +64,13 @@ function toData(f: IntakeFormRow): IntakeFormData {
 
 function formPreconditionRequired(): AppError {
     return new AppError('Send the version you edited in an If-Match header: a form change must name it.', 'PRECONDITION_REQUIRED', 428);
+}
+
+/** A form is made public only while public forms are open on the deployment (decision 86). */
+function assertAccessAllowed(access: IntakeFormAccess | undefined): void {
+    if (access === 'PUBLIC' && !isPublicIntakeOpen()) {
+        throw new ConflictError('Public forms are switched off on this deployment.', { reason: 'PUBLIC_FORMS_CLOSED' });
+    }
 }
 
 function cleanName(raw: string): string {
@@ -89,6 +100,7 @@ async function cleanDefinition(db: PrismaTx, ctx: RequestContext, projectId: str
             ...(f.options !== undefined ? { options: f.options.map((o) => sanitizePlainText(o).trim()) } : {}),
             customFieldId: f.customFieldId ?? null,
         })),
+        requester: d.requester,
     };
     const again = IntakeFormDefinitionSchema.safeParse(sanitised);
     if (!again.success) throw badRequest(again.error.issues[0]?.message ?? 'The form definition is not valid.');
@@ -207,10 +219,12 @@ export interface CreateIntakeFormInput {
     name: string;
     definition: unknown;
     published?: boolean;
+    access?: IntakeFormAccess;
 }
 
 export async function createIntakeForm(ctx: RequestContext, input: CreateIntakeFormInput): Promise<IntakeFormData> {
     assertCanManageIntake(ctx);
+    assertAccessAllowed(input.access);
     const name = cleanName(input.name);
     return runInTenantContext(ctx, async (db) => {
         const project = await loadProjectForForms(db, ctx, input.projectId);
@@ -226,6 +240,7 @@ export async function createIntakeForm(ctx: RequestContext, input: CreateIntakeF
             definitionJson: definition as unknown as Prisma.InputJsonValue,
             createdByUserId: ctx.userId,
             publishedAt: input.published === false ? null : new Date(),
+            access: input.access ?? 'MEMBERS',
         });
         await auditForm(db, ctx, 'INTAKE_FORM_CREATED', form, 'created');
         return toData(form);
@@ -237,6 +252,7 @@ export interface UpdateIntakeFormInput {
     definition?: unknown;
     published?: boolean;
     archived?: boolean;
+    access?: IntakeFormAccess;
 }
 
 /**
@@ -246,7 +262,7 @@ export interface UpdateIntakeFormInput {
  */
 export async function updateIntakeForm(ctx: RequestContext, id: string, input: UpdateIntakeFormInput, expectedVersion?: number): Promise<IntakeFormData> {
     assertCanManageIntake(ctx);
-    if ((input.name !== undefined || input.definition !== undefined) && expectedVersion === undefined) throw formPreconditionRequired();
+    if ((input.name !== undefined || input.definition !== undefined || input.access !== undefined) && expectedVersion === undefined) throw formPreconditionRequired();
     const name = input.name !== undefined ? cleanName(input.name) : undefined;
     return runInTenantContext(ctx, async (db) => {
         const form = await IntakeRepository.getForm(db, ctx, id);
@@ -271,6 +287,11 @@ export async function updateIntakeForm(ctx: RequestContext, id: string, input: U
                 data.bumpDefinition = true;
                 changed.push('definition');
             }
+        }
+        if (input.access !== undefined && input.access !== form.access) {
+            assertAccessAllowed(input.access);
+            data.access = input.access;
+            changed.push('access');
         }
         if (input.published !== undefined && input.published !== (form.publishedAt !== null)) {
             data.publishedAt = input.published ? new Date() : null;

@@ -333,6 +333,32 @@ export const INVITE_REDEEM_LIMIT: RateLimitConfig = {
     windowMs: 60 * 1000,
 };
 
+/**
+ * A public intake form's submit (sub-phase 2.6b, owner decision 88): 5 per
+ * minute and 30 per hour per IP and form, inside the handler
+ * (`acceptPublicIntakeRequest`), beside the edge's read tier on the same
+ * paths. A person sends one request at a time; a script spending a form's
+ * daily cap from one address is refused long before it does.
+ */
+export const INTAKE_PUBLIC_SUBMIT_LIMIT: RateLimitConfig = {
+    maxAttempts: 5,
+    windowMs: 60 * 1000,
+};
+export const INTAKE_PUBLIC_SUBMIT_HOURLY_LIMIT: RateLimitConfig = {
+    maxAttempts: 30,
+    windowMs: 60 * 60 * 1000,
+};
+
+/**
+ * A requester confirming their address (sub-phase 2.6b): 10 per minute per
+ * IP. The token is 256 bits, so guessing is not the threat; the limit keeps
+ * each attempt from being free.
+ */
+export const INTAKE_CONFIRM_LIMIT: RateLimitConfig = {
+    maxAttempts: 10,
+    windowMs: 60 * 1000,
+};
+
 // ═══════════════════════════════════════════════════════════════════
 // Progressive rate limit — Epic A.3 auth brute-force protection
 // ═══════════════════════════════════════════════════════════════════

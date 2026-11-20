@@ -1345,7 +1345,7 @@
                 "save": "Save form",
                 "failed": "The form could not be saved.",
                 "name": "Name",
-                "published": "Published (members can send requests through it)",
+                "published": "Published (it takes requests)",
                 "intro": "Introduction",
                 "confirmation": "Confirmation",
                 "confirmationHint": "Shown after a request is sent.",
@@ -1372,8 +1372,24 @@
                 "addField": "Add a field",
                 "preview": "Preview",
                 "hidePreview": "Hide the preview",
-                "previewLabel": "Preview of the form"
-            }
+                "previewLabel": "Preview of the form",
+                "access": "Who can send requests",
+                "accessMembers": "Members of this workspace",
+                "accessPublic": "Anyone with the link",
+                "accessMembersHint": "Members send requests from the Forms page.",
+                "accessPublicHint": "Anyone with the link can send a request without signing in. The link reveals nothing about this workspace.",
+                "askName": "Ask for their name",
+                "askEmail": "Ask for their email address",
+                "ask": {
+                    "OFF": "Do not ask",
+                    "OPTIONAL": "Optional",
+                    "REQUIRED": "Required"
+                }
+            },
+            "accessMembers": "Members",
+            "accessPublic": "Public",
+            "copyLinkNamed": "Copy the link to {name}",
+            "linkCopied": "Link copied."
         }
     },
     "views": {
@@ -1606,7 +1622,10 @@
             "mergedIntoRequest": "Merged into another request.",
             "mergedCount": "{count, plural, one {# request is merged into this one.} other {# requests are merged into this one.}}",
             "remark": "Internal remark",
-            "actions": "Triage"
+            "actions": "Triage",
+            "outsider": "Someone outside the workspace",
+            "email": "Email address",
+            "updates": "Email updates"
         },
         "actions": {
             "accept": "Accept",
@@ -1644,7 +1663,7 @@
             "failed": "The request could not be declined.",
             "reason": "Reason",
             "explanation": "Explanation for the requester",
-            "explanationHint": "Sent to an outside requester who asked for updates.",
+            "explanationHint": "Sent to an outside requester who confirmed their address.",
             "remark": "Internal remark",
             "remarkHint": "Only people who triage see it."
         },
@@ -1684,11 +1703,38 @@
             "another": "Send another",
             "allForms": "All forms",
             "failed": "The request could not be sent.",
-            "in": "A request to {project}"
+            "in": "A request to {project}",
+            "requesterName": "Your name",
+            "requesterEmail": "Your email address",
+            "wantsUpdates": "Email me about this request",
+            "wantsUpdatesHint": "We ask you to confirm the address first. The emails never repeat what you wrote.",
+            "trap": "Leave this field empty"
         },
         "forms": {
             "description": "Send a request to a project through one of its forms.",
             "none": "No project takes requests through a form yet."
+        },
+        "updates": {
+            "NONE": "Not asked for",
+            "ASKED": "Asked for; the address is not confirmed yet",
+            "CONFIRMED": "Confirmed"
+        },
+        "publicForm": {
+            "sent": "Your request was sent.",
+            "reference": "Reference: {reference}",
+            "confirmPending": "We sent you an email. Confirm your address from it to get updates about this request.",
+            "confirmed": "You will get updates about this request by email.",
+            "failed": "The request could not be sent. Try again.",
+            "resting": "This form is not taking requests right now. Try again later.",
+            "reload": "This page is out of date. Reload it and send the request again."
+        },
+        "publicConfirm": {
+            "heading": "Confirm your email address",
+            "body": "Press the button to get emails about the request you sent.",
+            "button": "Confirm my address",
+            "done": "Thank you. Your address is confirmed: you will get updates about your request.",
+            "invalid": "This link is not valid or has expired.",
+            "failed": "The address could not be confirmed. Try again."
         }
     }
 }

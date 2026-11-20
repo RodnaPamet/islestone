@@ -95,6 +95,7 @@ x-runtime-env: &runtime-env
   APP_URL: https://islestone.cloud
   NEXT_PUBLIC_APP_URL: https://islestone.cloud
   AUTH_PUBLIC_SIGNUP: "${AUTH_PUBLIC_SIGNUP:-}"
+  INTAKE_PUBLIC_FORMS: "${INTAKE_PUBLIC_FORMS:-}"
   GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"
   GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}" # pragma: allowlist secret (a reference, resolved from .env.prod)
   MICROSOFT_CLIENT_ID: "${MICROSOFT_CLIENT_ID:-}"

@@ -10,6 +10,12 @@
  * its refusal is shown here with the person's work kept. An edit sends the
  * form's version in `If-Match`.
  *
+ * Sub-phase 2.6b: who may send through it, members or anyone with the link
+ * (offered only while public forms are open on the deployment, or to turn a
+ * public form back into a members' one), and, for a public form, whether it
+ * asks for the requester's name and address. The preview of a public form is
+ * the public page's own form.
+ *
  * Written fresh for Islestone, on react-hook-form (`useFieldArray`).
  */
 import { useTranslations } from 'next-intl';
@@ -29,10 +35,12 @@ import {
     FIELD_KIND_FILLS,
     INTAKE_FIELD_KINDS,
     INTAKE_LIMITS,
+    INTAKE_REQUESTER_ASKS,
     IntakeFormDefinitionSchema,
     nextFieldId,
     type IntakeFieldKind,
     type IntakeFormDefinition,
+    type IntakeRequesterAsk,
 } from '@/lib/intake/form-definition';
 import type { IntakeFormData } from '@/lib/intake/types';
 
@@ -52,6 +60,9 @@ interface BuilderField {
 interface BuilderValues {
     name: string;
     published: boolean;
+    access: 'MEMBERS' | 'PUBLIC';
+    requesterName: IntakeRequesterAsk;
+    requesterEmail: IntakeRequesterAsk;
     intro: string;
     confirmation: string;
     fields: BuilderField[];
@@ -64,6 +75,9 @@ function toValues(form: IntakeFormData | null): BuilderValues {
     return {
         name: form?.name ?? '',
         published: form ? form.published : true,
+        access: form?.access ?? 'MEMBERS',
+        requesterName: d?.requester.name ?? 'OFF',
+        requesterEmail: d?.requester.email ?? 'OFF',
         intro: d?.intro ?? '',
         confirmation: d?.confirmation ?? '',
         fields: (d?.fields ?? []).map((f) => ({
@@ -79,8 +93,9 @@ function toValues(form: IntakeFormData | null): BuilderValues {
 }
 
 /** The builder's values as a definition (unvalidated: the server is the judge). */
-export function definitionOf(v: Pick<BuilderValues, 'intro' | 'confirmation' | 'fields'>): IntakeFormDefinition {
+export function definitionOf(v: Pick<BuilderValues, 'intro' | 'confirmation' | 'fields'> & Partial<Pick<BuilderValues, 'requesterName' | 'requesterEmail'>>): IntakeFormDefinition {
     return {
+        requester: { name: v.requesterName ?? 'OFF', email: v.requesterEmail ?? 'OFF' },
         intro: v.intro,
         confirmation: v.confirmation,
         fields: v.fields.map((f) => ({
@@ -107,12 +122,15 @@ export function IntakeFormBuilder({
     onOpenChange,
     projectId,
     form,
+    publicForms = false,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     projectId: string;
     /** The form to edit; `null` creates one. */
     form: IntakeFormData | null;
+    /** Whether public forms are open on this deployment (asked on the server, 2.6b). */
+    publicForms?: boolean;
 }) {
     const t = useTranslations('settings.intake.builder');
     const tKind = useTranslations('settings.intake.kind');
@@ -123,6 +141,14 @@ export function IntakeFormBuilder({
     const [preview, setPreview] = useState<IntakeFormDefinition | null>(null);
     const kindOptions = INTAKE_FIELD_KINDS.map((k) => ({ value: k, label: tKind(k) }));
     const watched = useWatch({ control, name: 'fields' });
+    const access = useWatch({ control, name: 'access' });
+    const accessOptions = [
+        { value: 'MEMBERS' as const, label: t('accessMembers') },
+        { value: 'PUBLIC' as const, label: t('accessPublic') },
+    ];
+    const askOptions = INTAKE_REQUESTER_ASKS.map((a) => ({ value: a, label: t(`ask.${a}`) }));
+    // A members' form may be made public only while public forms are open; a public one may always go back.
+    const offerAccess = publicForms || form?.access === 'PUBLIC';
 
     const fieldOptionsFor = useMemo(
         () => (kind: IntakeFieldKind) => [
@@ -137,10 +163,11 @@ export function IntakeFormBuilder({
         await handleSubmit(async (v) => {
             const definition = definitionOf(v);
             try {
+                const access = offerAccess ? { access: v.access } : {};
                 if (form) {
-                    await send('PATCH', `/intake/forms/${encodeURIComponent(form.id)}`, { name: v.name, definition, published: v.published }, form.version);
+                    await send('PATCH', `/intake/forms/${encodeURIComponent(form.id)}`, { name: v.name, definition, published: v.published, ...access }, form.version);
                 } else {
-                    await send('POST', '/intake/forms', { projectId, name: v.name, definition, published: v.published });
+                    await send('POST', '/intake/forms', { projectId, name: v.name, definition, published: v.published, ...access });
                 }
             } catch (err) {
                 refusal = intakeRefusal(err, t('failed'));
@@ -170,6 +197,46 @@ export function IntakeFormBuilder({
                     {t('published')}
                 </label>
             </div>
+            {offerAccess && (
+                <FormField label={t('access')} description={access === 'PUBLIC' ? t('accessPublicHint') : t('accessMembersHint')}>
+                    <Controller
+                        control={control}
+                        name="access"
+                        render={({ field }) => (
+                            <Combobox
+                                id="intake-form-access"
+                                selected={accessOptions.find((o) => o.value === field.value) ?? accessOptions[0]!}
+                                setSelected={(o) => o && field.onChange(o.value)}
+                                options={accessOptions.filter((o) => o.value === 'MEMBERS' || publicForms || field.value === 'PUBLIC')}
+                                caret
+                                buttonProps={{ 'aria-label': t('access') }}
+                            />
+                        )}
+                    />
+                </FormField>
+            )}
+            {access === 'PUBLIC' && (
+                <div className="grid grid-cols-1 gap-tight sm:grid-cols-2">
+                    {(['requesterName', 'requesterEmail'] as const).map((key) => (
+                        <FormField key={key} label={t(key === 'requesterName' ? 'askName' : 'askEmail')}>
+                            <Controller
+                                control={control}
+                                name={key}
+                                render={({ field }) => (
+                                    <Combobox
+                                        id={`intake-form-${key}`}
+                                        selected={askOptions.find((o) => o.value === field.value) ?? askOptions[0]!}
+                                        setSelected={(o) => o && field.onChange(o.value)}
+                                        options={askOptions}
+                                        caret
+                                        buttonProps={{ 'aria-label': t(key === 'requesterName' ? 'askName' : 'askEmail') }}
+                                    />
+                                )}
+                            />
+                        </FormField>
+                    ))}
+                </div>
+            )}
             <FormField label={t('intro')}>
                 <Textarea id="intake-form-intro" rows={2} maxLength={INTAKE_LIMITS.intro} {...register('intro')} />
             </FormField>
@@ -283,7 +350,12 @@ export function IntakeFormBuilder({
                 />
                 {preview && (
                     <div className="rounded-md border border-border-subtle p-default" aria-label={t('previewLabel')} role="region">
-                        <IntakeFormRenderer definition={preview} formKey="preview" preview />
+                        <IntakeFormRenderer
+                            definition={preview}
+                            formKey="preview"
+                            preview
+                            requester={getValues('access') === 'PUBLIC' ? preview.requester : undefined}
+                        />
                     </div>
                 )}
             </div>

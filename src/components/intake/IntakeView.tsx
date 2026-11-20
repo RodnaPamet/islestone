@@ -52,7 +52,9 @@ function RequestDetail({
     const project = config.projectById.get(request.projectId);
     const open = request.status === 'PENDING' || request.status === 'SNOOZED';
     const reopenable = request.status === 'SNOOZED' || request.status === 'DECLINED' || request.status === 'MERGED';
-    const requester = request.requesterUserId ? (memberLabel(byId.get(request.requesterUserId)) ?? tDetail('detail.unknownMember')) : tDetail('detail.noRequester');
+    const requester = request.requesterUserId
+        ? (memberLabel(byId.get(request.requesterUserId)) ?? tDetail('detail.unknownMember'))
+        : (request.requesterName ?? request.requesterEmail ?? (request.channel === 'PUBLIC_FORM' ? tDetail('detail.outsider') : tDetail('detail.noRequester')));
 
     const reopen = async () => {
         try {
@@ -89,6 +91,18 @@ function RequestDetail({
                             {request.formName ? ` · ${request.formName}` : ''}
                         </dd>
                     </div>
+                    {request.requesterEmail && (
+                        <div className="col-span-2">
+                            <dt className="text-xs text-content-muted">{tDetail('detail.email')}</dt>
+                            <dd className="break-all text-content-emphasis">{request.requesterEmail}</dd>
+                        </div>
+                    )}
+                    {request.channel === 'PUBLIC_FORM' && (
+                        <div className="col-span-2">
+                            <dt className="text-xs text-content-muted">{tDetail('detail.updates')}</dt>
+                            <dd className="text-content-emphasis">{tDetail(`updates.${request.requesterUpdates}`)}</dd>
+                        </div>
+                    )}
                 </dl>
             </div>
             {request.body && <p className="whitespace-pre-wrap text-sm text-content-default">{request.body}</p>}

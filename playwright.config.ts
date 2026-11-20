@@ -93,6 +93,9 @@ export default defineConfig({
             // `next start` is production, where public sign-up is closed by
             // default (ADR 0006); the specs register their own workspaces.
             AUTH_PUBLIC_SIGNUP: '1',
+            // Sub-phase 2.6b: public intake forms are closed in production
+            // by default; the intake spec sends one signed out.
+            INTAKE_PUBLIC_FORMS: '1',
             // Sub-phase 1.5: a production start refuses to run without a
             // real field-encryption key (src/env.ts and the startup check in
             // src/instrumentation.ts). A throwaway test value, never a real key.

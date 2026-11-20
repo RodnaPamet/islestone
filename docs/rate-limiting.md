@@ -198,6 +198,27 @@ outage must not take the API down. The mutation tier records
 5. Document it here and add a structural guard beside
    `tests/guards/api-read-rate-limit.test.ts`.
 
+## Anonymous intake surfaces (2.6b)
+
+Public intake forms (`docs/intake.md`, "Public forms (2.6b)") are reached
+with no session, so nothing can be keyed on a user:
+
+| Where | Key | Budget |
+|---|---|---|
+| Edge, every method of `/f/<publicId>` and `POST /api/intake/forms/<publicId>` | `intakeform:<publicId>` with the IP (an id without a public id's shape shares `intakeform:invalid`) | `API_READ_LIMIT`, 120 per minute |
+| Edge, `/f/confirm/<token>` and `POST /api/intake/confirm` | `intakeconfirm` with the IP | `API_READ_LIMIT`, 120 per minute |
+| Handler, the submit (`acceptPublicIntakeRequest`) | `intake-public:<publicId>` and `intake-public-hour:<publicId>`, with the IP | `INTAKE_PUBLIC_SUBMIT_LIMIT` (5 per minute) and `INTAKE_PUBLIC_SUBMIT_HOURLY_LIMIT` (30 per hour) |
+| Handler, the confirmation (`confirmRequesterAddress`) | `intake-confirm` with the IP | `INTAKE_CONFIRM_LIMIT` (10 per minute) |
+| Database, the submit | the form, and the workspace's public requests, over the last 24 hours | the form's `dailyCap` (default 200) and 2,000 per workspace |
+
+The edge keys come from `publicIntakeRateKey` (`src/lib/auth/guard.ts`) and
+run before the allowlist returns, like the CSP report's GET. The two routes
+turn the wrapper's default mutation tier off (`rateLimit: false`): their own
+per-form keys replace it, and a shared anonymous IP bucket would let one
+form's traffic spend another's. The daily caps are counted from
+`IntakeRequest` rows, not by a limiter, because production's in-memory
+counters (decision 50) forget on every deploy.
+
 ## Later callers
 
 API keys (5.2) reach the edge with no session cookie, so they cannot be

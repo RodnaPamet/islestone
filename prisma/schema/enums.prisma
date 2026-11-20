@@ -96,6 +96,17 @@ enum NotificationType {
 enum EmailNotificationType {
   WORK_ITEM_ASSIGNED
   DUE_DIGEST
+  /// Sub-phase 2.6b: the one email asking a public form's requester to
+  /// confirm their address (owner decision 89).
+  INTAKE_CONFIRM_ADDRESS
+  /// Sub-phase 2.6b: a confirmed requester's request was accepted.
+  INTAKE_ACCEPTED
+  /// Sub-phase 2.6b: a confirmed requester's request was declined (never
+  /// sent for spam).
+  INTAKE_DECLINED
+  /// Sub-phase 2.6b: a confirmed requester's request is handled together
+  /// with another.
+  INTAKE_MERGED
 }
 
 /// The state of a `NotificationOutbox` row.

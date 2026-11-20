@@ -19,6 +19,7 @@ import {
     isPublicPath,
     isTenantPath,
     pendingMfaWorkspaceSlug,
+    publicIntakeRateKey,
     unauthorizedJson,
 } from '@/lib/auth/guard';
 import { shouldBlockAdminRequest } from '@/lib/security/admin-session-guard';
@@ -117,6 +118,24 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
         // `NextResponse.next()`: MACHINE_CALLER_PREFIXES stays the only thing
         // making this path public at the edge, which is what `guard.ts`
         // claims of it.
+    }
+
+    // ── 0f. Public intake forms (sub-phase 2.6b, owner decision 88) ──
+    //
+    // `/f/<publicId>`, `/f/confirm/<token>` and the two public intake POSTs
+    // are public at the edge (`PUBLIC_PATH_PREFIXES`, `MACHINE_CALLER_PREFIXES`),
+    // so the read tier's budget (120/min) is applied here, every method, before
+    // the allowlist returns: keyed by IP and form for a form and its submit, by
+    // IP alone for the confirmation. The submit keeps its own stricter per-IP
+    // and per-form limits in its handler, and the daily caps are counted from
+    // the database. Falls through to the allowlist, which stays the only thing
+    // making these paths public.
+    {
+        const intakeKey = publicIntakeRateKey(pathname);
+        if (intakeKey) {
+            const rl = await checkApiReadRateLimit(req, null, intakeKey);
+            if (!rl.ok && rl.response) return rl.response;
+        }
     }
 
     // ── 1. Allow public paths (login, auth callbacks, static, etc.) ──

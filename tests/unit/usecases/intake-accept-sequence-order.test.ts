@@ -70,7 +70,18 @@ jest.mock('@/app-layer/repositories/IntakeRepository', () => ({
         }),
         listMergedInto: jest.fn(async () => []),
         countMergedInto: jest.fn(async () => 0),
+        // Sub-phase 2.6b: a confirmed public requester is told inside the transaction.
+        listConfirmedRequesters: jest.fn(async (_db: unknown, _ctx: unknown, ids: string[]) => {
+            events.push(`read:confirmed:${ids.join(',')}`);
+            return [{ id: 'r1', requesterEmail: 'outsider@example.com', form: { name: 'Bugs' } }];
+        }),
     },
+}));
+jest.mock('@/app-layer/notifications/enqueue', () => ({
+    enqueueEmail: jest.fn(async (_db: unknown, input: { type: string }) => {
+        events.push(`email:${input.type}`);
+        return { id: 'o1', dedupeKey: 'k' };
+    }),
 }));
 jest.mock('@/app-layer/repositories/ProjectRepository', () => ({
     ProjectRepository: { getVisible: jest.fn(async () => ({ id: 'p1', teamId: 't1', keyPrefix: 'ISL', archivedAt: null, name: 'P' })) },
@@ -117,6 +128,8 @@ describe('intake accept side-effect order', () => {
             'lock:request',
             'create:in-tx',
             'claim:accepted',
+            'read:confirmed:r1',
+            'email:INTAKE_ACCEPTED',
             'watch:u-requester',
             'audit:INTAKE_REQUEST_ACCEPTED',
             'tx:commit',

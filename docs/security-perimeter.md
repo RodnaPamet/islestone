@@ -104,6 +104,37 @@ Sub-phase 1.6. Copied from inflect-compliance's sink (`PROVENANCE.md`).
   and `tests/guards/machine-caller-paths-self-authenticate.test.ts` holds
   each method to its own check (the POST's limits, the GET's key).
 
+## Public intake forms (2.6b)
+
+The first anonymous write. A form published for "anyone with the link"
+(`/f/<publicId>`) takes requests from people with no session, only while an
+operator opens public forms (`INTAKE_PUBLIC_FORMS`, closed in production by
+default; owner decision 86). The layers, each with its own test
+(`docs/intake.md`, "Public forms (2.6b)"):
+
+- **One pre-tenant read.** `resolvePublicIntakeForm` resolves the form's
+  random public id under `runWithoutRls({ reason: 'public-intake-resolve' })`
+  (decision 98; used in that one file) and answers one identical 404 for every
+  form that is not open to the public; everything after runs in the
+  workspace's context as its system user. The page shows only the form's own
+  published text, and no public module reads a session
+  (`tests/guards/public-intake-boundary.test.ts`).
+- **Two machine-caller routes**, POST only, each gated in its handler
+  (`acceptPublicIntakeRequest`, `confirmRequesterAddress`; contracts in
+  `tests/guards/machine-caller-paths-self-authenticate.test.ts`): per-IP and
+  per-form limits, `Sec-Fetch-Site: cross-site` refused, `application/json`
+  only (a cross-origin `fetch` with it needs a preflight, which CORS refuses
+  for an unlisted origin), a capped body read through the stream.
+- **In-house bot defence** (decision 88): a signed form token (age, form,
+  version, a nonce that makes one request), a proof-of-work solved by the
+  page with WebCrypto (no script from another host, so the policy above is
+  unchanged), a trap field, and daily caps counted in the database.
+- **Content.** Every text sanitised before it is stored, the title stripped
+  of control and bidirectional-override characters, rendered as text; the
+  requester's name and address encrypted in place as personal data; no
+  requester email repeats what they typed.
+- **Not an embed.** `frame-ancestors 'none'` stays: a public form is a link.
+
 ## CORS
 
 `src/lib/security/cors.ts`, applied in the middleware only. An origin is
