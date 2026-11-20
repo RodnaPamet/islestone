@@ -1,6 +1,6 @@
 # 0006 — Vocabulary
 
-Status: Proposed — awaiting owner sign-off (2026-11-18 drafted). The role names, their order, the fallback role and the public sign-up switch were decided by the owner on 2026-11-18, and the sync and collaboration words ADR 0005 added on 2026-11-19; the other open questions await sign-off.
+Status: Proposed — awaiting owner sign-off (2026-11-18 drafted). The role names, their order, the fallback role and the public sign-up switch were decided by the owner on 2026-11-18, the sync and collaboration words ADR 0005 added on 2026-11-19, and the planning words of sub-phase 2.5 (Milestone, Cycle schedule, Burn-up, Repeat, Transition) on 2026-11-20; the other open questions await sign-off.
 
 ## Context
 
@@ -86,13 +86,17 @@ Rows for Phase 2 concepts are fixed by this ADR once signed. Rows for later phas
 | Activity | The timeline on an item: comments, changes read from the audit trail, and agent activity, merged for display. | No model: a read model | Activity | History, Feed, Log, Event |
 | Audit entry | One row of the hash-chained audit log. | `AuditLog` | Audit log | Activity, Event, History |
 | Template | A reusable starting point for a project or a work item (roadmap 2.5). | `ProjectTemplate`, `WorkItemTemplate` | Template | Blueprint, Preset |
+| Repeat | The rule on a work item that makes a new copy of it on a schedule (decided 2026-11-20). | `WorkItemRecurrence`; enum `RecurrenceFrequency` | Repeat; "Repeats weekly" | Recurring task, Recurring issue, Routine |
+| Transition | One recorded change to a work item's state, cycle, milestone, project or deletion, written by the database; read by the burn-up and by analytics (decided 2026-11-20). | `WorkItemTransition` | Not shown | History, Log, Event (each reserved: Activity, the audit log, automation), Snapshot |
 
 **Planning**
 
 | Term | Meaning | Model name | UI label | Words NOT to use |
 |---|---|---|---|---|
 | Cycle | A time-boxed period of one team that scopes work items. | `Cycle` | Cycle | Sprint, Iteration, Timebox |
-| Milestone | A named group of work items in one project with a target date. | `Milestone` | Milestone | Module, Release, Version, Phase, Epic |
+| Cycle schedule | A team's rule for making cycles: their length, the first start date, how many upcoming cycles to keep and where unfinished items go when one ends (decided 2026-11-20). | `CycleSchedule` | Cycle schedule | Sprint plan, Sprint calendar |
+| Burn-up | A cycle's chart of its scope and its completed items, day by day, read from transitions (decided 2026-11-20). | No model: a read model | Burn-up | Burndown, Velocity chart |
+| Milestone | A named group of work items in one project with a due date (`Milestone.dueDate`, UI "Due date": "Target" is banned for goals; decided 2026-11-20). | `Milestone` | Milestone | Module, Release, Version, Phase, Epic |
 | Goal | An outcome the workspace wants, with a target and a health status set by a person. | `Goal` | Goal | Objective, OKR, Key result, Target |
 | Initiative | A set of projects that together serve a goal. | `Initiative` | Initiative | Program, Portfolio, Theme, Epic |
 | Roadmap | The timeline layout over projects and initiatives. | No model: a view | Roadmap | Portfolio, Plan |
@@ -207,6 +211,10 @@ Because "member" is also the concept "anyone with a membership", text about perm
 |---|---|---|---|---|
 | Notification body | A notification's text, shown under its title in the Inbox. | `Notification.body`; the bus event's `body` | Not shown as a noun | Message (banned in identifiers; inflect-compliance's `message`) |
 | BCC mailbox | A workspace's copy-to address: every email the workspace sends is also sent, blind, to it. | `TenantNotificationSettings.bccMailbox` | BCC mailbox | Compliance mailbox (inflect-compliance's `complianceMailbox`), Archive address |
+
+### Planning words of sub-phase 2.5 — decided
+
+**Decided. Owner decision, 2026-11-20 (relayed to the porting session by its coordinator; `docs/porting/maps/2.5.md`, open questions 1 and 13).** The roadmap's "`Module` or milestone" is a **Milestone**, one model per project, as the table already said. The table gains four rows: Cycle schedule, Burn-up, Repeat and Transition. A milestone's date is `dueDate`, shown as "Due date", because "Target" is banned for goals and the schema guard refuses it everywhere.
 
 ### How Islestone avoids inflect-compliance's two-vocabulary state
 
