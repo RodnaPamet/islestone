@@ -25,7 +25,8 @@ import { useToast } from '@/components/ui/hooks';
 import { Input } from '@/components/ui/input';
 import { createColumns } from '@/components/ui/table';
 import { useTenantHref } from '@/lib/tenant-context-provider';
-import type { WorkConfigAffordances } from '@/lib/work-items/types';
+import { Switch } from '@/components/ui/switch';
+import type { TemplateAffordances, WorkConfigAffordances } from '@/lib/work-items/types';
 
 import { ProjectCreateDialog } from './ProjectCreateDialog';
 import { refusalText, SETTINGS_PATHS, type SettingsProject, useProjects, useSettingsApi, useTeams } from './settings-data';
@@ -34,7 +35,9 @@ import { TypedConfirmModal } from './TypedConfirmModal';
 
 const projectPath = (id: string) => `/projects/${encodeURIComponent(id)}`;
 
-export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffordances }) {
+const NO_TEMPLATES: TemplateAffordances = { manageItemTemplates: false, useProjectTemplates: false, manageProjectTemplates: false };
+
+export function ProjectsSettings({ affordances, templates = NO_TEMPLATES }: { affordances: WorkConfigAffordances; templates?: TemplateAffordances }) {
     const t = useTranslations('settings');
     const toast = useToast();
     const tenantHref = useTenantHref();
@@ -46,6 +49,9 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
     const [archiving, setArchiving] = useState<SettingsProject | null>(null);
     const [fieldsOf, setFieldsOf] = useState<SettingsProject | null>(null);
     const [name, setName] = useState('');
+    const [savingAsTemplate, setSavingAsTemplate] = useState<SettingsProject | null>(null);
+    const [templateName, setTemplateName] = useState('');
+    const [includeItems, setIncludeItems] = useState(false);
     const teamName = useMemo(() => new Map((teams ?? []).map((x) => [x.id, x.name])), [teams]);
 
     const columns = useMemo(() => {
@@ -58,7 +64,7 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
                 toast.error(refusalText(err, t('common.failed')));
             }
         };
-        const showActions = affordances.editProject || affordances.archiveProject || affordances.manageCustomFields;
+        const showActions = affordances.editProject || affordances.archiveProject || affordances.manageCustomFields || templates.manageProjectTemplates;
         return createColumns<SettingsProject>([
             {
                 id: 'name',
@@ -102,6 +108,19 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
                                               onClick={() => setFieldsOf(project)}
                                           />
                                       )}
+                                      {templates.manageProjectTemplates && (
+                                          <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              text={t('projects.saveAsTemplate')}
+                                              aria-label={t('projects.saveAsTemplateNamed', { name: project.name })}
+                                              onClick={() => {
+                                                  setTemplateName(project.name);
+                                                  setIncludeItems(false);
+                                                  setSavingAsTemplate(project);
+                                              }}
+                                          />
+                                      )}
                                       {affordances.archiveProject &&
                                           (project.archivedAt ? (
                                               <Button
@@ -127,7 +146,22 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
                   ]
                 : []),
         ]);
-    }, [t, tenantHref, teamName, affordances, send, revalidate, toast]);
+    }, [t, tenantHref, teamName, affordances, templates, send, revalidate, toast]);
+
+    const saveAsTemplate = async (): Promise<string | null> => {
+        const project = savingAsTemplate;
+        if (!project) return null;
+        const value = templateName.trim();
+        if (!value) return t('common.nameRequired');
+        try {
+            await send('POST', SETTINGS_PATHS.projectTemplates, { fromProjectId: project.id, name: value, includeItems });
+            await revalidate(SETTINGS_PATHS.projectTemplates, SETTINGS_PATHS.projectTemplatesAll);
+            toast.success(t('projects.savedAsTemplate', { name: value }));
+            return null;
+        } catch (err) {
+            return refusalText(err, t('common.failed'));
+        }
+    };
 
     const rename = async (): Promise<string | null> => {
         const project = renaming;
@@ -210,6 +244,21 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
                     onOpenChange={(open) => !open && setFieldsOf(null)}
                 />
             )}
+            <SettingsFormModal
+                open={savingAsTemplate !== null}
+                onOpenChange={(v) => !v && setSavingAsTemplate(null)}
+                title={t('projects.saveAsTemplateTitle', { name: savingAsTemplate?.name ?? '' })}
+                description={t('projects.saveAsTemplateBody')}
+                submitLabel={t('projects.saveAsTemplateSubmit')}
+                onSubmit={saveAsTemplate}
+            >
+                <FormField label={t('projectTemplates.name')} required>
+                    <Input id="template-name-input" value={templateName} onChange={(e) => setTemplateName(e.target.value)} maxLength={100} autoFocus />
+                </FormField>
+                <FormField label={t('projects.includeItems')} description={t('projects.includeItemsHint')}>
+                    <Switch id="template-include-items" checked={includeItems} onCheckedChange={setIncludeItems} aria-label={t('projects.includeItems')} />
+                </FormField>
+            </SettingsFormModal>
             <TypedConfirmModal
                 open={archiving !== null}
                 onOpenChange={(v) => !v && setArchiving(null)}

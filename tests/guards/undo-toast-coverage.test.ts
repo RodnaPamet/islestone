@@ -38,6 +38,7 @@ const SITE_CONTRACTS: Record<string, string> = {
     'src/components/work-items/data/use-saved-views.ts': 'saved view delete (the views menu, 2.4)',
     'src/components/work-items/data/use-custom-fields.ts': 'custom-field option delete (the field manager, 2.4)',
     'src/components/cycles/use-cycles.ts': 'upcoming cycle delete (the Cycles page and a cycle\'s page, 2.5a)',
+    'src/components/work-items/data/use-item-templates.ts': 'item template delete (the project page\'s templates manager, 2.5c)',
     'src/components/milestones/use-milestones.ts': 'milestone delete (a project\'s milestones and a milestone\'s page, 2.5b)',
 };
 

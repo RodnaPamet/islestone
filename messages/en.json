@@ -678,7 +678,8 @@
             "labels": "Labels",
             "dueDate": "Due date",
             "cycle": "Cycle",
-            "milestone": "Milestone"
+            "milestone": "Milestone",
+            "template": "Template"
         },
         "filters": {
             "category": "Category",
@@ -724,7 +725,9 @@
             "discardBody": "What you typed will be lost.",
             "discardConfirm": "Discard work item",
             "keepEditing": "Keep editing",
-            "goSettings": "Set up a project in Settings"
+            "goSettings": "Set up a project in Settings",
+            "noTemplate": "No template",
+            "templateHint": "The template's sub-items and field values are added when you create the work item."
         },
         "detail": {
             "tabs": {
@@ -947,6 +950,46 @@
         },
         "milestone": {
             "none": "No milestone"
+        },
+        "templates": {
+            "open": "Templates",
+            "title": "Item templates for {project}",
+            "description": "What a new work item of this project can start from. The create dialog offers each live template.",
+            "listHeading": "Templates",
+            "loading": "Loading templates…",
+            "empty": "No templates yet.",
+            "archived": "Archived",
+            "makes": "Makes: {title} · sub-items: {count}",
+            "edit": "Edit",
+            "editNamed": "Edit {name}",
+            "archive": "Archive",
+            "archiveNamed": "Archive {name}",
+            "unarchive": "Unarchive",
+            "unarchiveNamed": "Unarchive {name}",
+            "delete": "Delete",
+            "deleteNamed": "Delete {name}",
+            "deleted": "Template {name} deleted.",
+            "undo": "Undo",
+            "failed": "This could not be saved. Try again.",
+            "createHeading": "New template",
+            "editHeading": "Edit {name}",
+            "name": "Template name",
+            "itemTitle": "Work item title",
+            "itemDescription": "Work item description",
+            "type": "Type",
+            "priority": "Priority",
+            "assignee": "Assignee",
+            "labels": "Labels",
+            "dueInDays": "Due in days",
+            "dueInDaysHint": "Optional. The due date is this many days after the day the work item is made.",
+            "dueInDaysInvalid": "Due in days is a whole number from 0 to 3650.",
+            "subItems": "Sub-items",
+            "subItemsHint": "One title per line; each becomes a sub-item.",
+            "required": "A template needs a name and a work item title.",
+            "create": "Create template",
+            "save": "Save template",
+            "cancelEdit": "Cancel",
+            "done": "Done"
         }
     },
     "settings": {
@@ -975,7 +1018,12 @@
                 "open": "Manage projects"
             },
             "count": "{count} in this workspace",
-            "countNone": "None yet"
+            "countNone": "None yet",
+            "projectTemplates": {
+                "title": "Project templates",
+                "body": "Starting points for new projects, saved from an existing project.",
+                "open": "Manage project templates"
+            }
         },
         "firstProject": {
             "title": "Your first project",
@@ -1127,7 +1175,36 @@
             "resource": "project",
             "resourcePlural": "projects",
             "fields": "Fields",
-            "fieldsOf": "Fields of {name}"
+            "fieldsOf": "Fields of {name}",
+            "template": "Template",
+            "noTemplate": "No template",
+            "templateHint": "Optional. The new project starts with the template's fields, milestones, item templates and starter work items.",
+            "templateSkipped": "The template named things this workspace does not have, so they were left out: {list}",
+            "saveAsTemplate": "Save as template",
+            "saveAsTemplateNamed": "Save {name} as a template",
+            "saveAsTemplateTitle": "Save {name} as a template",
+            "saveAsTemplateBody": "The template keeps this project's custom fields, milestones (their dates as days from when it is used) and item templates. People are not kept.",
+            "saveAsTemplateSubmit": "Save template",
+            "includeItems": "Include open work items",
+            "includeItemsHint": "Its open work items and their open sub-items become the new project's starter work items.",
+            "savedAsTemplate": "Saved {name} as a project template."
+        },
+        "projectTemplates": {
+            "title": "Project templates",
+            "description": "A new project can start from one of these: its custom fields, milestones, item templates and starter work items. Save a project as a template in Settings → Projects.",
+            "col": {
+                "name": "Name",
+                "holds": "Holds",
+                "status": "Status"
+            },
+            "holds": "Fields: {fields} · milestones: {milestones} · item templates: {templates} · work items: {items}",
+            "unreadable": "Cannot be read",
+            "empty": "No project templates yet. Save a project as a template in Settings → Projects.",
+            "resource": "project template",
+            "resourcePlural": "project templates",
+            "renameTitle": "Rename project template",
+            "name": "Template name",
+            "deleted": "Project template {name} deleted."
         }
     },
     "views": {
