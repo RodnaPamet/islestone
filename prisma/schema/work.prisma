@@ -94,6 +94,7 @@ model Project {
   workItems    WorkItem[]
   customFields CustomField[]
   savedViews   SavedView[]
+  milestones   Milestone[]
 
   @@unique([id, tenantId])
   /// Target of WorkItem's composite FK: an item's team is its project's team.
@@ -213,6 +214,11 @@ model WorkItem {
   /// FK `(cycleId, teamId, tenantId)` keeps it a cycle of the item's own team;
   /// a move to another team's project clears it in the same UPDATE.
   cycleId         String?
+  /// The project's milestone the item belongs to (sub-phase 2.5b). The
+  /// composite FK `(milestoneId, projectId, tenantId)` keeps it a milestone of
+  /// the item's own project; a move to another project clears it in the same
+  /// UPDATE.
+  milestoneId     String?
 
   tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project   Project           @relation(fields: [projectId, teamId, tenantId], references: [id, teamId, tenantId], onDelete: Cascade)
@@ -222,6 +228,7 @@ model WorkItem {
   createdBy User              @relation("WorkItemCreator", fields: [createdByUserId], references: [id])
   parent    WorkItem?         @relation("WorkItemParent", fields: [parentId, projectId, tenantId], references: [id, projectId, tenantId], onDelete: NoAction, onUpdate: NoAction)
   cycle     Cycle?            @relation(fields: [cycleId, teamId, tenantId], references: [id, teamId, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  milestone Milestone?        @relation(fields: [milestoneId, projectId, tenantId], references: [id, projectId, tenantId], onDelete: NoAction, onUpdate: NoAction)
   subItems  WorkItem[]        @relation("WorkItemParent")
 
   relationsFrom     WorkItemRelation[] @relation("WorkItemRelationFrom")
@@ -255,6 +262,8 @@ model WorkItem {
   @@index([tenantId, deletionId])
   /// The cycle page, its counts and the rollover (ADR 0002 §13).
   @@index([tenantId, cycleId, stateCategory])
+  /// The milestones page's progress and the milestone filter (ADR 0002 §13).
+  @@index([tenantId, milestoneId, stateCategory])
   /// The purge sweep across every workspace (ADR 0002 §13's one exception).
   @@index([deletedAt])
 }
@@ -610,7 +619,7 @@ model Cycle {
   @@index([tenantId, completedAt, endsOn])
 }
 
-/// One recorded change to a work item's state, cycle, project or deletion
+/// One recorded change to a work item's state, cycle, milestone, project or deletion
 /// (ADR 0006 "Transition"). Written ONLY by the trigger
 /// `work_item_transition_record` (SECURITY DEFINER; `app_user` holds SELECT
 /// alone), each row the item's picture after the change; read by the burn-up
@@ -625,6 +634,8 @@ model WorkItemTransition {
   stateId       String
   stateCategory WorkflowStateCategory
   cycleId       String?
+  /// Since 2.5b; NULL in rows written before.
+  milestoneId   String?
   deleted       Boolean
   at            DateTime              @default(now())
 
@@ -633,4 +644,41 @@ model WorkItemTransition {
   @@index([tenantId, cycleId, workItemId])
   @@index([tenantId, workItemId, at])
   @@index([tenantId, projectId, at])
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Milestones (sub-phase 2.5b)
+//
+//  docs/porting/maps/2.5.md; owner decisions 62 and 71–74. Migration
+//  `20261122120000_milestones` holds `COLLATE "C"` on `sortKey`, RLS, the grant
+//  and the transition trigger's new column, each with a catalogue test
+//  (tests/integration/milestones.test.ts).
+// ─────────────────────────────────────────────────────────────────
+
+/// A named group of one project's work items with a due date (ADR 0006
+/// "Milestone"; the date is `dueDate` because "Target" is banned). Progress is
+/// derived from its items, never stored. Deleting one clears its items first
+/// (the item FK is RESTRICT).
+model Milestone {
+  id        String    @id @default(cuid())
+  tenantId  String
+  projectId String
+  /// Plaintext, sanitised; unique in the project.
+  name      String
+  /// Date-only; optional.
+  dueDate   DateTime? @db.Date
+  /// Fractional index within the project (ADR 0002 §5); `COLLATE "C"` in SQL.
+  sortKey   String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project   Project    @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  workItems WorkItem[]
+
+  @@unique([id, tenantId])
+  /// Target of WorkItem's composite FK: a milestone of another project cannot be stored.
+  @@unique([id, projectId, tenantId])
+  @@unique([tenantId, projectId, name])
+  @@index([tenantId, projectId, sortKey])
 }

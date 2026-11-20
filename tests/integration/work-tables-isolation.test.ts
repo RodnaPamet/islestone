@@ -6,7 +6,8 @@
  * WorkItemLabel, Comment, WorkItemWatcher and WorkItemLink; and, from
  * sub-phase 2.4, CustomField, CustomFieldOption, CustomFieldValue and
  * SavedView; and, from sub-phase 2.5a, CycleSchedule, Cycle and
- * WorkItemTransition (which app_user may only read: its writer is a trigger).
+ * WorkItemTransition (which app_user may only read: its writer is a trigger);
+ * and, from sub-phase 2.5b, Milestone.
  *
  * Every operation runs through `runInTenantContext` as tenant B, i.e. as
  * `app_user` with `app.tenant_id` = B: none may read, count, change or remove
@@ -49,6 +50,7 @@ interface Side {
     fieldId: string;
     optionId: string;
     cycleId: string;
+    milestoneId: string;
 }
 
 type Delegate = {
@@ -217,6 +219,13 @@ const TABLES: ReadonlyArray<{
         }),
     },
     {
+        model: 'Milestone',
+        delegate: 'milestone',
+        update: { name: 'renamed' },
+        deletable: true,
+        insert: (s) => ({ tenantId: s.tenantId, projectId: s.world.projectId, name: 'planted', sortKey: 'z' }),
+    },
+    {
         model: 'WorkItemTransition',
         delegate: 'workItemTransition',
         update: { deleted: true },
@@ -273,8 +282,11 @@ describeFn('work tables — two-tenant isolation as app_user', () => {
         });
         // Putting the item in the cycle writes a transition (the trigger).
         await prisma.workItem.update({ where: { id: item.id }, data: { cycleId: cycle.id } });
+        const milestone = await prisma.milestone.create({ data: { tenantId: tenant.id, projectId: world.projectId, name: `${tag} beta`, sortKey: 'V' } });
+        await prisma.workItem.update({ where: { id: other.id }, data: { milestoneId: milestone.id } });
         return {
             cycleId: cycle.id,
+            milestoneId: milestone.id,
             fieldId: field.id,
             optionId: option.id,
             tenantId: tenant.id,
