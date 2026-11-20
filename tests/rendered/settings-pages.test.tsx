@@ -55,7 +55,7 @@ import { __resetPendingUndoToastsForTest } from '@/components/ui/hooks/use-toast
 import { getPermissionsForRole } from '@/lib/permissions';
 import type { WorkConfigAffordances } from '@/lib/work-items/types';
 
-import { CONFIG, installFetch, renderWorkspace } from '../helpers/work-items-harness';
+import { CONFIG, deferred, installFetch, renderWorkspace } from '../helpers/work-items-harness';
 
 const ALL: WorkConfigAffordances = { manageWorkConfig: true, createProject: true, editProject: true, archiveProject: true };
 const NONE: WorkConfigAffordances = { manageWorkConfig: false, createProject: false, editProject: false, archiveProject: false };
@@ -459,6 +459,25 @@ describe('Projects', () => {
         fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: 'Engine' } });
         fireEvent.change(within(dialog).getByLabelText(/^Key prefix/), { target: { value: 'eng' } });
         expect(within(dialog).getByLabelText(/^Key prefix/)).toHaveValue('ENG');
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Create project' }));
+        await waitFor(() => expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ teamId: 'team-1', name: 'Engine', keyPrefix: 'ENG' }));
+    });
+
+    it('takes the first team when the teams arrive after the dialog opened', async () => {
+        const teamsAnswer = deferred<{ body: unknown }>();
+        const { calls } = installFetch({
+            'GET /projects': { body: [] },
+            'GET /teams': () => teamsAnswer.promise,
+            'POST /projects': { status: 201, body: { id: 'p-3' } },
+        });
+        renderWorkspace(<ProjectsSettings affordances={ALL} />);
+        fireEvent.click(await screen.findByRole('button', { name: 'Project' }));
+        const dialog = await screen.findByRole('dialog', { name: 'New project' });
+        fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: 'Engine' } });
+        fireEvent.change(within(dialog).getByLabelText(/^Key prefix/), { target: { value: 'ENG' } });
+        expect(within(dialog).getByRole('button', { name: 'Create project' })).toBeDisabled();
+        await act(async () => teamsAnswer.resolve({ body: TEAMS }));
+        await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Create project' })).toBeEnabled());
         fireEvent.click(within(dialog).getByRole('button', { name: 'Create project' }));
         await waitFor(() => expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ teamId: 'team-1', name: 'Engine', keyPrefix: 'ENG' }));
     });

@@ -51,8 +51,10 @@ test.describe('Settings', () => {
         await page.waitForURL(`**/t/${slug}/settings/teams/**`);
         await expect(page.getByRole('heading', { level: 1, name: 'Core: workflow' })).toBeVisible();
         const states = page.locator('#settings-states-table');
-        for (const name of ['Backlog', 'Todo', 'In progress', 'In review', 'Done', 'Cancelled']) {
-            await expect(states.getByRole('cell', { name: new RegExp(`^${name}`) })).toBeVisible();
+        const workflow = ['Backlog', 'Todo', 'In progress', 'In review', 'Done', 'Cancelled'];
+        for (const [i, name] of workflow.entries()) {
+            // Row 0 is the header; the first cell is the state's name.
+            await expect(states.getByRole('row').nth(i + 1).getByRole('cell').first()).toHaveText(new RegExp(`^${name}`));
         }
 
         // Then a project, from the steps (the team step is now done).

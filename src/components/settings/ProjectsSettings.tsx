@@ -47,6 +47,9 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
     const [keyPrefix, setKeyPrefix] = useState('');
     const teamName = useMemo(() => new Map((teams ?? []).map((x) => [x.id, x.name])), [teams]);
     const noTeams = teams !== undefined && teams.length === 0;
+    // The first team until the person picks one, also when the teams arrive
+    // after the dialog opened.
+    const chosenTeamId = teamId || teams?.[0]?.id || '';
 
     const columns = useMemo(() => {
         const unarchive = async (project: SettingsProject) => {
@@ -128,7 +131,7 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
         if (!value) return t('common.nameRequired');
         try {
             if (editing.mode === 'create') {
-                await send('POST', '/projects', { teamId, name: value, keyPrefix: keyPrefix.trim().toUpperCase() });
+                await send('POST', '/projects', { teamId: chosenTeamId, name: value, keyPrefix: keyPrefix.trim().toUpperCase() });
                 toast.success(t('projects.created', { name: value }));
             } else {
                 await send('PATCH', projectPath(editing.project.id), { name: value });
@@ -169,7 +172,7 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
                         onClick={() => {
                             setName('');
                             setKeyPrefix('');
-                            setTeamId(teams?.[0]?.id ?? '');
+                            setTeamId('');
                             setEditing({ mode: 'create' });
                         }}
                     />
@@ -192,7 +195,7 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
                 onOpenChange={(v) => !v && setEditing(null)}
                 title={editing?.mode === 'rename' ? t('projects.renameTitle') : t('projects.createTitle')}
                 submitLabel={editing?.mode === 'rename' ? t('common.save') : t('projects.createSubmit')}
-                submitDisabled={creating && (noTeams || !teamId)}
+                submitDisabled={creating && (noTeams || !chosenTeamId)}
                 onSubmit={submit}
             >
                 {creating && noTeams && (
@@ -211,7 +214,7 @@ export function ProjectsSettings({ affordances }: { affordances: WorkConfigAffor
                         <FormField label={t('projects.team')} required>
                             <Combobox
                                 id="project-team-input"
-                                selected={teamOptions.find((o) => o.value === teamId) ?? null}
+                                selected={teamOptions.find((o) => o.value === chosenTeamId) ?? null}
                                 setSelected={(o) => o && setTeamId(o.value)}
                                 options={teamOptions}
                                 caret
