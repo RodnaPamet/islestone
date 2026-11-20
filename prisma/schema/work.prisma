@@ -225,17 +225,26 @@ model WorkItem {
   /// the item's own project; a move to another project clears it in the same
   /// UPDATE.
   milestoneId     String?
+  /// The repeat this item is an occurrence of (2.5d). The FK is
+  /// `ON DELETE SET NULL ("recurrenceId")` in SQL: stopping a repeat leaves
+  /// its earlier items in place.
+  recurrenceId    String?
+  /// The occurrence this item stands for (date-only); one item per
+  /// `(recurrenceId, occurrenceOn)`, a partial unique in SQL.
+  occurrenceOn    DateTime?             @db.Date
 
-  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  project   Project           @relation(fields: [projectId, teamId, tenantId], references: [id, teamId, tenantId], onDelete: Cascade)
-  state     WorkflowState     @relation(fields: [stateId, teamId, stateCategory, tenantId], references: [id, teamId, category, tenantId], onDelete: Restrict)
-  type      WorkItemType      @relation(fields: [typeId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  assignee  TenantMembership? @relation("WorkItemAssignee", fields: [tenantId, assigneeId], references: [tenantId, userId], onDelete: Restrict)
-  createdBy User              @relation("WorkItemCreator", fields: [createdByUserId], references: [id])
-  parent    WorkItem?         @relation("WorkItemParent", fields: [parentId, projectId, tenantId], references: [id, projectId, tenantId], onDelete: NoAction, onUpdate: NoAction)
-  cycle     Cycle?            @relation(fields: [cycleId, teamId, tenantId], references: [id, teamId, tenantId], onDelete: Restrict, onUpdate: NoAction)
-  milestone Milestone?        @relation(fields: [milestoneId, projectId, tenantId], references: [id, projectId, tenantId], onDelete: NoAction, onUpdate: NoAction)
-  subItems  WorkItem[]        @relation("WorkItemParent")
+  tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project        Project             @relation(fields: [projectId, teamId, tenantId], references: [id, teamId, tenantId], onDelete: Cascade)
+  state          WorkflowState       @relation(fields: [stateId, teamId, stateCategory, tenantId], references: [id, teamId, category, tenantId], onDelete: Restrict)
+  type           WorkItemType        @relation(fields: [typeId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  assignee       TenantMembership?   @relation("WorkItemAssignee", fields: [tenantId, assigneeId], references: [tenantId, userId], onDelete: Restrict)
+  createdBy      User                @relation("WorkItemCreator", fields: [createdByUserId], references: [id])
+  parent         WorkItem?           @relation("WorkItemParent", fields: [parentId, projectId, tenantId], references: [id, projectId, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  cycle          Cycle?              @relation(fields: [cycleId, teamId, tenantId], references: [id, teamId, tenantId], onDelete: Restrict, onUpdate: NoAction)
+  milestone      Milestone?          @relation(fields: [milestoneId, projectId, tenantId], references: [id, projectId, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  subItems       WorkItem[]          @relation("WorkItemParent")
+  recurrence     WorkItemRecurrence? @relation("RecurrenceOccurrences", fields: [recurrenceId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
+  recurrenceRule WorkItemRecurrence? @relation("RecurrenceSource")
 
   relationsFrom     WorkItemRelation[] @relation("WorkItemRelationFrom")
   relationsTo       WorkItemRelation[] @relation("WorkItemRelationTo")
@@ -270,6 +279,8 @@ model WorkItem {
   @@index([tenantId, cycleId, stateCategory])
   /// The milestones page's progress and the milestone filter (ADR 0002 §13).
   @@index([tenantId, milestoneId, stateCategory])
+  /// A repeat's occurrences (stopping a repeat, the series mark).
+  @@index([tenantId, recurrenceId])
   /// The purge sweep across every workspace (ADR 0002 §13's one exception).
   @@index([deletedAt])
 }
@@ -775,4 +786,47 @@ model ProjectTemplate {
   @@unique([id, tenantId])
   @@unique([tenantId, name])
   @@index([tenantId, sortKey])
+}
+
+/// A repeat (sub-phase 2.5d, owner decisions 67 to 70): the rule on the item
+/// where it was set. The nightly `work-item-recurrence` job makes each
+/// occurrence `leadDays` before it is due, as `ownerUserId` re-resolved,
+/// claiming the stamped `nextOccurrenceOn` in the create's transaction.
+/// Dates are date-only. The rule goes with its item (cascade).
+model WorkItemRecurrence {
+  id               String              @id @default(cuid())
+  tenantId         String
+  sourceWorkItemId String
+  frequency        RecurrenceFrequency
+  /// Every N days, weeks, months or years: 1 to 99 (a CHECK).
+  interval         Int                 @default(1)
+  /// Weekly only: 0 (Sunday) to 6 (Saturday) (a CHECK).
+  weekdays         Int[]
+  /// The series' first date: the item's due date when the repeat was set.
+  firstOn          DateTime            @db.Date
+  endsOn           DateTime?           @db.Date
+  /// The number of times, the item itself counted: 2 to 1000 (a CHECK).
+  maxOccurrences   Int?
+  /// Days before an occurrence is due that it is made: 0 to 30 (a CHECK).
+  leadDays         Int                 @default(3)
+  /// The occurrence the rule waits for; null once it has ended.
+  nextOccurrenceOn DateTime?           @db.Date
+  /// How many occurrences the job has made.
+  occurrenceCount  Int                 @default(0)
+  /// Who the job acts as: whoever last set or resumed the repeat (an actor stamp; no FK).
+  ownerUserId      String
+  heldAt           DateTime?
+  heldReason       RecurrenceHold?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  source      WorkItem   @relation("RecurrenceSource", fields: [sourceWorkItemId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  occurrences WorkItem[] @relation("RecurrenceOccurrences")
+
+  @@unique([id, tenantId])
+  /// One repeat per item.
+  @@unique([sourceWorkItemId, tenantId])
+  /// The job's scan.
+  @@index([tenantId, nextOccurrenceOn])
 }

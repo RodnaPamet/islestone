@@ -66,6 +66,7 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     WorkItemTemplate: 'tests/integration/work-tables-isolation.test.ts',
     WorkItemTemplateLabel: 'tests/integration/work-tables-isolation.test.ts',
     ProjectTemplate: 'tests/integration/work-tables-isolation.test.ts',
+    WorkItemRecurrence: 'tests/integration/work-tables-isolation.test.ts',
     // Sub-phase 2.6a.
     ProjectIntake: 'tests/integration/intake-tables-isolation.test.ts',
     IntakeNotifyMember: 'tests/integration/intake-tables-isolation.test.ts',
