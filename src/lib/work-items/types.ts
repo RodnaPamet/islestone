@@ -35,6 +35,11 @@ export interface WorkItemRow {
     cycleId: string | null;
     /** The project's milestone the item is aimed at (2.5b). */
     milestoneId: string | null;
+    /** The repeat this item is an occurrence of, and the occurrence's date (2.5d). */
+    recurrenceId?: string | null;
+    occurrenceOn?: string | null;
+    /** A repeat is set on this item (2.5d). */
+    repeats?: boolean;
     sortKey: string;
     startDate: string | null;
     dueDate: string | null;
@@ -357,4 +362,30 @@ export interface ProjectTemplateSummary {
     createdAt: string;
     /** What the content holds, counted when it is read for an admin's list. */
     counts?: { customFields: number; milestones: number; itemTemplates: number; items: number };
+}
+
+export type RecurrenceFrequencyName = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+export type RecurrenceHoldName = 'OWNER_NOT_ACTIVE' | 'OWNER_NOT_PERMITTED' | 'SOURCE_DELETED' | 'PROJECT_ARCHIVED' | 'ENDED' | 'HELD_BY_MEMBER';
+
+/** A repeat as `GET /work-items/:id/recurrence` returns it (2.5d). Dates are `YYYY-MM-DD`. */
+export interface RecurrenceData {
+    id: string;
+    frequency: RecurrenceFrequencyName;
+    interval: number;
+    weekdays: number[];
+    firstOn: string;
+    endsOn: string | null;
+    maxOccurrences: number | null;
+    leadDays: number;
+    nextOccurrenceOn: string | null;
+    occurrenceCount: number;
+    ownerUserId: string;
+    heldAt: string | null;
+    heldReason: RecurrenceHoldName | null;
+}
+
+/** An item's place in a series (2.5d): the repeat set on it, and the series it is an occurrence of. */
+export interface WorkItemSeriesData {
+    rule: RecurrenceData | null;
+    occurrenceOf: { id: string; key: string; occurrenceOn: string | null } | null;
 }

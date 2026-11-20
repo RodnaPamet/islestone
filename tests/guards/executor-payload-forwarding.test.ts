@@ -62,6 +62,7 @@ describe('GUARD: executors read their payload', () => {
             'tenant-dek-rotation',
             'work-item-due-notification',
             'work-item-purge',
+            'work-item-recurrence',
             'work-item-sortkey-rebalance',
         ]);
         expect(regs).toHaveLength(calls.length);

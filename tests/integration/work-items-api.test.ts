@@ -188,6 +188,10 @@ const CALLS: Call[] = [
     { file: 'src/app/api/t/[tenantSlug]/cycles/[cycleId]/route.ts', method: 'DELETE', path: () => '/cycles/none', params: (i) => P(i, { cycleId: 'none' }), write: true, key: 'cycles.manage' },
     { file: 'src/app/api/t/[tenantSlug]/cycles/[cycleId]/burn-up/route.ts', method: 'GET', path: (i) => `/cycles/${i.cycle}/burn-up`, params: (i) => P(i, { cycleId: i.cycle }), write: false, key: 'cycles.view' },
     { file: 'src/app/api/t/[tenantSlug]/teams/[teamId]/cycle-schedule/route.ts', method: 'GET', path: (i) => `/teams/${i.team}/cycle-schedule`, params: (i) => P(i, { teamId: i.team }), write: false, key: 'cycles.view' },
+    // Sub-phase 2.5d: repeats (the item has no due date, so a MEMBER's PUT is a 409, never a 403).
+    { file: `${W}/[workItemId]/recurrence/route.ts`, method: 'GET', path: (i) => `/work-items/${i.item}/recurrence`, params: (i) => P(i, { workItemId: i.item }), write: false, key: 'work_items.view', itemRead: true },
+    { file: `${W}/[workItemId]/recurrence/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/recurrence`, params: (i) => P(i, { workItemId: i.other }), body: () => ({ frequency: 'WEEKLY' }), write: true, key: 'work_items.create' },
+    { file: `${W}/[workItemId]/recurrence/route.ts`, method: 'DELETE', path: (i) => `/work-items/${i.other}/recurrence`, params: (i) => P(i, { workItemId: i.other }), write: true, key: 'work_items.edit' },
     // Sub-phase 2.5c: templates.
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/work-item-templates/route.ts', method: 'GET', path: (i) => `/projects/${i.project}/work-item-templates`, params: (i) => P(i, { projectId: i.project }), write: false, key: 'projects.view' },
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/work-item-templates/route.ts', method: 'POST', path: (i) => `/projects/${i.project}/work-item-templates`, params: (i) => P(i, { projectId: i.project }), body: () => ({ name: `Template ${Math.random()}`, title: 'From the API' }), write: true, key: 'projects.edit' },

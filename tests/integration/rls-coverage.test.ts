@@ -309,6 +309,7 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             'WorkItemKeyAlias',
             'WorkItemLabel',
             'WorkItemLink',
+            'WorkItemRecurrence',
             'WorkItemRelation',
             'WorkItemTemplate',
             'WorkItemTemplateLabel',

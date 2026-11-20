@@ -689,6 +689,25 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'intake.manage',
         note: "Turn a project's intake on or off and set its notify list.",
     },
+    // ── Repeats (sub-phase 2.5d; owner decisions 70 and 72) ────────
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/recurrence$`),
+        methods: ['GET'],
+        permission: 'work_items.view',
+        note: "An item's place in a series: the repeat set on it, and the series it is an occurrence of.",
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/recurrence$`),
+        methods: ['PUT'],
+        permission: 'work_items.create',
+        note: 'Set, change, hold or resume a repeat: it makes items in the caller\'s name (the usecase also asserts work_items.edit).',
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/recurrence$`),
+        methods: ['DELETE'],
+        permission: 'work_items.edit',
+        note: 'Stop a repeat; the items it made stay.',
+    },
 ] as const;
 
 // ─── Resolver ───────────────────────────────────────────────────────

@@ -201,3 +201,28 @@ enum IntakeDeclineReason {
   SPAM
   OTHER
 }
+
+/// How often a repeat comes round (sub-phase 2.5d, owner decision 67).
+enum RecurrenceFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+/// Why a repeat is on hold (sub-phase 2.5d, owner decision 70). Not
+/// "Pause": ADR 0006 keeps that word away from the schema.
+enum RecurrenceHold {
+  /// The person who set it is no longer an active member.
+  OWNER_NOT_ACTIVE
+  /// They may no longer create work items in the item's project.
+  OWNER_NOT_PERMITTED
+  /// The item where the repeat was set was deleted.
+  SOURCE_DELETED
+  /// The item's project was archived.
+  PROJECT_ARCHIVED
+  /// The end date or the number of times was reached.
+  ENDED
+  /// A person put it on hold.
+  HELD_BY_MEMBER
+}

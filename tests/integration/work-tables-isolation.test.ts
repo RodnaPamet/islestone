@@ -8,7 +8,8 @@
  * SavedView; and, from sub-phase 2.5a, CycleSchedule, Cycle and
  * WorkItemTransition (which app_user may only read: its writer is a trigger);
  * and, from sub-phase 2.5b, Milestone; and, from sub-phase 2.5c,
- * WorkItemTemplate, WorkItemTemplateLabel and ProjectTemplate.
+ * WorkItemTemplate, WorkItemTemplateLabel and ProjectTemplate; and, from
+ * sub-phase 2.5d, WorkItemRecurrence.
  *
  * Every operation runs through `runInTenantContext` as tenant B, i.e. as
  * `app_user` with `app.tenant_id` = B: none may read, count, change or remove
@@ -242,6 +243,13 @@ const TABLES: ReadonlyArray<{
         insert: (s) => ({ tenantId: s.tenantId, templateId: s.templateId, labelId: s.labelId }),
     },
     {
+        model: 'WorkItemRecurrence',
+        delegate: 'workItemRecurrence',
+        update: { interval: 2 },
+        deletable: true,
+        insert: (s) => ({ tenantId: s.tenantId, sourceWorkItemId: s.otherItemId, frequency: 'DAILY', firstOn: new Date('2026-11-02T00:00:00Z'), ownerUserId: s.userId }),
+    },
+    {
         model: 'ProjectTemplate',
         delegate: 'projectTemplate',
         update: { name: 'renamed' },
@@ -311,6 +319,9 @@ describeFn('work tables — two-tenant isolation as app_user', () => {
             data: { tenantId: tenant.id, projectId: world.projectId, name: `${tag} template`, title: 'From a template', sortKey: 'V', createdByUserId: user.id },
         });
         await prisma.workItemTemplateLabel.create({ data: { tenantId: tenant.id, templateId: template.id, labelId: label.id } });
+        await prisma.workItemRecurrence.create({
+            data: { tenantId: tenant.id, sourceWorkItemId: item.id, frequency: 'WEEKLY', firstOn: new Date('2026-11-02T00:00:00Z'), ownerUserId: user.id },
+        });
         await prisma.projectTemplate.create({ data: { tenantId: tenant.id, name: `${tag} starter`, contentJson: '{}', sortKey: 'V', createdByUserId: user.id } });
         return {
             templateId: template.id,

@@ -64,6 +64,13 @@ export async function getProject(ctx: RequestContext, projectId: string) {
     });
 }
 
+/**
+ * A project template applies fields, milestones, item templates and up to
+ * hundreds of starter items in the create's one transaction; the default
+ * interactive-transaction timeout (5 s) is for single writes.
+ */
+const TEMPLATE_TX = { timeout: 60_000 };
+
 export async function createProject(ctx: RequestContext, input: { teamId: string; name: string; keyPrefix: string; templateId?: string }) {
     assertCanCreateProject(ctx);
     const name = sanitizePlainText(input.name).trim();
@@ -86,7 +93,7 @@ export async function createProject(ctx: RequestContext, input: { teamId: string
             metadata: { teamId: input.teamId, keyPrefix, ...(fromTemplate ? { projectTemplateId: fromTemplate.projectTemplateId, ...fromTemplate.counts, templateSkipped: fromTemplate.skipped } : {}) },
         });
         return fromTemplate ? { ...project, fromTemplate: { counts: fromTemplate.counts, skipped: fromTemplate.skipped } } : project;
-    });
+    }, input.templateId ? TEMPLATE_TX : undefined);
 }
 
 export async function updateProject(ctx: RequestContext, projectId: string, input: { name?: string; keyPrefix?: string; teamId?: string }) {

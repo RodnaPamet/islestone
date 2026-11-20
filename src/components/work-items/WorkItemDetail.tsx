@@ -45,6 +45,7 @@ import { toRow, useWorkItemMutations } from './data/use-work-item-mutations';
 import { ActivityPanel, CommentsPanel, LinksPanel, RelationsPanel, WatchersPanel } from './detail/collab-panels';
 import { SubItemsPanel } from './detail/SubItemsPanel';
 import { CustomFieldInput } from './fields/CustomFieldInput';
+import { RepeatControl } from './detail/RepeatControl';
 import { AssigneePicker, CyclePicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker } from './pickers';
 
 export type DetailTab = 'overview' | 'sub-items' | 'links' | 'comments' | 'activity';
@@ -196,6 +197,9 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                     disabled={!perms.edit}
                     onChange={(milestoneId) => void mutations.setMilestone(row, milestoneId)}
                 />
+            </PropertyRow>
+            <PropertyRow label={t('fields.repeat')}>
+                <RepeatControl itemId={item.id} hasDueDate={item.dueDate !== null} archived={Boolean(item.project.archivedAt)} />
             </PropertyRow>
             <PropertyRow label={t('fields.labels')} htmlFor={`labels-${item.id}`}>
                 <LabelsPicker id={`labels-${item.id}`} teamId={item.teamId} value={item.labelIds} disabled={!perms.edit} onChange={changeLabels} />

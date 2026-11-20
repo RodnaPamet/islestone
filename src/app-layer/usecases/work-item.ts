@@ -408,6 +408,22 @@ function overridesOf(input: CreateWorkItemInput): TemplateOverrides {
 }
 
 /**
+ * What a caller of `createWorkItemInTx` may add. `metadata` joins the
+ * `WORK_ITEM_CREATED` entry (the intake accept's request id and channel,
+ * 2.6a). A repeat's copy (2.5d) names the occurrence it stands for, which is
+ * written on the row (`recurrenceId`, `occurrenceOn`, unique together), and
+ * the source's sub-items, made with it as a template's would be.
+ */
+export interface CreateInTxOptions {
+    metadata?: Record<string, unknown>;
+    recurrenceId?: string;
+    /** `YYYY-MM-DD`. */
+    occurrenceOn?: string;
+    /** Sub-items to make with the item when no template brings them (a repeat's copy of its source's). */
+    subItems?: ReadonlyArray<{ title: string }>;
+}
+
+/**
  * The create path inside a caller's transaction: every rule of a create
  * (visibility, a writable project, a template's projection, type, state,
  * assignee, cycle, milestone, labels, parent, the key number, the order,
@@ -423,7 +439,7 @@ export async function createWorkItemInTx(
     db: PrismaTx,
     ctx: RequestContext,
     input: CreateWorkItemInput,
-    opts: { metadata?: Record<string, unknown> } = {},
+    opts: CreateInTxOptions = {},
 ): Promise<WorkItemDto & { templateSkipped?: string[] }> {
     // The graph lock comes FIRST, before any row read or lock (a
     // template may bring sub-items, which are parent links).
@@ -478,7 +494,7 @@ export async function createWorkItemInTx(
     if (plan.cycleId) await assertCycleTakesItems(db, ctx, plan.cycleId, project.teamId);
     if (plan.milestoneId) await assertMilestoneOfProject(db, ctx, plan.milestoneId, project.id);
     if (labelIds.length > 0) await assertLabelsUsable(db, ctx, labelIds, project.teamId);
-    const subItems = fromTemplate?.subItems ?? [];
+    const subItems = fromTemplate?.subItems ?? opts.subItems ?? [];
     if (input.parentId) await assertParentAllowed(db, ctx, v, input.parentId, { projectId: project.id, subtreeHeight: subItems.length > 0 ? 1 : 0 });
 
     // The number first: its row lock serialises creates in the project,
@@ -504,6 +520,8 @@ export async function createWorkItemInTx(
         parentId: input.parentId ?? null,
         cycleId: plan.cycleId ?? null,
         milestoneId: plan.milestoneId ?? null,
+        recurrenceId: opts.recurrenceId ?? null,
+        occurrenceOn: parseDateOnly(opts.occurrenceOn ?? null),
         sortKey,
         startDate: parseDateOnly(input.startDate),
         dueDate: parseDateOnly(plan.dueDate),
@@ -536,7 +554,7 @@ export async function createWorkItemInTx(
     // The template's sub-items, in its order, in this transaction.
     for (const sub of subItems) {
         // guardrail-allow: n+1 — a template's sub-items, at most TEMPLATE_LIMITS.subItems (50), each claiming its number in order.
-        await insertTemplateItemInTx(db, ctx, project, { parentId: row.id, typeId: type.id, title: sub.title, milestoneId: row.milestoneId, templateId: input.templateId! });
+        await insertTemplateItemInTx(db, ctx, project, { parentId: row.id, typeId: type.id, title: sub.title, milestoneId: row.milestoneId, templateId: input.templateId ?? null });
     }
 
     await emitAutomationEvent(ctx, {
@@ -579,7 +597,8 @@ export async function emitCreatedItemBells(ctx: RequestContext, result: WorkItem
 
 export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemInput): Promise<WorkItemDto & { templateSkipped?: string[] }> {
     assertCanCreateWorkItem(ctx);
-    const result = await runInTenantContext(ctx, (db) => createWorkItemInTx(db, ctx, input));
+    // A template's sub-items (up to 50) are made in the same transaction.
+    const result = await runInTenantContext(ctx, (db) => createWorkItemInTx(db, ctx, input), input.templateId ? { timeout: 20_000 } : undefined);
     // After the commit: the due reminder and the assignment bell.
     await emitDueBell(ctx, { ...result, dueDate: parseDateOnly(result.dueDate) });
     if (result.assigneeId) {

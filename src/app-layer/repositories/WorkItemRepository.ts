@@ -181,6 +181,9 @@ export const workItemListSelect = {
     parentId: true,
     cycleId: true,
     milestoneId: true,
+    recurrenceId: true,
+    occurrenceOn: true,
+    recurrenceRule: { select: { id: true } },
     sortKey: true,
     startDate: true,
     dueDate: true,
@@ -629,6 +632,8 @@ export class WorkItemRepository {
             parentId: string | null;
             cycleId?: string | null;
             milestoneId?: string | null;
+            recurrenceId?: string | null;
+            occurrenceOn?: Date | null;
             sortKey: string;
             startDate: Date | null;
             dueDate: Date | null;
@@ -959,6 +964,32 @@ export class WorkItemRepository {
             data: { cycleId: null, version: { increment: 1 } },
         });
         return result.count;
+    }
+
+    // ── Repeats (sub-phase 2.5d) ─────────────────────────────────────
+
+    /**
+     * A repeat's source as the job finds it: visible to the rule's owner,
+     * deleted or not (a deleted source holds the rule, `SOURCE_DELETED`, so
+     * the read must see it), its project's archive state with it.
+     */
+    static async recurrenceSource(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, id: string) {
+        return db.workItem.findFirst({
+            // Deliberately not narrowed by `deletedAt`: a deleted source is a finding (it holds the rule).
+            where: { id, tenantId: ctx.tenantId, AND: [projectVisibilityWhere(v, { includeArchived: true })] },
+            select: { id: true, projectId: true, teamId: true, deletedAt: true, project: { select: { keyPrefix: true, archivedAt: true } } },
+        });
+    }
+
+    /**
+     * Is there already an item for this occurrence (a copy made before a
+     * hold and a resume)? Deleted ones count: the occurrence unique covers
+     * them, and a deleted copy is not made again.
+     */
+    static async occurrenceExists(db: PrismaTx, ctx: RequestContext, recurrenceId: string, occurrenceOn: Date): Promise<boolean> {
+        // Deliberately not narrowed by `deletedAt` or visibility: the unique index is not.
+        const hit = await db.workItem.findFirst({ where: { tenantId: ctx.tenantId, recurrenceId, occurrenceOn }, select: { id: true } });
+        return hit !== null;
     }
 
     // ── Templates (sub-phase 2.5c) ───────────────────────────────────

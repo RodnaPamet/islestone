@@ -67,6 +67,8 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${T}/projects/[projectId]/work-item-templates/[templateId]/route.ts`]: { PATCH: 'projects.edit', DELETE: 'projects.edit' },
     [`${T}/project-templates/route.ts`]: { GET: 'projects.create', POST: 'admin.manage' },
     [`${T}/project-templates/[templateId]/route.ts`]: { PATCH: 'admin.manage', DELETE: 'admin.manage' },
+    // Sub-phase 2.5d (owner decisions 70 and 72).
+    [`${W}/[workItemId]/recurrence/route.ts`]: { GET: 'work_items.view', PUT: 'work_items.create', DELETE: 'work_items.edit' },
     [`${T}/projects/[projectId]/custom-fields/route.ts`]: { GET: 'projects.view', POST: 'projects.edit' },
     [`${T}/projects/[projectId]/custom-fields/[fieldId]/route.ts`]: { PATCH: 'projects.edit' },
     [`${T}/projects/[projectId]/custom-fields/[fieldId]/options/route.ts`]: { POST: 'projects.edit' },
