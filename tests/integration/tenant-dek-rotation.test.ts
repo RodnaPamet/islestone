@@ -244,6 +244,11 @@ describeFn('rotateTenantDek and the sweep (integration — real DB)', () => {
         );
         expect(sweep.perField.map((f) => `${f.model}.${f.field}`).sort()).toEqual([
             'Comment.body',
+            // Sub-phase 2.6a: an intake request's text, answers and remarks.
+            'IntakeRequest.answersJson',
+            'IntakeRequest.body',
+            'IntakeRequest.declineExplanation',
+            'IntakeRequest.internalRemark',
             'ProjectTemplate.contentJson',
             'TenantSecuritySettings.auditStreamSecretEncrypted',
             'WorkItem.description',
