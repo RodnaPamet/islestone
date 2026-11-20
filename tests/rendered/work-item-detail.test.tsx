@@ -6,7 +6,10 @@
  * the owner's rule (decision 53) through the server's own functions; a
  * delete goes through the undo toast; the comment text is kept when the
  * server refuses it; a member who may not edit gets no editing controls; and
- * neither variant has axe violations.
+ * neither variant has axe violations. Since 2.7d: the description is shown
+ * with its chips and key links and edited on request; a `<@userId>` token is
+ * a chip only for a person its source's `Mention` rows name (the authority
+ * rule), and the comment box's `@` picker puts a person's token in the text.
  *
  * Written fresh for Islestone, after inflect-compliance's
  * `task-detail-mutation-failures.test.tsx` (comments kept on refusal,
@@ -72,6 +75,8 @@ describe('the detail as a page and as a sheet', () => {
         const { container } = renderDetail(variant);
         expect(await screen.findByRole('heading', { name: 'Item 1' })).toBeInTheDocument();
         expect(screen.getByText('ISL-1')).toBeInTheDocument();
+        expect(screen.getByText('The description.')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Edit description' }));
         expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue('The description.');
         expect(await axe(container)).toHaveNoViolations();
     });
@@ -81,6 +86,7 @@ describe('the detail as a page and as a sheet', () => {
         renderDetail('page', 'VIEWER', 'u-viewer');
         expect(await screen.findByRole('heading', { name: 'Item 1' })).toBeInTheDocument();
         expect(screen.queryByRole('textbox', { name: 'Description' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Edit description' })).toBeNull();
         expect(screen.queryByRole('button', { name: 'Delete work item' })).toBeNull();
         expect(screen.getByLabelText('State')).toBeDisabled();
     });
@@ -191,5 +197,69 @@ describe('delete', () => {
         expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
         fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
         expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
+    });
+});
+
+describe('mentions and key links (2.7d)', () => {
+    const DESCRIPTION = 'Over to <@u-bob> and <@u-eve>, see ISL-7 and UTF-8.';
+
+    it('a token is a chip only for a recorded person; any other stays text; a known key links', async () => {
+        routes({ 'GET /work-items/wi-1': { body: detail(row(1), { description: DESCRIPTION, descriptionMentions: ['u-bob'] }) } });
+        const { container } = renderDetail('page', 'VIEWER', 'u-viewer');
+        expect(await screen.findByRole('heading', { name: 'Item 1' })).toBeInTheDocument();
+        const section = screen.getByRole('heading', { name: 'Description' }).closest('section')!;
+        expect(await within(section).findByText('@Bob Builder')).toBeInTheDocument();
+        expect(within(section).getByText(/<@u-eve>/)).toBeInTheDocument();
+        expect(within(section).getByRole('link', { name: 'ISL-7' })).toHaveAttribute('href', '/t/acme/work-items/ISL-7');
+        expect(within(section).queryByRole('link', { name: 'UTF-8' })).toBeNull();
+        expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it('a token with no row names nobody, even when it names a real member', async () => {
+        routes({ 'GET /work-items/wi-1': { body: detail(row(1), { description: 'From the form: <@u-bob>', descriptionMentions: [] }) } });
+        renderDetail('page', 'VIEWER', 'u-viewer');
+        expect(await screen.findByText('From the form: <@u-bob>')).toBeInTheDocument();
+        expect(screen.queryByText('@Bob Builder')).toBeNull();
+    });
+
+    it("a comment's chips come from its own rows", async () => {
+        routes({
+            'GET /work-items/wi-1/comments': {
+                body: {
+                    items: [{ id: 'c-1', workItemId: 'wi-1', authorUserId: 'u-ada', body: 'Thanks <@u-bob>, ask <@u-ada>', editedAt: null, createdAt: '2026-11-02T10:00:00.000Z', mentions: ['u-bob'] }],
+                    pageInfo: { hasNextPage: false },
+                },
+            },
+        });
+        renderDetail('page');
+        const list = await openComments('page');
+        expect(await within(list).findByText('@Bob Builder')).toBeInTheDocument();
+        expect(within(list).getByText(/ask <@u-ada>/)).toBeInTheDocument();
+    });
+
+    it('the comment box offers members after @ and puts the chosen token in the text', async () => {
+        routes();
+        renderDetail('page');
+        await openComments('page');
+        const box = screen.getByRole('textbox', { name: 'New comment' });
+        fireEvent.change(box, { target: { value: 'Hi @bo', selectionStart: 6, selectionEnd: 6 } });
+        const picker = await screen.findByRole('listbox', { name: 'Mention a member' });
+        expect(within(picker).getAllByRole('option').map((o) => o.textContent)).toEqual(['Bob Builder']);
+        expect(box).toHaveAttribute('aria-activedescendant', within(picker).getByRole('option').id);
+        fireEvent.keyDown(box, { key: 'Enter' });
+        expect(box).toHaveValue('Hi <@u-bob> ');
+        expect(screen.queryByRole('listbox', { name: 'Mention a member' })).toBeNull();
+    });
+
+    it('Escape closes the picker and leaves the text as typed', async () => {
+        routes();
+        renderDetail('page');
+        await openComments('page');
+        const box = screen.getByRole('textbox', { name: 'New comment' });
+        fireEvent.change(box, { target: { value: '@', selectionStart: 1, selectionEnd: 1 } });
+        expect(within(await screen.findByRole('listbox', { name: 'Mention a member' })).getAllByRole('option')).toHaveLength(2);
+        fireEvent.keyDown(box, { key: 'Escape' });
+        await waitFor(() => expect(screen.queryByRole('listbox', { name: 'Mention a member' })).toBeNull());
+        expect(box).toHaveValue('@');
     });
 });

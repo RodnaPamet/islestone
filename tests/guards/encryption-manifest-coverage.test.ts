@@ -71,6 +71,9 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    // ── Mentions (sub-phase 2.7d) ──────────────────────────────────────
+    'Mention.commentId':
+        'A pointer to the comment that mentions the person (a cuid, FK-checked); the comment\'s text is Comment.body, encrypted.',
     // ── The marked answer (sub-phase 2.4b-c) ──────────────────────────
     'WorkItem.answerCommentId':
         'A pointer to one of the item\'s own comments (a cuid, FK-checked); the comment\'s text is Comment.body, encrypted.',

@@ -38,6 +38,7 @@ import {
 import { PRODUCT_NAME } from './email/layout';
 import { WorkItemAssignedEmail, workItemLabel } from './email/work-item-assigned';
 import { WorkItemWaitingOnEmail, waitingOnLede } from './email/work-item-waiting-on';
+import { WorkItemMentionedEmail, mentionedLede } from './email/work-item-mentioned';
 
 export type { DigestDueGroup } from './email/notification-digest';
 
@@ -158,6 +159,39 @@ export async function buildWorkItemWaitingOnEmail(payload: WorkItemWaitingOnPayl
             `— ${PRODUCT_NAME}`,
         ].join('\n'),
         bodyHtml: await render(createElement(WorkItemWaitingOnEmail, { ...payload, link })),
+    };
+}
+
+// ─── Mentions (2.7d) ───
+
+export interface WorkItemMentionedPayload {
+    recipientName: string;
+    mentionedByName?: string;
+    where: 'comment' | 'description';
+    workItemTitle: string;
+    workItemKey?: string | null;
+    /** The item's path in the app (`/t/<slug>/…`, `tenantWorkItemPath`). */
+    linkPath: string;
+}
+
+/** Who mentioned them, on which item, and a link; never the text (decision 130). */
+export async function buildWorkItemMentionedEmail(payload: WorkItemMentionedPayload): Promise<EmailTemplateResult> {
+    const link = appLink(payload.linkPath);
+    const label = workItemLabel(payload);
+    return {
+        subject: `Mentioned on ${label}`,
+        bodyText: [
+            `Hi ${payload.recipientName},`,
+            '',
+            mentionedLede(payload.mentionedByName, payload.where),
+            '',
+            `  ${label}`,
+            '',
+            `Open the work item: ${link}`,
+            '',
+            `— ${PRODUCT_NAME}`,
+        ].join('\n'),
+        bodyHtml: await render(createElement(WorkItemMentionedEmail, { ...payload, link })),
     };
 }
 

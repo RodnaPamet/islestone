@@ -276,6 +276,7 @@ model WorkItem {
   links             WorkItemLink[]
   customFieldValues CustomFieldValue[]
   notifications     Notification[]
+  mentions          Mention[]
 
   @@unique([tenantId, projectId, number])
   @@unique([id, tenantId])
@@ -410,11 +411,42 @@ model Comment {
   /// The item that marks this comment as its answer (2.4b-c); at most one,
   /// and only the comment's own item (the FK names the item's id).
   answerOf WorkItem[] @relation("WorkItemAnswer")
+  /// The people this comment mentions (2.7d).
+  mentions Mention[]
 
   /// Target of the answer link: another item's comment cannot be stored.
   @@unique([id, workItemId, tenantId])
   @@index([tenantId, workItemId, createdAt])
   @@index([tenantId, authorUserId])
+}
+
+/// A person mentioned in a comment or in a work item's description (sub-phase
+/// 2.7d, owner decisions 127 to 130). The rows, not the text, are the
+/// authority: a `<@userId>` token renders as a chip only when its source has a
+/// row for that person, so a token typed by an outsider, copied by a template
+/// or a repeat, or pasted from elsewhere names nobody and notifies nobody.
+/// `commentId` NULL is the item's description. One row per source and person
+/// (two partial uniques in the migration). The item and the comment cascade,
+/// and so does the membership: a removed member's mentions go and render as
+/// plain text. `mentionedById` is an actor stamp, a plain column with no FK.
+model Mention {
+  id              String   @id @default(cuid())
+  tenantId        String
+  workItemId      String
+  commentId       String?
+  mentionedUserId String
+  mentionedById   String
+  createdAt       DateTime @default(now())
+
+  tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workItem WorkItem         @relation(fields: [workItemId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  comment  Comment?         @relation(fields: [commentId, workItemId, tenantId], references: [id, workItemId, tenantId], onDelete: Cascade)
+  member   TenantMembership @relation("MentionMember", fields: [tenantId, mentionedUserId], references: [tenantId, userId], onDelete: Cascade)
+
+  /// "Mentioned you", newest first, per person.
+  @@index([tenantId, mentionedUserId, createdAt])
+  @@index([tenantId, workItemId])
+  @@index([tenantId, commentId])
 }
 
 /// A member watching a work item. The member FK cascades: a removed member

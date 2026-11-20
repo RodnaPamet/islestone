@@ -16,10 +16,11 @@ import { createHash } from 'node:crypto';
 import type { WorkflowStateCategory } from '@prisma/client';
 
 import { createAssignmentNotification } from '../notifications/assignment';
+import { createMentionNotifications } from '../notifications/mention';
 import { createWatcherNotifications, type WatcherActivityKind } from '../notifications/watcher';
 import { createWorkItemDueNotification } from '../notifications/work-item-due';
 import { enqueueEmail } from '../notifications/enqueue';
-import { emailDeliveryFor } from '../notifications/settings';
+import { emailDeliveryFor, memberDeliveries } from '../notifications/settings';
 import { MembershipRepository } from '../repositories/MembershipRepository';
 import {
     WorkItemRepository,
@@ -381,6 +382,11 @@ export interface WatcherEvent {
     kind: WatcherActivityKind;
     discriminator: string;
     detail: string;
+    /**
+     * Watchers this event does not ring: the people the same write mentioned
+     * (2.7d), who get the mention instead of a second "new comment".
+     */
+    skipUserIds?: readonly string[];
 }
 
 /**
@@ -400,7 +406,10 @@ export async function emitWatcherActivity(ctx: RequestContext, events: readonly 
             for (const e of events) {
                 const item = items.get(e.workItemId);
                 if (!item) continue;
-                const recipients = watchers.filter((w) => w.workItemId === e.workItemId && w.userId !== ctx.userId).map((w) => w.userId);
+                const skip = new Set(e.skipUserIds ?? []);
+                const recipients = watchers
+                    .filter((w) => w.workItemId === e.workItemId && w.userId !== ctx.userId && !skip.has(w.userId))
+                    .map((w) => w.userId);
                 await createWatcherNotifications(db, recipients, {
                     tenantId: ctx.tenantId,
                     workItemId: item.id,
@@ -417,6 +426,71 @@ export async function emitWatcherActivity(ctx: RequestContext, events: readonly 
         logger.warn('failed to fan work-item activity out to watchers', {
             component: 'notifications',
             workItemIds: events.map((e) => e.workItemId),
+            error: err instanceof Error ? err.message : String(err),
+        });
+    }
+}
+
+/**
+ * The mention bell and email (sub-phase 2.7d; owner decisions 128 and 130),
+ * after the commit, to the people the write newly mentioned
+ * (`recordMentionsInTx` never returns the author). In one short transaction:
+ * the bell rows (`createMentionNotifications`, which asks each person's
+ * preference), then, for each person whose mention email is IMMEDIATE (the
+ * default), the email. Both say who mentioned them, on which item, with a
+ * link; never the comment's or the description's text.
+ */
+export async function emitMentionBells(
+    ctx: RequestContext,
+    item: { id: string; title: string; key: string },
+    source: { commentId: string | null },
+    userIds: readonly string[],
+): Promise<void> {
+    const recipients = [...new Set(userIds)].filter((id) => id !== ctx.userId);
+    if (recipients.length === 0 || !ctx.tenantSlug) return;
+    const tenantSlug = ctx.tenantSlug;
+    try {
+        await runInTenantContext(ctx, async (db) => {
+            const contacts = await MembershipRepository.contactsOf(db, [...recipients, ctx.userId]);
+            const byId = new Map(contacts.map((c) => [c.id, c]));
+            const mentionedByName = byId.get(ctx.userId)?.name ?? undefined;
+            const linkPath = tenantWorkItemPath(tenantSlug, item.id);
+            await createMentionNotifications(db, recipients, {
+                tenantId: ctx.tenantId,
+                workItemId: item.id,
+                workItemKey: item.key,
+                workItemTitle: item.title,
+                linkUrl: linkPath,
+                commentId: source.commentId,
+                mentionedByName,
+            });
+            const deliveries = await memberDeliveries(db, ctx.tenantId, 'WORK_ITEM_MENTIONED', recipients);
+            for (const userId of recipients) {
+                if (deliveries.get(userId)?.email !== 'IMMEDIATE') continue;
+                const recipient = byId.get(userId);
+                if (!recipient?.email) continue;
+                // An outbox row per person, at most MAX_MENTIONS_PER_TEXT; `enqueueEmail` is a write.
+                await enqueueEmail(db, {
+                    tenantId: ctx.tenantId,
+                    type: 'WORK_ITEM_MENTIONED',
+                    toEmail: recipient.email,
+                    entityId: `${item.id}:${source.commentId ?? 'description'}`,
+                    requestId: ctx.requestId,
+                    payload: {
+                        recipientName: recipient.name || recipient.email,
+                        mentionedByName,
+                        where: source.commentId ? 'comment' : 'description',
+                        workItemTitle: item.title,
+                        workItemKey: item.key,
+                        linkPath,
+                    },
+                });
+            }
+        });
+    } catch (err) {
+        logger.warn('failed to create work-item-mentioned notification', {
+            component: 'notifications',
+            workItemId: item.id,
             error: err instanceof Error ? err.message : String(err),
         });
     }

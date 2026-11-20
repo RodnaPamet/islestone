@@ -902,3 +902,27 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    The brief cited decisions 135 (Inbox), 136 (retention) and 139 (Settings → Notifications); in
    this file they are 134, 135 and 136 (139 is the recipient-list copy rule). The build follows the
    decisions' text.
+   2.7c merged as #58. **2.7d (mentions, decisions 127 to 131) is built** on branch `wt/p27d`, on
+   top of 2.7c, per `docs/work-items.md` ("Mentions (2.7d)") and `docs/notifications.md`
+   ("Mentions"); written fresh, no `PROVENANCE.md` row:
+   - Schema: `Mention` (one row per source and person, `commentId` NULL for the description; two
+     partial uniques; cascading with the item, the comment and the membership; RLS, grants,
+     two-tenant test); `NotificationType.WORK_ITEM_MENTIONED` and
+     `EmailNotificationType.WORK_ITEM_MENTIONED`, each in a migration of its own; the preference
+     CHECK widened to allow IMMEDIATE for mentions. Migrations
+     `20261205120000_notification_type_mentioned`, `20261205120100_email_type_mentioned`,
+     `20261205120200_mentions`. The drift check passes, residue unchanged.
+   - Rules: the pure grammar `src/app-layer/domain/mention.ts`; `recordMentionsInTx` in a person's
+     own comment add or edit, description edit, or create naming a description (never intake
+     accept, templates or repeat copies; never an API key, an agent or the system user); only
+     ACTIVE members with `work_items.view` who see the project, dropped silently otherwise; an edit
+     notifies only the people it adds; the newly mentioned become watchers (`reason: 'mentioned'`);
+     audited `WORK_ITEM_MENTIONED` / `WORK_ITEM_MENTIONS_REMOVED`, ids only. The rows, not the
+     text, decide which tokens render as chips.
+   - Notifications: the `WORK_ITEM_MENTIONED` bell and IMMEDIATE email (the default; offered and
+     CHECKed), after the commit, who and which item with a link, never the text; the comment's
+     watcher fan-out skips the people it mentioned; DAILY lists the bell row in the digest.
+   - UI: the `@` picker (`MentionTextarea`) on the comment box and editor, the description editor
+     and the create dialog's description; chips and key links (`MentionText`) on comments, the
+     description and the pinned answer; the description is shown rendered and edited on request
+     ("Edit description"). No new route or key.

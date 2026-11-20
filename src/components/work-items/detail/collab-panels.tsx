@@ -14,6 +14,10 @@
  * comment until the answer is cleared, and "Mark as answer" is offered where
  * the field set shows the answer: `commentAffordances`, the same module.
  *
+ * A comment's text is written in `MentionTextarea` (the `@` picker) and shown
+ * by `MentionText`: a token is a chip only for a person the server recorded
+ * for that comment (`mentions`), and a key links to its item (2.7d).
+ *
  * The comment and activity lists follow inflect-compliance's task detail
  * page (lines 1586–1678) and `PanelActivityFeed.tsx` at
  * 5528464fc54a8681956f3b9ce23ca9c075f0420e; written fresh here.
@@ -25,7 +29,6 @@ import { Button } from '@inflect/ui/components/ui/button';
 import { formatDateTime } from '@inflect/ui/lib/format-date';
 import { commentAffordances } from '@/app-layer/policies/comment.policies';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { useTenantSWR } from '@/lib/data/use-tenant-swr';
 import { useCurrentUserId, usePermissions, useTenantContext } from '@/lib/tenant-context-provider';
@@ -43,6 +46,8 @@ import {
 import { AssigneePicker } from '../pickers';
 import { WorkItemPicker } from '../WorkItemPicker';
 import { activityPhraseKey } from './activity-phrases';
+import { MentionText } from '../mentions/MentionText';
+import { MentionTextarea } from '../mentions/MentionTextarea';
 
 function useMemberName() {
     const tName = useTranslations('workItems');
@@ -87,7 +92,7 @@ export function CommentsPanel({ workItemId, answer }: { workItemId: string; answ
             </h2>
             {canComment && (
                 <div className="space-y-tight">
-                    <Textarea aria-label={tComments('detail.newComment')} value={draft} onChange={(e) => setDraft(e.target.value)} rows={3} />
+                    <MentionTextarea aria-label={tComments('detail.newComment')} value={draft} onValueChange={setDraft} rows={3} />
                     <Button variant="secondary" onClick={submit} disabled={!draft.trim()} text={tComments('detail.addComment')} />
                 </div>
             )}
@@ -112,10 +117,10 @@ export function CommentsPanel({ workItemId, answer }: { workItemId: string; answ
                             </p>
                             {isEditing ? (
                                 <div className="mt-2 space-y-tight">
-                                    <Textarea
+                                    <MentionTextarea
                                         aria-label={tComments('detail.editComment')}
                                         value={editing.body}
-                                        onChange={(e) => setEditing({ id: c.id, body: e.target.value })}
+                                        onValueChange={(body) => setEditing({ id: c.id, body })}
                                         rows={3}
                                     />
                                     <div className="flex gap-tight">
@@ -132,7 +137,7 @@ export function CommentsPanel({ workItemId, answer }: { workItemId: string; answ
                                     </div>
                                 </div>
                             ) : (
-                                <p className="mt-1 whitespace-pre-wrap text-sm text-content-default">{c.body}</p>
+                                <MentionText text={c.body} mentions={c.mentions} className="mt-1 whitespace-pre-wrap text-sm text-content-default" />
                             )}
                             {allowed.isAnswer && <p className="mt-1 text-xs text-content-muted">{tComments('answer.locked')}</p>}
                             {!isEditing && (mayEdit || deleteBasis || markAnswer) && (

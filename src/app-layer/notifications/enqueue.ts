@@ -22,6 +22,7 @@ import {
     buildNotificationDigestEmail,
     buildWorkItemAssignedEmail,
     buildWorkItemWaitingOnEmail,
+    buildWorkItemMentionedEmail,
     type EmailTemplateResult,
     type IntakeConfirmAddressPayload,
     type IntakeDeclinedPayload,
@@ -29,6 +30,7 @@ import {
     type NotificationDigestPayload,
     type WorkItemAssignedPayload,
     type WorkItemWaitingOnPayload,
+    type WorkItemMentionedPayload,
 } from './templates';
 
 /**
@@ -56,6 +58,8 @@ export interface EmailPayloadByType {
     WORK_ITEM_WAITING_ON: WorkItemWaitingOnPayload;
     /** Sub-phase 2.7c: the one daily digest (owner decision 133). */
     NOTIFICATION_DIGEST: NotificationDigestPayload;
+    /** Sub-phase 2.7d: a person newly mentioned, when their preference is IMMEDIATE (decision 130: never the text). */
+    WORK_ITEM_MENTIONED: WorkItemMentionedPayload;
 }
 
 type EmailPayloadMap = { [K in EmailNotificationType]: EmailPayloadByType[K] };
@@ -197,6 +201,8 @@ async function buildEmailContent(input: EnqueueEmailInput): Promise<EmailTemplat
             return buildWorkItemWaitingOnEmail(input.payload);
         case 'NOTIFICATION_DIGEST':
             return buildNotificationDigestEmail(input.payload);
+        case 'WORK_ITEM_MENTIONED':
+            return buildWorkItemMentionedEmail(input.payload);
         case 'INTAKE_CONFIRM_ADDRESS':
             return buildIntakeRequesterEmail('CONFIRM', input.payload);
         case 'INTAKE_ACCEPTED':

@@ -65,8 +65,13 @@ export interface WorkItemPage {
 /** The detail read (`GET /work-items/:id`). */
 export interface WorkItemDetailData extends WorkItemRow {
     description: string | null;
-    /** The marked answer, pinned on the detail (2.4b-c). */
-    answer?: { id: string; authorUserId: string; body: string; editedAt: string | null; createdAt: string } | null;
+    /**
+     * The people the description mentions (2.7d): the only `<@userId>` tokens
+     * the renderer shows as chips (`Mention` rows are the authority).
+     */
+    descriptionMentions?: string[];
+    /** The marked answer, pinned on the detail (2.4b-c), with the people it mentions (2.7d). */
+    answer?: { id: string; authorUserId: string; body: string; editedAt: string | null; createdAt: string; mentions?: string[] } | null;
     project: { id?: string; keyPrefix: string; name?: string; archivedAt?: string | null };
     state: { id: string; name: string; category: WorkflowStateCategory; archivedAt?: string | null };
     type: { id: string; name: string } | null;
@@ -230,6 +235,8 @@ export interface CommentRow {
     body: string;
     editedAt: string | null;
     createdAt: string;
+    /** The people this comment mentions (2.7d): the renderer's authority for its chips. */
+    mentions?: string[];
 }
 
 export interface ActivityEntryRow {

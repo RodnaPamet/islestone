@@ -28,6 +28,7 @@ import type { WorkItemDetailData, WorkItemRow } from '@/lib/work-items/types';
 
 import { memberLabel, useMembers, useWorkConfig } from '../data/use-work-config';
 import { useWorkItemMutations } from '../data/use-work-item-mutations';
+import { MentionText } from '../mentions/MentionText';
 
 export function PinnedAnswer({ item, row, canEdit }: { item: WorkItemDetailData; row: WorkItemRow; canEdit: boolean }) {
     const tAnswer = useTranslations('workItems.answer');
@@ -43,7 +44,7 @@ export function PinnedAnswer({ item, row, canEdit }: { item: WorkItemDetailData;
             <p className="text-xs text-content-muted">
                 {memberLabel(byId.get(answer.authorUserId)) ?? tAnswer('formerMember')} · {formatDateTime(answer.createdAt)}
             </p>
-            <p className="whitespace-pre-wrap text-sm text-content-default">{answer.body}</p>
+            <MentionText text={answer.body} mentions={answer.mentions} />
             {canEdit && (
                 <Button variant="ghost" size="sm" text={tAnswer('clear')} onClick={() => mutations.clearAnswer(row, answer)} />
             )}

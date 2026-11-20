@@ -269,6 +269,7 @@ describe('the schema speaks ADR 0006', () => {
             'IntakeNotifyMember',
             'IntakeRequest',
             'Label',
+            'Mention',
             'Milestone',
             'Notification',
             'NotificationOutbox',

@@ -116,6 +116,33 @@ test.describe('work-item views', () => {
         expect(after.status()).toBe(200);
     });
 
+    test('a comment mentions a member through the @ picker and links a key (2.7d)', async ({ authedPage: page, isolatedTenant }) => {
+        const slug = isolatedTenant.tenantSlug;
+        const { projectId, typeId } = await seedProject(page.request, slug, 'MEN');
+        await seedItem(page.request, slug, { projectId, typeId, title: 'Linked one' });
+        const item = await seedItem(page.request, slug, { projectId, typeId, title: 'Mentioning one' });
+
+        await page.goto(`/t/${slug}/work-items/${item.key}`);
+        await expect(page.getByRole('heading', { level: 1, name: 'Mentioning one' })).toBeVisible();
+        await page.getByRole('tab', { name: /Comments/ }).click();
+        const box = page.getByRole('textbox', { name: 'New comment' });
+        await box.pressSequentially('See MEN-1, @');
+        const picker = page.getByRole('listbox', { name: 'Mention a member' });
+        await expect(picker.getByRole('option', { name: isolatedTenant.ownerName })).toBeVisible();
+        await page.keyboard.press('Enter');
+        await expect(box).toHaveValue(/^See MEN-1, <@[^>]+> $/);
+        const sent = page.waitForResponse((r) => r.url().endsWith('/comments') && r.request().method() === 'POST');
+        await page.getByRole('button', { name: 'Comment', exact: true }).click();
+        expect((await sent).status()).toBe(201);
+
+        // The server recorded the mention: the token is a chip with the name, and the key links.
+        const comments = page.getByRole('list', { name: 'Comments' });
+        await expect(comments.getByText(`@${isolatedTenant.ownerName}`)).toBeVisible();
+        await comments.getByRole('link', { name: 'MEN-1' }).click();
+        await expect(page).toHaveURL(new RegExp(`/t/${slug}/work-items/MEN-1$`));
+        await expect(page.getByRole('heading', { level: 1, name: 'Linked one' })).toBeVisible();
+    });
+
     test('the board moves cards with the keyboard alone', async ({ authedPage: page, isolatedTenant }) => {
         const slug = isolatedTenant.tenantSlug;
         const { projectId, typeId } = await seedProject(page.request, slug, 'KBD');
