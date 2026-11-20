@@ -5,7 +5,8 @@
  * WorkItemType, WorkItem, WorkItemKeyAlias, WorkItemRelation, Label,
  * WorkItemLabel, Comment, WorkItemWatcher and WorkItemLink; and, from
  * sub-phase 2.4, CustomField, CustomFieldOption, CustomFieldValue and
- * SavedView.
+ * SavedView; and, from sub-phase 2.5a, CycleSchedule, Cycle and
+ * WorkItemTransition (which app_user may only read: its writer is a trigger).
  *
  * Every operation runs through `runInTenantContext` as tenant B, i.e. as
  * `app_user` with `app.tenant_id` = B: none may read, count, change or remove
@@ -47,6 +48,7 @@ interface Side {
     relationId: string;
     fieldId: string;
     optionId: string;
+    cycleId: string;
 }
 
 type Delegate = {
@@ -63,6 +65,8 @@ const TABLES: ReadonlyArray<{
     delegate: string;
     update: Record<string, unknown>;
     deletable: boolean;
+    /** app_user may only read (SELECT): updates and inserts are refused by privilege. */
+    readOnly?: boolean;
     insert: (s: Side) => Record<string, unknown>;
 }> = [
     { model: 'Team', delegate: 'team', update: { name: 'renamed' }, deletable: true, insert: (s) => ({ tenantId: s.tenantId, name: `planted-${SUFFIX}` }) },
@@ -192,6 +196,42 @@ const TABLES: ReadonlyArray<{
         deletable: true,
         insert: (s) => ({ tenantId: s.tenantId, name: 'planted', visibility: 'SHARED', layout: 'LIST', configJson: {}, createdByUserId: s.userId }),
     },
+    {
+        model: 'CycleSchedule',
+        delegate: 'cycleSchedule',
+        update: { upcomingCount: 3 },
+        deletable: true,
+        insert: (s) => ({ tenantId: s.tenantId, teamId: s.world.teamId, firstStartsOn: new Date('2027-01-04T00:00:00Z') }),
+    },
+    {
+        model: 'Cycle',
+        delegate: 'cycle',
+        update: { name: 'renamed' },
+        deletable: true,
+        insert: (s) => ({
+            tenantId: s.tenantId,
+            teamId: s.world.teamId,
+            number: 99,
+            startsOn: new Date('2030-01-01T00:00:00Z'),
+            endsOn: new Date('2030-01-14T00:00:00Z'),
+        }),
+    },
+    {
+        model: 'WorkItemTransition',
+        delegate: 'workItemTransition',
+        update: { deleted: true },
+        deletable: false,
+        readOnly: true,
+        insert: (s) => ({
+            tenantId: s.tenantId,
+            workItemId: s.itemId,
+            projectId: s.world.projectId,
+            teamId: s.world.teamId,
+            stateId: s.world.defaultStateId,
+            stateCategory: 'UNSTARTED',
+            deleted: false,
+        }),
+    },
 ];
 
 describeFn('work tables — two-tenant isolation as app_user', () => {
@@ -227,7 +267,14 @@ describeFn('work tables — two-tenant isolation as app_user', () => {
         await prisma.savedView.create({
             data: { tenantId: tenant.id, name: `${tag} view`, visibility: 'SHARED', layout: 'LIST', configJson: {}, createdByUserId: user.id },
         });
+        await prisma.cycleSchedule.create({ data: { tenantId: tenant.id, teamId: world.teamId, firstStartsOn: new Date('2026-11-02T00:00:00Z') } });
+        const cycle = await prisma.cycle.create({
+            data: { tenantId: tenant.id, teamId: world.teamId, number: 1, startsOn: new Date('2026-11-02T00:00:00Z'), endsOn: new Date('2026-11-15T00:00:00Z') },
+        });
+        // Putting the item in the cycle writes a transition (the trigger).
+        await prisma.workItem.update({ where: { id: item.id }, data: { cycleId: cycle.id } });
         return {
+            cycleId: cycle.id,
             fieldId: field.id,
             optionId: option.id,
             tenantId: tenant.id,
@@ -279,7 +326,13 @@ describeFn('work tables — two-tenant isolation as app_user', () => {
             expect(new Set(rows.map((r) => r.tenantId))).toEqual(new Set([sides.b!.tenantId]));
         });
 
-        it('updateMany over A changes nothing', async () => {
+        it(t.readOnly ? 'an update is refused by privilege' : 'updateMany over A changes nothing', async () => {
+            if (t.readOnly) {
+                await expect(
+                    runInTenantContext(ctxB, (db) => delegateOf(db, t.delegate).updateMany({ where: { tenantId: sides.b!.tenantId }, data: t.update })),
+                ).rejects.toThrow(/permission denied/i);
+                return;
+            }
             const updated = await runInTenantContext(ctxB, (db) =>
                 delegateOf(db, t.delegate).updateMany({ where: { tenantId: sides.a!.tenantId }, data: t.update }),
             );

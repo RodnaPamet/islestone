@@ -45,6 +45,12 @@ const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const APPEND_ONLY_TABLES: readonly string[] = ['AuditLog'];
 
 /**
+ * Tenant tables app_user may only read (sub-phase 2.5a): their one writer is a
+ * SECURITY DEFINER trigger, so no request can forge, change or remove a row.
+ */
+const READ_ONLY_TABLES: readonly string[] = ['WorkItemTransition'];
+
+/**
  * Tenant tables app_user may read, insert and update but never delete
  * (sub-phase 1.6): the application never deletes an outbox row or a settings
  * row; a workspace purge cascades as the table owner.
@@ -305,7 +311,7 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
         // it explicitly; this is the check that it did. The append-only audit
         // trail is the exception: SELECT and INSERT, asserted in the next test.
         const tables = [...TENANT_SCOPED_MODELS, ...ORG_SCOPED_MODELS.keys()].filter(
-            (t) => !APPEND_ONLY_TABLES.includes(t),
+            (t) => !APPEND_ONLY_TABLES.includes(t) && !READ_ONLY_TABLES.includes(t),
         );
         const missing: string[] = [];
         for (const table of tables) {
@@ -337,6 +343,21 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             }
         }
         expect(held).toEqual([]);
+    });
+
+    test('app_user holds SELECT, and nothing more, on the trigger-written tables', async () => {
+        const held: string[] = [];
+        for (const table of READ_ONLY_TABLES) {
+            for (const privilege of ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) {
+                const [row] = await prisma.$queryRawUnsafe<Array<{ ok: boolean }>>(
+                    `SELECT has_table_privilege('app_user', $1, $2) AS ok`,
+                    `"${table}"`,
+                    privilege,
+                );
+                if (row?.ok) held.push(`${privilege} ON "${table}"`);
+            }
+        }
+        expect(held).toEqual(READ_ONLY_TABLES.map((t) => `SELECT ON "${t}"`));
     });
 
     test('app_user holds SELECT and INSERT, and nothing more, on the append-only audit trails', async () => {

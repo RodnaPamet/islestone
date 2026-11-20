@@ -99,6 +99,9 @@ model Tenant {
   customFieldOptions CustomFieldOption[]
   customFieldValues  CustomFieldValue[]
   savedViews         SavedView[]
+  cycleSchedules     CycleSchedule[]
+  cycles             Cycle[]
+  workItemTransitions WorkItemTransition[]
 
   @@index([organizationId])
 }
