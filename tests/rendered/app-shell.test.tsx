@@ -129,6 +129,7 @@ describe('the application shell', () => {
         expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
             ['My Work', '/t/acme/my-work'],
             ['Inbox', '/t/acme/inbox'],
+            ['Work items', '/t/acme/work-items'],
             ['Projects', '/t/acme/projects'],
             ['Views', '/t/acme/views'],
         ]);
@@ -166,7 +167,7 @@ describe('the application shell', () => {
         const ids = Array.from(dialog.querySelectorAll('[data-testid^="command-palette-nav-nav:"]')).map((r) =>
             r.getAttribute('data-href'),
         );
-        expect(ids).toEqual(['/t/acme/my-work', '/t/acme/inbox', '/t/acme/projects', '/t/acme/views', '/t/acme/settings']);
+        expect(ids).toEqual(['/t/acme/my-work', '/t/acme/inbox', '/t/acme/work-items', '/t/acme/projects', '/t/acme/views', '/t/acme/settings']);
 
         fireEvent.click(within(dialog).getByText('Go to Projects'));
         expect(mockPush).toHaveBeenCalledWith('/t/acme/projects');

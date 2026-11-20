@@ -13,6 +13,7 @@
  */
 import { z } from 'zod';
 
+import { DUE_FILTERS } from '@/app-layer/domain/work-item-due';
 import { WORKFLOW_STATE_CATEGORIES } from '@/app-layer/domain/workflow-state';
 
 export const WORK_ITEM_PRIORITIES = ['NONE', 'URGENT', 'HIGH', 'MEDIUM', 'LOW'] as const;
@@ -103,18 +104,22 @@ export const BulkWorkItemDeleteSchema = z.object({ workItemIds: BulkIds }).stric
 /**
  * The move route takes exactly one of `position` (reorder), `parentId`
  * (re-parent, `null` for the top level) or `projectId` (another project).
+ * A board drop (sub-phase 2.3) sends `stateId`, optionally with a
+ * `position` among the destination column's neighbours: the state change and
+ * the reorder are one transaction.
  */
 export const MoveWorkItemSchema = z
     .object({
         position: PositionSchema.optional(),
         parentId: Id.nullable().optional(),
         projectId: Id.optional(),
+        stateId: Id.optional(),
     })
     .strict()
     .refine((b) => {
-        const modes = (b.projectId !== undefined ? 1 : 0) + (b.parentId !== undefined ? 1 : 0);
+        const modes = (b.projectId !== undefined ? 1 : 0) + (b.parentId !== undefined ? 1 : 0) + (b.stateId !== undefined ? 1 : 0);
         return modes === 1 || (modes === 0 && b.position !== undefined);
-    }, 'Give exactly one of parentId or projectId, or a position alone to reorder.');
+    }, 'Give exactly one of parentId, projectId or stateId, or a position alone to reorder.');
 
 /** The list query (`GET /work-items`). */
 export const WorkItemQuerySchema = z.object({
@@ -127,7 +132,11 @@ export const WorkItemQuerySchema = z.object({
     labelId: z.string().max(2000).optional(),
     parentId: z.string().max(2000).optional(),
     assigneeId: z.string().max(2000).optional(),
-    due: z.enum(['overdue', 'next7d']).optional(),
+    /** Creator user ids, comma-joinable, as `assigneeId`. */
+    createdById: z.string().max(2000).optional(),
+    /** Only `me`: the caller's watched items, resolved from the request context. */
+    watching: z.enum(['me']).optional(),
+    due: z.enum(DUE_FILTERS).optional(),
     q: z.string().max(200).optional(),
     includeArchived: z.enum(['true', 'false', '1', '0']).optional(),
     order: z.enum(['manual', 'updated']).optional(),

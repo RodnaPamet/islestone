@@ -52,7 +52,7 @@ export const BACK_AFFORDANCE_COHORT_TODO: readonly string[] = [] as const;
  * navigation (`NAV_PATHS` in `@/components/layout/nav-config`); they have no
  * parent within the workspace. The back affordance is forbidden here.
  */
-export const MAIN_PAGES: readonly string[] = ['/my-work', '/inbox', '/views', '/projects', '/settings'] as const;
+export const MAIN_PAGES: readonly string[] = ['/my-work', '/inbox', '/work-items', '/views', '/projects', '/settings'] as const;
 
 /**
  * Every other workspace route. The back affordance is required here (unless
@@ -62,7 +62,7 @@ export const MAIN_PAGES: readonly string[] = ['/my-work', '/inbox', '/views', '/
  * `classifyRoute` helper normalises a runtime pathname to the same form
  * before lookup.
  */
-export const SUBPAGES: readonly string[] = [] as const;
+export const SUBPAGES: readonly string[] = ['/work-items/[workItemKey]', '/projects/[projectKey]'] as const;
 
 /**
  * Normalise a runtime pathname (with the tenant prefix and concrete dynamic

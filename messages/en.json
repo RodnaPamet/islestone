@@ -167,7 +167,8 @@
             "inbox": "Inbox",
             "views": "Views",
             "projects": "Projects",
-            "settings": "Settings"
+            "settings": "Settings",
+            "workItems": "Work items"
         }
     },
     "ui": {
@@ -181,10 +182,12 @@
         },
         "recordStepper": {
             "previous": {
-                "item": "Previous item"
+                "item": "Previous item",
+                "workItem": "Previous work item"
             },
             "next": {
-                "item": "Next item"
+                "item": "Next item",
+                "workItem": "Next work item"
             }
         }
     },
@@ -501,7 +504,8 @@
         "views": "Views",
         "projects": "Projects",
         "settings": "Settings",
-        "workspace": "Workspace"
+        "workspace": "Workspace",
+        "workItems": "Work items"
     },
     "commandPalette": {
         "title": "Command palette",
@@ -529,7 +533,8 @@
             "goToSettings": "Go to Settings",
             "askAssistant": "Ask the assistant",
             "toggleTheme": "Toggle theme",
-            "signOut": "Sign out"
+            "signOut": "Sign out",
+            "goToWorkItems": "Go to Work items"
         }
     },
     "shortcuts": {
@@ -576,10 +581,283 @@
     },
     "placeholders": {
         "title": "Not here yet",
-        "myWork": "Your assigned, created, watched and soon-due work items will gather here once work items arrive.",
         "inbox": "Your notifications will be listed here. Until then, the bell in the top bar shows the latest.",
         "views": "Saved views of work items, with their filters, grouping and layout, arrive in a later release.",
-        "projects": "Projects, and the work items in them, arrive in a later release.",
         "settings": "The workspace's settings pages arrive in a later release."
+    },
+    "workItems": {
+        "list": {
+            "title": "Work items",
+            "create": "Work item",
+            "searchPlaceholder": "Search work items…",
+            "empty": "No work items match these filters.",
+            "loadFailed": "The work items could not be loaded. Try again.",
+            "loadMore": "Load more",
+            "resource": "work item",
+            "resourcePlural": "work items"
+        },
+        "myWork": {
+            "description": "Your work items: assigned to you, created by you, watched by you, and due soon.",
+            "count": "{count}",
+            "countMore": "{count}+",
+            "closedHidden": "Done and cancelled items are hidden; choose a category in the filters to show them.",
+            "sections": {
+                "assigned": {
+                    "title": "Assigned to me",
+                    "empty": "Nothing assigned to you matches these filters."
+                },
+                "created": {
+                    "title": "Created by me",
+                    "empty": "Nothing you created matches these filters."
+                },
+                "watching": {
+                    "title": "Watching",
+                    "empty": "Nothing you watch matches these filters."
+                },
+                "dueSoon": {
+                    "title": "Due soon",
+                    "description": "Your open items that are overdue or due within {days} days.",
+                    "empty": "Nothing of yours is overdue or due within {days} days."
+                }
+            },
+            "countHint": "Items loaded",
+            "loadMoreIn": "Load more in {section}"
+        },
+        "layout": {
+            "label": "Layout",
+            "list": "List",
+            "board": "Board"
+        },
+        "lanes": {
+            "label": "By label",
+            "none": "No swimlanes",
+            "assignee": "By assignee",
+            "priority": "By priority",
+            "type": "By type",
+            "project": "By project",
+            "choose": "Swimlanes"
+        },
+        "category": {
+            "BACKLOG": "Backlog",
+            "UNSTARTED": "Unstarted",
+            "STARTED": "Started",
+            "DONE": "Done",
+            "CANCELLED": "Cancelled"
+        },
+        "priority": {
+            "NONE": "No priority",
+            "URGENT": "Urgent",
+            "HIGH": "High",
+            "MEDIUM": "Medium",
+            "LOW": "Low"
+        },
+        "col": {
+            "key": "Key",
+            "title": "Title",
+            "state": "State",
+            "priority": "Priority",
+            "assignee": "Assignee",
+            "dueDate": "Due"
+        },
+        "fields": {
+            "title": "Title",
+            "description": "Description",
+            "project": "Project",
+            "type": "Type",
+            "state": "State",
+            "priority": "Priority",
+            "assignee": "Assignee",
+            "labels": "Labels",
+            "dueDate": "Due date"
+        },
+        "filters": {
+            "category": "Category",
+            "state": "State",
+            "priority": "Priority",
+            "type": "Type",
+            "label": "Label",
+            "assignee": "Assignee",
+            "unassigned": "Unassigned",
+            "project": "Project",
+            "due": "Due",
+            "overdue": "Overdue",
+            "next7d": "Due in the next 7 days"
+        },
+        "bulk": {
+            "setState": "Set state",
+            "assign": "Assign selected work items",
+            "delete": "Delete"
+        },
+        "deleted": {
+            "open": "Deleted",
+            "title": "Deleted work items",
+            "description": "Work items deleted in the last 30 days. Restoring one brings back the sub-items deleted with it.",
+            "truncated": "Showing the most recently deleted work items only.",
+            "empty": "No deleted work items.",
+            "restore": "Restore",
+            "restoreItem": "Restore {key}",
+            "back": "Back to work items"
+        },
+        "new": {
+            "title": "New work item",
+            "subItemOf": "A sub-item of {key}.",
+            "noProjects": "There is no open project to add a work item to.",
+            "titleRequired": "Give the work item a title.",
+            "cancel": "Cancel",
+            "submit": "Create work item",
+            "discardTitle": "Discard this work item?",
+            "discardBody": "What you typed will be lost.",
+            "discardConfirm": "Discard work item",
+            "keepEditing": "Keep editing"
+        },
+        "detail": {
+            "tabs": {
+                "overview": "Overview",
+                "sub-items": "Sub-items",
+                "links": "Links",
+                "comments": "Comments",
+                "activity": "Activity"
+            },
+            "sections": "Sections",
+            "sheetTitle": "Work item",
+            "openFullPage": "Open full page",
+            "loading": "Loading the work item…",
+            "notFound": "This work item does not exist, or you cannot see it.",
+            "loadFailed": "This could not be loaded. Try again.",
+            "properties": "Properties",
+            "overdue": "Overdue",
+            "subItemOf": "Sub-item of",
+            "deleteItem": "Delete work item",
+            "saveDescription": "Save description",
+            "noDescription": "No description.",
+            "unassigned": "Unassigned",
+            "unknownMember": "Unknown member",
+            "formerMember": "A former member",
+            "system": "Islestone",
+            "searchMembers": "Search members…",
+            "noLabels": "No labels",
+            "comments": "Comments",
+            "newComment": "New comment",
+            "addComment": "Comment",
+            "editComment": "Edit comment",
+            "saveComment": "Save comment",
+            "cancel": "Cancel",
+            "edit": "Edit",
+            "delete": "Delete",
+            "edited": "edited",
+            "editCommentBy": "Edit the comment by {name}",
+            "deleteCommentBy": "Delete the comment by {name}",
+            "noComments": "No comments yet.",
+            "activity": "Activity",
+            "relations": "Relations",
+            "relationType": "Relation",
+            "relatedItem": "Related work item",
+            "addRelation": "Add relation",
+            "noRelations": "No relations.",
+            "hiddenItem": "A work item you cannot see",
+            "removeRelation": "Remove the relation to {key}",
+            "pickWorkItem": "Pick a work item",
+            "searchWorkItems": "Search by key or title…",
+            "links": "Links",
+            "linkUrl": "Link address",
+            "linkUrlPlaceholder": "https://…",
+            "linkTitle": "Link title",
+            "addLink": "Add link",
+            "noLinks": "No links.",
+            "removeLink": "Remove the link {name}",
+            "watchers": "Watchers",
+            "watch": "Watch",
+            "addWatcher": "Add a watcher",
+            "removeWatcher": "Remove {name} from the watchers",
+            "remove": "Remove"
+        },
+        "relation": {
+            "blocks": "Blocks",
+            "blockedBy": "Blocked by",
+            "relatesTo": "Relates to",
+            "duplicates": "Duplicates",
+            "duplicatedBy": "Duplicated by",
+            "choice": {
+                "BLOCKS": "Blocks",
+                "BLOCKED_BY": "Blocked by",
+                "RELATES": "Relates to",
+                "DUPLICATES": "Duplicates"
+            }
+        },
+        "activity": {
+            "created": "created this work item",
+            "updated": "edited this work item",
+            "stateChanged": "changed the state",
+            "stateChangedFromTo": "moved this from {from} to {to}",
+            "assigned": "changed the assignee",
+            "labelsChanged": "changed the labels",
+            "linked": "added a link",
+            "unlinked": "removed a link",
+            "relationAdded": "added a relation",
+            "relationRemoved": "removed a relation",
+            "moved": "moved this to another project",
+            "reordered": "reordered this",
+            "reparented": "changed the parent",
+            "deleted": "deleted this work item",
+            "restored": "restored this work item",
+            "watcherAdded": "added a watcher",
+            "watcherRemoved": "removed a watcher",
+            "changed": "changed this work item",
+            "commented": "commented"
+        },
+        "subItems": {
+            "title": "Sub-items",
+            "add": "Sub-item",
+            "progress": "{done} of {total} done",
+            "progressLabel": "Sub-items done",
+            "markDone": "Mark {key} done",
+            "empty": "No sub-items."
+        },
+        "board": {
+            "label": "Board",
+            "instructions": "To move a card with the keyboard, press Space to pick it up, the arrow keys to move it, Space again to drop it, or Escape to cancel. Press Enter to open it.",
+            "instructionsReadOnly": "Press Enter to open a card.",
+            "cardLabel": "{key}: {title}",
+            "moveTo": "Move {key} to another column",
+            "due": "Due {date}",
+            "noAssignee": "No assignee",
+            "noLabel": "No label",
+            "noValue": "Other",
+            "countMore": "{count}+",
+            "addIn": "Add a work item to {column}",
+            "pickedUp": "Picked up {key}.",
+            "position": "{column}, position {position} of {total}.",
+            "inLane": "Lane {lane}.",
+            "dropped": "Dropped {key} in {column} at position {position}.",
+            "cancelled": "Move cancelled. {key} is back where it was.",
+            "cannotMove": "You cannot move work items.",
+            "noStateInTeam": "The work item’s team has no state in {column}.",
+            "announcements": "Board announcements"
+        },
+        "projects": {
+            "col": {
+                "name": "Name",
+                "key": "Key",
+                "team": "Team",
+                "status": "Status"
+            },
+            "archived": "Archived",
+            "active": "Active",
+            "empty": "No projects yet."
+        },
+        "toast": {
+            "failed": "That change could not be saved. Try again.",
+            "conflict": "Someone else changed this work item. You are now seeing their version.",
+            "undo": "Undo",
+            "deleted": "{key} deleted",
+            "bulkDeleted": "{count} work items deleted",
+            "bulkPartial": "{done} of {total} work items changed; the rest could not be.",
+            "restored": "{key} restored",
+            "commentDeleted": "Comment deleted",
+            "watcherRemoved": "Watcher removed",
+            "labelRemoved": "Label removed",
+            "relationRemoved": "Relation removed",
+            "linkRemoved": "Link removed"
+        }
     }
 }

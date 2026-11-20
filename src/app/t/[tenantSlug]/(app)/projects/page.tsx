@@ -1,13 +1,16 @@
 import { getTranslations } from 'next-intl/server';
 
-import { PlaceholderPage } from '@/components/layout/PlaceholderPage';
+import { ProjectsList } from '@/components/work-items/ProjectsList';
+import { workItemPageContext } from '@/lib/server/work-item-pages.server';
 
 /**
- * Projects: a placeholder until its feature arrives (see `PlaceholderPage`).
- * The layout has already admitted the member.
+ * Projects: every project the member can see, each linking to its list and
+ * board (sub-phase 2.3). Projects are created through the API and, later,
+ * the workspace settings.
  */
-export default async function ProjectsPage() {
+export default async function ProjectsPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
+    const { tenantSlug } = await params;
+    const { config } = await workItemPageContext(tenantSlug);
     const tNav = await getTranslations('nav');
-    const t = await getTranslations('placeholders');
-    return <PlaceholderPage title={tNav('projects')} emptyTitle={t('title')} body={t('projects')} testId="placeholder-projects" />;
+    return <ProjectsList title={tNav('projects')} projects={config.projects} teams={config.teams} />;
 }

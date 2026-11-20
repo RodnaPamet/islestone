@@ -18,6 +18,7 @@
  * @module usecases/tenant-admin
  */
 import type { RequestContext } from '../types';
+import { assertCanRead } from '../policies/common';
 import {
     assertCanManageMembers,
     assertCanChangeRoles,
@@ -111,6 +112,42 @@ export async function listTenantMembers(ctx: RequestContext) {
         ...m,
         activeSessionCount: counts[m.userId] ?? 0,
     }));
+}
+
+// ─── List Assignable Users ───
+//
+// Copied from inflect-compliance `src/app-layer/usecases/tenant-admin.ts`
+// lines 117–184 at 5528464fc54a8681956f3b9ce23ca9c075f0420e (sub-phase 2.3),
+// without the reviewer audience (the source's `taskReviewersOnly` option, its
+// eligibility select and filter): ADR 0002 §3 has no reviewer gate.
+//
+// `listTenantMembers` above is admin-gated — correctly, because the admin
+// view exposes session counts, invite state, deactivated rows and
+// custom-role linkage. The work-item pickers (assignee, watchers) need a
+// roster too, and a MEMBER or VIEWER has a real reason to read it. This
+// usecase returns the minimal safe shape — id, name, email and image, ACTIVE
+// rows only, no session counts, no role badges, no invite or deactivated rows
+// — to every member (`assertCanRead`). The shape is a contract with
+// `src/components/work-items/data/use-work-config.ts`; do not narrow it.
+
+export interface AssignableUser {
+    id: string;
+    name: string | null;
+    email: string;
+    image: string | null;
+}
+
+export async function listAssignableUsers(ctx: RequestContext): Promise<AssignableUser[]> {
+    assertCanRead(ctx);
+    const memberships = await runInTenantContext(ctx, (db) =>
+        db.tenantMembership.findMany({
+            where: { tenantId: ctx.tenantId, status: 'ACTIVE' },
+            select: { user: { select: { id: true, name: true, email: true, image: true } } },
+            orderBy: { createdAt: 'asc' },
+            take: MEMBERSHIP_SCAN_CAP,
+        }),
+    );
+    return memberships.map((m) => ({ id: m.user.id, name: m.user.name, email: m.user.email, image: m.user.image }));
 }
 
 // ─── Invite Member (DEPRECATED — use createInviteToken from tenant-invites.ts) ───

@@ -68,7 +68,9 @@ describe('page segregation', () => {
 
     it('classifyRoute returns the expected class', () => {
         for (const main of MAIN_PAGES) expect(classifyRoute(`/t/acme${main}`)).toBe('main');
-        expect(classifyRoute('/t/acme/projects/p1')).toBe('unknown');
+        expect(classifyRoute('/t/acme/projects/ISL')).toBe('subpage');
+        expect(classifyRoute('/t/acme/work-items/ISL-1')).toBe('subpage');
+        expect(classifyRoute('/t/acme/projects/ISL/settings')).toBe('unknown');
         expect(classifyRoute('/login')).toBe('unknown');
     });
 });

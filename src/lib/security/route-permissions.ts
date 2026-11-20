@@ -242,6 +242,12 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note: 'Key lookup (current prefix, retired prefix, alias).',
     },
     {
+        path: new RegExp(`^${T}\\/users\\/assignable$`),
+        methods: ['GET'],
+        permission: 'work_items.view',
+        note: 'The active-member roster the work-item pickers read (assignee, watchers).',
+    },
+    {
         path: new RegExp(`^${T}\\/work-items\\/bulk\\/assign$`),
         methods: ['POST'],
         permission: 'work_items.assign',

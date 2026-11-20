@@ -138,6 +138,15 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 keywords: ['notifications'],
             },
             {
+                id: 'nav:work-items',
+                group: 'Navigation',
+                label: t('goToWorkItems'),
+                matchLabel: 'Work items',
+                icon: LayoutList,
+                href: href(NAV_PATHS.workItems),
+                keywords: ['list', 'board', 'issues'],
+            },
+            {
                 id: 'nav:projects',
                 group: 'Navigation',
                 label: t('goToProjects'),

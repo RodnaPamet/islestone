@@ -30,6 +30,7 @@ import { badRequest } from '@/lib/errors/types';
 import { WORK_ITEM_DELETED_LIST_CAP } from '@/lib/list-backfill-cap';
 import { buildKeysetWhere, keysetOrderBy, type CursorPayload, type KeysetOrder } from '@/lib/pagination';
 import { parseEnumListFilter, parseIdListFilter } from '../domain/list-filter';
+import { DUE_FILTERS, DUE_SOON_DAYS, type DueFilter } from '../domain/work-item-due';
 import { OPEN_CATEGORY_FILTER, WORKFLOW_STATE_CATEGORIES } from '../domain/workflow-state';
 import { projectVisibilityWhere, type ProjectVisibility } from '../policies/project-visibility';
 import type { RequestContext } from '../types';
@@ -61,7 +62,12 @@ export interface WorkItemFilters {
     parentId?: string;
     /** A member's user id, or `none` for unassigned. */
     assigneeId?: string;
-    due?: 'overdue' | 'next7d';
+    /** The creator's user id (comma-joinable), as `assigneeId` takes one. */
+    createdById?: string;
+    /** `me`: the items the CALLER watches, read from the request context, never a user id from the client. */
+    watching?: 'me';
+    /** `overdue`, `next7d` (today to seven days on) or `soon` (overdue or due within `DUE_SOON_DAYS`); open items only. */
+    due?: DueFilter;
     /** Title text; an exact key hit is passed as `keyHit`. */
     q?: string;
     /** Include archived projects' items (default: excluded). */
@@ -92,6 +98,7 @@ export const workItemListSelect = {
     stateCategory: true,
     priority: true,
     assigneeId: true,
+    createdByUserId: true,
     parentId: true,
     sortKey: true,
     startDate: true,
@@ -179,6 +186,11 @@ export class WorkItemRepository {
         else if (filters.parentId) and.push({ parentId: parseIdListFilter(filters.parentId) });
         if (filters.assigneeId === 'none') and.push({ assigneeId: null });
         else if (filters.assigneeId) and.push({ assigneeId: parseIdListFilter(filters.assigneeId) });
+        if (filters.createdById) and.push({ createdByUserId: parseIdListFilter(filters.createdById) });
+        if (filters.watching !== undefined) {
+            if (filters.watching !== 'me') throw badRequest('Invalid watching filter. Must be: me.');
+            and.push({ watchers: { some: { tenantId: ctx.tenantId, userId: ctx.userId } } });
+        }
 
         if (filters.due) {
             const day = utcDay(today);
@@ -186,8 +198,10 @@ export class WorkItemRepository {
                 and.push({ dueDate: { lt: day }, stateCategory: OPEN_CATEGORY_FILTER });
             } else if (filters.due === 'next7d') {
                 and.push({ dueDate: { gte: day, lte: new Date(day.getTime() + 7 * 86_400_000) }, stateCategory: OPEN_CATEGORY_FILTER });
+            } else if (filters.due === 'soon') {
+                and.push({ dueDate: { lte: new Date(day.getTime() + DUE_SOON_DAYS * 86_400_000) }, stateCategory: OPEN_CATEGORY_FILTER });
             } else {
-                throw badRequest('Invalid due filter. Must be one of: overdue, next7d.');
+                throw badRequest(`Invalid due filter. Must be one of: ${DUE_FILTERS.join(', ')}.`);
             }
         }
 

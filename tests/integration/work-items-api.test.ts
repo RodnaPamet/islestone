@@ -47,7 +47,7 @@ import { DB_AVAILABLE } from './db-helper';
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const TAG = `wapi${Date.now().toString(36)}`;
 const ROOT = path.resolve(__dirname, '../..');
-const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels'];
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'users'];
 
 type Handler = (req: NextRequest, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>;
 
@@ -104,6 +104,10 @@ const CALLS: Call[] = [
     { file: `${W}/[workItemId]/activity/route.ts`, method: 'GET', path: (i) => `/work-items/${i.item}/activity`, params: (i) => P(i, { workItemId: i.item }), itemRead: true, write: false, key: 'work_items.view' },
     { file: `${W}/[workItemId]/sub-items/route.ts`, method: 'GET', path: (i) => `/work-items/${i.item}/sub-items?progress=1`, params: (i) => P(i, { workItemId: i.item }), itemRead: true, write: false, key: 'work_items.view' },
     { file: `${W}/[workItemId]/move/route.ts`, method: 'POST', path: (i) => `/work-items/${i.other}/move`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ position: { afterId: i.item } }), write: true, key: 'work_items.edit' },
+    // Sub-phase 2.3: a board drop (state and place in one request).
+    { file: `${W}/[workItemId]/move/route.ts`, method: 'POST', path: (i) => `/work-items/${i.other}/move`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ stateId: i.state, position: { beforeId: i.item } }), write: true, key: 'work_items.edit' },
+    // Sub-phase 2.3: the member roster the pickers read.
+    { file: 'src/app/api/t/[tenantSlug]/users/assignable/route.ts', method: 'GET', path: () => '/users/assignable', params: (i) => P(i), write: false, key: 'work_items.view' },
     { file: `${W}/[workItemId]/comments/route.ts`, method: 'GET', path: (i) => `/work-items/${i.item}/comments`, params: (i) => P(i, { workItemId: i.item }), itemRead: true, write: false, key: 'work_items.view' },
     { file: `${W}/[workItemId]/comments/route.ts`, method: 'POST', path: (i) => `/work-items/${i.other}/comments`, params: (i) => P(i, { workItemId: i.other }), body: () => ({ body: 'hello' }), write: true, key: 'work_items.comment' },
     { file: `${W}/[workItemId]/comments/[commentId]/route.ts`, method: 'PATCH', path: (i) => `/work-items/${i.item}/comments/${i.comment}`, params: (i) => P(i, { workItemId: i.item, commentId: i.comment }), body: () => ({ body: 'edited' }), write: true, key: 'work_items.comment' },
@@ -341,6 +345,14 @@ describeFn('the work-item API', () => {
             expect(res.status).toBe(403);
             expect(await prisma.auditLog.count({ where: { tenantId, action: 'AUTHZ_DENIED', entity: 'Comment', entityId: commentId } })).toBe(1);
         });
+    });
+
+    it('the roster gives every member the active members, in the pickers\' shape and no more', async () => {
+        const res = await call('VIEWER', CALLS.find((c) => c.file.endsWith('users/assignable/route.ts'))!);
+        expect(res.status).toBe(200);
+        const roster = res.body as unknown as Array<Record<string, unknown>>;
+        expect(roster.map((m) => m.id).sort()).toEqual(Object.values(users).sort());
+        for (const m of roster) expect(Object.keys(m).sort()).toEqual(['email', 'id', 'image', 'name']);
     });
 
     it('the audit chain verifies', async () => {

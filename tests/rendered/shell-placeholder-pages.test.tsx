@@ -2,8 +2,9 @@
 
 /**
  * Every destination the shell links to exists (sub-phase 1.7), so no nav
- * link 404s: My Work, Inbox, Projects and Views are placeholders saying the
- * feature arrives later, in the catalogue's words; Settings is one too, and
+ * link 404s: Inbox and Views are placeholders saying the feature arrives
+ * later, in the catalogue's words (My Work and Projects became real pages in
+ * 2.3, covered by tests/rendered/work-item-pages.test.tsx); Settings is one too, and
  * asserts on the server the same rule the sidebar's gear reads; the workspace
  * root goes to My Work.
  */
@@ -42,9 +43,7 @@ jest.mock('@/lib/server/tenant-context.server', () => ({ getTenantServerContext:
 import type { Role } from '@prisma/client';
 
 import InboxPage from '@/app/t/[tenantSlug]/(app)/inbox/page';
-import MyWorkPage from '@/app/t/[tenantSlug]/(app)/my-work/page';
 import WorkspaceRootPage from '@/app/t/[tenantSlug]/(app)/page';
-import ProjectsPage from '@/app/t/[tenantSlug]/(app)/projects/page';
 import SettingsPage from '@/app/t/[tenantSlug]/(app)/settings/page';
 import ViewsPage from '@/app/t/[tenantSlug]/(app)/views/page';
 import { getPermissionsForRole } from '@/lib/permissions';
@@ -63,9 +62,7 @@ function contextFor(role: Role) {
 
 describe('the placeholder destinations', () => {
     it.each([
-        ['My Work', MyWorkPage, en.placeholders.myWork],
         ['Inbox', InboxPage, en.placeholders.inbox],
-        ['Projects', ProjectsPage, en.placeholders.projects],
         ['Views', ViewsPage, en.placeholders.views],
     ] as const)('%s renders its title and says the feature arrives later', async (title, Page, body) => {
         render(await Page());

@@ -24,9 +24,10 @@ A list is cursor-only: there is no unpaginated form (roadmap H2 seeds 100,000 it
 | `cursor` | string | — | Opaque pagination token from the previous page |
 | `order` | `manual` / `updated` | `manual` | Work items: manual order `(sortKey, id)` ascending, or recently changed `(updatedAt, id)` descending |
 | `q` | string | — | The title (case-insensitive) or an exact key such as `ISL-12` |
-| `projectId`, `teamId`, `typeId`, `stateId`, `labelId`, `assigneeId`, `parentId` | id, or a comma-joined list | — | `assigneeId=none` is unassigned, `parentId=none` top-level only |
+| `projectId`, `teamId`, `typeId`, `stateId`, `labelId`, `assigneeId`, `createdById`, `parentId` | id, or a comma-joined list | — | `assigneeId=none` is unassigned, `parentId=none` top-level only; `createdById` is the creator |
+| `watching` | `me` | — | The items the caller watches; the caller is the request's user, and any other value is a 400 |
 | `stateCategory`, `priority` | enum, or a comma-joined list | — | Validated by `parseEnumListFilter`; an unknown member is a 400 |
-| `due` | `overdue` / `next7d` | — | Open items due before today, or in the next seven days (today in `NOTIFICATIONS_TZ`) |
+| `due` | `overdue` / `next7d` / `soon` | — | Open items due before today, in the next seven days, or (`soon`) overdue or due within `DUE_SOON_DAYS` (7, `src/app-layer/domain/work-item-due.ts`); today is the date in `NOTIFICATIONS_TZ` |
 | `includeArchived` | `1` / `true` | — | Include archived projects' items |
 
 ## Cursor design

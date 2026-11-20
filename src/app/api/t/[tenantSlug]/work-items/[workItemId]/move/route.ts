@@ -1,15 +1,17 @@
 /**
  * Move a work item: reorder (`position`), re-parent (`parentId`, `null` for
  * the top level) or move to another project (`projectId`, with its whole
- * subtree; the destination's create gate is asked in the usecase). Exactly one
- * mode per request; `If-Match` is optional.
+ * subtree; the destination's create gate is asked in the usecase), or a board
+ * drop (`stateId`, with an optional `position` among the column's
+ * neighbours, one transaction; sub-phase 2.3). Exactly one mode per request;
+ * `If-Match` is optional.
  */
 import type { NextRequest } from 'next/server';
 
 import { jsonResponse } from '@/lib/api-response';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
-import { moveWorkItemToProject, reorderWorkItem, reparentWorkItem } from '@/app-layer/usecases/work-item-moves';
+import { moveWorkItemOnBoard, moveWorkItemToProject, reorderWorkItem, reparentWorkItem } from '@/app-layer/usecases/work-item-moves';
 import { expectedVersionFrom } from '@/lib/http/if-match';
 import { MoveWorkItemSchema } from '@/lib/schemas/work-item';
 import { parseJsonBody } from '@/lib/validation/route';
@@ -19,6 +21,11 @@ export const POST = withApiErrorHandling(
         const input = await parseJsonBody(req, MoveWorkItemSchema);
         if (input.projectId !== undefined) {
             return jsonResponse(await moveWorkItemToProject(ctx, params.workItemId, { projectId: input.projectId, position: input.position }));
+        }
+        if (input.stateId !== undefined) {
+            return jsonResponse(
+                await moveWorkItemOnBoard(ctx, params.workItemId, { stateId: input.stateId, position: input.position }, expectedVersionFrom(req)),
+            );
         }
         if (input.parentId !== undefined) {
             return jsonResponse(
