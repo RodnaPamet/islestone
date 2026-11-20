@@ -8,9 +8,9 @@
 --    milestone too. Each construct has a catalogue test
 --    (tests/integration/milestones.test.ts).
 --
--- The item's FK to its milestone is NO ACTION, not RESTRICT: a project purge
--- deletes the project's items and milestones in one cascading statement, and
--- NO ACTION checks the reference at its end. A delete of a milestone an item
+-- The item's FK to its milestone is NO ACTION, not RESTRICT: deleting a
+-- workspace (or a project with items left) removes its items and milestones
+-- in one cascading statement, and NO ACTION checks the reference at its end. A delete of a milestone an item
 -- still names is refused all the same; the usecase clears the items first.
 
 -- ─── 1) Prisma DDL ────────────────────────────────────────────────
