@@ -1,6 +1,6 @@
 # 0003 — Assignee and delegate
 
-Status: Proposed — awaiting owner sign-off (2026-11-18 drafted). Open questions 8, 9 and 10, and that agents have no risk tier (section 4), were decided by the owner on 2026-11-18; the other open questions await sign-off.
+Status: Proposed — awaiting owner sign-off (2026-11-18 drafted). Open questions 8, 9 and 10, and that agents have no risk tier (section 4), were decided by the owner on 2026-11-18, and that an agent never reviews (section 4, ADR 0009) on 2026-11-20 (decision 164); the other open questions await sign-off.
 
 ## Context
 
@@ -131,6 +131,7 @@ Read at commit `5528464fc54a8681956f3b9ce23ca9c075f0420e`. Phase 6 plans to port
   - activity entries in its own live session (section 6);
   - its own session's moves listed in section 5, and its heartbeat.
 - **Everything else is a proposal** while the tool is at the `PROPOSE` rung, where every tool starts: creating or changing items, comments, relations, plans and schedule changes. A proposal is decided by a person, and the real usecase then runs as that person (section 8). A tool a workspace owner has raised to `AUTOMATIC` writes directly (section 9), except in a session that someone other than the item's assignee started: that session's writes are proposals routed to the assignee (decision 8 above, held at every rung by decision 10 below).
+- **An agent never reviews** (owner decision 164, 2026-11-20; ADR 0009 §10). An agent never responds to a review step and never counts as a reviewer, at any rung; it may draft a review comment as a proposal the named reviewer approves as their own comment, which records no response.
 - **Decided (open question 10). Owner decision, 2026-11-18; the owner chose "Proposals to assignee".** A session started by someone other than the work item's assignee never writes directly, whatever the rung: even where a workspace owner has raised a tool to `AUTOMATIC`, that session's writes go to the assignee as proposals. Decision 8 wins over decision 9 for such sessions. A session the assignee started follows the rung (decision 9, section 9).
 
 ### 5. Agent sessions and their states
