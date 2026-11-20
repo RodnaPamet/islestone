@@ -72,7 +72,12 @@ errors: an assignment rings the assignee (the email is an outbox row written
 inside the transaction; a bulk assign sends one digest); a state change, a
 comment, an assignment and a material edit ring the item's ACTIVE watchers,
 never the actor; and a due date on the 7, 1 or 0-day window rings the
-assignee, as does the daily `work-item-due-notification` job. A due date is
+assignee and the person the item waits on, as does the daily
+`work-item-due-notification` job (owner decision 137, 2.7a: the same
+`WORK_ITEM_DUE` type and windows, so one mute governs both; the waited-on
+person's copy reads "waiting on you"; an unassigned item still rings the
+person it waits on; one row when they are the same person; only ACTIVE
+members; naming who an item waits on rings today's window for them too). A due date is
 date-only: its day is read from the value's UTC date parts and never shifted
 by a zone; only "today" is computed in `NOTIFICATIONS_TZ`.
 

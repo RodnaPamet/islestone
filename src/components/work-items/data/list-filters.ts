@@ -7,7 +7,7 @@
  * The server owns filtering: a list is always what the API answered for its
  * query. `rowBelongs` only decides where an optimistic row goes until the
  * server's answer replaces it, and answers `unknown` for the facets it cannot
- * decide on the client (free text, due windows, watching), in which case the row keeps
+ * decide on the client (free text, due windows, watching, waiting on `me`), in which case the row keeps
  * its place and the next revalidation settles it.
  *
  * Written fresh for Islestone (sub-phase 2.3).
@@ -29,7 +29,7 @@ export interface WorkItemListFilters {
     cycleId?: string;
     /** Milestone ids, or `none` (2.5b). */
     milestoneId?: string;
-    /** Member user ids an item waits on, or `none` (2.4b). */
+    /** Member user ids an item waits on, `none` (2.4b), or `me`: the server reads the caller (2.7a). */
     waitingOnId?: string;
     /** `me` only: the server reads the caller from the request context. */
     watching?: 'me';
@@ -98,6 +98,11 @@ function inList(raw: string | undefined, value: string | null): boolean | undefi
     return values.includes(value);
 }
 
+/** Does the list name the caller as the person items wait on (`waitingOnId=me`, 2.7a)? */
+export function waitsOnMe(filters: WorkItemListFilters): boolean {
+    return !!filters.waitingOnId?.split(',').some((v) => v.trim() === 'me');
+}
+
 /**
  * Does `row` belong in a list loaded with `filters`? `unknown` when a facet
  * the client cannot evaluate is set.
@@ -117,12 +122,13 @@ export function rowBelongs(filters: WorkItemListFilters, row: WorkItemRow): 'yes
         // `current` names cycles only the server resolves: undecided here.
         f.cycleId && !f.cycleId.split(',').includes('current') ? inList(f.cycleId, row.cycleId ?? null) : undefined,
         f.milestoneId ? inList(f.milestoneId, row.milestoneId ?? null) : undefined,
-        f.waitingOnId ? inList(f.waitingOnId, row.waitingOnUserId ?? null) : undefined,
+        f.waitingOnId && !waitsOnMe(f) ? inList(f.waitingOnId, row.waitingOnUserId ?? null) : undefined,
         f.labelId ? f.labelId.split(',').some((id) => row.labelIds.includes(id)) : undefined,
     ];
     if (checks.some((c) => c === false)) return 'no';
     // The watcher set is not on the row: a watch or unwatch revalidates the lists.
-    if (f.q || f.due || f.watching || f.customFields || f.cycleId?.split(',').includes('current')) return 'unknown';
+    // `waitingOnId=me` names the caller only the server knows: a waiting-on write revalidates those lists.
+    if (f.q || f.due || f.watching || waitsOnMe(f) || f.customFields || f.cycleId?.split(',').includes('current')) return 'unknown';
     return 'yes';
 }
 

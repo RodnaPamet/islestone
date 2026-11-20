@@ -1,6 +1,7 @@
 /**
  * My Work's list filters against a real Postgres, as `app_user` (owner
- * decision 54): `createdById`, `watching=me` and `due=soon` return the rows
+ * decisions 54 and 76): `createdById`, `watching=me`, `waitingOnId=me` (2.7a)
+ * and `due=soon` return the rows
  * they name and nothing from another workspace, a deleted project or (for a
  * GUEST, who sees no project until 8.4) any project at all.
  *
@@ -102,6 +103,10 @@ describeFn('work-item list: the My Work filters', () => {
             await item(w, w.owner, `${p} due at the edge`, { assigneeId: w.member.userId, dueDate: dayFrom(today, DUE_SOON_DAYS) });
             await item(w, w.owner, `${p} due later`, { assigneeId: w.member.userId, dueDate: dayFrom(today, DUE_SOON_DAYS + 1) });
             await item(w, w.owner, `${p} no due date`, { assigneeId: w.member.userId });
+            // Waiting on the member: assigned to the owner, and unassigned.
+            await item(w, w.owner, `${p} waits on member`, { assigneeId: w.owner.userId, waitingOnUserId: w.member.userId });
+            await item(w, w.owner, `${p} waits on member, unassigned`, { waitingOnUserId: w.member.userId });
+            await item(w, w.owner, `${p} waits on owner`, { waitingOnUserId: w.owner.userId });
             const done = await item(w, w.owner, `${p} due soon but done`, { assigneeId: w.member.userId, dueDate: dayFrom(today, 1) });
             await setWorkItemState(w.owner, done.id, { stateId: w.doneStateId }, done.version);
             void mine;
@@ -136,6 +141,13 @@ describeFn('work-item list: the My Work filters', () => {
         // The owner watches nothing it did not ask to (the member's watch is not theirs).
         expect(await titlesOf(a.owner, { watching: 'me' })).not.toContain('A watched');
         expect(await titlesOf(b.member, { watching: 'me' })).toEqual(['B watched']);
+    });
+
+    it('waitingOnId=me returns the items waiting on the CALLER, in this workspace only (2.7a)', async () => {
+        expect(await titlesOf(a.member, { waitingOnId: 'me' })).toEqual(['A waits on member', 'A waits on member, unassigned'].sort());
+        expect(await titlesOf(a.owner, { waitingOnId: 'me' })).toEqual(['A waits on owner']);
+        expect(await titlesOf(b.member, { waitingOnId: 'me' })).toEqual(['B waits on member', 'B waits on member, unassigned'].sort());
+        expect(await titlesOf(a.guest, { waitingOnId: 'me' })).toEqual([]);
     });
 
     it('due=soon is open items due by today + DUE_SOON_DAYS, overdue included', async () => {

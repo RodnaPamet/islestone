@@ -1135,7 +1135,8 @@ export async function assignWorkItem(ctx: RequestContext, id: string, input: { a
  * §14; owner decisions 103 to 105). A single-field change: `If-Match` is
  * optional and the version increases. It never makes the person accountable
  * (ADR 0003 §1). Audit inside; after the commit, one bell to the person
- * named (unless they named themselves) and the watcher fan-out.
+ * named (unless they named themselves), the due reminder when today is on a
+ * window (decision 137), and the watcher fan-out.
  */
 export async function setWorkItemWaitingOn(ctx: RequestContext, id: string, input: { userId: string | null }, expectedVersion?: number) {
     assertCanEditWorkItems(ctx);
@@ -1164,6 +1165,8 @@ export async function setWorkItemWaitingOn(ctx: RequestContext, id: string, inpu
     const after = await getWorkItem(ctx, id);
     if (outcome.changed) {
         await emitWaitingOnBell(ctx, input.userId, { id, title: after.title, key: after.key });
+        // The newly named person hears today's due window too (decision 137).
+        if (input.userId) await emitDueBell(ctx, { ...after, dueDate: parseDateOnly(after.dueDate) });
         await emitWatcherActivity(ctx, [
             {
                 workItemId: id,
@@ -1396,7 +1399,15 @@ export async function bulkSetWorkItemDueDate(ctx: RequestContext, input: { workI
         })),
     );
     for (const i of outcome) {
-        await emitDueBell(ctx, { id: i.id, title: i.title, key: keyOf(i), dueDate, assigneeId: i.assigneeId, stateCategory: i.stateCategory });
+        await emitDueBell(ctx, {
+            id: i.id,
+            title: i.title,
+            key: keyOf(i),
+            dueDate,
+            assigneeId: i.assigneeId,
+            waitingOnUserId: i.waitingOnUserId,
+            stateCategory: i.stateCategory,
+        });
     }
     return bulkResults(ids, new Set(outcome.map((i) => i.id)));
 }

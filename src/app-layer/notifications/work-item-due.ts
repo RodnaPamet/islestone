@@ -19,6 +19,14 @@
  *   read from the value's UTC date parts and never converted; only "now" is
  *   converted to the reminder zone `tz` (`NOTIFICATIONS_TZ`).
  *
+ * Recipients (owner decision 137, 2026-11-20; roadmap 2.7a):
+ *   the assignee, and the person the item waits on (2.4b), each an ACTIVE
+ *   member. Same windows and the same `WORK_ITEM_DUE` type, so one mute and
+ *   one preference govern both; the waited-on person's copy says "waiting on
+ *   you". An unassigned item still reminds the person it waits on. When the
+ *   assignee is the person waited on, they get ONE reminder (the assignee's
+ *   copy), never two.
+ *
  * Deduplication contract:
  *   `Notification.dedupeKey` is unique, shaped
  *   `{tenantId}:WORK_ITEM_DUE:{window}:{workItemId}:{userId}:{YYYY-MM-DD}`,
@@ -61,6 +69,13 @@ export const WORK_ITEM_DUE_WINDOWS: Record<WorkItemDueWindow, WindowCopy> = {
     week: { days: 7, title: 'Work item due in one week', phrase: 'is due in one week' },
     day: { days: 1, title: 'Work item due tomorrow', phrase: 'is due tomorrow' },
     today: { days: 0, title: 'Work item due today', phrase: 'is due today' },
+};
+
+/** The copy for the person the item waits on (decision 137): same windows, "waiting on you". */
+export const WORK_ITEM_DUE_WAITING_ON_WINDOWS: Record<WorkItemDueWindow, Omit<WindowCopy, 'days'>> = {
+    week: { title: 'Waiting on you: due in one week', phrase: 'is waiting on you and is due in one week' },
+    day: { title: 'Waiting on you: due tomorrow', phrase: 'is waiting on you and is due tomorrow' },
+    today: { title: 'Waiting on you: due today', phrase: 'is waiting on you and is due today' },
 };
 
 /** The title the settings API lists for the mute. */
@@ -117,27 +132,45 @@ export interface WorkItemDueTarget {
     title: string;
     key: string | null;
     dueDate: Date;
-    assigneeUserId: string;
+    /** The ACTIVE assignee, or `null` (unassigned, or not an active member). */
+    assigneeUserId: string | null;
+    /** The ACTIVE member the item waits on (2.4b), or `null`. */
+    waitingOnUserId?: string | null;
+}
+
+/** Who is reminded about a target, and in which wording: at most one row per person. */
+export function dueRecipients(target: WorkItemDueTarget): Array<{ userId: string; role: 'assignee' | 'waitingOn' }> {
+    const out: Array<{ userId: string; role: 'assignee' | 'waitingOn' }> = [];
+    if (target.assigneeUserId) out.push({ userId: target.assigneeUserId, role: 'assignee' });
+    const waiting = target.waitingOnUserId ?? null;
+    if (waiting && waiting !== target.assigneeUserId) out.push({ userId: waiting, role: 'waitingOn' });
+    return out;
 }
 
 export interface WorkItemDueOutcome {
-    status: 'created' | 'duplicate' | 'out-of-window' | 'muted';
+    status: 'created' | 'duplicate' | 'out-of-window' | 'no-recipient' | 'muted';
     window: WorkItemDueWindow | null;
 }
 
 type DueDb = Pick<PrismaClient, 'notification' | 'tenantNotificationSettings'>;
 
-function rowFor(target: WorkItemDueTarget, window: WorkItemDueWindow, now: Date, tz: string) {
-    const copy = WORK_ITEM_DUE_WINDOWS[window];
+function rowFor(
+    target: WorkItemDueTarget,
+    recipient: { userId: string; role: 'assignee' | 'waitingOn' },
+    window: WorkItemDueWindow,
+    now: Date,
+    tz: string,
+) {
+    const copy = recipient.role === 'assignee' ? WORK_ITEM_DUE_WINDOWS[window] : WORK_ITEM_DUE_WAITING_ON_WINDOWS[window];
     const label = target.key ? `${target.key} "${target.title}"` : `"${target.title}"`;
     return {
         tenantId: target.tenantId,
-        userId: target.assigneeUserId,
+        userId: recipient.userId,
         type: WORK_ITEM_DUE_NOTIFICATION_TYPE,
         title: copy.title,
         body: `${label} ${copy.phrase}.`,
         linkUrl: tenantWorkItemPath(target.tenantSlug, target.id),
-        dedupeKey: buildWorkItemDueDedupeKey(target.tenantId, window, target.id, target.assigneeUserId, now, tz),
+        dedupeKey: buildWorkItemDueDedupeKey(target.tenantId, window, target.id, recipient.userId, now, tz),
     };
 }
 
@@ -157,7 +190,8 @@ export async function createWorkItemDueNotifications(
     for (const t of targets) {
         if (t.tenantId !== tenantId) continue;
         const window = classifyDueWindow(t.dueDate, now, tz);
-        if (window) rows.push(rowFor(t, window, now, tz));
+        if (!window) continue;
+        for (const recipient of dueRecipients(t)) rows.push(rowFor(t, recipient, window, now, tz));
     }
     if (rows.length === 0) return { created: 0, candidates: 0, muted: false };
     // Above the write, not filtered after it: a muted row would still reach
@@ -194,6 +228,7 @@ export async function createWorkItemDueNotification(
 ): Promise<WorkItemDueOutcome> {
     const window = classifyDueWindow(target.dueDate, now, tz);
     if (!window) return { status: 'out-of-window', window: null };
+    if (dueRecipients(target).length === 0) return { status: 'no-recipient', window };
     const r = await createWorkItemDueNotifications(db, target.tenantId, [target], now, tz);
     if (r.muted) return { status: 'muted', window };
     return { status: r.created > 0 ? 'created' : 'duplicate', window };

@@ -53,7 +53,16 @@ export async function seedWorkItem(
     prisma: PrismaClient,
     tenantId: string,
     world: WorkWorld,
-    data: { title: string; createdByUserId: string; sortKey: string; parentId?: string | null; assigneeId?: string | null; dueDate?: Date | null; stateName?: string },
+    data: {
+        title: string;
+        createdByUserId: string;
+        sortKey: string;
+        parentId?: string | null;
+        assigneeId?: string | null;
+        waitingOnUserId?: string | null;
+        dueDate?: Date | null;
+        stateName?: string;
+    },
 ) {
     const seq = await prisma.projectKeySequence.update({
         where: { projectId: world.projectId },
@@ -74,6 +83,7 @@ export async function seedWorkItem(
             sortKey: data.sortKey,
             parentId: data.parentId ?? null,
             assigneeId: data.assigneeId ?? null,
+            waitingOnUserId: data.waitingOnUserId ?? null,
             dueDate: data.dueDate ?? null,
         },
     });

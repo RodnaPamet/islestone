@@ -181,12 +181,24 @@ describe('work-item side-effect order', () => {
         expect(events).toEqual(['tx:begin', 'audit:WORK_ITEM_STATE_CHANGED', 'tx:commit', 'automation:WORK_ITEM_STATE_CHANGED', 'watchers:fan-out']);
     });
 
-    it('waiting on: audit inside; then COMMIT, the bell to the person named, watchers', async () => {
+    it('waiting on: audit inside; then COMMIT, the bell to the person named, the due reminder (2.7a), watchers', async () => {
         await setWorkItemWaitingOn(ctx, 'w1', { userId: 'u-other' });
         const firstCommit = events.indexOf('tx:commit');
         expect(events.slice(0, firstCommit + 1)).toEqual(['tx:begin', 'audit:WORK_ITEM_WAITING_ON_CHANGED', 'tx:commit']);
-        expect(events.filter((e) => e.startsWith('bell:') || e.startsWith('watchers:'))).toEqual(['bell:waiting-on', 'watchers:fan-out']);
+        expect(events.filter((e) => e.startsWith('bell:') || e.startsWith('watchers:'))).toEqual(['bell:waiting-on', 'bell:due', 'watchers:fan-out']);
         expect(events.indexOf('bell:waiting-on')).toBeGreaterThan(firstCommit);
+    });
+
+    it('clearing who an item waits on rings no due reminder', async () => {
+        const before = ITEM.waitingOnUserId;
+        (ITEM as { waitingOnUserId: string | null }).waitingOnUserId = 'u-other';
+        try {
+            await setWorkItemWaitingOn(ctx, 'w1', { userId: null });
+        } finally {
+            (ITEM as { waitingOnUserId: string | null }).waitingOnUserId = before;
+        }
+        expect(events).toContain('watchers:fan-out');
+        expect(events).not.toContain('bell:due');
     });
 
     it('a create naming who it waits on rings that bell after the commit, last', async () => {

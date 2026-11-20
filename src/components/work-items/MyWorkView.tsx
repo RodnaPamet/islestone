@@ -1,13 +1,16 @@
 'use client';
 
 /**
- * My Work (owner decision 54): four sections over the shared list query, one
- * filter toolbar for all of them, the create dialog and the detail sheet.
+ * My Work (owner decisions 54 and 76): five sections over the shared list
+ * query, one filter toolbar for all of them, the create dialog and the detail
+ * sheet.
  *
  *   1. Assigned to me  — `assigneeId=<me>`
- *   2. Created by me   — `createdById=<me>`
- *   3. Watching        — `watching=me` (the server reads the caller)
- *   4. Due soon        — `assigneeId=<me>&due=soon`: open, overdue or due
+ *   2. Waiting on me   — `waitingOnId=me` (2.7a; the server reads the caller;
+ *                        open items only, by the 2.4b CHECK)
+ *   3. Created by me   — `createdById=<me>`
+ *   4. Watching        — `watching=me` (the server reads the caller)
+ *   5. Due soon        — `assigneeId=<me>&due=soon`: open, overdue or due
  *                        within `DUE_SOON_DAYS` (the server's window)
  *
  * An item may sit in several sections. Each section is a `useWorkItemList`
@@ -45,19 +48,20 @@ import { WorkItemSheet } from './WorkItemSheet';
 /** Rows per page in each section. */
 export const MY_WORK_PAGE_SIZE = 25;
 
-export type MyWorkSectionId = 'assigned' | 'created' | 'watching' | 'dueSoon';
+export type MyWorkSectionId = 'assigned' | 'waitingOn' | 'created' | 'watching' | 'dueSoon';
 
 /** Each section's fixed filters for the person `userId`. */
 export function myWorkSectionFilters(userId: string): Record<MyWorkSectionId, WorkItemListFilters> {
     return {
         assigned: { assigneeId: userId },
+        waitingOn: { waitingOnId: 'me' },
         created: { createdById: userId },
         watching: { watching: 'me' },
         dueSoon: { assigneeId: userId, due: 'soon' },
     };
 }
 
-const SECTION_ORDER: readonly MyWorkSectionId[] = ['assigned', 'created', 'watching', 'dueSoon'];
+const SECTION_ORDER: readonly MyWorkSectionId[] = ['assigned', 'waitingOn', 'created', 'watching', 'dueSoon'];
 
 /** The filter scope: My Work fixes the person, so no assignee facet. */
 const FILTER_SCOPE = { fixedAssignee: true } as const;

@@ -11,7 +11,7 @@
 import { WorkItemRepository } from '@/app-layer/repositories/WorkItemRepository';
 import { DUE_SOON_DAYS } from '@/app-layer/domain/work-item-due';
 import type { ProjectVisibility } from '@/app-layer/policies/project-visibility';
-import { rowBelongs } from '@/components/work-items/data/list-filters';
+import { rowBelongs, waitsOnMe } from '@/components/work-items/data/list-filters';
 import { WorkItemQuerySchema } from '@/lib/schemas/work-item';
 
 import type { WorkItemRow } from '@/lib/work-items/types';
@@ -84,6 +84,12 @@ describe('WorkItemRepository._buildWhere — the My Work filters', () => {
         expect(and({ watching: 'me' })).toContainEqual({ watchers: { some: { tenantId: 'tenant-1', userId: 'u-me' } } });
     });
 
+    it('waitingOnId=me is the CALLER from the request context, alone or beside ids and none (2.7a)', () => {
+        expect(and({ waitingOnId: 'me' })).toContainEqual({ waitingOnUserId: { in: ['u-me'] } });
+        expect(and({ waitingOnId: 'me,u-me' })).toContainEqual({ waitingOnUserId: { in: ['u-me'] } });
+        expect(and({ waitingOnId: 'me,none' })).toContainEqual({ OR: [{ waitingOnUserId: null }, { waitingOnUserId: { in: ['u-me'] } }] });
+    });
+
     it('refuses a watching value other than me even past the schema', () => {
         expect(() => and({ watching: 'u-other' as 'me' })).toThrow(/watching/);
     });
@@ -118,6 +124,18 @@ describe('rowBelongs — the My Work filters on the client', () => {
         expect(rowBelongs({ waitingOnId: 'u-ada' }, row(1, { waitingOnUserId: 'u-bob' }))).toBe('no');
         expect(rowBelongs({ waitingOnId: 'none' }, row(1, { waitingOnUserId: null }))).toBe('yes');
         expect(rowBelongs({ waitingOnId: 'none' }, row(1, { waitingOnUserId: 'u-bob' }))).toBe('no');
+    });
+
+    it('cannot decide waitingOnId=me on the client: the server names the caller (2.7a)', () => {
+        expect(waitsOnMe({ waitingOnId: 'me' })).toBe(true);
+        expect(waitsOnMe({ waitingOnId: 'u-ada,me' })).toBe(true);
+        expect(waitsOnMe({ waitingOnId: 'u-ada' })).toBe(false);
+        expect(waitsOnMe({})).toBe(false);
+        // Never read as the literal id "me", which would drop every row.
+        expect(rowBelongs({ waitingOnId: 'me' }, row(1, { waitingOnUserId: 'u-ada' }))).toBe('unknown');
+        expect(rowBelongs({ waitingOnId: 'me' }, row(1, { waitingOnUserId: null }))).toBe('unknown');
+        // …but another facet can still rule a row out.
+        expect(rowBelongs({ waitingOnId: 'me', stateCategory: 'STARTED' }, row(1, { stateCategory: 'DONE' }))).toBe('no');
     });
 
     it('cannot decide watching on the client', () => {

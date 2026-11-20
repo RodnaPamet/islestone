@@ -39,6 +39,7 @@ import type { WorkItemDetailData, WorkItemRow, WorkflowStateCategory } from '@/l
 
 import { useWorkConfig, type WorkConfigIndex } from './use-work-config';
 import { useWorkItemCache, type WorkItemCache } from './work-item-cache';
+import { waitsOnMe } from './list-filters';
 
 /** The row fields of a detail (or a row) answer. */
 export function toRow(item: WorkItemRow): WorkItemRow {
@@ -310,7 +311,11 @@ export function useWorkItemMutations() {
             setWaitingOn(item: WorkItemRow, userId: string | null) {
                 return write(item, { waitingOnUserId: userId }, (version) =>
                     apiSend<WorkItemDetailData>('PUT', url(`/work-items/${item.id}/waiting-on`), { userId }, { ifMatch: version }),
-                );
+                ).then((saved) => {
+                    // "Waiting on me" lists cannot place the row on the client (2.7a): read them again.
+                    if (saved) cache.revalidateLists(waitsOnMe);
+                    return saved;
+                });
             },
 
             /** Assign or clear (`If-Match`). */

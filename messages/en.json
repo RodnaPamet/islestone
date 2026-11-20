@@ -604,7 +604,7 @@
             "resourcePlural": "work items"
         },
         "myWork": {
-            "description": "Your work items: assigned to you, created by you, watched by you, and due soon.",
+            "description": "Your work items: assigned to you, waiting on you, created by you, watched by you, and due soon.",
             "count": "{count}",
             "countMore": "{count}+",
             "closedHidden": "Done and cancelled items are hidden; choose a category in the filters to show them.",
@@ -612,6 +612,10 @@
                 "assigned": {
                     "title": "Assigned to me",
                     "empty": "Nothing assigned to you matches these filters."
+                },
+                "waitingOn": {
+                    "title": "Waiting on me",
+                    "empty": "Nothing open waits on you and matches these filters."
                 },
                 "created": {
                     "title": "Created by me",

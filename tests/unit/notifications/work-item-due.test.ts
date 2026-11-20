@@ -18,6 +18,7 @@ import {
     createWorkItemDueNotification,
     createWorkItemDueNotifications,
     daysUntilDue,
+    dueRecipients,
     todayInTz,
     type WorkItemDueTarget,
 } from '@/app-layer/notifications/work-item-due';
@@ -78,6 +79,40 @@ describe('writes', () => {
         expect(publishNotificationEvent).toHaveBeenCalledTimes(2);
         const rows = createMany.mock.calls[0]![0].data as Array<{ linkUrl: string; body: string; type: string }>;
         expect(rows[0]).toMatchObject({ type: 'WORK_ITEM_DUE', linkUrl: '/t/acme/work-items/1', body: 'ISL-1 "Item 1" is due today.' });
+    });
+
+    it('reminds the person an item waits on too, worded "waiting on you", unassigned items included (decision 137)', async () => {
+        const { db, createMany } = fakeDb();
+        const both = { ...target('1', '2030-03-11'), waitingOnUserId: 'u2' };
+        const unassigned = { ...target('2', '2030-03-10'), assigneeUserId: null, waitingOnUserId: 'u3' };
+        const r = await createWorkItemDueNotifications(db, 't1', [both, unassigned], NOW, 'UTC');
+        expect(r).toEqual({ created: 3, candidates: 3, muted: false });
+        const rows = createMany.mock.calls[0]![0].data as Array<{ userId: string; type: string; title: string; body: string; dedupeKey: string }>;
+        expect(rows.map((x) => x.userId)).toEqual(['u1', 'u2', 'u3']);
+        expect(rows.every((x) => x.type === 'WORK_ITEM_DUE')).toBe(true);
+        expect(rows[0]).toMatchObject({ title: 'Work item due tomorrow', body: 'ISL-1 "Item 1" is due tomorrow.' });
+        expect(rows[1]).toMatchObject({
+            title: 'Waiting on you: due tomorrow',
+            body: 'ISL-1 "Item 1" is waiting on you and is due tomorrow.',
+            dedupeKey: 't1:WORK_ITEM_DUE:day:1:u2:2030-03-10',
+        });
+        expect(rows[2]).toMatchObject({ title: 'Waiting on you: due today', body: 'ISL-2 "Item 2" is waiting on you and is due today.' });
+        expect(publishNotificationEvent).toHaveBeenCalledTimes(3);
+    });
+
+    it('one reminder, not two, when the assignee is the person waited on', async () => {
+        const { db, createMany } = fakeDb();
+        expect(dueRecipients({ ...target('1', '2030-03-10'), waitingOnUserId: 'u1' })).toEqual([{ userId: 'u1', role: 'assignee' }]);
+        const r = await createWorkItemDueNotifications(db, 't1', [{ ...target('1', '2030-03-10'), waitingOnUserId: 'u1' }], NOW, 'UTC');
+        expect(r.created).toBe(1);
+        expect((createMany.mock.calls[0]![0].data as unknown[]).length).toBe(1);
+    });
+
+    it('an item with nobody to remind writes nothing', async () => {
+        const { db, createMany } = fakeDb();
+        const nobody = { ...target('1', '2030-03-10'), assigneeUserId: null, waitingOnUserId: null };
+        expect(await createWorkItemDueNotification(db, nobody, NOW, 'UTC')).toEqual({ status: 'no-recipient', window: 'today' });
+        expect(createMany).not.toHaveBeenCalled();
     });
 
     it('a muted type writes nothing', async () => {

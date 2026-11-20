@@ -1,8 +1,9 @@
 /**
  * The due-date reminder is emitted AFTER the work-item transaction commits,
  * in a transaction of its own, fire-and-forget, at every write that can put
- * an assigned item on a reminder window: create, a due-date edit, and an
- * assignment (sub-phase 2.2; owner decision 2026-11-18, "In 2.2").
+ * an item on a reminder window for its assignee or the person it waits on:
+ * create, a due-date edit, an assignment (sub-phase 2.2; owner decision
+ * 2026-11-18, "In 2.2") and naming who it waits on (2.7a; decision 137).
  *
  * Inside the transaction it would roll the item back on a notification
  * failure, and a bell published before the commit can name an item that
@@ -23,7 +24,7 @@ const USECASES = read('src/app-layer/usecases/work-item.ts');
 const SHARED = read('src/app-layer/usecases/work-item-shared.ts');
 
 describe('the due reminder is emitted after the commit', () => {
-    it.each(['updateWorkItem', 'assignWorkItem', 'bulkSetWorkItemDueDate'])('%s', (name) => {
+    it.each(['updateWorkItem', 'assignWorkItem', 'bulkSetWorkItemDueDate', 'setWorkItemWaitingOn'])('%s', (name) => {
         expect(emittedAfterCommit(functionBodyOf(USECASES, name), 'emitDueBell')).toEqual({ called: true, insideTransaction: false });
     });
 
