@@ -2,7 +2,7 @@
  * Waiting on against a real Postgres, as `app_user` (sub-phase 2.4b-a;
  * docs/porting/maps/2.4b.md; ADR 0002 §14; owner decisions 103 to 107):
  *
- *   - what migration `20261127120100_waiting_on` adds beyond Prisma, in the
+ *   - what migration `20261128120100_waiting_on` adds beyond Prisma, in the
  *     catalogue and by its bite: the member FK (RESTRICT), the CHECK that a
  *     closed item waits on nobody, the transition trigger firing on it;
  *   - the single-field write: an active member only, the version increases,

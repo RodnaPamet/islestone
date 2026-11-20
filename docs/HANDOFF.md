@@ -786,7 +786,7 @@ Full evidence is in `docs/porting/oss/<project>.md`, section "Licence check". `P
    - Schema: `WorkItem.waitingOnUserId` (member FK, RESTRICT; the closed-item CHECK),
      `WorkItemTransition.waitingOnUserId` (the trigger fires on it),
      `NotificationType.WORK_ITEM_WAITING_ON`. Migrations
-     `20261127120000_notification_type_waiting_on` and `20261127120100_waiting_on`.
+     `20261128120000_notification_type_waiting_on` and `20261128120100_waiting_on`.
    - Domain: `stateTransitionEffects` clears it on every move into a closed category.
    - API: `PUT /work-items/:id/waiting-on` (`work_items.edit`, versioned), `waitingOnUserId`
      on create, the `waitingOnId` list filter (ids, `none`). Member removal clears it; a
