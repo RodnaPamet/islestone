@@ -16,8 +16,9 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { Role } from '@prisma/client';
 import { axe } from 'jest-axe';
 
+const mockReplace = jest.fn();
 jest.mock('next/navigation', () => ({
-    useRouter: () => ({ push: jest.fn(), replace: jest.fn(), prefetch: jest.fn(), refresh: jest.fn(), back: jest.fn() }),
+    useRouter: () => ({ push: jest.fn(), replace: mockReplace, prefetch: jest.fn(), refresh: jest.fn(), back: jest.fn() }),
     usePathname: () => '/t/acme/projects/ISL',
     useSearchParams: () => new URLSearchParams(),
     useParams: () => ({ tenantSlug: 'acme' }),
@@ -45,6 +46,7 @@ function renderList(role: Role = 'OWNER') {
 
 beforeEach(() => {
     window.localStorage.clear();
+    mockReplace.mockReset();
 });
 
 describe('the work-item list', () => {
@@ -58,6 +60,15 @@ describe('the work-item list', () => {
         // The row chevron's empty header cell is the mirrored DataTable's
         // (src/components/ui/table, never edited here); every other rule runs.
         expect(await axe(container, { rules: { 'empty-table-header': { enabled: false } } })).toHaveNoViolations();
+    });
+
+    it('writes nothing to the URL on its own: a no-op replace cancelled the person\'s navigation', async () => {
+        routes();
+        renderList();
+        await screen.findByRole('link', { name: 'Item 1' });
+        // The toolbar debounces the select's mount-time search by 250 ms.
+        await new Promise((r) => setTimeout(r, 400));
+        expect(mockReplace).not.toHaveBeenCalled();
     });
 
     it('reads the list with the view\'s project and the manual order', async () => {

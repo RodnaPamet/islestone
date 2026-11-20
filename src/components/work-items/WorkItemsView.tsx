@@ -192,7 +192,22 @@ export function WorkItemsView(props: WorkItemsViewProps) {
             ),
         [config, members, props.scope, tView],
     );
-    const filterCtx = useFilterContext(defs.filters, defs.filterKeys, { syncUrl: true });
+    const raw = useFilterContext(defs.filters, defs.filterKeys, { syncUrl: true });
+    // The mirrored filter select reports its (empty) search on mount and the
+    // toolbar debounces it into `setSearch`, which writes the URL with
+    // `router.replace`. That no-op replace, 250 ms after the page mounts,
+    // cancelled a navigation the person had just started (the palette's
+    // "Go to Inbox" left them on this page). A search that does not change
+    // writes nothing.
+    const filterCtx = useMemo(
+        () => ({
+            ...raw,
+            setSearch: (q: string) => {
+                if (q !== raw.search) raw.setSearch(q);
+            },
+        }),
+        [raw],
+    );
     return (
         <FilterProvider value={filterCtx}>
             <WorkItemsViewBody {...props} filterDefs={defs.filters} />
