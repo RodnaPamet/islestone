@@ -95,6 +95,21 @@ export interface WorkItemViewConfig {
     labels: ViewLabel[];
 }
 
+/**
+ * The work-configuration writes a Settings page offers its viewer, asked on
+ * the server by `workConfigAffordances` (`work-config.policies.ts`), which
+ * reads the same predicates the usecases assert.
+ */
+export interface WorkConfigAffordances {
+    /** Create, change and delete teams, workflow states, types and labels. */
+    manageWorkConfig: boolean;
+    createProject: boolean;
+    /** Rename a project. */
+    editProject: boolean;
+    /** Archive and unarchive a project. */
+    archiveProject: boolean;
+}
+
 /** A member a picker offers (`GET /users/assignable`). */
 export interface Member {
     id: string;

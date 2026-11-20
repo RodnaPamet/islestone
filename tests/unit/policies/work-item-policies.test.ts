@@ -24,6 +24,12 @@ import {
     assertCanEditProject,
     assertCanManageWorkConfig,
     assertCanReadWorkConfig,
+    mayArchiveProject,
+    mayCreateProject,
+    mayEditProject,
+    mayManageWorkConfig,
+    mayReadWorkConfig,
+    workConfigAffordances,
 } from '@/app-layer/policies/work-config.policies';
 import { commentDeleteBasis, mayEditComment } from '@/app-layer/policies/comment.policies';
 import {
@@ -116,6 +122,39 @@ describe('work configuration gates', () => {
             VIEWER: [true, false, false, false, false],
             GUEST: [true, false, false, false, false],
         });
+    });
+});
+
+describe('the Settings affordances (decision 55)', () => {
+    it('each predicate answers exactly what its assertion admits, for every role', () => {
+        for (const role of ROLES) {
+            const ctx = makeRequestContext(role);
+            expect(mayReadWorkConfig(ctx)).toBe(passes(() => assertCanReadWorkConfig(ctx)));
+            expect(mayManageWorkConfig(ctx)).toBe(passes(() => assertCanManageWorkConfig(ctx)));
+            expect(mayCreateProject(ctx)).toBe(passes(() => assertCanCreateProject(ctx)));
+            expect(mayEditProject(ctx)).toBe(passes(() => assertCanEditProject(ctx)));
+            expect(mayArchiveProject(ctx)).toBe(passes(() => assertCanArchiveProject(ctx)));
+        }
+    });
+
+    it('offers an OWNER and an ADMIN every write', () => {
+        for (const role of ['OWNER', 'ADMIN'] as Role[]) {
+            expect(workConfigAffordances(makeRequestContext(role))).toEqual({
+                manageWorkConfig: true,
+                createProject: true,
+                editProject: true,
+                archiveProject: true,
+            });
+        }
+    });
+
+    it('an Admin whose custom role withholds admin.manage and projects.archive is offered neither', () => {
+        const perms = getPermissionsForRole('ADMIN');
+        perms.admin.manage = false;
+        perms.projects.archive = false;
+        const ctx = makeRequestContext('ADMIN', { appPermissions: perms });
+        expect(workConfigAffordances(ctx)).toEqual({ manageWorkConfig: false, createProject: true, editProject: true, archiveProject: false });
+        expect(() => assertCanManageWorkConfig(ctx)).toThrow(expect.objectContaining({ status: 403 }));
     });
 });
 
