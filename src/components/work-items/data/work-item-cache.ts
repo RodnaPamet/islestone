@@ -116,17 +116,21 @@ export interface WorkItemCache {
 }
 
 export function useWorkItemCache(): WorkItemCache {
-    const { mutate } = useSWRConfig();
+    const { mutate, cache } = useSWRConfig();
     const apiUrl = useTenantApiUrl();
     return useMemo<WorkItemCache>(
         () => ({
             applyRow(row, detail) {
                 for (const list of lists) list.update((pages) => placeRow(pages, list.filters, row));
-                void mutate<WorkItemDetailData>(
-                    apiUrl(workItemDetailPath(row.id)),
-                    (current) => (current ? { ...current, ...row, ...detail } : current),
-                    { revalidate: false },
-                );
+                // Only a detail that is loaded: SWR drops an in-flight fetch's
+                // answer when its key is mutated after the fetch began, so a
+                // write landing while a sheet was still loading left it
+                // loading for good.
+                const key = apiUrl(workItemDetailPath(row.id));
+                if (cache.get(key)?.data === undefined) return;
+                void mutate<WorkItemDetailData>(key, (current) => (current ? { ...current, ...row, ...detail } : current), {
+                    revalidate: false,
+                });
             },
             removeRow(id) {
                 for (const list of lists) list.update((pages) => removeRowFromPages(pages, id));
@@ -141,9 +145,11 @@ export function useWorkItemCache(): WorkItemCache {
                 return mutate(apiUrl(path));
             },
             setPath<T>(path: string, fn: (current: T | undefined) => T | undefined) {
+                // As above: never mark a key whose first read is still in flight.
+                if (cache.get(apiUrl(path))?.data === undefined) return Promise.resolve(undefined);
                 return mutate<T>(apiUrl(path), fn, { revalidate: false });
             },
         }),
-        [mutate, apiUrl],
+        [mutate, cache, apiUrl],
     );
 }

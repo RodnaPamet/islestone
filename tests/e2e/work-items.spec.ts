@@ -57,7 +57,11 @@ test.describe('work-item views', () => {
         await dialog.getByLabel('Title').fill('Write the board');
         await dialog.getByRole('button', { name: 'Create work item' }).click();
         await expect(dialog).toBeHidden();
+        // The new item opens in the sheet; close it.
+        const created = page.getByTestId('work-item-sheet-body');
+        await expect(created.getByRole('heading', { name: 'Write the board' })).toBeVisible();
         await page.keyboard.press('Escape');
+        await expect(created).toBeHidden();
 
         // The list shows it.
         const table = page.locator('#work-items-table');

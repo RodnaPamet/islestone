@@ -30,6 +30,7 @@ import { __resetPendingUndoToastsForTest } from '@/components/ui/hooks/use-toast
 import { useWorkConfig } from '@/components/work-items/data/use-work-config';
 import { useWorkItemList } from '@/components/work-items/data/use-work-item-list';
 import { useWorkItemMutations } from '@/components/work-items/data/use-work-item-mutations';
+import { useWorkItem } from '@/components/work-items/data/use-work-item-collab';
 
 import { deferred, detail, installFetch, page, PROJECT, renderWorkspace, row } from '../helpers/work-items-harness';
 
@@ -214,3 +215,32 @@ describe('a bulk change', () => {
     });
 });
 
+describe('a write while a detail is still loading', () => {
+    function Detail() {
+        const { data } = useWorkItem('wi-1');
+        return <p>{data ? `Detail: ${data.title}` : 'Detail loading'}</p>;
+    }
+
+    it('does not strand the detail: its first read still lands', async () => {
+        const read = deferred<{ body: unknown }>();
+        installFetch({
+            'GET /work-items': { body: page([row(1)]) },
+            'GET /work-items/wi-1': () => read.promise,
+            'POST /work-items/wi-1/state': { body: detail(row(1, { stateId: 'st-progress', stateCategory: 'STARTED', version: 2 })) },
+        });
+        renderWorkspace(
+            <>
+                <Items />
+                <Detail />
+            </>,
+        );
+        await screen.findByText('Item 1');
+        expect(screen.getByText('Detail loading')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Start ISL-1' }));
+        await waitFor(() => expect(within(item('ISL-1')).getByText('In progress')).toBeInTheDocument());
+        await act(async () => {
+            read.resolve({ body: detail(row(1, { title: 'Item 1 in full', stateId: 'st-progress', stateCategory: 'STARTED', version: 2 })) });
+        });
+        expect(await screen.findByText('Detail: Item 1 in full')).toBeInTheDocument();
+    });
+});
