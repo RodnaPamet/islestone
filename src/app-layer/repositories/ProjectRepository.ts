@@ -5,10 +5,11 @@
  * (`projectRowVisibilityWhere`), so a guest sees only granted projects and a
  * deleted project reads as absent. Written fresh for Islestone.
  */
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import type { PrismaTx } from '@/lib/db-context';
-import { projectRowVisibilityWhere, type ProjectVisibility } from '../policies/project-visibility';
+import { SEARCH_ROW_CAP, containsPattern, prefixPattern } from '@/lib/search/query';
+import { projectRowVisibilityWhere, projectVisibilitySql, type ProjectVisibility } from '../policies/project-visibility';
 import type { RequestContext } from '../types';
 
 export const PROJECT_LIST_TAKE = 200;
@@ -25,7 +26,48 @@ export const projectSelect = {
     updatedAt: true,
 } satisfies Prisma.ProjectSelect;
 
+/** One search candidate (`ProjectRepository.searchNames`). */
+export interface ProjectSearchRow {
+    id: string;
+    name: string;
+    keyPrefix: string;
+}
+
 export class ProjectRepository {
+    /**
+     * Live, visible, unarchived projects whose name holds the query
+     * (substring, `Project_search_name_trgm`) or all of its words (`simple`
+     * full text, `Project_search_name_fts`), or whose key prefix is the query
+     * (the unique `(tenantId, keyPrefix)`). Ordered so the best candidates
+     * make the cut; bounded by `limit` (at most `SEARCH_ROW_CAP`). Raw SQL
+     * because Prisma cannot order by a rank (sub-phase 2.7b, docs/search.md);
+     * the query is a bind parameter.
+     */
+    static async searchNames(
+        db: PrismaTx,
+        ctx: RequestContext,
+        v: ProjectVisibility,
+        query: string,
+        opts: { limit: number },
+    ): Promise<ProjectSearchRow[]> {
+        const limit = Math.min(Math.max(1, Math.floor(opts.limit)), SEARCH_ROW_CAP);
+        return db.$queryRaw<ProjectSearchRow[]>(Prisma.sql`
+            SELECT p."id", p."name", p."keyPrefix"
+              FROM "Project" p
+             WHERE p."tenantId" = ${ctx.tenantId}
+               AND ${projectVisibilitySql(v, { projectAlias: 'p', projectIdColumn: 'p."id"' })}
+               AND (p."name" ILIKE ${containsPattern(query)}
+                    OR to_tsvector('simple', p."name") @@ plainto_tsquery('simple', ${query})
+                    OR p."keyPrefix" = upper(${query}))
+             ORDER BY (p."keyPrefix" = upper(${query})) DESC,
+                      (lower(p."name") = lower(${query})) DESC,
+                      (p."name" ILIKE ${prefixPattern(query)}) DESC,
+                      ts_rank(to_tsvector('simple', p."name"), plainto_tsquery('simple', ${query})) DESC,
+                      similarity(p."name", ${query}) DESC,
+                      p."id" ASC
+             LIMIT ${limit}`);
+    }
+
     static async list(
         db: PrismaTx,
         ctx: RequestContext,

@@ -20,7 +20,7 @@ import { gitFiles } from '../helpers/git-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const T = 'src/app/api/t/[tenantSlug]';
-const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates', 'intake'].map((r) => `${T}/${r}/`);
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates', 'intake', 'search'].map((r) => `${T}/${r}/`);
 
 type Spec = Partial<Record<'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', string>>;
 const W = `${T}/work-items`;
@@ -82,6 +82,8 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${T}/projects/[projectId]/custom-fields/[fieldId]/options/route.ts`]: { POST: 'projects.edit' },
     [`${T}/projects/[projectId]/custom-fields/[fieldId]/options/[optionId]/route.ts`]: { PATCH: 'projects.edit', DELETE: 'projects.edit' },
     [`${T}/views/route.ts`]: { GET: 'views.view', POST: 'views.create' },
+    // Sub-phase 2.7b: workspace search, under the projects key (work items skipped without work_items.view).
+    [`${T}/search/route.ts`]: { GET: 'projects.view' },
     [`${T}/views/[viewId]/route.ts`]: { GET: 'views.view', PATCH: 'views.edit', DELETE: 'views.edit' },
     [`${T}/projects/route.ts`]: { GET: 'projects.view', POST: 'projects.create' },
     [`${T}/projects/[projectId]/route.ts`]: { GET: 'projects.view', PATCH: 'projects.edit', DELETE: 'projects.archive' },

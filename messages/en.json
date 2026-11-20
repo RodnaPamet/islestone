@@ -517,7 +517,7 @@
     "commandPalette": {
         "title": "Command palette",
         "description": "Search for pages and actions. Use arrow keys to navigate and Enter to activate.",
-        "searchPlaceholder": "Search pages and actions…",
+        "searchPlaceholder": "Search work items, projects and pages…",
         "searchPlaceholderSignedOut": "Sign in to search…",
         "filterResultsAria": "Filter results by type",
         "searching": "Searching…",

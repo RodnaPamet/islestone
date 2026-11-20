@@ -6,7 +6,7 @@
  *      (My Work, Inbox, Projects, Views) and, for an owner, Settings;
  *   2. navigates from the sidebar, and every destination renders (no 404);
  *   3. opens the command palette with the keyboard (Ctrl+K) and goes
- *      somewhere from it;
+ *      somewhere from it, and finds a work item and a project in it (2.7b);
  *   4. switches workspace from the top chrome's switcher, after joining a
  *      second workspace by invitation;
  *   5. cannot open another workspace's shell by its slug.
@@ -143,6 +143,41 @@ test.describe('Application shell', () => {
         await page.keyboard.press('Control+k');
         await expect(palette).toBeVisible();
         await page.keyboard.press('Escape');
+        await expect(palette).toBeHidden();
+    });
+
+    test('the command palette finds work items by title and key, and projects by name (2.7b)', async ({ authedPage, isolatedTenant }) => {
+        const page = authedPage;
+        const slug = isolatedTenant.tenantSlug;
+        const base = `/api/t/${slug}`;
+        const team = await page.request.post(`${base}/teams`, { data: { name: 'Palette team' } });
+        expect(team.status()).toBe(201);
+        const project = await page.request.post(`${base}/projects`, { data: { teamId: (await team.json()).id, name: 'Palette project', keyPrefix: 'PAL' } });
+        expect(project.status()).toBe(201);
+        const types = (await (await page.request.get(`${base}/work-item-types`)).json()) as Array<{ id: string }>;
+        const item = await page.request.post(`${base}/work-items`, { data: { projectId: (await project.json()).id, typeId: types[0]!.id, title: 'Searchable widget' } });
+        expect(item.status()).toBe(201);
+        await page.reload();
+        await waitForHydration(page, 'aside');
+
+        await page.keyboard.press('Control+k');
+        const palette = page.getByRole('dialog', { name: 'Command palette' });
+        await expect(palette).toBeVisible();
+        await page.keyboard.type('searchable wid');
+        const hit = palette.getByTestId('command-palette-result-workItem');
+        await expect(hit).toHaveCount(1);
+        await expect(hit).toContainText('Searchable widget');
+        await expect(hit).toContainText('PAL-1');
+
+        // A key finds its item; a project's name finds the project.
+        await palette.getByRole('combobox').fill('pal-1');
+        await expect(palette.getByTestId('command-palette-result-workItem')).toContainText('Searchable widget');
+        await palette.getByRole('combobox').fill('palette proj');
+        await expect(palette.getByTestId('command-palette-result-project')).toContainText('Palette project');
+
+        await palette.getByRole('combobox').fill('searchable');
+        await palette.getByTestId('command-palette-result-workItem').click();
+        await page.waitForURL(`**/t/${slug}/work-items/PAL-1`, { timeout: 30_000 });
         await expect(palette).toBeHidden();
     });
 
