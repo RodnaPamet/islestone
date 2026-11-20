@@ -86,7 +86,7 @@ export function customFieldsOf(values: WorkItemListRow['customFieldValues'] | un
 
 /** The list and response shape of a work item. */
 export function toWorkItemDto(row: WorkItemListRow) {
-    const { project, labels, startDate, dueDate, customFieldValues, priorityRank: _rank, ...rest } = row;
+    const { project, labels, startDate, dueDate, customFieldValues, priorityRank: _rank, recurrenceRule, occurrenceOn, ...rest } = row;
     void _rank;
     return {
         ...rest,
@@ -95,6 +95,9 @@ export function toWorkItemDto(row: WorkItemListRow) {
         startDate: dateOnly(startDate),
         dueDate: dateOnly(dueDate),
         customFields: customFieldsOf(customFieldValues),
+        occurrenceOn: dateOnly(occurrenceOn),
+        /** The item has a repeat set on it (2.5d). */
+        repeats: recurrenceRule !== null,
     };
 }
 

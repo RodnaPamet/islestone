@@ -279,6 +279,15 @@ export interface IntakePurgePayload {
     tenantId?: string;
 }
 
+/**
+ * Nightly repeats (sub-phase 2.5d): make each due occurrence as the person
+ * who set the repeat, re-resolved. No `tenantId` sweeps every workspace with
+ * a running repeat; a `tenantId` re-runs one.
+ */
+export interface WorkItemRecurrencePayload {
+    tenantId?: string;
+}
+
 /** Daily rebalance of projects whose sort keys passed the length bound (ADR 0002 §5). */
 export interface WorkItemSortKeyRebalancePayload {
     tenantId?: string;
@@ -319,6 +328,7 @@ export interface JobPayloadMap {
     'cycle-rollover': CycleRolloverPayload;
     'intake-snooze-wake': IntakeSnoozeWakePayload;
     'intake-purge': IntakePurgePayload;
+    'work-item-recurrence': WorkItemRecurrencePayload;
 }
 
 /** Union of all valid job names */
@@ -421,6 +431,15 @@ export const JOB_DEFAULTS: Record<JobName, {
     'work-item-sortkey-rebalance': {
         attempts: 1,
         backoff: { type: 'fixed', delay: 60_000 },
+        removeOnComplete: 30,
+        removeOnFail: 100,
+    },
+    'work-item-recurrence': {
+        // Two attempts, five minutes apart: a retry makes nothing twice (each
+        // occurrence is claimed on its stamped date, and the occurrence unique
+        // backs it).
+        attempts: 2,
+        backoff: { type: 'fixed', delay: 300_000 },
         removeOnComplete: 30,
         removeOnFail: 100,
     },

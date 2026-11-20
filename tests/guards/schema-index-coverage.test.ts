@@ -114,6 +114,7 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
     { model: 'IntakeRequest', fields: ['tenantId', 'status', 'decidedAt'], justification: 'The purge job: decided requests past retention.' },
     { model: 'IntakeRequest', fields: ['tenantId', 'mergedIntoRequestId'], justification: 'The requests merged into a request.' },
     { model: 'IntakeForm', fields: ['tenantId', 'projectId', 'archivedAt'], justification: "A project's live forms." },
+    { model: 'WorkItemRecurrence', fields: ['tenantId', 'nextOccurrenceOn'], justification: 'The nightly job reads the running repeats due by a date, oldest first.' },
 ];
 
 /** Tenant models whose list queries are fully served by Layers A + B, with the reason. */

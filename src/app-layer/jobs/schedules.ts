@@ -12,6 +12,7 @@
  *   - cycle-rollover:            00:10 in NOTIFICATIONS_TZ (close ended cycles; 2.5a)
  *   - intake-snooze-wake:        08:00 in NOTIFICATIONS_TZ (snoozed requests come back; 2.6a)
  *   - intake-purge:              02:50 UTC (decided requests past retention; 2.6a)
+ *   - work-item-recurrence:      00:30 in NOTIFICATIONS_TZ (make due repeats; 2.5d)
  *
  * The two key rotations (`key-rotation`, `tenant-dek-rotation`) are started by
  * an operator through their admin routes and have no schedule.
@@ -186,6 +187,16 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         pattern: '50 2 * * *',    // 02:50 UTC
         // After the 02:30 work-item purge, off the hour.
         description: 'Hard-delete intake requests decided more than 90 days ago, spam after 7 (owner decision 90). Counts-only audit entry per batch.',
+        defaultPayload: {},
+    },
+    {
+        name: 'work-item-recurrence',
+        pattern: '30 0 * * *',    // 00:30 in NOTIFICATIONS_TZ
+        // After the rollover (a new occurrence never lands in a cycle anyway)
+        // and well before the 08:00 reminders, so a copy due within the lead
+        // days is there when its due reminder runs (map 2.5, decision 68).
+        tz: env.NOTIFICATIONS_TZ,
+        description: 'Make each due occurrence of a repeating work item, as the person who set the repeat (re-resolved), or put the repeat on hold with the reason. Idempotent: an occurrence is claimed on its stamped date.',
         defaultPayload: {},
     },
 ];

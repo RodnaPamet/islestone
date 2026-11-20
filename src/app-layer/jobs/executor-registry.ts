@@ -582,6 +582,23 @@ executorRegistry.register('work-item-sortkey-rebalance', async (payload) => {
     return makeResult('work-item-sortkey-rebalance', startedAt, startMs, r.items, r.items, 0, { projects: r.projects });
 });
 
+// ── Repeats (sub-phase 2.5d) ─────────────────────────────────────────
+
+executorRegistry.register('work-item-recurrence', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processWorkItemRecurrence } = await import('./work-item-recurrence');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId };
+    const r = await processWorkItemRecurrence(forwarded);
+    return makeResult('work-item-recurrence', startedAt, startMs, r.tenants, r.tenants - r.failedTenants, r.failedTenants, {
+        rules: r.rules,
+        created: r.created,
+        held: r.held,
+        failed: r.failed,
+        skippedOccurrences: r.skippedOccurrences,
+    });
+});
+
 // ── Cycles (sub-phase 2.5a) ──────────────────────────────────────────
 
 executorRegistry.register('cycle-rollover', async (payload) => {

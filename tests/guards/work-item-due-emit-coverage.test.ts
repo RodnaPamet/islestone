@@ -23,7 +23,7 @@ const USECASES = read('src/app-layer/usecases/work-item.ts');
 const SHARED = read('src/app-layer/usecases/work-item-shared.ts');
 
 describe('the due reminder is emitted after the commit', () => {
-    it.each(['createWorkItem', 'updateWorkItem', 'assignWorkItem', 'bulkSetWorkItemDueDate'])('%s', (name) => {
+    it.each(['updateWorkItem', 'assignWorkItem', 'bulkSetWorkItemDueDate'])('%s', (name) => {
         expect(emittedAfterCommit(functionBodyOf(USECASES, name), 'emitDueBell')).toEqual({ called: true, insideTransaction: false });
     });
 
@@ -32,6 +32,11 @@ describe('the due reminder is emitted after the commit', () => {
         expect(functionBodyOf(USECASES, 'emitCreatedItemBells')).toMatch(/\bemitDueBell\s*\(/);
         const accept = functionBodyOf(read('src/app-layer/usecases/intake-request.ts'), 'acceptIntakeRequest');
         expect(emittedAfterCommit(accept, 'emitCreatedItemBells')).toEqual({ called: true, insideTransaction: false });
+    });
+
+    it('the repeat job rings the create bells after its commit (2.5d)', () => {
+        const run = functionBodyOf(read('src/app-layer/usecases/recurrence-run.ts'), 'runRecurrenceRule');
+        expect(emittedAfterCommit(run, 'emitCreatedItemBells')).toEqual({ called: true, insideTransaction: false });
     });
 
     it('emitDueBell runs in its own transaction and swallows its errors', () => {
