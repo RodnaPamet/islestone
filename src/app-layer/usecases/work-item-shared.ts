@@ -30,6 +30,7 @@ import {
     type WorkItemListRow,
 } from '../repositories/WorkItemRepository';
 import type { ProjectVisibility } from '../policies/project-visibility';
+import { reviewSummaryOf } from '../domain/review-steps';
 import { formatKey } from '../domain/work-item-key';
 import type { RequestContext } from '../types';
 import type { ReviewNoticeOut } from './review-engine';
@@ -90,7 +91,7 @@ export function customFieldsOf(values: WorkItemListRow['customFieldValues'] | un
 
 /** The list and response shape of a work item. */
 export function toWorkItemDto(row: WorkItemListRow) {
-    const { project, labels, startDate, dueDate, customFieldValues, priorityRank: _rank, recurrenceRule, occurrenceOn, ...rest } = row;
+    const { project, labels, startDate, dueDate, customFieldValues, priorityRank: _rank, recurrenceRule, occurrenceOn, reviewRounds, ...rest } = row;
     void _rank;
     return {
         ...rest,
@@ -102,6 +103,15 @@ export function toWorkItemDto(row: WorkItemListRow) {
         occurrenceOn: dateOnly(occurrenceOn),
         /** The item has a repeat set on it (2.5d). */
         repeats: recurrenceRule !== null,
+        /** Where the item's review stands (2.8b): the list column and the board card's mark. */
+        review: reviewSummaryOf(
+            reviewRounds.map((r) => ({
+                number: r.number,
+                status: r.status,
+                stepCount: r._count.steps,
+                steps: r.steps.map((st) => ({ name: st.name, dueOn: dateOnly(st.dueOn), pendingCount: st._count.reviewers })),
+            })),
+        ),
     };
 }
 

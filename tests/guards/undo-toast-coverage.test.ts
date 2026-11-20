@@ -44,6 +44,7 @@ const SITE_CONTRACTS: Record<string, string> = {
     'src/components/milestones/use-milestones.ts': 'milestone delete (a project\'s milestones and a milestone\'s page, 2.5b)',
     'src/components/inbox/use-inbox.ts': 'marking a notification Done, and moving one back to the Inbox (the Inbox, 2.7c)',
     'src/components/recipient-lists/use-recipient-lists.ts': 'removing a person from a recipient list (Settings → Recipient lists and a project\'s lists, 2.7e)',
+    'src/components/work-items/data/use-review.ts': 'removing a reviewer and removing a review step not yet opened (the detail\'s review section, 2.8b)',
 };
 
 const HOOK_FILE = 'src/components/ui/hooks/use-toast-with-undo.ts';

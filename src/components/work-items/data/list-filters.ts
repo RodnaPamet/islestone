@@ -7,7 +7,8 @@
  * The server owns filtering: a list is always what the API answered for its
  * query. `rowBelongs` only decides where an optimistic row goes until the
  * server's answer replaces it, and answers `unknown` for the facets it cannot
- * decide on the client (free text, due windows, watching, waiting on `me`), in which case the row keeps
+ * decide on the client (free text, due windows, watching, waiting on `me`,
+ * reviewers), in which case the row keeps
  * its place and the next revalidation settles it.
  *
  * Written fresh for Islestone (sub-phase 2.3).
@@ -33,6 +34,12 @@ export interface WorkItemListFilters {
     waitingOnId?: string;
     /** `me` only: the server reads the caller from the request context. */
     watching?: 'me';
+    /**
+     * Member user ids, or `me` (2.8a's filter; 2.8b's "To review"): items whose
+     * open review step still asks them. Reviewer rows are not on the list row,
+     * so the client never decides it.
+     */
+    reviewerId?: string;
     parentId?: string;
     due?: string;
     q?: string;
@@ -57,6 +64,7 @@ export const LIST_FILTER_KEYS = [
     'milestoneId',
     'waitingOnId',
     'watching',
+    'reviewerId',
     'parentId',
     'due',
     'q',
@@ -103,6 +111,11 @@ export function waitsOnMe(filters: WorkItemListFilters): boolean {
     return !!filters.waitingOnId?.split(',').some((v) => v.trim() === 'me');
 }
 
+/** Does the list filter by reviewers (`reviewerId`, 2.8b)? A review write re-reads those lists. */
+export function filtersByReviewer(filters: WorkItemListFilters): boolean {
+    return !!filters.reviewerId?.trim();
+}
+
 /**
  * Does `row` belong in a list loaded with `filters`? `unknown` when a facet
  * the client cannot evaluate is set.
@@ -128,7 +141,8 @@ export function rowBelongs(filters: WorkItemListFilters, row: WorkItemRow): 'yes
     if (checks.some((c) => c === false)) return 'no';
     // The watcher set is not on the row: a watch or unwatch revalidates the lists.
     // `waitingOnId=me` names the caller only the server knows: a waiting-on write revalidates those lists.
-    if (f.q || f.due || f.watching || waitsOnMe(f) || f.customFields || f.cycleId?.split(',').includes('current')) return 'unknown';
+    // `reviewerId` reads reviewer rows the row does not carry: a review write revalidates those lists.
+    if (f.q || f.due || f.watching || f.reviewerId || waitsOnMe(f) || f.customFields || f.cycleId?.split(',').includes('current')) return 'unknown';
     return 'yes';
 }
 

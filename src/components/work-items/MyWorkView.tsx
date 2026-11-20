@@ -1,10 +1,13 @@
 'use client';
 
 /**
- * My Work (owner decisions 54 and 76): five sections over the shared list
- * query, one filter toolbar for all of them, the create dialog and the detail
- * sheet.
+ * My Work (owner decisions 54, 76 and 152): six sections over the shared
+ * list query, one filter toolbar for all of them, the create dialog and the
+ * detail sheet.
  *
+ *   0. To review       — `reviewerId=me` (2.8b; the server reads the caller:
+ *                        items whose OPEN review step still asks them, not
+ *                        yet responded, not withdrawn)
  *   1. Assigned to me  — `assigneeId=<me>`
  *   2. Waiting on me   — `waitingOnId=me` (2.7a; the server reads the caller;
  *                        open items only, by the 2.4b CHECK)
@@ -48,11 +51,12 @@ import { WorkItemSheet } from './WorkItemSheet';
 /** Rows per page in each section. */
 export const MY_WORK_PAGE_SIZE = 25;
 
-export type MyWorkSectionId = 'assigned' | 'waitingOn' | 'created' | 'watching' | 'dueSoon';
+export type MyWorkSectionId = 'toReview' | 'assigned' | 'waitingOn' | 'created' | 'watching' | 'dueSoon';
 
 /** Each section's fixed filters for the person `userId`. */
 export function myWorkSectionFilters(userId: string): Record<MyWorkSectionId, WorkItemListFilters> {
     return {
+        toReview: { reviewerId: 'me' },
         assigned: { assigneeId: userId },
         waitingOn: { waitingOnId: 'me' },
         created: { createdById: userId },
@@ -61,7 +65,8 @@ export function myWorkSectionFilters(userId: string): Record<MyWorkSectionId, Wo
     };
 }
 
-const SECTION_ORDER: readonly MyWorkSectionId[] = ['assigned', 'waitingOn', 'created', 'watching', 'dueSoon'];
+/** "To review" first (the 2.8 map): the person's move on someone else's work. */
+const SECTION_ORDER: readonly MyWorkSectionId[] = ['toReview', 'assigned', 'waitingOn', 'created', 'watching', 'dueSoon'];
 
 /** The filter scope: My Work fixes the person, so no assignee facet. */
 const FILTER_SCOPE = { fixedAssignee: true } as const;
@@ -133,7 +138,8 @@ function MyWorkBody({ userId, title }: MyWorkViewProps) {
 function MyWorkSection({ id, filters, onOpen }: { id: MyWorkSectionId; filters: WorkItemListFilters; onOpen: (row: WorkItemRow) => void }) {
     const tSection = useTranslations('workItems');
     const headingId = useId();
-    const columns = useWorkItemColumns();
+    // Every section shows where an item's review stands (2.8b).
+    const columns = useWorkItemColumns(false, { review: true });
     const list = useWorkItemList(filters, { limit: MY_WORK_PAGE_SIZE });
     const count = list.items.length;
     const days = { days: DUE_SOON_DAYS };
@@ -153,6 +159,7 @@ function MyWorkSection({ id, filters, onOpen }: { id: MyWorkSectionId; filters: 
                 )}
             </div>
             {id === 'dueSoon' && <p className="text-xs text-content-muted">{tSection('myWork.sections.dueSoon.description', days)}</p>}
+            {id === 'toReview' && <p className="text-xs text-content-muted">{tSection('myWork.sections.toReview.description')}</p>}
             <DataTable<WorkItemRow>
                 data={list.items}
                 columns={columns}

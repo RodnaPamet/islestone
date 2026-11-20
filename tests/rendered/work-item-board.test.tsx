@@ -65,6 +65,22 @@ describe('the board', () => {
         expect(within(column('Todo')).getByText('Item 1')).toBeInTheDocument();
     });
 
+    it('marks a card with where its review stands (2.8b), and an item with none with nothing', async () => {
+        installFetch({
+            'GET /work-items': columnsRoute([
+                row(1, { review: { state: 'returned', roundNumber: 1, step: null } }),
+                row(2, { review: { state: 'open', roundNumber: 2, step: { name: 'Legal', dueOn: '2026-11-25', pendingCount: 1 } } }),
+                row(3),
+            ]),
+            'GET /users/assignable': { body: MEMBERS },
+        });
+        const { container } = renderBoard();
+        expect(await screen.findByText('Review: Returned')).toBeInTheDocument();
+        expect(screen.getByText('Review: Open')).toBeInTheDocument();
+        expect(screen.getAllByText(/^Review: /)).toHaveLength(2);
+        expect(await axe(container)).toHaveNoViolations();
+    });
+
     it('has no axe violations', async () => {
         installFetch({ 'GET /work-items': columnsRoute([row(1), row(2)]), 'GET /users/assignable': { body: MEMBERS } });
         const { container } = renderBoard();

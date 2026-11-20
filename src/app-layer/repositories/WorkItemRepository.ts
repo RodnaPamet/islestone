@@ -228,6 +228,25 @@ export const workItemListSelect = {
     project: { select: { keyPrefix: true } },
     labels: { select: { labelId: true }, take: 20, orderBy: { labelId: 'asc' } },
     customFieldValues: { select: customFieldValueSelect, take: ROW_CUSTOM_VALUES_TAKE, orderBy: { id: 'asc' } },
+    /**
+     * The review at a glance (2.8b, `reviewSummaryOf`): the two newest rounds,
+     * each with its step count and its OPEN step (at most one per round) and
+     * that step's pending reviewers, counted.
+     */
+    reviewRounds: {
+        select: {
+            number: true,
+            status: true,
+            _count: { select: { steps: true } },
+            steps: {
+                where: { status: 'OPEN' },
+                take: 1,
+                select: { name: true, dueOn: true, _count: { select: { reviewers: { where: { outcome: null, withdrawnAt: null } } } } },
+            },
+        },
+        orderBy: { number: 'desc' },
+        take: 2,
+    },
 } satisfies Prisma.WorkItemSelect;
 
 export type WorkItemListRow = Prisma.WorkItemGetPayload<{ select: typeof workItemListSelect }>;

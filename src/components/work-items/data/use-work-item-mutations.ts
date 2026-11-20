@@ -64,6 +64,7 @@ export function toRow(item: WorkItemRow): WorkItemRow {
         recurrenceId: item.recurrenceId ?? null,
         occurrenceOn: item.occurrenceOn ?? null,
         repeats: item.repeats ?? false,
+        review: item.review ?? null,
         sortKey: item.sortKey,
         startDate: item.startDate,
         dueDate: item.dueDate,

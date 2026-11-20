@@ -18,12 +18,17 @@ import { useTenantHref } from '@/lib/tenant-context-provider';
 import { workItemPath } from '@/lib/work-item-paths';
 import type { WorkItemRow } from '@/lib/work-items/types';
 
-import { PriorityBadge, StateBadge } from './badges';
+import { PriorityBadge, ReviewBadge, StateBadge } from './badges';
 import { memberLabel, useMembers, useWorkConfig } from './data/use-work-config';
 import { customFieldText } from './fields/custom-field-format';
 
-/** `extended` (the list with its column gear, 2.4) adds created, updated, type and the page's custom fields. */
-export function useWorkItemColumns(extended = false) {
+/**
+ * `extended` (the list with its column gear, 2.4) adds created, updated, type
+ * and the page's custom fields; it and `options.review` (My Work, 2.8b) add
+ * the review column.
+ */
+export function useWorkItemColumns(extended = false, options: { review?: boolean } = {}) {
+    const withReview = extended || options.review === true;
     const tCols = useTranslations('workItems');
     const config = useWorkConfig();
     const router = useRouter();
@@ -69,6 +74,9 @@ export function useWorkItemColumns(extended = false) {
                 cell: ({ row }) => memberName(row.original.assigneeId) ?? <span className="text-content-muted">{tCols('detail.unassigned')}</span>,
             },
             { id: 'due', header: tCols('col.dueDate'), cell: ({ row }) => row.original.dueDate ?? '' },
+            // Sub-phase 2.8b: where the item's review stands (the open step and
+            // how many it waits on, Signed off, Returned).
+            ...(withReview ? [{ id: 'review', header: tCols('col.review'), cell: ({ row }) => <ReviewBadge review={row.original.review} /> } satisfies ColumnDef<WorkItemRow>] : []),
             // Sub-phase 2.4: hidden until the column gear (or a saved view) shows them.
             ...(extended ? extendedColumns() : []),
         ]);
@@ -112,7 +120,7 @@ export function useWorkItemColumns(extended = false) {
                 })),
             ];
         }
-    }, [tCols, config, router, tenantHref, memberById, extended]);
+    }, [tCols, config, router, tenantHref, memberById, extended, withReview]);
 }
 
 /** The column gear's columns for the list: the 2.3 six by default, the rest hidden until chosen. */
@@ -132,6 +140,7 @@ export function useWorkItemColumnChoices() {
             { id: 'type', label: tChoice('col.type'), defaultVisible: false },
             { id: 'cycle', label: tChoice('col.cycle'), defaultVisible: false },
             { id: 'milestone', label: tChoice('col.milestone'), defaultVisible: false },
+            { id: 'review', label: tChoice('col.review'), defaultVisible: false },
             ...(config.customFields ?? []).filter((f) => !f.archived).map((f) => ({ id: `cf:${f.id}`, label: f.name, defaultVisible: false })),
         ],
         [tChoice, config],

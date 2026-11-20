@@ -48,6 +48,7 @@ import { appendAuditEntryOrQueue } from '@/lib/audit';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
 import { badRequest, ConflictError, forbidden, notFound } from '@/lib/errors/types';
 import type { ReviewStepInput } from '@/lib/schemas/review';
+import type { WorkItemReviewData } from '@/lib/work-items/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
 // ─── The response shape ───────────────────────────────────────────────────
@@ -108,13 +109,14 @@ function roundDto(r: ReviewRoundRow) {
 
 export type ReviewRoundDto = ReturnType<typeof roundDto>;
 
-export interface WorkItemReviewDto {
-    workItemId: string;
-    itemVersion: number;
+/**
+ * The answer of the read and of every write. Its shape is the client's
+ * (`WorkItemReviewData`, `src/lib/work-items/types.ts`, which the detail
+ * reads): `tsc` holds the two equal.
+ */
+export interface WorkItemReviewDto extends WorkItemReviewData {
     /** Newest first; the live (PLANNED or OPEN) round, when there is one, is first. */
     rounds: ReviewRoundDto[];
-    /** While a round is open, the item waits on these people (decision 152): the open step's pending reviewers. */
-    waitingOnReviewerIds: string[];
     viewer: ReviewAffordances;
 }
 

@@ -31,7 +31,7 @@ import { useToast } from '@/components/ui/hooks';
 import { PRIORITY_ORDER } from '@/lib/work-items/presentation';
 import type { WorkItemRow } from '@/lib/work-items/types';
 
-import { PriorityBadge } from '../badges';
+import { PriorityBadge, ReviewBadge } from '../badges';
 import type { WorkItemListFilters } from '../data/list-filters';
 import { memberLabel, useMembers, useWorkConfig } from '../data/use-work-config';
 import { useWorkItemList, type WorkItemListResult } from '../data/use-work-item-list';
@@ -148,6 +148,8 @@ function BoardCard(props: CardProps) {
             </div>
             <div className="mt-1 flex items-center gap-2">
                 <PriorityBadge priority={row.priority} />
+                {/* Sub-phase 2.8b: the review mark; no review lane (a step names several people). */}
+                <ReviewBadge review={row.review} compact />
                 {row.dueDate && <span className="text-xs text-content-muted">{tCard('board.due', { date: row.dueDate })}</span>}
                 {assigneeName && (
                     <span className="ml-auto" title={assigneeName}>

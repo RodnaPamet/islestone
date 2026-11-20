@@ -11,7 +11,9 @@
  *      read of its own (`useSWR(`, `useSWRInfinite(`): a view that opened one
  *      would hold rows no mutation reaches.
  *   3. Every versioned write (PATCH of an item, and its state, assign and
- *      move routes) in the data folder passes `ifMatch`.
+ *      move routes; and, 2.8b, the review writes that name the round: the
+ *      steps PUT, send, withdraw and skip) in the data folder passes
+ *      `ifMatch`.
  *
  * Population: tracked files (`gitFiles`); comments masked (`codeOf`). Proven
  * against a planted repository. Written fresh for Islestone; it carries the
@@ -63,7 +65,9 @@ export function unversionedWrites(root: string): string[] {
             // The item itself (`/work-items/${id}`) by PATCH, or its state,
             // assign and move routes; a comment's PATCH is not versioned.
             const versioned = (/^\s*'PATCH'/.test(args) && /\/work-items\/\$\{[^}]+\}`/.test(args)) || /\/(state|assign|move)`/.test(args);
-            if (versioned && !/\bifMatch\b/.test(args)) out.push(rel);
+            // A review write that names the round (2.8b, `use-review.ts`'s `url(…)` paths under the item's review).
+            const reviewVersioned = /['`]\/(send|withdraw)['`]/.test(args) || /\/skip`/.test(args) || (/^\s*'PUT'/.test(args) && /['`]\/steps['`]/.test(args));
+            if ((versioned || reviewVersioned) && !/\bifMatch\b/.test(args)) out.push(rel);
         }
     }
     return out;
@@ -104,6 +108,12 @@ describe('the detectors, against a planted repository', () => {
                 "apiSend('POST', url(`/work-items/${id}/restore`));",
                 "apiSend('PATCH', url(`/work-items/${id}/comments/${c}`), b);",
             ].join('\n'),
+            'src/components/work-items/data/review.ts': [
+                "apiSend('PUT', url('/steps'), { steps }, { ifMatch: round?.version });",
+                "apiSend('POST', url(`/steps/${s}/skip`), undefined, { ifMatch: v });",
+                "apiSend('POST', url(`/steps/${s}/respond`), body);",
+                "apiSend('POST', url('/withdraw'));",
+            ].join('\n'),
             'src/app/t/[tenantSlug]/(app)/work-items/page.tsx': "const x = window.fetch('/y');\n",
         };
         for (const [rel, content] of Object.entries(plant)) {
@@ -122,7 +132,7 @@ describe('the detectors, against a planted repository', () => {
         expect(strayReads(root)).toEqual(['src/components/work-items/reads.tsx']);
     });
 
-    it('finds a versioned write without If-Match, not a restore', () => {
-        expect(unversionedWrites(root)).toEqual(['src/components/work-items/data/hook.ts']);
+    it('finds a versioned write without If-Match (a withdraw of the round among them), not a restore or a response', () => {
+        expect(unversionedWrites(root)).toEqual(['src/components/work-items/data/hook.ts', 'src/components/work-items/data/review.ts']);
     });
 });

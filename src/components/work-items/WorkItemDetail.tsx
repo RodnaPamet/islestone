@@ -40,7 +40,7 @@ import { useListOrder } from './data/list-order';
 import { useProjectCustomFields } from './data/use-custom-fields';
 import { useFieldSet } from './data/use-field-sets';
 import { fieldSetGaps, isClosedCategory, isFieldEmpty, requirementOf, type FieldKey, type FieldValues } from '@/lib/work-items/field-sets';
-import { useWorkConfig } from './data/use-work-config';
+import { memberLabel, useMembers, useWorkConfig } from './data/use-work-config';
 import { useWorkItem, useWorkItemCollab } from './data/use-work-item-collab';
 import { toRow, useWorkItemMutations } from './data/use-work-item-mutations';
 import { ActivityPanel, CommentsPanel, LinksPanel, RelationsPanel, WatchersPanel } from './detail/collab-panels';
@@ -50,6 +50,7 @@ import { MentionTextarea } from './mentions/MentionTextarea';
 import { CustomFieldInput } from './fields/CustomFieldInput';
 import { RepeatControl } from './detail/RepeatControl';
 import { PinnedAnswer, useMarkAnswer } from './detail/AnswerControls';
+import { ReviewSteps, useReviewWaitingOn } from './detail/ReviewSteps';
 import { AssigneePicker, CyclePicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker, WaitingOnPicker } from './pickers';
 
 export type DetailTab = 'overview' | 'sub-items' | 'links' | 'comments' | 'activity';
@@ -93,12 +94,16 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
     const t = useTranslations('workItems');
     const router = useRouter();
     const tenantHref = useTenantHref();
-    const { tenantSlug } = useTenantContext();
+    const { tenantSlug, userId: viewerId } = useTenantContext();
     const perms = usePermissions().work_items;
     const config = useWorkConfig();
     const mutations = useWorkItemMutations();
     const collab = useWorkItemCollab(workItemId);
     const { data: item, error, isLoading } = useWorkItem(workItemId);
+    // While a review round is open the item waits on its open step's
+    // reviewers, read-only (decisions 152 and 153): the picker steps aside.
+    const reviewWaitingOn = useReviewWaitingOn(item ? workItemId : null);
+    const { byId: memberById } = useMembers();
     const projectFields = useProjectCustomFields(item?.projectId);
     // The type's field set (2.4b-b), from the server's rules: a hidden field
     // with no value is not offered, a required one is marked, and an open
@@ -226,10 +231,21 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                 </PropertyRow>
             )}
             {offers('waitingOn') && (
-                <PropertyRow label={t('fields.waitingOn')} required={requiredMark('waitingOn')} htmlFor={item.stateCategory === 'DONE' || item.stateCategory === 'CANCELLED' ? undefined : `waiting-on-${item.id}`}>
+                <PropertyRow
+                    label={t('fields.waitingOn')}
+                    required={requiredMark('waitingOn')}
+                    htmlFor={item.stateCategory === 'DONE' || item.stateCategory === 'CANCELLED' || reviewWaitingOn ? undefined : `waiting-on-${item.id}`}
+                >
                     {item.stateCategory === 'DONE' || item.stateCategory === 'CANCELLED' ? (
                         <span className="text-content-muted">
                             {t('detail.waitingOnClosed')}
+                        </span>
+                    ) : reviewWaitingOn ? (
+                        <span className="text-sm" title={t('review.waitingOnHint')}>
+                            {t('review.waitingOnReviewers', {
+                                step: reviewWaitingOn.stepName,
+                                names: reviewWaitingOn.userIds.map((id) => memberLabel(memberById.get(id)) ?? t('detail.formerMember')).join(', ') || t('detail.waitingOnNobody'),
+                            })}
                         </span>
                     ) : (
                         <WaitingOnPicker
@@ -386,6 +402,7 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                             </section>
                         )}
                         <PinnedAnswer item={item} row={row} canEdit={perms.edit} />
+                        <ReviewSteps workItemId={item.id} projectId={item.projectId} viewerId={viewerId} />
                         <WatchersPanel workItemId={item.id} projectId={item.projectId} />
                     </div>
                 );
