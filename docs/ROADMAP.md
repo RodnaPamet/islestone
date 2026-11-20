@@ -93,6 +93,26 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 - **Dead or stale:** gantt-task-react, Glide Data Grid, Novel, y-sweet, Oso, Replicache, LlamaIndex.TS, LLM Guard, MCP-UI.
 - **Model weights** are licensed separately from model code.
 
+### 2.6 Product audits
+
+Proprietary products read for ideas only. Nothing is copied from them, and their product names and branding are not used; Islestone's words come from ADR 0006.
+
+**Procore** (construction management), audited 2026-11-20: [`docs/research/procore-audit.md`](research/procore-audit.md). Its hosts were not reachable, so its facts come from public search summaries and press releases. The owner adopted nine of its ten top ideas on 2026-11-20 (decisions 76 to 84, `docs/HANDOFF.md`); #8 was not adopted separately, because 6.3 and a search skill already plan it. Where each landed:
+
+| Idea | Decision | Where |
+|---|---|---|
+| Waiting on: whose move it is, apart from the accountable assignee | 76 | 2.4b; My Work section in 2.7; time waiting in 3.6 |
+| Field sets: required, optional or hidden fields per work item type | 77 | 2.4b; proposals checked against them in 6.2 |
+| Questions with a marked answer, and an agent that drafts cited answers | 78 | 2.4b (type and answer); 7.8 (the agent's skill) |
+| Distribution groups: named sets of people to notify | 79 | 2.7; a notify target in 5.1 |
+| Review steps: sequential or parallel reviewers, rounds instead of rewinds | 80 | 2.8; conditional steps in 5.1 |
+| Checklist runs: templated pass/fail checks whose failures open work items | 81 | 4.5 |
+| Periodic structured reports: an agent drafts from computed facts, a person files | 82 | 7.4 |
+| Meeting series: agenda, carry-forward of open points, minutes | 83 | 7.6 |
+| Project roles for guests and the outside firm they belong to | 84 | 8.4 |
+
+Each needs ADR 0006 rows before its first model or label (rule 1), and two need an ADR 0002 amendment (77 and 80). None is made yet, and no word is chosen: each sub-phase lists its proposed words as open questions, decided when it starts. Words already taken that these ideas reach for: "Workflow" (a team's states only, rule 6), "Approve, Edit and approve, Reject" (proposals), "Responsible" (banned for assignee), "Checklist item" (banned for sub-item), "Group" (SCIM's word), "Report" (banned for view), "Company" (banned for organization), "Collaborator" (banned for member), and "Template", "Layout" and "Run", which already name other concepts. Principle 3 and ADR 0003 hold throughout: every tracked piece of work stays a work item, the assignee stays the one accountable person, agents only propose, and an agent never counts as a reviewer.
+
 ## 3. Product principles
 
 1. **People are accountable; agents are delegated.** A work item has one human assignee and, optionally, one agent delegate.
@@ -189,6 +209,20 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 - **Source:** Teable `packages/core` (MIT) for field types; Kaneo for custom fields.
 - **Prompt:** "Add `SavedView` (filters, grouping, sorting, layout, visible columns; personal or shared) and typed custom fields per project (text, number, select, multi-select, date, person, URL, checkbox) stored in a typed value table with indexes. Custom fields appear in filters, columns, board grouping and the API. Check Teable's per-package licence before translating any field logic and record it in `PROVENANCE.md`."
 
+#### 2.4b Work-item fields follow-ups (L)
+- **Source:** the Procore audit, ideas only (`docs/research/procore-audit.md`, top ideas #1, #2 and #3). No code, text or names taken.
+- **Prompt:** "Add three things to the work-item model, as a short series of pull requests in this order. (1) Waiting on: a nullable, versioned field on `WorkItem` naming the one person who must act next, a member (a guest once 8.4 exists), set by hand and cleared when the item closes. It is a column, a filter and a swimlane, follows the `If-Match` rules and is audited like any field change. It is not a second assignee: the assignee stays the one accountable person (ADR 0003 §1), and nothing routes notifications, delegation or proposals by it until a later sub-phase says so. (2) Field sets: for each work item type, which built-in fields and which custom fields are required, optional or hidden. The create and update usecases refuse a write that leaves a required field empty, naming the fields; the forms show and hide fields from the same rules, read from the server, never restated in a component. (3) Questions: a Question type whose field set requires a due date and waiting-on, and a marked answer: a person who may edit the item marks one of its comments as the answer, stored as a pointer from the item to the comment, which moves the item to a Done state of its team and notifies its watchers. Ship a Question item template on 2.5's templates. Every new column is in the migration with its index; every write is validated, authorised, audited and sanitised as in 2.2."
+- **Owner decision, 2026-11-20 (Procore audit; decisions 76, 77 and 78).** This sub-phase was added for three adopted ideas. 2.1 to 2.4 have landed, so it is where the next work-item field work picks them up. It runs after 2.5 (the Question template uses 2.5's item templates) and before 2.7 (My Work's "waiting on me" section). The agent that drafts answers to questions is 7.8.
+- **ADR amendments it needs before its first model** (none made yet):
+  - ADR 0002 §1 says "Types carry no behaviour"; field sets give a type behaviour, so §1 is amended, with §7 for how a project's custom fields enter a type's set.
+  - ADR 0006 rows for waiting-on, the field set and the marked answer (rule 1).
+  - ADR 0003 §1 is not changed: waiting-on never makes anyone accountable, and the assignee stays the one accountable person.
+- **Open questions, decided when it starts:**
+  1. Words. Waiting on: proposed "Waiting on" (`waitingOnUserId`), "Next to act", "Whose turn"; not Owner, Responsible or Assignee (banned or taken), and "awaiting input" is already an agent session state. Field set: proposed "Field set", "Type fields", "Field rules"; not "Field layout" ("Layout" is a view's list, board, timeline or calendar), Property or Attribute (banned for custom fields). Answer: proposed "Answer" (`answerCommentId`), "Marked answer"; not "Accepted answer" (Accept is a banned synonym of Approve) and not "Reply" as a model (banned for comments).
+  2. Where a field set lives: per workspace type, or per project and type (custom fields belong to a project, ADR 0002 §7). What a new rule does to existing items that break it.
+  3. Who or what sets waiting-on besides a person: per-state defaults a team configures, review steps (2.8); and whether it may name the delegate's agent session once 6.3 exists (a session awaiting input reads as waiting on the assignee either way).
+  4. The marked answer and decision 53: deleting a comment marked as the answer is refused, or clears the mark. Which Done state the item moves to when its team has several. Whether Question is seeded for every new workspace (ADR 0006 open question 6 recommends Feature, Bug, Chore only).
+
 #### 2.5 Cycles, modules, templates and recurrence (M)
 - **Prompt:** "Add `Cycle` (time-boxed, per team, automatic rollover of unfinished items by a scheduled job), `Module` or milestone (a scoped group with a target date), project and item templates, and recurring items generated by a job. Each cycle page shows scope, completed, and a burn-up chart."
 
@@ -197,11 +231,30 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 
 #### 2.7 Search, inbox and My Work (M)
 - **Prompt:** "Add Postgres full-text search over items and comments with a tenant-leading index, searching encrypted description and comment bodies only as the search ADR called for by ADR 0002 section 11 decides, a notification inbox with per-event preferences and digests, mentions, and a My Work page (assigned, created, watching, due soon). Search lives inside the filter popover and the command palette."
+- **Owner decision, 2026-11-20 (Procore audit; decision 76).** My Work gains a section of the items waiting on me (2.4b's field), as a read of the shared list query like the other four. Whether the due-date reminders also go to the person an item waits on is decided when 2.7 starts; the assignee keeps getting them.
+- **Owner decision, 2026-11-20 (Procore audit; decision 79): distribution groups.** Named sets of members (guests once 8.4 exists), per workspace or per project, that a person adds to an item's watchers in one step, and that later features name as recipients: review steps (2.8), checklist records (4.5), automation notify actions (5.1), filed reports (7.4) and meeting minutes (7.6). Each member's notification preferences (this sub-phase) and project visibility still apply, re-checked at send time with the workspace-liveness check (`tests/guards/cross-tenant-recipient-liveness.test.ts`). The new tables follow the tenant-table rules (RLS, tenant-leading index, two-tenant test in `ISOLATION_TESTED`).
+  - ADR amendments it needs: an ADR 0006 row before the first model or label. Nothing in ADRs 0002 or 0003 changes: a group only notifies, it never assigns.
+  - Open questions, decided when it starts: the word (proposed "Recipient list", "Distribution list", "Audience"; not "Group", which is SCIM's word, "Team", which is taken, or "List" alone, a layout); whether adding a group to an item copies its members as watchers at that moment or follows the group as it changes; who manages workspace and project groups (`admin.manage`, `projects.edit`, or a key of their own).
+
+#### 2.8 Reviews (L)
+- **Source:** the Procore audit, ideas only (`docs/research/procore-audit.md`, top idea #5). No code, text or names taken.
+- **Prompt:** "Add review steps to work items. An item may carry an ordered list of steps. Each step names its reviewers (members, or a distribution group from 2.7), says whether all or any of them must respond, and has a due date in working days. While a step is open, the item waits on its reviewers who have not responded (2.4b's waiting-on); when the step completes, the next one opens, and after the last the item waits on its assignee again. A reviewer responds with one of two outcomes and an optional comment. A returned step closes the round and opens a new round of the same steps: the earlier round's steps and responses stay as they were, read-only, and nothing is rewound or deleted. Default steps per work item type, set by an admin, are copied onto an item when it is created. Only people respond: an agent never counts as a reviewer and never responds to a step; at most a delegate drafts a review comment as a proposal that a reviewer approves as their own. Every response is audited, every route is a literal `requirePermission`, and notifications go through the shared bell and email writers. Conditional steps (add a step when a field passes a value) wait for 5.1's conditions."
+- **Owner decision, 2026-11-20 (Procore audit; decision 80).** This sub-phase was added for review steps. It runs after 2.4b (waiting-on) and 2.7 (distribution groups), and does not hold up Phases 3, 5 or 6 (section 6). Review steps belong to work items: no table per kind of record (principle 3), and the assignee stays the one accountable person whatever a step says (ADR 0003 §1). It is the human counterpart of the proposal queue (6.2), not part of it: a proposal reviews an agent's change, a review step reviews a person's work.
+- **ADR amendments it needs before its first model** (none made yet):
+  - ADR 0002 §3 says "No reviewer gate in this ADR": amend it, or write a new ADR for reviews that §3 points to.
+  - ADR 0006 rows for the review step, the round and the two outcomes.
+  - The rule that an agent never counts as a reviewer is written into whichever ADR records reviews, beside ADR 0003's rule that agents propose.
+- **Open questions, decided when it starts:**
+  1. Words. Proposed "Review step" or "Sign-off step"; "Round" or "Revision"; outcomes "Approved for use" and "Returned", or "Cleared" and "Sent back". Not Approve, Edit and approve or Reject (proposals), not Accept or Decline (banned synonyms of Approve, and intake's verbs), not "Workflow" or "approval workflow" (rule 6). "Review" already names the proposal review page (6.2).
+  2. Whether an open step stops the item moving to a Done state (a gate), or only shows that it has not been reviewed.
+  3. Who may add, change or skip steps on one item, and whether an admin may close a step whose reviewers have left.
+  4. The working-day calendar before 3.1 brings working calendars (Monday to Friday until then?).
 
 **Hardening H2.**
 - Performance: seeded tenants at 10,000 and 100,000 items; list, board and search stay under an agreed response budget; no query in a loop; every list query has a backing index (port the index and query-shape guardrails).
 - Concurrency tests for reordering, key allocation and bulk updates under parallel writers.
-- A permission matrix test: every role against every work-item route, including guests limited to their projects.
+- A permission matrix test: every role against every work-item route, including guests limited to their projects, and the review-step routes once 2.8 lands.
+- A required field (2.4b) is refused by the usecase for an API caller that skips the form; an earlier review round (2.8) is never rewritten by a later one.
 - Drag and drop passes keyboard and screen-reader checks.
 - Public forms and email intake fuzzed for injection, oversized bodies and floods.
 - End-to-end tests run in isolated tenants; no shared mutable state between tests.
@@ -229,6 +282,7 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 #### 3.6 Analytics and forecasting (L)
 - **Source:** `bitovi/jira-auto-scheduler` (MIT) for the Monte Carlo approach.
 - **Prompt:** "Add analytics: cycle time, lead time, throughput, cumulative flow, burn-up. Add a forecasting module, pure and seeded, that runs Monte Carlo simulation over historical throughput to give a completion-date distribution for any scope, shown as dates at 50, 85 and 95 percent. Refuse to forecast with fewer than a stated minimum of completed items and say so. Add a configurable dashboard on the ported dashboard grid."
+- **Owner decision, 2026-11-20 (Procore audit; decision 76).** Analytics count the time items spent waiting on each party (2.4b's waiting-on): per person and, once 8.4 tags guests with their firm, per firm. It reads the field's recorded changes, never a guess from its current value.
 
 **Hardening H3.**
 - Property tests on the scheduler: cycles refused, results stable under input reordering, calendars correct across time zones and daylight-saving changes.
@@ -254,6 +308,16 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 - **Source:** `lib/storage/`; Uppy and tus.
 - **Prompt:** "Port the storage layer (S3 and local providers, signed URLs, antivirus scan) and add attachments on items, comments and pages with Uppy resumable uploads, previews for images and PDFs, and per-plan size limits."
 
+#### 4.5 Checklists (M)
+- **Source:** the Procore audit, ideas only (`docs/research/procore-audit.md`, top idea #6). No code, text or names taken.
+- **Prompt:** "Add checklists. A checklist definition is an ordered list of checks in sections; each check takes a result of pass, fail or not applicable, an optional note, and an optional evidence requirement (a file from 4.4). Running a definition against a project, or against one work item, creates a record of that run; changing the definition later never changes a past record. A failed check opens a work item linked back to the record and the check, and a check marked so cannot be saved as failed without one. A section may need a named person's sign-off before later sections open. A completed record is read-only, and a PDF of it goes to a distribution group (2.7) through the outbox. The new tables follow the tenant-table rules; notes are sanitised and, where they can hold personal data, encrypted through the manifest. An agent may later pre-fill results from evidence as proposals (Phase 7); a person completes the record."
+- **Owner decision, 2026-11-20 (Procore audit; decision 81).** This sub-phase was added for checklists, after 2.5 (templates), 2.7 (distribution groups) and 4.4 (files for evidence). Principle 3 holds: a checklist record is not a second kind of tracked work, and anything it asks someone to do is a work item. Uses beyond construction: release checklists, onboarding, QA passes, launch readiness.
+- **ADR amendments it needs before its first model** (none made yet): ADR 0006 rows for the definition, the check, its result, the record of a run and the sign-off. ADR 0002 is not changed while checks stay outside `WorkItem`; it is, if a check ever becomes a work item.
+- **Open questions, decided when it starts:**
+  1. Words. Proposed "Checklist", "Check", "Check result", "Checklist record" or "Walkthrough", "Sign-off point". Not "Checklist item" (banned for sub-item), not "Template" (2.5's project and item templates), not "Run" (an agent run's label) or "Execution" (automation's).
+  2. Whether a sign-off stores a drawn signature (personal data, under the encryption and PII rules) or a recorded acknowledgement by the signed-in person.
+  3. Definitions per workspace, per project, or both; the permission keys for defining, running and signing.
+
 **Hardening H4.**
 - A user who loses access is disconnected from open collaboration sessions.
 - Document and canvas size caps; websocket connection and message rate limits per tenant.
@@ -268,6 +332,7 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 - **Source:** `app-layer/automation`; `RuleBuilderModal`; React Flow; Paca web (Apache-2.0) for the graph builder.
 - **Prompt:** "Port the automation bus, rules, executions and action executor. Define the event contract for work items, cycles, comments, intake and integrations. Build a trigger, condition, action builder. Actions: set field, assign, comment, notify, create item, call webhook. Detect and stop rule loops with a per-chain depth limit."
 - **Owner decision, 2026-11-18** ("Add it in Phase 6"): 5.1 ships without an action that starts an agent run. Phase 6 adds it once the agent engine and its kill switch exist, in 6.3.
+- **Owner decision, 2026-11-20 (Procore audit; decisions 79 and 80).** The notify action can name a distribution group (2.7), with each member's preferences and project visibility re-checked at send time. Review steps (2.8) gain conditional steps through the builder's conditions: a step added when a field passes a value. An automation never responds to a review step.
 
 #### 5.2 Public API and webhooks (M)
 - **Source:** API-key auth, `webhook-headers.ts`, the audit-stream delivery pattern.
@@ -301,6 +366,7 @@ The inherited engine already does what agent frameworks sell. Adding Mastra, Lan
 #### 6.2 MCP server and proposals (L)
 - **Source:** `src/lib/mcp` transport, auth and registry; proposal queue usecases and UI.
 - **Prompt:** "Port the MCP server on the TypeScript SDK v2 and the 2026-07-28 specification. Write project-management tools: read tools for items, projects, cycles, docs, search and analytics; propose tools for creating and updating items, comments, plans and schedule changes. Port the proposal queue with approve, edit and reject, and its review page. Every tool carries an authorization declaration enforced by lint."
+- **Owner decision, 2026-11-20 (Procore audit; decision 77).** A proposal is checked against its type's field set (2.4b) when it is made: one that would leave a required field empty is refused at propose time, as the usecase would refuse it at approval.
 
 #### 6.3 Agents as delegates (L)
 - **Source:** Paperclip (MIT) for checkout locks, budgets and heartbeat; Linear's agent guidelines for the interaction model.
@@ -343,6 +409,10 @@ Each feature ships as a skill with an evaluation set, writes only proposals, and
 
 #### 7.4 Digests and risk signals (M)
 - **Prompt:** "Add status digests: a deterministic query collects what changed, what slipped and what is blocked for a project and period; a model writes the summary from those facts only, with a link per claim. Add risk signals computed in code (ageing items, blocked chains on the critical path, scope growth, over-allocation), which the digest explains."
+- **Owner decision, 2026-11-20 (Procore audit; decision 82): periodic structured reports.** A project can have a report definition (daily, weekly or per cycle) with sections of three kinds: sections computed by code (completed, started, blocked, slipped, time logged from 3.4, items opened from checklists in 4.5), sections people fill, and sections guests contribute once 8.4 exists. An agent drafts the free-text summary from the computed sections only, with a link per claim, and flags missing or conflicting entries, as a proposal. A person finalises the report, which files a read-only record and sends it to a distribution group (2.7). This turns the digest into a filed record a person answers for (principle 4): the model never states a number the code did not compute, and H7's groundedness check applies.
+  - The filed record itself, without the agent, may land earlier, after 3.4 and 3.6, as its own pull request; decide when 7.4 starts.
+  - ADR amendments it needs: an ADR 0006 row before the first model or label. "Report" is a banned synonym for View, so either pick another word or amend View's row to free it.
+  - Open questions, decided when it starts: the word (proposed "Status report", if View's row is amended; otherwise "Briefing" or "Bulletin"; not "Digest", which already names the notification digest, and not "Template" for the definition); whether a filed record can be corrected by a new version or never changes; who may finalise (the project's admins, or a named person per definition).
 
 #### 7.5 Forecast explanation and rescheduling (L)
 - **Source:** Timefold Solver Community (Apache-2.0) as an optional sidecar.
@@ -351,10 +421,19 @@ Each feature ships as a skill with an evaluation set, writes only proposals, and
 #### 7.6 Meetings to actions (M)
 - **Source:** Meetily and anarlog (MIT) for the pipeline shape.
 - **Prompt:** "Add meeting notes: upload or paste a transcript, get decisions and action items as proposals linked to existing items where they match. Transcription from audio is a later, separately decided step."
+- **Owner decision, 2026-11-20 (Procore audit; decision 83): meeting series.** A meeting record belongs to a series, with an agenda whose points link to work items. Points left open carry into the series' next meeting automatically. Minutes are kept per meeting and sent to a distribution group (2.7). New actions become work items, or, from a transcript, proposals (this sub-phase's prompt), so a transcript's proposals have a meeting to belong to and a history.
+  - The meeting record, agenda and carry-forward may land first as their own pull request, after 4.1 (pages) and 2.7, ahead of the transcript work; decide when 7.6 starts. Transcript text is new encrypted content; audio stays deferred (9.3).
+  - ADR amendments it needs: ADR 0006 rows before the first model or label. Principle 3 holds: a meeting is a record, and the work it creates is work items.
+  - Open questions, decided when it starts: the words (proposed "Meeting", "Meeting series", "Agenda point", "Minutes"; not "Agenda item", since "item" is a work item's short label, not "Note" or "Meeting notes" as a model, since "Note" is banned for pages and comments, and not "Session" unqualified); whether minutes are a page (4.1) or a field of the meeting; who may edit minutes once sent.
 
 #### 7.7 Islestone inside other assistants (M)
 - **Source:** MCP Apps (`modelcontextprotocol/ext-apps`).
 - **Prompt:** "Publish Islestone's board and item views as MCP Apps so a customer's assistant can render them interactively, and document how an external coding agent takes a delegated item through the MCP server: checkout, activity updates, linked pull request, hand back for review."
+
+#### 7.8 Drafted answers (M)
+- **Source:** the Procore audit, ideas only (`docs/research/procore-audit.md`, top idea #3, its agent part). No code, text or names taken.
+- **Prompt:** "Add answer drafting for Question items (2.4b). When a question is created or delegated, the agent searches the knowledge index (6.5) and drafts an answer that cites the item, page and file ids it relied on, submitted as a comment proposal. Approving it posts the comment as the approver's own reply; marking a comment as the answer stays a person's act and is never proposed. A draft with a claim that cites nothing fails the groundedness check (H7). Starting the agent on new questions uses 6.3's invocation by automation. Such a session was not started by the item's assignee, so it proposes at every rung (ADR 0003, decision 15). Ship the skill with an evaluation set measuring citation precision and the share of drafts approved without edits."
+- **Owner decision, 2026-11-20 (Procore audit; decision 78).** This sub-phase was added for the agent part of questions. It needs 2.4b, 6.3 and 6.5. ADR 0003 holds unchanged: the assignee stays accountable for the answer, and the agent only proposes. Needs no ADR amendment beyond 2.4b's answer row.
 
 **Hardening H7.**
 - Each skill has a minimum evaluation score that gates release, and the suite runs on every change to its text or tools.
@@ -377,6 +456,13 @@ Each feature ships as a skill with an evaluation set, writes only proposals, and
 
 #### 8.4 Sharing and guests (M)
 - **Prompt:** "Add project-level roles, guest access limited to named projects, private projects, and public read-only links for roadmaps and pages with expiry and revocation."
+- **Owner decision, 2026-11-20 (Procore audit; decision 84).** Three additions for outside people:
+  - **Project roles per area.** For each area (work items, pages, files, canvas, reports), a level of none, read, contribute or manage, chosen when a guest is invited to a project. Build them on the `PermissionSet` and the `TenantCustomRole` patterns; no parallel system of permission templates.
+  - **A grantable subset**: the project roles a project's admins may hand out, as `ASSIGNABLE_TENANT_ROLES` limits the workspace roles a writer may grant.
+  - **The guest's firm**: a tag on a guest naming the outside firm they belong to, so an item can wait on that firm (2.4b) and analytics and reports can group by it (3.6, 7.4).
+  - `visibleProjects` stops returning none for GUEST here, and H2's permission matrix gains the project roles. The assignee rule is unchanged: a guest is assigned only items in projects they can access (ADR 0003 §1).
+  - ADR amendments it needs: ADR 0006 rows for the project role, the grantable subset and the firm, before the first model or label.
+  - Open questions, decided when it starts: the words. For the firm, proposed "Firm", "Affiliation" or "Partner"; not "Company", "Account" or "Enterprise" (banned for organization), "Organization" (taken), "Collaborator" (banned for member), "Team" (taken) or "Group" (SCIM's). For project roles, proposed "Project role" and "Grantable roles"; not "Permission template" ("Template" is 2.5's, and ADR 0006 keeps "Permissions" out of identifiers), "Access level" or "Permission level" (banned for role). Also: whether a firm is a workspace-level record shared across projects, and whether members (not only guests) can carry one.
 
 #### 8.5 Reach (M)
 - **Prompt:** "Make the product installable as a PWA with a responsive mobile layout for inbox, My Work, item detail and quick capture; complete the accessibility audit to WCAG 2.2 AA; add a second locale to prove the i18n path."
@@ -417,6 +503,11 @@ Each feature ships as a skill with an evaluation set, writes only proposals, and
 - Phase 6 needs Phase 2 and sub-phase 2.7; Phase 7 needs Phases 3 and 6.
 - Phase 8 sub-phases 8.1 to 8.4 can start once Phase 2 is done.
 - A usable first release is Phases 0 to 2 plus 6.1 to 6.4 and 7.1: a work tracker with a planning agent.
+- The sub-phases added on 2026-11-20 from the Procore audit (decisions 76 to 84, section 2.6):
+  - Inside Phase 2: 2.4b runs after 2.5 and before 2.7, and 2.8 after 2.4b and 2.7. 2.4b follows 2.5 despite its number, because its Question template uses 2.5's item templates.
+  - 2.8 (reviews) does not hold up Phases 3, 5 or 6 and is not needed for the first release: "Phase 2 must finish" above means 2.1 to 2.7. Its conditional steps wait for 5.1.
+  - 4.5 (checklists) needs 2.5, 2.7 and 4.4.
+  - 7.8 (drafted answers) needs 2.4b, 6.3 and 6.5. The additions to 7.4 and 7.6 may land their records earlier, as each says.
 
 ## 7. Completeness review
 
@@ -426,7 +517,7 @@ Checked against the brief and against what a project-management product needs.
 |---|---|
 | Research on portable open-source repositories | Section 2, with port, inspiration and avoid verdicts |
 | Reuse of the inflect-compliance UI, ticketing, tldraw and agent engines | 1.2, 2.1 to 2.3, 4.2, 6.1 to 6.2 |
-| Phases and sub-phases with a prompt each | Section 5: 10 phases, 55 sub-phases |
+| Phases and sub-phases with a prompt each | Section 5: 10 phases, 59 sub-phases (2.4b, 2.8, 4.5 and 7.8 added on 2026-11-20) |
 | Hardening per phase | H0 to H9 |
 | Security and tenancy | 1.3 to 1.5, every hardening gate |
 | Core tracker features: hierarchy, views, custom fields, cycles, intake, search | Phase 2 |
@@ -436,6 +527,7 @@ Checked against the brief and against what a project-management product needs.
 | Agent platform and AI features | Phases 6 and 7 |
 | Billing, onboarding, enterprise, sharing, mobile, docs | Phase 8 |
 | Delivery, environments, launch | 1.8, Phase 9 |
+| Ideas adopted from the Procore audit (2026-11-20) | Section 2.6: 2.4b, 2.7, 2.8, 3.6, 4.5, 5.1, 6.2, 7.4, 7.6, 7.8, 8.4 |
 
 Gaps found in review and how they were closed:
 
