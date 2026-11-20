@@ -27,6 +27,7 @@ jest.mock('next/navigation', () => ({
 
 import { stateColumns } from '@/components/work-items/board/board-model';
 import { WorkItemBoard } from '@/components/work-items/board/WorkItemBoard';
+import { useProjectCustomFields } from '@/components/work-items/data/use-custom-fields';
 import { CustomFieldsManager } from '@/components/work-items/fields/CustomFieldsManager';
 import { WorkItemDetail } from '@/components/work-items/WorkItemDetail';
 import { WorkItemsView } from '@/components/work-items/WorkItemsView';
@@ -269,6 +270,32 @@ describe('the field manager', () => {
         expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ name: 'Stage', type: 'SELECT', options: [{ name: 'Alpha' }, { name: 'Beta' }] });
         fireEvent.click(within(dialog).getByRole('button', { name: 'Archive Size' }));
         await waitFor(() => expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ archived: true }));
+    });
+
+    it("refreshes the views' list of the project's fields after a write, so a reader mounted before it (the create dialog) never hands the detail a stale list", async () => {
+        let fields = [managed(SIZE)];
+        installFetch({
+            ['GET /projects/' + PROJECT + '/custom-fields']: () => ({ body: fields }),
+            ['POST /projects/' + PROJECT + '/custom-fields']: () => {
+                fields = [managed(SIZE), managed(STAGE)];
+                return { status: 201, body: managed(STAGE) };
+            },
+        });
+        function Reader() {
+            const live = useProjectCustomFields(PROJECT);
+            return <p role="status" aria-label="Fields the views read">{live.map((f) => f.name).join(',')}</p>;
+        }
+        renderWorkspace(
+            <>
+                <Reader />
+                <CustomFieldsManager projectId={PROJECT} projectName="Islands" open onOpenChange={jest.fn()} />
+            </>,
+        );
+        await waitFor(() => expect(screen.getByRole('status', { name: 'Fields the views read', hidden: true })).toHaveTextContent('Size'));
+        const dialog = await screen.findByRole('dialog', { name: 'Fields of Islands' });
+        fireEvent.change(within(dialog).getByLabelText(/^Name(?! of)/), { target: { value: 'Stage' } });
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Add field' }));
+        await waitFor(() => expect(screen.getByRole('status', { name: 'Fields the views read', hidden: true })).toHaveTextContent('Size,Stage'));
     });
 });
 

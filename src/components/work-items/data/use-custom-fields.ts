@@ -5,12 +5,17 @@
  * 2.4): `GET /projects/:id/custom-fields?includeArchived=1` and the writes,
  * each followed by a fresh read. The views render with the server page's
  * configuration, so a change here asks the page to refresh (`router.refresh`)
- * when the manager closes.
+ * when the manager closes. Every write also revalidates the views' own read
+ * of the project's live fields (`useProjectCustomFields`, the key the detail,
+ * the create dialog and the accept dialog share): a reader mounted before the
+ * write (the create dialog on the project page) would otherwise hand a stale
+ * list to the next reader within SWR's deduping window.
  *
  * Written fresh for Islestone.
  */
 import { useTranslations } from 'next-intl';
 import { useCallback, useMemo } from 'react';
+import { useSWRConfig } from 'swr';
 
 import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { ApiClientError, apiSend } from '@/lib/data/api-client';
@@ -44,19 +49,24 @@ export function useCustomFields(projectId: string, enabled = true) {
     const toast = useToast();
     const triggerUndo = useToastWithUndo();
     const t = useTranslations('workItems.customFields');
+    const { mutate: mutateKey } = useSWRConfig();
+    /** The manager's own list (archived included) and the views' list of live fields. */
+    const refresh = useCallback(async () => {
+        await Promise.all([mutate(), mutateKey(apiUrl(`/projects/${projectId}/custom-fields`))]);
+    }, [mutate, mutateKey, apiUrl, projectId]);
 
     const run = useCallback(
         async <T,>(method: 'POST' | 'PATCH' | 'DELETE', sub: string, body?: unknown): Promise<T | null> => {
             try {
                 const out = await apiSend<T>(method, apiUrl(`/projects/${projectId}/custom-fields${sub}`), body);
-                await mutate();
+                await refresh();
                 return out;
             } catch (err) {
                 toast.error(err instanceof ApiClientError && err.reason ? err.reason : t('failed'));
                 return null;
             }
         },
-        [apiUrl, projectId, mutate, toast, t],
+        [apiUrl, projectId, refresh, toast, t],
     );
 
     const removeOption = useCallback(
@@ -77,7 +87,7 @@ export function useCustomFields(projectId: string, enabled = true) {
                     void mutate(before, { revalidate: false });
                 },
                 onCommit: () => {
-                    void mutate();
+                    void refresh();
                 },
                 onError: (err) => {
                     void mutate(before, { revalidate: true });
@@ -85,7 +95,7 @@ export function useCustomFields(projectId: string, enabled = true) {
                 },
             });
         },
-        [mutate, triggerUndo, t, apiUrl, projectId, toast],
+        [mutate, refresh, triggerUndo, t, apiUrl, projectId, toast],
     );
 
     return useMemo(
