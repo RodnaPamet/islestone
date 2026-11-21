@@ -33,7 +33,7 @@ export function savedViewsPath(projectId: string | null | undefined): string {
 export interface SavedViewInput {
     name: string;
     visibility: 'PERSONAL' | 'SHARED';
-    layout: 'LIST' | 'BOARD';
+    layout: 'LIST' | 'BOARD' | 'TIMELINE';
     config: SavedViewData['config'];
 }
 

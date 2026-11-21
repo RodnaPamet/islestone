@@ -1823,7 +1823,7 @@ The authenticated application shell (sidebar, top chrome, mobile drawer), the th
 | `tests/guards/mobile-readiness.test.ts` | same | COPY+EDIT | The read bound to the `viewport` declaration. |
 | `tests/e2e/app-shell.spec.ts` | `tests/e2e/tenant-switcher.spec.ts`, `theme-toggle.spec.ts`, `responsive.spec.ts`, `a11y.spec.ts` | PATTERN | Pattern only, no code copied: a fresh spec over the shell, the palette and the switcher. |
 | `tests/rendered/app-shell.test.tsx`, `page-shells-a11y.test.tsx`, `tenant-context-provider.test.tsx`, `shell-placeholder-pages.test.tsx`; `tests/unit/home-page-redirect.test.ts`; `tests/integration/workspace-app-layout-gate.test.ts` | — | Islestone-owned | The shell end to end with jest-axe; the page shells under axe; the provider; the placeholder pages and the Settings gate; the root redirect; the layout's two-workspace gate. |
-| `__mocks__/next-intl.js` | same | COPY+EDIT | `relativeTime` formats through `Intl.RelativeTimeFormat` rather than stringifying the date. |
+| `__mocks__/next-intl.js` | same | COPY+EDIT | `relativeTime` formats through `Intl.RelativeTimeFormat` rather than stringifying the date; ICU `plural` arguments are formatted (an exact `=n` branch, `one`, `other`, `#` through `Intl.NumberFormat`) rather than rendered as their source (3.1b). |
 
 </details>
 

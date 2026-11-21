@@ -109,6 +109,8 @@ const CALLS: Call[] = [
     { file: `${W}/route.ts`, method: 'POST', path: () => '/work-items', params: (i) => P(i), body: (i) => ({ projectId: i.project, typeId: i.type, title: 'api created' }), write: true, key: 'work_items.create' },
     { file: `${W}/deleted/route.ts`, method: 'GET', path: () => '/work-items/deleted', params: (i) => P(i), write: true, key: 'work_items.delete' },
     { file: `${W}/metrics/route.ts`, method: 'GET', path: () => '/work-items/metrics', params: (i) => P(i), itemList: true, write: false, key: 'work_items.view' },
+    // Roadmap 3.1b: the timeline (the list's filters, the engine's answer).
+    { file: `${W}/timeline/route.ts`, method: 'GET', path: (i) => `/work-items/timeline?projectId=${i.project}`, params: (i) => P(i), itemList: true, write: false, key: 'work_items.view' },
     { file: `${W}/by-key/[key]/route.ts`, method: 'GET', path: (i) => `/work-items/by-key/${i.key}`, params: (i) => P(i, { key: i.key }), itemRead: true, write: false, key: 'work_items.view' },
     { file: `${W}/bulk/assign/route.ts`, method: 'POST', path: () => '/work-items/bulk/assign', params: (i) => P(i), body: (i) => ({ workItemIds: [i.other], assigneeId: null }), write: true, key: 'work_items.assign' },
     { file: `${W}/bulk/state/route.ts`, method: 'POST', path: () => '/work-items/bulk/state', params: (i) => P(i), body: (i) => ({ workItemIds: [i.other], stateCategory: 'STARTED' }), write: true, key: 'work_items.edit' },
@@ -402,6 +404,8 @@ describeFn('the work-item API', () => {
         expect(list).toMatchObject({ status: 200, body: { items: [] } });
         const metrics = await call('GUEST', CALLS.find((c) => c.file.endsWith('metrics/route.ts'))!);
         expect(metrics.body).toMatchObject({ total: 0 });
+        const timeline = await call('GUEST', CALLS.find((c) => c.file.endsWith('timeline/route.ts'))!);
+        expect(timeline).toMatchObject({ status: 200, body: { rows: [], edges: [] } });
         const projects = await call('GUEST', CALLS.find((c) => c.file.endsWith('projects/route.ts') && c.method === 'GET')!);
         expect(projects.body).toEqual([]);
         const sub = await call('OWNER', CALLS.find((c) => c.file.endsWith('sub-items/route.ts'))!);

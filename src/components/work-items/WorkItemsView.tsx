@@ -63,6 +63,7 @@ import { AssigneePicker } from './pickers';
 import { useWorkItemColumnChoices, useWorkItemColumns } from './use-work-item-columns';
 import { useListFiltersFromContext, useWorkItemFilterContext } from './use-work-item-filter-context';
 import { WorkItemSheet } from './WorkItemSheet';
+import { DEFAULT_TIMELINE_SETTINGS, TimelineView, type TimelineMode, type TimelineSettings } from './timeline/TimelineView';
 
 export interface WorkItemsViewProps {
     /**
@@ -238,6 +239,9 @@ function WorkItemsViewBody({
     const [layout, setLayout] = useLocalStorage<WorkItemLayout>(uiStorageKey('work-items', 'layout', viewKey), 'list');
     const [storedLaneBy, setLaneBy] = useLocalStorage<LaneBy>(uiStorageKey('work-items', 'lanes', viewKey), 'none');
     const [storedSort, setSort] = useLocalStorage<string>(uiStorageKey('work-items', 'sort', viewKey), 'manual');
+    // The timeline's settings per view (3.1b), and Chart or Table per viewer (decision 203).
+    const [timelineSettings, setTimelineSettings] = useLocalStorage<TimelineSettings>(uiStorageKey('work-items', 'timeline', viewKey), DEFAULT_TIMELINE_SETTINGS);
+    const [timelineMode, setTimelineMode] = useLocalStorage<TimelineMode>(uiStorageKey('work-items', 'timeline-mode'), 'chart');
     const [sheetId, setSheetId] = useState<string | null>(null);
     const [creating, setCreating] = useState<{ stateId?: string } | null>(null);
     const [showDeleted, setShowDeleted] = useState(false);
@@ -260,21 +264,28 @@ function WorkItemsViewBody({
     const laneId = laneFieldId(storedLaneBy);
     const laneBy: LaneBy = laneId && !laneFields.some((f) => f.id === laneId) ? 'none' : storedLaneBy;
 
+    // A cycle's page shades the cycle's days on the timeline (3.1b).
+    const cycleRange = useMemo(() => {
+        const cycle = scope.cycleId ? (config.cycles ?? []).find((c) => c.id === scope.cycleId) : undefined;
+        return cycle ? { start: cycle.startsOn, end: cycle.endsOn } : undefined;
+    }, [config, scope.cycleId]);
+
     const columnChoices = useWorkItemColumnChoices();
     const columnsGear = useColumnsDropdown({ storageKey: uiStorageKey('col-vis', `work-items:${viewKey}`), columns: columnChoices });
 
     const snapshot = useCallback(
         () => ({
-            layout: layout === 'board' ? ('BOARD' as const) : ('LIST' as const),
+            layout: layout === 'board' ? ('BOARD' as const) : layout === 'timeline' ? ('TIMELINE' as const) : ('LIST' as const),
             config: {
                 filters: Object.fromEntries(Object.entries(filterApi.state).filter(([, v]) => v.length > 0)),
                 ...(filterApi.search ? { q: filterApi.search } : {}),
                 sort,
                 laneBy,
                 columns: columnChoices.filter((c) => columnsGear.columnVisibility[c.id] !== false).map((c) => c.id),
+                timeline: timelineSettings,
             },
         }),
-        [layout, filterApi.state, filterApi.search, sort, laneBy, columnChoices, columnsGear.columnVisibility],
+        [layout, filterApi.state, filterApi.search, sort, laneBy, columnChoices, columnsGear.columnVisibility, timelineSettings],
     );
 
     const applyView = useCallback(
@@ -282,7 +293,8 @@ function WorkItemsViewBody({
             filterApi.clearAll();
             for (const [key, values] of Object.entries(view.config.filters ?? {})) if (values.length) filterApi.add(key, values);
             filterApi.setSearch(view.config.q ?? '');
-            setLayout(view.layout === 'BOARD' ? 'board' : 'list');
+            setLayout(view.layout === 'BOARD' ? 'board' : view.layout === 'TIMELINE' ? 'timeline' : 'list');
+            if (view.config.timeline) setTimelineSettings(view.config.timeline);
             setLaneBy((view.config.laneBy as LaneBy) || 'none');
             setSort(view.config.sort || 'manual');
             if (view.config.columns) {
@@ -292,7 +304,7 @@ function WorkItemsViewBody({
                 columnsGear.setColumnVisibility(map);
             }
         },
-        [filterApi, setLayout, setLaneBy, setSort, columnChoices, columnsGear],
+        [filterApi, setLayout, setLaneBy, setSort, columnChoices, columnsGear, setTimelineSettings],
     );
 
     // `?view=<id>` (the Views page's links) applies that view once.
@@ -403,6 +415,32 @@ function WorkItemsViewBody({
                     </>
                 );
                 if (showDeleted) return <DeletedView onBack={() => setShowDeleted(false)} />;
+                if (layout === 'timeline') {
+                    return (
+                        <ListPageShell>
+                            <ListPageShell.Header>
+                                <PageHeader title={header.title} description={header.description} actions={actions} />
+                            </ListPageShell.Header>
+                            <ListPageShell.Filters className="space-y-section">
+                                {summary}
+                                {toolbar(createButton)}
+                            </ListPageShell.Filters>
+                            <ListPageShell.Body>
+                                <TimelineView
+                                    filters={filters}
+                                    scopeProjectId={scope.projectId}
+                                    settings={{ ...DEFAULT_TIMELINE_SETTINGS, ...timelineSettings }}
+                                    onSettingsChange={setTimelineSettings}
+                                    mode={timelineMode === 'table' ? 'table' : 'chart'}
+                                    onModeChange={setTimelineMode}
+                                    onOpen={(id) => setSheetId(id)}
+                                    highlightRange={cycleRange}
+                                />
+                            </ListPageShell.Body>
+                            {sheet}
+                        </ListPageShell>
+                    );
+                }
                 if (layout === 'board') {
                     const columns = scope.teamId ? stateColumns(config.statesOfTeam(scope.teamId)) : categoryColumns();
                     return (

@@ -101,6 +101,9 @@ const ESM_PACKAGES = [
     // dynamic `import()`, which Jest's CommonJS runtime refuses without
     // `--experimental-vm-modules`; compiled, the import becomes a require.
     '@react-email/render',
+    // The timeline widget (3.1b): SVAR React Gantt's MIT core and the
+    // packages it reaches ship ESM only.
+    '@svar-ui/[^/]+',
 ];
 
 const moduleNameMapper = {
@@ -120,6 +123,10 @@ const moduleNameMapper = {
     // NumberFlow animates through Web Animations and a custom element jsdom
     // only partly supports; the mock renders the settled Intl.NumberFormat text.
     '^@number-flow/react$': '<rootDir>/tests/rendered/number-flow-mock.tsx',
+    // SVAR's React packages declare a `require` entry (`dist/index.cjs.js`)
+    // that is not in the published files; Jest's CommonJS resolver takes it,
+    // so the ES build is mapped directly (and compiled, ESM_PACKAGES).
+    '^@svar-ui/(react-[a-z]+)$': '<rootDir>/node_modules/@svar-ui/$1/dist/index.es.js',
     '\\.css$': '<rootDir>/tests/mocks/style.ts',
 };
 

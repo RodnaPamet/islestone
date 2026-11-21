@@ -20,6 +20,17 @@ const Name = z.string().trim().min(1).max(64);
 /** A filter key the list reads: a built-in facet or `cf.<fieldId>`. */
 const FilterKey = z.string().regex(/^(stateCategory|stateId|priority|typeId|labelId|assigneeId|projectId|cycleId|milestoneId|waitingOnId|reviewerId|due|cf\.[A-Za-z0-9_-]{1,64})$/, 'Unknown filter.');
 
+/** Timeline zoom levels (3.1b). */
+export const TIMELINE_ZOOMS = ['day', 'week', 'month', 'quarter'] as const;
+
+export const TimelineConfigSchema = z
+    .object({
+        zoom: z.enum(TIMELINE_ZOOMS),
+        showCriticalPath: z.boolean(),
+        showNoDates: z.boolean(),
+    })
+    .strict();
+
 export const SavedViewConfigSchema = z
     .object({
         /** The filter system's state: key → selected values. */
@@ -43,13 +54,15 @@ export const SavedViewConfigSchema = z
             .default('none'),
         /** The list's visible column ids, in order. */
         columns: z.array(z.string().min(1).max(70)).max(60).optional(),
+        /** The timeline's settings (3.1b): its zoom, the critical path and the "No dates" list. */
+        timeline: TimelineConfigSchema.optional(),
     })
     .strict();
 
 export type SavedViewConfig = z.infer<typeof SavedViewConfigSchema>;
 
-/** Layouts accepted now: TIMELINE and CALENDAR arrive with 3.1 and 3.3. */
-export const SAVED_VIEW_LAYOUTS = ['LIST', 'BOARD'] as const;
+/** Layouts accepted now: TIMELINE since 3.1b; CALENDAR arrives with 3.3. */
+export const SAVED_VIEW_LAYOUTS = ['LIST', 'BOARD', 'TIMELINE'] as const;
 
 export const CreateSavedViewSchema = z
     .object({
