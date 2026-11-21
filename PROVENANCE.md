@@ -2163,6 +2163,18 @@ Built by [`docs/porting/maps/3.1.md`](docs/porting/maps/3.1.md) (its 3.1c part) 
 | `src/lib/work-items/reschedule.ts`, the 3.1c changes to `src/lib/work-items/timeline.ts`, `work-item.ts` (`rescheduleWorkItems`), `WorkItemRepository.ts` (`setDatesOfLocked`), `WorkItemRelationRepository.ts` (`liveBlocksReach`), `src/lib/schemas/work-item.ts`, `route-permissions.ts`, the `work-items/bulk/dates` route; `src/components/work-items/timeline/` (`ChangeDatesDialog.tsx`, `TimelineDependencies.tsx`, and the 3.1c changes to `TimelineView.tsx`, `TimelineScheduleTable.tsx`, `timeline-model.ts`, `timeline.css`), `data/use-timeline-writes.ts`, the 3.1c changes to `work-item-cache.ts` and `WorkItemsView.tsx` | ADR 0010, the 3.1 map | — | — | Islestone-owned | Written fresh. |
 | `tests/unit/work-items/reschedule.test.ts`, `tests/rendered/timeline-changes.test.tsx`, `tests/rendered/timeline-chart-changes.test.tsx`, `tests/integration/work-item-reschedule.test.ts`, `tests/e2e/timeline-changes.spec.ts` | — | — | — | Islestone-owned | Written fresh. |
 
+## Hardening H2a: the scale seed and the plan checks
+
+Built by [`docs/porting/maps/H2.md`](docs/porting/maps/H2.md) (parts 1.1 to 1.3 and 1.7) under owner decisions 166, 168 and 170 to 172; see [`docs/performance.md`](docs/performance.md). **Nothing was copied.** inflect-compliance's plan test was read for its method, and its staging seed for what a seeder that nobody runs becomes.
+
+| File | Source | Commit | Licence | Action | Changes |
+|---|---|---|---|---|---|
+| `tests/perf/plans.test.ts`, `tests/perf/plan-capture.ts` (seed a realistic skew, `ANALYZE`, ask the planner, assert the plan) | inflect-compliance `tests/integration/task-tenant-index-plan.test.ts` | `5528464fc54a8681956f3b9ce23ca9c075f0420e` | BUSL-1.1 | PATTERN | Pattern only, no code copied: written fresh over a seeded database with `auto_explain` capturing the real repository calls under row-level security, a registry of named queries and a forcing guard. |
+| `scripts/seed-scale/` (a seeder run on every pull request so it cannot rot) | inflect-compliance `scripts/seed-staging.ts` (its header) | `5528464fc54a8681956f3b9ce23ca9c075f0420e` | BUSL-1.1 | PATTERN | Pattern only, no code copied: the lesson only. |
+| `scripts/seed-scale/random.ts` (cyrb128 to seed sfc32) | the public-domain cyrb128 hash and sfc32 generator (PractRand's Chris Doty-Humphrey for sfc32) | — | public domain | PATTERN | Written fresh from the algorithms. |
+| `scripts/seed-scale/` (the rest), `scripts/ci-postgres.sh` (`--pg-stat-statements`, `CI_PG_PREFIX`), `SearchVectorRepository.insertBulkForSeed`, `WorkItemRepository.lockItemsOfPerson` (the `UNION`), migration `20261213120000_list_scale_indexes`, the `perf` Jest project and its setup files, the `Performance (10k)` job in `.github/workflows/ci.yml` | — | — | — | Islestone-owned | Written fresh. |
+| `tests/perf/` (the rest), `tests/guards/plan-checked-queries-coverage.test.ts`, the H2a additions to `tests/guards/search-vector-write-seam.test.ts` and `schema-index-coverage.test.ts`, `tests/unit/perf/plan-capture.test.ts`, `tests/unit/seed-scale/seed-scale.test.ts`, `tests/integration/seed-scale.test.ts` | — | — | — | Islestone-owned | Written fresh. |
+
 ## Adopted
 
 | Component | Source (repository and path) | Commit | Licence | What was taken | Changes |
