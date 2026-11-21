@@ -154,6 +154,80 @@ jobs:
       - run: npm run db:check-schema-drift
       - run: npm run test:integration -- --ci
 
+  # Hardening H2a (owner decisions 166, 168, 170 to 172; docs/performance.md):
+  # the deterministic performance checks on the 10k seed, blocking. The seed
+  # (scripts/seed-scale/) is cached as a dump keyed on everything it is built
+  # from; a miss seeds it (about two minutes) and saves the dump, a hit
+  # restores it. Either way it is verified before anything is measured. Then
+  # the plan checks (tests/perf/plans.test.ts) and the statements per request
+  # (tests/perf/statements.test.ts, pg_stat_statements). Latency is H2b's.
+  performance:
+    name: Performance (10k)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      # The usecases go through PgBouncer as production does; the bulk writer,
+      # the verification and the plan checks connect directly.
+      DATABASE_URL: postgresql://islestone:islestone_ci@127.0.0.1:6432/islestone_perf
+      DIRECT_DATABASE_URL: postgresql://islestone:islestone_ci@127.0.0.1:5432/islestone_perf
+      # The app's env module validates these; throwaway values (the seeder
+      # signs nobody in).
+      AUTH_SECRET: ci-perf-throwaway-secret-not-for-production # pragma: allowlist secret
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3100
+      LOG_LEVEL: warn
+      PERF_SHAPE: 10k
+      PERF_REPORT_DIR: perf-report
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Build and start Postgres (pg_stat_statements) and PgBouncer (scripts/ci-postgres.sh)
+        run: scripts/ci-postgres.sh islestone_perf --pgbouncer --pg-stat-statements
+      - name: Restore the cached 10k seed
+        id: seed-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: .perf-cache/seed-10k.dump
+          key: perf-seed-10k-${{ hashFiles('prisma/migrations/**', 'scripts/seed-scale/**', 'deploy/postgres/**') }}
+      - name: Restore the dump
+        if: steps.seed-cache.outputs.cache-hit == 'true'
+        run: scripts/seed-scale/cache.sh restore islestone_perf .perf-cache/seed-10k.dump
+      - name: Seed the 10k shape and dump it
+        if: steps.seed-cache.outputs.cache-hit != 'true'
+        run: |
+          npm run migrate:deploy
+          npm run seed:scale -- --shape 10k
+          scripts/seed-scale/cache.sh save islestone_perf .perf-cache/seed-10k.dump
+      - name: Save the dump
+        if: steps.seed-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .perf-cache/seed-10k.dump
+          key: ${{ steps.seed-cache.outputs.cache-primary-key }}
+      # A fresh seed verified itself above; a restored one is verified here.
+      - name: Verify the restored seed
+        if: steps.seed-cache.outputs.cache-hit == 'true'
+        run: npm run seed:scale -- --shape 10k --verify-only
+      - name: Install pg_stat_statements in the seeded database
+        run: docker exec islestone-ci-postgres psql -q -U islestone -d islestone_perf -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements'
+      - name: Plan checks and statements per request (blocking)
+        run: npm run test:perf -- --ci
+      - name: Upload the performance report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-report-10k
+          path: perf-report
+          if-no-files-found: ignore
+          retention-days: 30
+
   licence:
     name: Licence
     runs-on: ubuntu-24.04
