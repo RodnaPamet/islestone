@@ -30,6 +30,8 @@
     "ui:verify": "node scripts/ui-drift.mjs verify",
     "ui:mirror": "node scripts/ui-mirror.mjs verify",
     "test:integration": "jest --selectProjects integration --runInBand",
+    "test:perf": "jest --selectProjects perf --runInBand",
+    "seed:scale": "tsx scripts/seed-scale/index.ts",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

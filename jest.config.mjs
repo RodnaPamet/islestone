@@ -4,8 +4,11 @@
  *   node         tests/unit, tests/guards    route handlers, pure logic, source guards
  *   jsdom        tests/rendered              React components through Testing Library
  *   integration  tests/integration           against a real Postgres (`npm run test:integration`)
+ *   perf         tests/perf                  against the SEEDED database (`npm run test:perf`, H2a)
  *
  * `npm test` selects `node` and `jsdom` only, so it needs no database. The
+ * perf project (Hardening H2a, docs/performance.md) needs a database seeded by
+ * `scripts/seed-scale/` and runs only when selected. The
  * integration project applies the migrations once (globalSetup), points the
  * app's DATABASE_URL at the test database before any suite loads (setupFiles),
  * and runs in band: suites share one database and reset it.
@@ -183,6 +186,15 @@ const config = {
             // (real database round trips, advisory-lock waits, a cold Prisma
             // client). Not `testTimeout`: Jest ignores it inside a project.
             setupFilesAfterEnv: ['<rootDir>/tests/setup/integration-timeout.ts', '<rootDir>/tests/setup/disconnect-after-suite.ts'],
+        },
+        {
+            ...shared,
+            displayName: 'perf',
+            testEnvironment: 'node',
+            testMatch: ['<rootDir>/tests/perf/**/*.test.ts'],
+            setupFiles: ['<rootDir>/jest.setup.ts', '<rootDir>/tests/setup/perf-env.ts'],
+            // The integration project's teardown: the audit stream's buffers and the clients.
+            setupFilesAfterEnv: ['<rootDir>/tests/setup/perf-timeout.ts', '<rootDir>/tests/setup/disconnect-after-suite.ts'],
         },
     ],
 };

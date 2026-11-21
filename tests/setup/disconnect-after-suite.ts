@@ -1,5 +1,5 @@
 /**
- * Global `afterAll` hook for the `integration` project — release long-lived
+ * Global `afterAll` hook for the `integration` and `perf` projects — release long-lived
  * Prisma connections at the end of every test file.
  *
  * Two singletons need to come down:

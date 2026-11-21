@@ -72,6 +72,10 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
     { model: 'WorkItem', fields: ['tenantId', 'projectId', 'stateId', 'sortKey'], justification: 'Board columns by state.' },
     { model: 'WorkItem', fields: ['tenantId', 'teamId', 'stateCategory', 'sortKey'], justification: 'Team backlog across projects, by category.' },
     { model: 'WorkItem', fields: ['tenantId', 'assigneeId', 'stateCategory', 'dueDate'], justification: 'My Work: assigned and open, by due date.' },
+    // Hardening H2a (decision 172): found by the plan checks on the 10k seed (docs/performance.md, "Findings").
+    { model: 'WorkItem', fields: ['tenantId', 'sortKey', 'id'], justification: 'Work items page: the whole workspace in manual order, one page without reading every item (H2a).' },
+    { model: 'WorkItem', fields: ['tenantId', 'assigneeId', 'sortKey', 'id'], justification: "My Work's Assigned to me, in manual order across projects (H2a)." },
+    { model: 'WorkItem', fields: ['tenantId', 'dueDate', 'id'], justification: 'Work items page sorted by due date across projects (H2a; map part 1.4).' },
     { model: 'WorkItem', fields: ['tenantId', 'parentId', 'sortKey'], justification: 'Sub-items of an item, in order; the progress groupBy.' },
     { model: 'WorkItem', fields: ['tenantId', 'createdByUserId', 'createdAt'], justification: 'Created by me.' },
     { model: 'WorkItem', fields: ['tenantId', 'projectId', 'updatedAt', 'id'], justification: 'Recently changed, keyset over (updatedAt, id).' },
