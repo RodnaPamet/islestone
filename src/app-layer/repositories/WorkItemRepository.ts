@@ -740,15 +740,24 @@ export class WorkItemRepository {
      * to them, waiting on them or holding a person value naming them, and
      * `alsoIds`: the items their pending reviewer rows are on, which the caller
      * reads through `ReviewRepository` (the reviewer table's one seam).
+     *
+     * The candidates are a UNION of one indexed read per reason, never one
+     * `OR` over the table: an `OR` across columns could use no index and read
+     * every item of the workspace (Hardening H2a, docs/performance.md,
+     * "Findings"); each branch is served by its own tenant-leading index.
      */
     static async lockItemsOfPerson(db: PrismaTx, ctx: RequestContext, userId: string, alsoIds: readonly string[]): Promise<LockedWorkItemIds> {
         const rows = await db.$queryRaw<Array<{ id: string }>>`
             SELECT w."id" FROM "WorkItem" w
              WHERE w."tenantId" = ${ctx.tenantId}
-               AND (w."assigneeId" = ${userId}
-                 OR w."waitingOnUserId" = ${userId}
-                 OR w."id" IN (SELECT v."workItemId" FROM "CustomFieldValue" v WHERE v."tenantId" = ${ctx.tenantId} AND v."userId" = ${userId})
-                 OR w."id" = ANY(${[...new Set(alsoIds)]}::text[]))
+               AND w."id" IN (
+                   SELECT a."id" FROM "WorkItem" a WHERE a."tenantId" = ${ctx.tenantId} AND a."assigneeId" = ${userId}
+                   UNION
+                   SELECT b."id" FROM "WorkItem" b WHERE b."tenantId" = ${ctx.tenantId} AND b."waitingOnUserId" = ${userId}
+                   UNION
+                   SELECT v."workItemId" FROM "CustomFieldValue" v WHERE v."tenantId" = ${ctx.tenantId} AND v."userId" = ${userId}
+                   UNION
+                   SELECT unnest(${[...new Set(alsoIds)]}::text[]))
              ORDER BY w."id"
                FOR UPDATE OF w`;
         return mintLockedWorkItemIds(rows.map((r) => r.id));

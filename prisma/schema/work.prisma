@@ -312,6 +312,9 @@ model WorkItem {
   @@index([tenantId, projectId, createdAt, id])
   @@index([tenantId, projectId, dueDate, id])
   @@index([tenantId, projectId, priorityRank, id])
+  @@index([tenantId, sortKey, id])
+  @@index([tenantId, assigneeId, sortKey, id])
+  @@index([tenantId, dueDate, id])
   @@index([tenantId, stateCategory, dueDate])
   @@index([tenantId, typeId])
   /// Deleting or merging a state finds its items across projects.
