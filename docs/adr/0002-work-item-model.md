@@ -1,6 +1,6 @@
 # 0002 — Work item model
 
-Status: Accepted (owner decisions, 2026-11-19; amended by owner decisions 100 to 119, 2026-11-20: field sets in §1 and §7, waiting on in §14, the marked answer in §15; and by owner decisions 148 to 165, 2026-11-20: review steps in §1, §3 and §14, ADR 0009; and by owner decisions 183, 188 and 200, 2026-11-20: blocks read as finish-to-start in §6 and the project's due date in §16, ADR 0010)
+Status: Accepted (owner decisions, 2026-11-19; amended by owner decisions 100 to 119, 2026-11-20: field sets in §1 and §7, waiting on in §14, the marked answer in §15; and by owner decisions 148 to 165, 2026-11-20: review steps in §1, §3 and §14, ADR 0009; and by owner decisions 183, 188 and 200, 2026-11-20: blocks read as finish-to-start in §6 and the project's due date in §16, ADR 0010; and by owner decisions 205 to 224, 2026-11-21: an item's direct goal, health and the lifecycle in §2, goals, initiatives and progress in §17)
 
 ## Context
 
@@ -55,16 +55,19 @@ The chain is goal → initiative → project → work item → sub-item.
 | Initiative → Project | `Project.initiativeId` (nullable) | Different model: a project owns a key prefix, custom fields and a team. |
 | Project → Work item | `WorkItem.projectId` (required) | Every item needs a project, because the key comes from the project. |
 | Work item → Sub-item | `WorkItem.parentId` (nullable) | Same table. A sub-item is a work item with the same fields, type system, states and key. |
+| Work item → Goal (direct) | `WorkItem.goalId` (nullable) | Added by owner decision 211 (2026-11-21, a departure from the 3.2 map's recommendation): an item may also name one goal itself, which may be a goal its project's initiative does not serve. It sits beside the chain, not in it: a project never names a goal, and nothing is inherited. |
 
 Rules:
 
-- **Each link is single-parent.** So every item has exactly one ancestry, and "why does this exist" has one answer (roadmap 2.2, idea 2). A many-to-many link would make ancestry a set.
+- **Each link is single-parent.** So every item has exactly one project ancestry, and "why does this exist" has one answer through its project (roadmap 2.2, idea 2). A many-to-many link would make ancestry a set.
+- **An item's direct goal** (owner decision 211, 2026-11-21; the owner chose "Items may name a goal directly too" over the recommended "no"). `WorkItem.goalId` names at most one goal of the item's workspace, by a composite foreign key `(goalId, tenantId)`. It is a work-item field set by a person under `work_items.edit` (naming a goal also asks `goals.view`), a single-field versioned change (§9) and a configurable built-in field of the field sets (§1). Nothing is inherited: a sub-item does not take its parent's goal, a new item does not take its project's initiative's goal, and a project move keeps it (goals are workspace-wide). An item therefore has its project ancestry and, at most, one direct goal path; the ancestry query returns both, and a goal's progress counts an item reached either way once (§17).
 - **A sub-item is in the same project as its parent**, held by a composite foreign key (see section 10). This keeps the ancestry unique and the key prefix meaningful. Moving a parent to another project moves its subtree in the same transaction.
 - **Moving a sub-item on its own to another project is refused.** It would leave its parent. A sub-item moves to another project only with its parent's subtree (the rule above). **Decision:** owner decision, 2026-11-19 (open question 5); the owner chose "Accept all", accepting this ADR's recommendation.
 - **Depth is capped**, so the ancestry query is bounded: 5 levels of sub-items, 3 levels of goals. The usecase refuses a write past the cap. **Decision:** owner decision, 2026-11-19 (open question 4); the owner chose "Accept all", accepting the recommended caps.
 - **No cycles in `parentId`.** Re-parenting runs the same locked check as blocking relations (section 6).
-- **Ancestry is one query**: a recursive common table expression up `WorkItem.parentId`, then joins to project, initiative and the goal chain (roadmap 3.2).
+- **Ancestry is one query**: a recursive common table expression up `WorkItem.parentId`, then joins to project, initiative and the goal chain, and from the item's own `goalId` up the goal chain again (roadmap 3.2; decisions 211 and 220). Deleted goals and initiatives are left out of it (§17).
 - Cycles and milestones are scopes, not ancestors. An item has at most one of each (`cycleId`, `milestoneId`).
+- **Goals and initiatives carry a lifecycle and a health** (owner decisions 205, 206 and 208, 2026-11-21): a status of Planned, Started, Completed or Cancelled, and a health set by a person, one of On track, At risk, Off track or Completed ("Completed" as a health is decision 205, the owner's choice B over the recommended A), or none. The two are independent: health is a person's judgement and is never derived from the status, progress or anything else. See §17.
 
 ### 3. Teams, workflow states and categories
 
@@ -206,21 +209,29 @@ enum WorkItemRelationType  { BLOCKS RELATES DUPLICATES }
 enum CustomFieldType       { TEXT NUMBER SELECT MULTI_SELECT DATE PERSON URL CHECKBOX }
 
 model Goal {
-  id          String    @id @default(cuid())
+  id          String      @id @default(cuid())
   tenantId    String
   parentId    String?                  // goals nest; capped depth
   title       String
-  targetDate  DateTime? @db.Date
-  health      String?                  // set by a person (roadmap 3.2)
+  status      GoalStatus               // PLANNED STARTED COMPLETED CANCELLED (§17)
+  dueDate     DateTime?   @db.Date     // "Due date", never "target" (ADR 0006); not an engine deadline
+  health      Health?                  // ON_TRACK AT_RISK OFF_TRACK COMPLETED; set by a person (§17)
+  leadUserId  String?
+  deletedAt   DateTime?                // soft delete with restore, purged after 30 days (§17)
   @@unique([id, tenantId])
   @@index([tenantId, parentId])
 }
 
 model Initiative {
-  id        String  @id @default(cuid())
+  id        String            @id @default(cuid())
   tenantId  String
   goalId    String?
   name      String
+  status    InitiativeStatus           // the same four values as GoalStatus
+  dueDate   DateTime?         @db.Date
+  health    Health?
+  leadUserId String?
+  deletedAt DateTime?
   @@unique([id, tenantId])
   @@index([tenantId, goalId])
 }
@@ -507,6 +518,17 @@ List queries also filter `deletedAt IS NULL`. If the pinned Prisma version canno
 - `Project.dueDate` is an optional, date-only due date for a whole project (roadmap 3.1; owner decision 188, 2026-11-20, the owner's choice C over the 3.1 map's recommended A). It is set on create under `projects.create` and changed under `projects.edit`, through the project routes, and audited by `PROJECT_CREATED` / `PROJECT_UPDATED` naming the field; a project template carries it as an offset from creation.
 - It is a deadline for the schedule and nothing else (ADR 0010 §3): with the item's milestone's due date, it bounds how late the project's items may finish, and the timeline reports an item that misses it. It changes no item's or milestone's dates, is never refused against them, and rings no reminder. The word is "Due date", never "Target" (ADR 0006).
 
+### 17. Goals, initiatives and progress
+
+Roadmap 3.2; owner decisions 205 to 224, 2026-11-21 (`docs/porting/maps/3.2.md`).
+
+- **Records above projects, not work items.** `Goal` and `Initiative` are workspace-scoped records with a title or name (plaintext), a description (encrypted, sanitised), an optional date-only due date that is not a scheduling deadline (decision 210; ADR 0010 §3 unchanged) and an optional **Lead**, one active member, Viewers included, who never becomes accountable for any work item (decision 209; ADR 0003 §1 unchanged). They never appear in a work-item read.
+- **Lifecycle and health** (decisions 205, 206, 208, 214). Both have the status Planned, Started, Completed or Cancelled, and a health one of On track, At risk, Off track or Completed, or "No health set". Health is set by a person who may change goals, never by an API key, a job or an agent, and is recorded on the row and in the audit trail with who set it and when; there is no written update (decision 207). Health and status are independent: neither sets, clears or refuses the other, and both are shown with their names.
+- **Progress is derived, never stored** (decisions 211, 212), as a milestone's: the live, visible, non-cancelled items, sub-items included, of the live projects under an initiative, archived projects included; for a goal, the same through every live initiative of it and of the goals below it, **plus** the items whose own `goalId` is the goal or a goal below it, each item counted once. Zero items is "No items", never complete.
+- **Archive and soft delete** (decision 218, the owner's choice of soft delete with restore over the recommended archive-only). A Completed or Cancelled goal or initiative may be archived: kept whole, hidden from lists and pickers, read-only until unarchived. Any goal or initiative may be deleted softly (`deletedAt`, `deletionId`) and restored, like a project; deleting a goal deletes its child goals and its initiatives as one group. While deleted, projects and items keep their links, and every read leaves the row out; a restore brings the group and its links back.
+- **The purge** (decision 219). A nightly job hard-deletes goals and initiatives soft-deleted more than `GOAL_PURGE_DAYS` (default 30) days ago. Every link to a purged row is cleared by its foreign key (`ON DELETE SET NULL` on the one column: `Goal.parentId`, `Initiative.goalId`, `Project.initiativeId`, `WorkItem.goalId`), and the job records counts only.
+- **The tree's rules** (§2, made concrete): one advisory lock per workspace (`goal-tree:<tenantId>`) for every write to `Goal.parentId` or `Initiative.goalId` and every goal delete and restore, taken before any project or item row; no cycle and at most three levels, counting deleted goals so a restore cannot break either.
+
 ### Open questions for the owner
 
 All five were answered on 2026-11-19 in the working session.
@@ -549,7 +571,7 @@ All five were answered on 2026-11-19 in the working session.
   - 3, principles 3 and 5;
   - 4 (global preamble);
   - 2.1, 2.2, 2.4, 2.5, 2.7 and H2;
-  - 3.1 (scheduler reads blocking relations), 3.2 (goals and initiatives);
+  - 3.1 (scheduler reads blocking relations), 3.2 (goals and initiatives: §2's direct goal and §17, decisions 205 to 224);
   - 4.1 (comments on pages), 4.3 (live updates);
   - 5.3 (links by key), 5.5 (importers keep keys);
   - 6.5 (embeddings).
