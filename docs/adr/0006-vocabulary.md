@@ -1,6 +1,6 @@
 # 0006 — Vocabulary
 
-Status: Proposed — awaiting owner sign-off (2026-11-18 drafted). The role names, their order, the fallback role and the public sign-up switch were decided by the owner on 2026-11-18, the sync and collaboration words ADR 0005 added on 2026-11-19, and the planning words of sub-phase 2.5 (Milestone, Cycle schedule, Burn-up, Repeat, Transition) on 2026-11-20, the intake words of sub-phase 2.6 on 2026-11-20, the work-item field words of sub-phase 2.4b (Waiting on, Field set, Answer) on 2026-11-20, and the review words of sub-phase 2.8 (Review step, Round, Reviewer, Signed off, Returned) on 2026-11-20; the other open questions await sign-off.
+Status: Proposed — awaiting owner sign-off (2026-11-18 drafted). The role names, their order, the fallback role and the public sign-up switch were decided by the owner on 2026-11-18, the sync and collaboration words ADR 0005 added on 2026-11-19, and the planning words of sub-phase 2.5 (Milestone, Cycle schedule, Burn-up, Repeat, Transition) on 2026-11-20, the intake words of sub-phase 2.6 on 2026-11-20, the work-item field words of sub-phase 2.4b (Waiting on, Field set, Answer) on 2026-11-20, the review words of sub-phase 2.8 (Review step, Round, Reviewer, Signed off, Returned) on 2026-11-20, and the scheduling words of sub-phase 3.1 (Working calendar, Holiday, Critical path, Float, the earliest and latest dates, Deadline, Change dates) on 2026-11-20; the other open questions await sign-off.
 
 ## Context
 
@@ -67,7 +67,7 @@ Rows for Phase 2 concepts are fixed by this ADR once signed. Rows for later phas
 
 | Term | Meaning | Model name | UI label | Words NOT to use |
 |---|---|---|---|---|
-| Project | A body of work owned by one team, with its own key prefix and custom fields. | `Project` | Project | Space, Board, Repository, Folder |
+| Project | A body of work owned by one team, with its own key prefix and custom fields, and from roadmap 3.1 an optional due date (`Project.dueDate`, UI "Due date"; decided 2026-11-20, decision 188). | `Project` | Project | Space, Board, Repository, Folder |
 | Work item | The single unit of tracked work. One table holds every kind (roadmap principle 3). | `WorkItem` | Work item ("item" where the screen already names work items) | Task, Issue, Ticket, Card, Story, Epic |
 | Sub-item | A work item whose parent is another work item in the same project. | `WorkItem.parentId` | Sub-item | Subtask, Child issue, Checklist item |
 | Work item type | A workspace-configured kind of work item, such as Bug or Feature. | `WorkItemType` | Type | Issue type, Kind, Tracker, Category |
@@ -107,6 +107,13 @@ Rows for Phase 2 concepts are fixed by this ADR once signed. Rows for later phas
 | Goal | An outcome the workspace wants, with a target and a health status set by a person. | `Goal` | Goal | Objective, OKR, Key result, Target |
 | Initiative | A set of projects that together serve a goal. | `Initiative` | Initiative | Program, Portfolio, Theme, Epic |
 | Roadmap | The timeline layout over projects and initiatives. | No model: a view | Roadmap | Portfolio, Plan |
+| Working calendar | The working weekdays, holidays and time zone the schedule and review steps count working days on: one per workspace, and optionally one per team that replaces it for the team's items (ADR 0010; decided 2026-11-20, roadmap 3.1). | `WorkingCalendar` | Working calendar | Calendar (alone: the `CALENDAR` layout and 3.3's sync), Schedule (a cycle schedule's word), Work week, Business calendar |
+| Holiday | A date a working calendar does not count as a working day, entered by hand (ADR 0010; decided 2026-11-20). | `WorkingCalendarHoliday` | Holiday | Time off (3.5's: a person's), Leave, Day off, Exception (for a holiday) |
+| Critical path | The open and started items with the least float in a timeline's scope, and the blocks relations between them that leave no gap; computed on every read, never stored (ADR 0010; decided 2026-11-20). | No model: a read model | Critical path; "Critical" | Longest path (in UI text) |
+| Float | How many working days an item can slip without moving the finish or missing a deadline; negative when late (ADR 0010; decided 2026-11-20). | No model: `totalFloat`, `freeFloat` in the schedule's result | Float; "3 days of float"; "Late by 2 days" when negative | Slack (5.4's chat product), Buffer, Margin |
+| Earliest and latest dates | The earliest and latest days an item can start and finish given its dependencies, today and its deadlines; computed, never stored (ADR 0010; decided 2026-11-20). | No model: `earliestStart`, `earliestFinish`, `latestStart`, `latestFinish` in the schedule's result | Earliest start, Earliest finish, Latest start, Latest finish | Early start, Early finish, Late start, Late finish |
+| Deadline | A date an item must finish by for the schedule: its milestone's due date and its project's due date (ADR 0010; decided 2026-11-20, decision 188). | No model: read from `Milestone.dueDate` and `Project.dueDate` | Due date (the field); "Misses its milestone's due date", "Misses the project's due date" | Target date, End date (for a project's due date) |
+| Change dates | The confirmation a timeline drag or a schedule-table edit opens before a person's own date change is sent, with "Also move the N items it pushes later" (ADR 0010; decided 2026-11-20, decisions 194 and 201). | No model: a dialog; the pushed items' change `POST /work-items/bulk/dates` | Change dates; "Also move the N items it pushes later" | Proposal (agents' word), Suggestion, Plan change |
 
 **Views, intake and inbox**
 
@@ -252,6 +259,10 @@ Because "member" is also the concept "anyone with a membership", text about perm
 ### Review words of sub-phase 2.8 — decided
 
 **Decided. Owner decisions 148 and 164, 2026-11-20 (relayed to the porting session by its coordinator; `docs/porting/maps/2.8.md`, open questions 1 and 17; `docs/HANDOFF.md`; ADR 0009).** The Work table gains the rows Review step, Round, Reviewer and Review outcome; the outcomes are **Signed off** and **Returned** (verbs Sign off, Return), and My Work's section is **To review**. "Review" alone stays the proposal review page's word (roadmap 6.2): the item's area is "Review steps" and a reviewer's list is "To review", never "Reviews". Approve, Edit and approve and Reject stay the proposal's verbs, Accept and Decline intake's; Pass and Fail are left to 4.5's checks. "Round" is not "Revision" (an item's content will have versions in 4.1), "Iteration" or "Cycle" (taken). The response text is never `note` or `message`.
+
+### Scheduling words of sub-phase 3.1 — decided
+
+**Decided. Owner decisions 188, 194 and 201, 2026-11-20 (relayed to the porting session by its coordinator; `docs/porting/maps/3.1.md`, open questions 7, 13 and 20; `docs/HANDOFF.md`; ADR 0010).** The Planning table gains the rows Working calendar, Holiday, Critical path, Float, Earliest and latest dates, Deadline and Change dates, and the Project row names the project's due date (decision 188). "Calendar" alone stays the `CALENDAR` layout's and roadmap 3.3's word, so the model is `WorkingCalendar`; "Schedule" stays a cycle schedule's word and is not banned unqualified (`CycleSchedule` exists). "Slack" is roadmap 5.4's chat product, never float; "Gantt" stays inside the timeline library's import; "Proposal" stays agents' (ADR 0003), so the timeline's confirmation is "Change dates", also when it moves the items a change pushes later (decision 194); "Time off" is roadmap 3.5's, a person's, never a holiday. A project's due date is "Due date", as a milestone's, because "Target" is banned for goals.
 
 ### How Islestone avoids inflect-compliance's two-vocabulary state
 

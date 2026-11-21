@@ -85,9 +85,12 @@ export async function deleteLabel(ctx: RequestContext, labelId: string) {
             // guardrail-allow: n+1 — a batched drain: each pass reads one bounded batch and deletes it.
             const ids = await LabelRepository.attachedItemIds(db, ctx, labelId);
             if (ids.length === 0) break;
+            // The batch locked in id order (batches ascend, so the whole
+            // drain does too; decision 173), then detached and bumped.
+            const locked = await WorkItemRepository.lockForWrite(db, ctx, ids);
             await LabelRepository.detachFrom(db, ctx, labelId, ids);
             // Every item the label was on, in any project: the version follows the row.
-            await WorkItemRepository.bumpVersion(db, ctx, { kind: 'ALL' }, ids);
+            await WorkItemRepository.bumpVersion(db, ctx, { kind: 'ALL' }, locked);
             detached += ids.length;
         }
         await LabelRepository.delete(db, ctx, labelId);

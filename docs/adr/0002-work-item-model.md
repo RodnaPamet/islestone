@@ -1,6 +1,6 @@
 # 0002 — Work item model
 
-Status: Accepted (owner decisions, 2026-11-19; amended by owner decisions 100 to 119, 2026-11-20: field sets in §1 and §7, waiting on in §14, the marked answer in §15; and by owner decisions 148 to 165, 2026-11-20: review steps in §1, §3 and §14, ADR 0009)
+Status: Accepted (owner decisions, 2026-11-19; amended by owner decisions 100 to 119, 2026-11-20: field sets in §1 and §7, waiting on in §14, the marked answer in §15; and by owner decisions 148 to 165, 2026-11-20: review steps in §1, §3 and §14, ADR 0009; and by owner decisions 183, 188 and 200, 2026-11-20: blocks read as finish-to-start in §6 and the project's due date in §16, ADR 0010)
 
 ## Context
 
@@ -128,6 +128,8 @@ Common rules: a CHECK refuses `fromId = toId`; `@@unique([tenantId, type, fromId
 - The check walks every `BLOCKS` edge, including edges to soft-deleted items. No relation may be created to or from a soft-deleted item. Together these make restoring an item unable to create a cycle.
 - Roadmap 2.1 requires a property test: over random sequences of inserts, the accepted edges never contain a cycle, and an insert is accepted exactly when it keeps the graph acyclic.
 - Importers report source cycles in the dry run and skip those edges.
+
+**Scheduling** (owner decision 183, 2026-11-20; ADR 0010). Roadmap 3.1's scheduling engine reads `BLOCKS` as finish-to-start with no lag. Other dependency kinds, or lag, would be a new decision amending this section and ADR 0010.
 
 ### 7. Custom fields as typed values
 
@@ -500,6 +502,11 @@ List queries also filter `deletedAt IS NULL`. If the pinned Prisma version canno
 - `WorkItem.answerCommentId` points at one live comment of the same item (roadmap 2.4b; owner decisions 78 and 113 to 118, 2026-11-20). A person who may edit the item marks it, never an API key or an agent; marking moves an open item to the team's first live `DONE` state (a chooser when there are several) in the same versioned write. Marking or clearing the answer of a closed item changes only the pointer, and clearing never reopens.
 - It is offered only where the item's field set shows the answer (§1). While a comment is the marked answer, deleting and editing it are refused until the answer is cleared; an admin moderates by clearing, then deleting.
 
+### 16. The project's due date
+
+- `Project.dueDate` is an optional, date-only due date for a whole project (roadmap 3.1; owner decision 188, 2026-11-20, the owner's choice C over the 3.1 map's recommended A). It is set on create under `projects.create` and changed under `projects.edit`, through the project routes, and audited by `PROJECT_CREATED` / `PROJECT_UPDATED` naming the field; a project template carries it as an offset from creation.
+- It is a deadline for the schedule and nothing else (ADR 0010 §3): with the item's milestone's due date, it bounds how late the project's items may finish, and the timeline reports an item that misses it. It changes no item's or milestone's dates, is never refused against them, and rings no reminder. The word is "Due date", never "Target" (ADR 0006).
+
 ### Open questions for the owner
 
 All five were answered on 2026-11-19 in the working session.
@@ -538,6 +545,7 @@ All five were answered on 2026-11-19 in the working session.
 
 - Roadmap (`docs/ROADMAP.md`):
   - 2.2, ideas 2 (goal ancestry) and 3 (one table, many views);
+  - 3.1 (scheduling, ADR 0010: §6's finish-to-start reading and §16's project due date);
   - 3, principles 3 and 5;
   - 4 (global preamble);
   - 2.1, 2.2, 2.4, 2.5, 2.7 and H2;

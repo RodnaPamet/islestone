@@ -105,7 +105,9 @@ async function moveUnfinishedInTx(db: PrismaTx, ctx: RequestContext, from: Cycle
         // guardrail-allow: n+1 — a bounded drain: each page leaves the cycle, so the next read finds the rest.
         const page = await WorkItemRepository.rolloverCandidates(db, ctx, from.id, ROLLOVER_PAGE);
         if (page.length === 0) return moved;
-        const count = await WorkItemRepository.moveCycle(db, ctx, page.map((r) => r.id), from.id, to?.id ?? null);
+        // The page locked in id order (pages ascend by id; decision 173).
+        const locked = await WorkItemRepository.lockForWrite(db, ctx, page.map((r) => r.id));
+        const count = await WorkItemRepository.moveCycle(db, ctx, locked, from.id, to?.id ?? null);
         moved += count;
         for (const r of page) {
             await logEvent(db, ctx, {

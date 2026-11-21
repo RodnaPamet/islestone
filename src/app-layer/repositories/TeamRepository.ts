@@ -8,6 +8,7 @@ import type { Prisma, WorkflowStateCategory } from '@prisma/client';
 
 import type { PrismaTx } from '@/lib/db-context';
 import type { RequestContext } from '../types';
+import type { LockedWorkItemIds } from './work-item-locks';
 
 /** A team's workflow is small; a page this size holds any real one. */
 export const TEAM_STATES_TAKE = 100;
@@ -183,7 +184,12 @@ export class TeamRepository {
         to: { id: string; category: WorkflowStateCategory },
         effects: { completedAt?: Date | null; cancelledAt?: Date | null; waitingOnUserId?: null },
         stampStartedAt: Date | null,
+        _locked: LockedWorkItemIds,
     ): Promise<number> {
+        // After `WorkItemRepository.lockInState` (decision 173). The predicate,
+        // not the locked ids: this statement's fresh snapshot also catches a
+        // row moved into the state by a writer we waited on, which the FK
+        // would otherwise refuse when the state is deleted.
         const result = await db.workItem.updateMany({
             where: { tenantId: ctx.tenantId, stateId: fromStateId },
             data: { stateId: to.id, stateCategory: to.category, ...effects, version: { increment: 1 } },

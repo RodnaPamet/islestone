@@ -92,6 +92,8 @@ export class LabelRepository {
     static async attachedItemIds(db: PrismaTx, ctx: RequestContext, labelId: string): Promise<string[]> {
         const rows = await db.workItemLabel.findMany({
             where: { tenantId: ctx.tenantId, labelId },
+            // Ascending, so a drain's batches lock rows in id order (decision 173).
+            orderBy: { workItemId: 'asc' },
             take: LABEL_DETACH_BATCH,
             select: { workItemId: true },
         });

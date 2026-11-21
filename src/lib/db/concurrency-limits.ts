@@ -363,3 +363,24 @@ export const AUDIT_APPEND_TX_OPTIONS = {
     maxWait: AUDIT_APPEND_MAX_WAIT_MS,
     timeout: AUDIT_APPEND_TIMEOUT_MS,
 } as const;
+
+/**
+ * Simultaneous creates in ONE project the product supports (owner decision
+ * 174, 2026-11-20; Hardening H2; issue #32): 25, the same design point as
+ * {@link AUDIT_APPEND_DESIGN_POINT_CONCURRENCY}, proved by
+ * `tests/integration/concurrency/key-allocation.test.ts`.
+ *
+ * Creates in a project are serial by design (the gapless number is claimed
+ * under the project's key-sequence row lock, held to commit). Measured on
+ * 2026-11-20 before the fix: a create alone took 30 to 70 ms, yet 24 of 25
+ * simultaneous creates in one project failed. Not the queue's length but the
+ * pool: each waiter held a connection inside its transaction while it waited,
+ * the create at the head needed one more for its audit append, and none was
+ * left until the waiters' transactions expired. Raising
+ * {@link TENANT_TX_TIMEOUT_MS} would only have made every waiter wait longer.
+ * The fix narrows what a waiter holds: `createWorkItem` waits its turn per
+ * project in the process before opening a transaction
+ * (`src/app-layer/usecases/project-sequence-queue.ts`). The transaction budget
+ * is unchanged.
+ */
+export const WORK_ITEM_CREATE_BURST_PER_PROJECT = 25;
