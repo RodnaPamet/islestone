@@ -19,8 +19,9 @@ import { makeRequestContext } from '../../helpers/make-context';
 const ctx = (role: Role, userId = 'me', appPermissions = getPermissionsForRole(role)) => makeRequestContext(role, { userId, appPermissions });
 
 describe('saved-view policies', () => {
-    it('every role reads; OWNER, ADMIN and MEMBER save personal and shared; VIEWER personal only (decision 60); GUEST nothing', () => {
-        for (const role of ['OWNER', 'ADMIN', 'MEMBER', 'VIEWER', 'GUEST'] as Role[]) expect(mayReadSavedViews(ctx(role))).toBe(true);
+    it('every workspace-wide role reads; OWNER, ADMIN and MEMBER save personal and shared; VIEWER personal only (decision 60); GUEST nothing, not even a read (decision 204)', () => {
+        for (const role of ['OWNER', 'ADMIN', 'MEMBER', 'VIEWER'] as Role[]) expect(mayReadSavedViews(ctx(role))).toBe(true);
+        expect(mayReadSavedViews(ctx('GUEST'))).toBe(false);
         for (const role of ['OWNER', 'ADMIN', 'MEMBER'] as Role[]) {
             expect(maySaveSavedView(ctx(role), 'PERSONAL')).toBe(true);
             expect(maySaveSavedView(ctx(role), 'SHARED')).toBe(true);

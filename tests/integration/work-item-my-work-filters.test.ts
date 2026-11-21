@@ -2,8 +2,10 @@
  * My Work's list filters against a real Postgres, as `app_user` (owner
  * decisions 54 and 76): `createdById`, `watching=me`, `waitingOnId=me` (2.7a)
  * and `due=soon` return the rows
- * they name and nothing from another workspace, a deleted project or (for a
- * GUEST, who sees no project until 8.4) any project at all.
+ * they name and nothing from another workspace or a deleted project. A GUEST
+ * is refused the list until 8.4 (owner decision 204: it holds no key); one
+ * granted the read keys, as 8.4 will, gets nothing from any project, since it
+ * has no project grant yet.
  *
  * Every read goes through `listWorkItems`, the usecase the route calls, so the
  * filters are proved through `runInTenantContext` with row-level security on.
@@ -19,6 +21,7 @@ import { createWorkItem, listWorkItems, setWorkItemState } from '@/app-layer/use
 import { notificationsTz } from '@/app-layer/usecases/work-item-shared';
 import { watchWorkItem } from '@/app-layer/usecases/work-item-collab';
 import { listWorkItemTypes } from '@/app-layer/usecases/work-item-type';
+import { getPermissionsForRole } from '@/lib/permissions';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 
 import { prismaTestClient, resetDatabase } from '../helpers/db';
@@ -51,6 +54,8 @@ describeFn('work-item list: the My Work filters', () => {
     let goneProjectId = '';
     const titlesOf = async (ctx: RequestContext, query: Parameters<typeof listWorkItems>[1]) =>
         (await listWorkItems(ctx, { ...query, limit: 100 })).items.map((i) => i.title).sort();
+    /** The workspace's GUEST granted the read keys, as 8.4 will, with no project grant yet. */
+    const guestAs84 = (w: Workspace): RequestContext => ({ ...w.guest, appPermissions: getPermissionsForRole('VIEWER') });
 
     async function workspace(slug: string, ownerId: string, memberId: string, guestId: string): Promise<Workspace> {
         const tenant = await createTenantWithDek({ name: slug, slug });
@@ -147,7 +152,7 @@ describeFn('work-item list: the My Work filters', () => {
         expect(await titlesOf(a.member, { waitingOnId: 'me' })).toEqual(['A waits on member', 'A waits on member, unassigned'].sort());
         expect(await titlesOf(a.owner, { waitingOnId: 'me' })).toEqual(['A waits on owner']);
         expect(await titlesOf(b.member, { waitingOnId: 'me' })).toEqual(['B waits on member', 'B waits on member, unassigned'].sort());
-        expect(await titlesOf(a.guest, { waitingOnId: 'me' })).toEqual([]);
+        expect(await titlesOf(guestAs84(a), { waitingOnId: 'me' })).toEqual([]);
     });
 
     it('due=soon is open items due by today + DUE_SOON_DAYS, overdue included', async () => {
@@ -163,9 +168,10 @@ describeFn('work-item list: the My Work filters', () => {
         }
     });
 
-    it('a GUEST, who sees no project yet, gets nothing from any filter', async () => {
-        expect(await titlesOf(a.guest, { createdById: a.member.userId })).toEqual([]);
-        expect(await titlesOf(a.guest, { watching: 'me' })).toEqual([]);
-        expect(await titlesOf(a.guest, { due: 'soon' })).toEqual([]);
+    it('a GUEST is refused every filter (decision 204); one granted the read keys, who sees no project yet, gets nothing', async () => {
+        for (const query of [{ createdById: a.member.userId }, { watching: 'me' as const }, { due: 'soon' as const }, { waitingOnId: 'me' }]) {
+            await expect(titlesOf(a.guest, query)).rejects.toMatchObject({ status: 403 });
+            expect(await titlesOf(guestAs84(a), query)).toEqual([]);
+        }
     });
 });

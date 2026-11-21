@@ -33,6 +33,7 @@ import { listWorkItemTypes } from '@/app-layer/usecases/work-item-type';
 import { createWorkItem, getWorkItem, listWorkItems, updateWorkItem } from '@/app-layer/usecases/work-item';
 import { moveWorkItemToProject } from '@/app-layer/usecases/work-item-moves';
 import { verifyAuditChain } from '@/lib/audit';
+import { getPermissionsForRole } from '@/lib/permissions';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 
 import { prismaTestClient, resetDatabase } from '../helpers/db';
@@ -416,13 +417,15 @@ describeFn('custom fields and saved views', () => {
             expect(await deleteSavedView(member, own.id)).toEqual({ deleted: true, moderated: false });
         });
 
-        it('a project-scoped view of a project nobody can see is not saved, and a GUEST sees no project view', async () => {
+        it('a project-scoped view of a project nobody can see is not saved; a GUEST is refused the views (decision 204), and one granted the read key, as 8.4 will, still sees no project view', async () => {
             await expect(createSavedView(member, { name: 'X', visibility: 'PERSONAL', projectId: 'missing', layout: 'LIST', config })).rejects.toMatchObject({ status: 404 });
             const u = await prisma.user.create({ data: { email: `guest-${TAG}@example.test` } });
             await prisma.tenantMembership.create({ data: { tenantId, userId: u.id, role: 'GUEST' } });
             const guest = makeRequestContext('GUEST', { tenantId, userId: u.id, tenantSlug: TAG, requestId: `${TAG}-g` });
-            const views = (await listSavedViews(guest, undefined)).views;
-            expect(views.every((v) => v.projectId === null)).toBe(true);
+            await expect(listSavedViews(guest, undefined)).rejects.toMatchObject({ status: 403 });
+            const granted = makeRequestContext('GUEST', { tenantId, userId: u.id, tenantSlug: TAG, requestId: `${TAG}-g2`, appPermissions: getPermissionsForRole('VIEWER') });
+            const views = (await listSavedViews(granted, undefined)).views;
+            expect(views.some((v) => v.projectId !== null)).toBe(false);
         });
 
         it('a malformed config is refused by the schema', async () => {

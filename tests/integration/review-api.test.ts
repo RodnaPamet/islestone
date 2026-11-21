@@ -10,8 +10,8 @@
  *   - a key refusal is a 403 with an `AUTHZ_DENIED` row (`requirePermission`),
  *     a refusal decided in the usecase (a person not named responding, the
  *     item's assignee responding, a member skipping without standing) is a 403
- *     with an `AUTHZ_DENIED` row too, and a GUEST, who sees no project until
- *     8.4, reads a 404 wherever the key admits it;
+ *     with an `AUTHZ_DENIED` row too, and a GUEST, who holds no key until 8.4
+ *     (owner decision 204), is refused every route by its key;
  *   - responding: every role that sees the project responds when named, and
  *     is refused when not; the assignee never (decision 158), even after
  *     being named and then assigned.
@@ -76,7 +76,7 @@ interface Call {
 const P = (f: Fixture, extra: Record<string, string> = {}) => ({ tenantSlug: TAG, workItemId: f.item, ...extra });
 const EDIT = { OWNER: 200, ADMIN: 200, MEMBER: 200, VIEWER: 403, GUEST: 403 } as const;
 const CALLS: Call[] = [
-    { file: `${RV}/route.ts`, method: 'GET', setup: 'open', path: (f) => `/work-items/${f.item}/review`, params: (f) => P(f), expect: { OWNER: 200, ADMIN: 200, MEMBER: 200, VIEWER: 200, GUEST: 404 } },
+    { file: `${RV}/route.ts`, method: 'GET', setup: 'open', path: (f) => `/work-items/${f.item}/review`, params: (f) => P(f), expect: { OWNER: 200, ADMIN: 200, MEMBER: 200, VIEWER: 200, GUEST: 403 } },
     {
         file: `${RV}/steps/route.ts`,
         method: 'PUT',
@@ -95,8 +95,8 @@ const CALLS: Call[] = [
         path: (f) => `/work-items/${f.item}/review/steps/${f.step}/respond`,
         params: (f) => P(f, { stepId: f.step }),
         body: () => ({ outcome: 'SIGNED_OFF' }),
-        // Not named: refused in the usecase (a GUEST does not see the item).
-        expect: { OWNER: 403, ADMIN: 403, MEMBER: 403, VIEWER: 403, GUEST: 404 },
+        // Not named: refused in the usecase; a GUEST by the key (decision 204).
+        expect: { OWNER: 403, ADMIN: 403, MEMBER: 403, VIEWER: 403, GUEST: 403 },
     },
     {
         file: `${RV}/steps/[stepId]/skip/route.ts`,

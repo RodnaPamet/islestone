@@ -11,8 +11,9 @@
  *     matrix drives the saved-view routes at a shared view, which it is refused.
  *     (Also a self-watch, driven on its own.)
  *   - A GUEST membership (written with the raw client: GUEST is not
- *     assignable until 8.4) sees NO item through any read route: the list is
- *     empty, metrics are zero, and every per-item read is a 404.
+ *     assignable until 8.4) holds no key (owner decision 204), so every route
+ *     here refuses it with a 403 and an `AUTHZ_DENIED` row naming its key:
+ *     it reads no item, list, count, project or configuration.
  *   - `If-Match` gives 428 without a version on a title edit and 409 with a
  *     stale one.
  *
@@ -92,9 +93,9 @@ interface Call {
     path: (i: Ids) => string;
     params: (i: Ids) => Record<string, string>;
     body?: (i: Ids) => unknown;
-    /** A read of one visible item (a GUEST must get a 404). */
+    /** A read of one visible item. */
     itemRead?: boolean;
-    /** A list or count over items (a GUEST must get nothing). */
+    /** A list or count over items. */
     itemList?: boolean;
     /** Does the route write? */
     write: boolean;
@@ -392,22 +393,23 @@ describeFn('the work-item API', () => {
         expect(res.status).toBeLessThan(500);
     });
 
-    it.each(CALLS.filter((c) => c.itemRead).map((c) => [`${c.method} ${c.file.replace('src/app/api/t/[tenantSlug]/', '')}`, c] as const))(
-        'a GUEST sees no item through %s (404)',
+    it.each(CALLS.map((c) => [`${c.method} ${c.file.replace('src/app/api/t/[tenantSlug]/', '')}`, c] as const))(
+        'a GUEST is refused %s with a 403 and an AUTHZ_DENIED row naming the key (decision 204)',
         async (_name, c) => {
-            expect((await call('GUEST', c)).status).toBe(404);
+            const before = await prisma.auditLog.count({ where: { tenantId, action: 'AUTHZ_DENIED', entity: 'Permission', entityId: c.key } });
+            const res = await call('GUEST', c);
+            expect(res.status).toBe(403);
+            expect(await prisma.auditLog.count({ where: { tenantId, action: 'AUTHZ_DENIED', entity: 'Permission', entityId: c.key } })).toBe(before + 1);
         },
     );
 
-    it('a GUEST lists no items, counts none, and sees no project', async () => {
-        const list = await call('GUEST', CALLS.find((c) => c.file.endsWith('work-items/route.ts') && c.method === 'GET')!);
-        expect(list).toMatchObject({ status: 200, body: { items: [] } });
-        const metrics = await call('GUEST', CALLS.find((c) => c.file.endsWith('metrics/route.ts'))!);
-        expect(metrics.body).toMatchObject({ total: 0 });
-        const timeline = await call('GUEST', CALLS.find((c) => c.file.endsWith('timeline/route.ts'))!);
-        expect(timeline).toMatchObject({ status: 200, body: { rows: [], edges: [] } });
-        const projects = await call('GUEST', CALLS.find((c) => c.file.endsWith('projects/route.ts') && c.method === 'GET')!);
-        expect(projects.body).toEqual([]);
+    it('what a GUEST is refused exists: an OWNER reads the list, the timeline, the projects and the sub-item', async () => {
+        const list = await call('OWNER', CALLS.find((c) => c.file.endsWith('work-items/route.ts') && c.method === 'GET')!);
+        expect((list.body.items as unknown[]).length).toBeGreaterThan(0);
+        const timeline = await call('OWNER', CALLS.find((c) => c.file.endsWith('timeline/route.ts'))!);
+        expect((timeline.body.rows as unknown[]).length).toBeGreaterThan(0);
+        const projects = await call('OWNER', CALLS.find((c) => c.file.endsWith('projects/route.ts') && c.method === 'GET')!);
+        expect((projects.body as unknown as unknown[]).length).toBeGreaterThan(0);
         const sub = await call('OWNER', CALLS.find((c) => c.file.endsWith('sub-items/route.ts'))!);
         expect((sub.body.items as unknown[]).length).toBe(1);
     });

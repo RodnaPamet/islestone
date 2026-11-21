@@ -76,9 +76,8 @@ describe('work-item gates by built-in role', () => {
             ADMIN: { read: true, create: true, edit: true, assign: true, comment: true, delete: true },
             MEMBER: { read: true, create: true, edit: true, assign: true, comment: true, delete: false },
             VIEWER: { read: true, create: false, edit: false, assign: false, comment: false, delete: false },
-            // GUEST's coarse tier refuses create; its comment key is honoured
-            // (it reaches no item until 8.4 grants it projects).
-            GUEST: { read: true, create: false, edit: false, assign: false, comment: true, delete: false },
+            // Decision 204: a GUEST holds no key until 8.4, so every gate refuses it.
+            GUEST: { read: false, create: false, edit: false, assign: false, comment: false, delete: false },
         });
     });
 
@@ -104,7 +103,7 @@ describe('work-item gates by built-in role', () => {
 });
 
 describe('work configuration gates', () => {
-    it('reads for every role, changes for OWNER and ADMIN, projects by their own keys', () => {
+    it('reads for every workspace-wide role (never a GUEST, decision 204), changes for OWNER and ADMIN, projects by their own keys', () => {
         const row = (role: Role) => {
             const ctx = makeRequestContext(role);
             return [
@@ -120,7 +119,7 @@ describe('work configuration gates', () => {
             ADMIN: [true, true, true, true, true],
             MEMBER: [true, false, true, true, false],
             VIEWER: [true, false, false, false, false],
-            GUEST: [true, false, false, false, false],
+            GUEST: [false, false, false, false, false],
         });
     });
 });

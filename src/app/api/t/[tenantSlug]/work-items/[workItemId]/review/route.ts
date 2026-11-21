@@ -2,7 +2,7 @@
  * A work item's review (sub-phase 2.8a; ADR 0009): its rounds, newest first,
  * with their steps, reviewers and responses (the response text decrypted for
  * readers of the item), and what the caller may do. Key: `work_items.view`
- * (decision 160); a GUEST, who sees no project until 8.4, gets a 404.
+ * (decision 160); a GUEST, who holds no key until 8.4 (decision 204), gets the 403.
  *
  * Written fresh for Islestone.
  */

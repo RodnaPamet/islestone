@@ -44,6 +44,7 @@ import { addComment, deleteComment, editComment } from '@/app-layer/usecases/wor
 import { purgeWorkspaceWorkItems } from '@/app-layer/usecases/work-item-purge';
 import { listWorkItemTypes } from '@/app-layer/usecases/work-item-type';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
+import { getPermissionsForRole } from '@/lib/permissions';
 import { checkSearchConfiguration } from '@/lib/search/configuration-check';
 import { SEARCH_VECTOR_REVISION } from '@/lib/search/configuration';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
@@ -308,7 +309,9 @@ describeFn('search over descriptions and comments (2.7f)', () => {
             const found = (await searchWorkspace(owner, 'изтрит')).hits.map((h) => h.id);
             expect(found).toEqual([]);
             expect((await searchWorkspace(owner, 'архивиран')).hits).toEqual([]);
-            expect((await searchWorkspace(guest, 'фактура')).hits).toEqual([]);
+            // Decision 204: a GUEST is refused; one granted the read keys, as 8.4 will, with no grant finds nothing.
+            await expect(searchWorkspace(guest, 'фактура')).rejects.toMatchObject({ status: 403 });
+            expect((await searchWorkspace({ ...guest, appPermissions: getPermissionsForRole('VIEWER') }, 'фактура')).hits).toEqual([]);
         });
 
         it('the list\'s q finds description and comment matches too, under its own filters', async () => {

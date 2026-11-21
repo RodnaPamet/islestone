@@ -46,6 +46,7 @@ import { createTeam } from '@/app-layer/usecases/team';
 import { createWorkItem, getWorkItem } from '@/app-layer/usecases/work-item';
 import { listWorkItemTypes } from '@/app-layer/usecases/work-item-type';
 import { verifyAuditChain } from '@/lib/audit';
+import { getPermissionsForRole } from '@/lib/permissions';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 
 import { prismaTestClient, resetDatabase } from '../helpers/db';
@@ -151,7 +152,9 @@ describeFn('intake', () => {
             expect((await listOpenIntakeForms(viewer)).map((f) => f.id)).toEqual([formId]);
             await expect(getOpenIntakeForm(viewer, draft.id)).rejects.toMatchObject({ status: 404 });
             await expect(sendIntakeRequest(member, draft.id, { title: 'x', answers: { f1: 'Ready' } })).rejects.toMatchObject({ status: 404 });
-            expect(await listOpenIntakeForms(guest)).toEqual([]);
+            // Decision 204: a GUEST is refused; one granted the read keys, as 8.4 will, sees no project's form.
+            await expect(listOpenIntakeForms(guest)).rejects.toMatchObject({ status: 403 });
+            expect(await listOpenIntakeForms({ ...guest, appPermissions: getPermissionsForRole('VIEWER') })).toEqual([]);
             expect((await listIntakeForms(member)).length).toBeGreaterThanOrEqual(2);
         });
     });

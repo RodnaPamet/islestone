@@ -33,6 +33,7 @@ import { createWorkItem, deleteWorkItem, getWorkItem, listWorkItems, setWorkItem
 import { moveWorkItemToProject } from '@/app-layer/usecases/work-item-moves';
 import { getWorkItemViewConfig } from '@/app-layer/usecases/work-item-views';
 import { verifyAuditChain } from '@/lib/audit';
+import { getPermissionsForRole } from '@/lib/permissions';
 import { runInTenantContext } from '@/lib/db/rls-middleware';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 
@@ -141,7 +142,9 @@ describeFn('milestones', () => {
             await expect(createMilestone(viewer, projectId, { name: 'Nope' })).rejects.toMatchObject({ status: 403 });
             const names = (await listMilestones(viewer, projectId)).map((m) => m.name);
             expect(names.indexOf('Alpha')).toBeLessThan(names.indexOf('Beta'));
-            await expect(listMilestones(guest, projectId)).rejects.toMatchObject({ status: 404 });
+            // Decision 204: a GUEST holds no key, so it is refused; one granted the read keys, as 8.4 will, sees no project.
+            await expect(listMilestones(guest, projectId)).rejects.toMatchObject({ status: 403 });
+            await expect(listMilestones({ ...guest, appPermissions: getPermissionsForRole('VIEWER') }, projectId)).rejects.toMatchObject({ status: 404 });
             // A sanitised name: markup does not survive.
             expect((await createMilestone(member, projectId, { name: '<b>Gamma</b>' })).name).toBe('Gamma');
         });
@@ -219,7 +222,8 @@ describeFn('milestones', () => {
             expect(none).not.toContain(a.id);
             const config = await getWorkItemViewConfig(viewer);
             expect(config.milestones.find((x) => x.id === m.id)).toEqual({ id: m.id, projectId, name: 'Filter', dueDate: null });
-            expect((await getWorkItemViewConfig(guest)).milestones).toEqual([]);
+            await expect(getWorkItemViewConfig(guest)).rejects.toMatchObject({ status: 403 });
+            expect((await getWorkItemViewConfig({ ...guest, appPermissions: getPermissionsForRole('VIEWER') })).milestones).toEqual([]);
         });
 
         it('a move to another project clears the milestone', async () => {

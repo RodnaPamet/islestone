@@ -20,6 +20,7 @@ import { getWorkItemViewConfig } from '@/app-layer/usecases/work-item-views';
 import { listAssignableUsers } from '@/app-layer/usecases/tenant-admin';
 import { updateWorkflowState } from '@/app-layer/usecases/workflow-state';
 import { verifyAuditChain } from '@/lib/audit';
+import { getPermissionsForRole } from '@/lib/permissions';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 
 import { prismaTestClient, resetDatabase } from '../helpers/db';
@@ -116,8 +117,10 @@ describeFn('the board drop', () => {
         expect(config.teams.map((t) => t.name).sort()).toEqual(['Core', 'Other']);
         expect(config.states.some((s) => s.id === states['In review'])).toBe(false);
         expect(config.types.length).toBeGreaterThanOrEqual(3);
+        // Decision 204: a GUEST is refused the configuration; one granted the read keys, as 8.4 will, sees no project.
         const guest = makeRequestContext('GUEST', { tenantId, userId: owner.userId, tenantSlug: TAG, requestId: `${TAG}-g` });
-        expect((await getWorkItemViewConfig(guest)).projects).toEqual([]);
+        await expect(getWorkItemViewConfig(guest)).rejects.toMatchObject({ status: 403 });
+        expect((await getWorkItemViewConfig({ ...guest, appPermissions: getPermissionsForRole('VIEWER') })).projects).toEqual([]);
     });
 
     it('the roster lists active members only, in the pickers\' shape', async () => {
@@ -126,6 +129,11 @@ describeFn('the board drop', () => {
         const roster = await listAssignableUsers(owner);
         expect(roster.map((m) => m.id)).toEqual([owner.userId]);
         expect(roster[0]).toMatchObject({ name: 'Olive Owner', email: `owner-${TAG}@example.test`, image: null });
+    });
+
+    it('the roster, members\' names and emails, is never read by a GUEST (decision 204)', async () => {
+        const guest = makeRequestContext('GUEST', { tenantId, userId: owner.userId, tenantSlug: TAG, requestId: `${TAG}-g-roster` });
+        await expect(listAssignableUsers(guest)).rejects.toMatchObject({ status: 403 });
     });
 
     it('the audit chain verifies', async () => {

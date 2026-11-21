@@ -48,8 +48,8 @@ import type { MembershipStatus, Role } from '@prisma/client';
 import { computePermissions } from '@/lib/tenant-context';
 import type { Permissions } from '@/lib/tenant-context';
 import {
+    effectiveRoleOfMembership,
     getPermissionsForRole,
-    parsePermissionsJson,
     permissionsForMembership,
 } from '@/lib/permissions';
 import type { PermissionSet } from '@/lib/permissions';
@@ -304,7 +304,7 @@ export async function resolveMemberContextWithReason(input: {
         return { ok: false, reason: 'NOT_ACTIVE', status: membership.status };
     }
 
-    const effectiveRole = membership.customRole?.baseRole ?? membership.role;
+    const effectiveRole = effectiveRoleOfMembership(membership);
     const suffix = input.discriminator ? `-${input.discriminator}` : '';
     return {
         ok: true,
@@ -315,12 +315,7 @@ export async function resolveMemberContextWithReason(input: {
             tenantSlug: membership.tenant?.slug,
             role: effectiveRole,
             permissions: computePermissions(effectiveRole),
-            appPermissions: membership.customRole
-                ? parsePermissionsJson(
-                      membership.customRole.grantsJson,
-                      membership.customRole.baseRole,
-                  )
-                : getPermissionsForRole(membership.role),
+            appPermissions: permissionsForMembership(membership),
         },
     };
 }
@@ -330,7 +325,8 @@ export async function resolveMemberContextWithReason(input: {
  * role, coarse flags and granular set a request from that member gets.
  *
  * A request's rule (`resolveTenantContext`): the role is the custom role's
- * base when the membership has one, the coarse flags are `computePermissions`
+ * base when the membership has one (a GUEST membership stays GUEST,
+ * decision 204: `effectiveRoleOfMembership`), the coarse flags are `computePermissions`
  * of that role, and the granular set is `permissionsForMembership` — the custom
  * role's JSON parsed over its base. Only the link is read, never the custom
  * role's `isActive`: a request applies a soft-deleted role a membership is
@@ -348,7 +344,7 @@ export function initiatorAuthority(membership: {
     role: Role;
     customRole: { baseRole: Role; grantsJson: unknown } | null;
 }): { role: Role; permissions: Permissions; appPermissions: PermissionSet } {
-    const role = membership.customRole?.baseRole ?? membership.role;
+    const role = effectiveRoleOfMembership(membership);
     return {
         role,
         permissions: computePermissions(role),

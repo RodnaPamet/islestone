@@ -47,6 +47,7 @@ describeFn('per-tenant role resolution (R-1, security-critical)', () => {
             const ids = tenants.map((t) => t.id);
             if (ids.length > 0) {
                 await prisma.tenantMembership.deleteMany({ where: { tenantId: { in: ids } } });
+                await prisma.tenantCustomRole.deleteMany({ where: { tenantId: { in: ids } } });
             }
         } catch { /* best effort */ }
         try {
@@ -169,6 +170,22 @@ describeFn('per-tenant role resolution (R-1, security-critical)', () => {
         expect(ctxD.permissions.canRead).toBe(true);
         expect(ctxD.permissions.canExport).toBe(false);
         expect(ctxD.permissions.canWrite).toBe(false);
+    });
+
+    it('a GUEST holds no key, and a custom role carried by a GUEST membership grants nothing (decision 204)', async () => {
+        const { tenantId, slug } = await createTenant('guest-carry');
+        const user = await createUser(emailFor('guest-carry'));
+        const everything = Object.fromEntries(
+            Object.entries(getPermissionsForRole('OWNER')).map(([d, actions]) => [d, Object.fromEntries(Object.keys(actions as object).map((a) => [a, true]))]),
+        );
+        const role = await prisma.tenantCustomRole.create({ data: { tenantId, name: 'Wide member', baseRole: 'MEMBER', grantsJson: everything } });
+        await prisma.tenantMembership.create({ data: { userId: user.id, tenantId, role: 'GUEST', status: 'ACTIVE', customRoleId: role.id } });
+
+        const ctx = await resolveTenantContext({ tenantSlug: slug }, user.id);
+        expect(ctx.role).toBe('GUEST');
+        expect(ctx.permissions).toEqual({ canRead: true, canWrite: false, canAdmin: false, canExport: false });
+        expect(ctx.appPermissions).toEqual(getPermissionsForRole('GUEST'));
+        expect(Object.values(ctx.appPermissions).flatMap((d) => Object.values(d as object)).some(Boolean)).toBe(false);
     });
 
     it('throws FORBIDDEN when user is not a member of the target tenant', async () => {

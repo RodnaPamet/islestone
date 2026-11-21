@@ -190,8 +190,9 @@ describeFn('workspace search (2.7b)', () => {
         expect(r.meta).toMatchObject({ truncated: true, perTypeLimit: 1, perTypeCounts: { workItem: 1, project: 1 } });
     });
 
-    it('a GUEST (no project grants until 8.4) is offered nothing', async () => {
-        const r = await searchWorkspace(ctxA({ role: 'GUEST', membershipRole: 'GUEST', appPermissions: getPermissionsForRole('GUEST') }), 'login');
+    it('a GUEST is refused search (decision 204); one granted the read keys, as 8.4 will, with no project grant is offered nothing', async () => {
+        await expect(searchWorkspace(ctxA({ role: 'GUEST', membershipRole: 'GUEST', appPermissions: getPermissionsForRole('GUEST') }), 'login')).rejects.toMatchObject({ status: 403 });
+        const r = await searchWorkspace(ctxA({ role: 'GUEST', membershipRole: 'GUEST', appPermissions: getPermissionsForRole('VIEWER') }), 'login');
         expect(r.hits).toEqual([]);
         expect(r.meta.perTypeCounts).toEqual({ workItem: 0, project: 0 });
     });

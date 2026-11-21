@@ -310,12 +310,14 @@ describeFn('working calendars', () => {
             return res.status;
         };
         const write = (role: Role, ok: number) => (role === 'OWNER' || role === 'ADMIN' ? ok : 403);
+        // Decision 204: a GUEST holds no key until 8.4, so it is refused the reads too.
+        const read = (role: Role, ok: number) => (role === 'GUEST' ? 403 : ok);
 
         it.each(ROLES)('as %s', async (role) => {
             const before = await denied();
             const statuses: Array<[string, number, number]> = [];
             const check = async (label: string, got: Promise<number>, want: number) => statuses.push([label, await got, want]);
-            await check('GET workspace', call(role, 'working-calendar/route.ts', 'GET', '/working-calendar', {}), 200);
+            await check('GET workspace', call(role, 'working-calendar/route.ts', 'GET', '/working-calendar', {}), read(role, 200));
             await check('PUT workspace', call(role, 'working-calendar/route.ts', 'PUT', '/working-calendar', {}, { timeZone: 'Europe/Sofia', workingWeekdays: MON_FRI }), write(role, 200));
             await check(
                 'POST holidays',
@@ -326,7 +328,7 @@ describeFn('working calendars', () => {
             const holiday = ws.holidays.find((h) => h.day === '2028-01-01') ?? (await addWorkspaceHolidays(owner, { holidays: [{ day: '2028-01-01', name: 'New Year' }] })).calendar.holidays.find((h) => h.day === '2028-01-01')!;
             await check('DELETE holiday', call(role, 'working-calendar/holidays/[holidayId]/route.ts', 'DELETE', `/working-calendar/holidays/${holiday.id}`, { holidayId: holiday.id }), write(role, 200));
             const t = `teams/[teamId]/working-calendar`;
-            await check('GET team', call(role, `${t}/route.ts`, 'GET', `/teams/${teamId}/working-calendar`, { teamId }), 200);
+            await check('GET team', call(role, `${t}/route.ts`, 'GET', `/teams/${teamId}/working-calendar`, { teamId }), read(role, 200));
             await check('PUT team', call(role, `${t}/route.ts`, 'PUT', `/teams/${teamId}/working-calendar`, { teamId }, { timeZone: 'UTC', workingWeekdays: MON_FRI }), write(role, 200));
             if (role !== 'OWNER' && role !== 'ADMIN') await setTeamWorkingCalendar(owner, teamId, { timeZone: 'UTC', workingWeekdays: MON_FRI });
             await check(

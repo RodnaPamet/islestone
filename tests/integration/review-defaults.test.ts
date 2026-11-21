@@ -418,7 +418,8 @@ describeFn('default review steps per type and the Done check', () => {
             return res.status;
         };
         const EXPECT = {
-            GET: { OWNER: 200, ADMIN: 200, MEMBER: 200, VIEWER: 200, GUEST: 200 },
+            // Decision 204: a GUEST holds no key until 8.4, so it is refused the read too.
+            GET: { OWNER: 200, ADMIN: 200, MEMBER: 200, VIEWER: 200, GUEST: 403 },
             PUT: { OWNER: 200, ADMIN: 200, MEMBER: 403, VIEWER: 403, GUEST: 403 },
         } as const;
 
