@@ -1,50 +1,59 @@
 /**
- * Working days (sub-phase 2.8a; owner decision 151): Monday to Friday, no
- * holidays, until roadmap 3.1 brings teams' working calendars, which replace
- * {@link WORKING_WEEKDAYS} for steps opened after it.
+ * Working days for review steps (sub-phase 2.8a, owner decision 151; from
+ * roadmap 3.1, owner decisions 191 and 192, ADR 0009 §13 as amended, ADR
+ * 0010 §5): the same signatures 2.8 wrote, on a working calendar.
+ *
+ * The arithmetic lives in the scheduling engine's calendar module
+ * (`schedule/calendar.ts`); this module keeps 2.8's `Date` shapes over it.
+ * With no calendar given, it is Monday to Friday with no holidays, which is
+ * also what a workspace that never edited a calendar uses: review due days
+ * do not move until an admin edits one, and a stored `dueOn` never moves.
  *
  * Pure and date-only: every value is UTC midnight of a calendar date (the
  * shape Prisma reads a `@db.Date` column back as), and only its UTC parts are
  * read, so a date never meets a time zone here. "Today" is computed by the
- * caller in `NOTIFICATIONS_TZ` (`todayInTz`) before it reaches this module.
+ * caller in the calendar's time zone before it reaches this module.
  *
  * Written fresh for Islestone: inflect-compliance has no working-day
  * arithmetic, and date-fns's `addBusinessDays` works on instants, a time-zone
  * question date-only values must never meet.
  */
+import {
+    DEFAULT_WORKING_WEEKDAYS,
+    defaultCalendar,
+    epochDayToDate,
+    isWorkingDay as isWorkingEpochDay,
+    toEpochDay,
+    workingDaysAfter,
+    type CompiledCalendar,
+} from './schedule/calendar';
 
-const MS_PER_DAY = 86_400_000;
+/** The default working weekdays, as `Date.getUTCDay()` numbers: Monday (1) to Friday (5). */
+export const WORKING_WEEKDAYS: ReadonlySet<number> = new Set(DEFAULT_WORKING_WEEKDAYS);
 
-/** The working weekdays, as `Date.getUTCDay()` numbers: Monday (1) to Friday (5). */
-export const WORKING_WEEKDAYS: ReadonlySet<number> = new Set([1, 2, 3, 4, 5]);
+const MONDAY_TO_FRIDAY = defaultCalendar('monday-to-friday');
 
 /** A date-only value's day, at UTC midnight. */
 export function dateOnlyUtc(d: Date): Date {
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
-export function isWorkingDay(d: Date): boolean {
-    return WORKING_WEEKDAYS.has(d.getUTCDay());
+export function isWorkingDay(d: Date, calendar: CompiledCalendar = MONDAY_TO_FRIDAY): boolean {
+    return isWorkingEpochDay(calendar, toEpochDay(d));
 }
 
 /**
  * The date `n` working days after `start` (date-only): each following day
  * that is a working day counts one, so from a Friday one working day is the
  * Monday, and from a Saturday it is also the Monday. `n` must be a positive
- * whole number; the result is always a working day.
+ * whole number; the result is always a working day of the calendar.
  */
-export function addWorkingDays(start: Date, n: number): Date {
+export function addWorkingDays(start: Date, n: number, calendar: CompiledCalendar = MONDAY_TO_FRIDAY): Date {
     if (!Number.isInteger(n) || n < 1) throw new RangeError('addWorkingDays: n must be a whole number of at least 1');
-    let day = dateOnlyUtc(start).getTime();
-    let counted = 0;
-    while (counted < n) {
-        day += MS_PER_DAY;
-        if (WORKING_WEEKDAYS.has(new Date(day).getUTCDay())) counted += 1;
-    }
-    return new Date(day);
+    return epochDayToDate(workingDaysAfter(calendar, toEpochDay(start), n));
 }
 
 /** The next working day after `d`. */
-export function nextWorkingDay(d: Date): Date {
-    return addWorkingDays(d, 1);
+export function nextWorkingDay(d: Date, calendar: CompiledCalendar = MONDAY_TO_FRIDAY): Date {
+    return addWorkingDays(d, 1, calendar);
 }
