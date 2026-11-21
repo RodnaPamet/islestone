@@ -90,6 +90,9 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
         ['list (a milestone filter, 2.5b)', (db) => WorkItemRepository.list(db, ctx, GUEST, { milestoneId: 'm1,none' }, { limit: 10, sort: listSortSpec('manual') })],
         ['list (q with description and comment matches, 2.7f)', (db) => WorkItemRepository.list(db, ctx, GUEST, { q: 'login', fullTextMatchIds: ['w1'] }, { limit: 10, sort: listSortSpec('manual') })],
         ['findSearchRows (2.7f)', (db) => WorkItemRepository.findSearchRows(db, ctx, GUEST, ['w1'])],
+        ['listForTimeline (3.1b, the list\'s where)', (db) => WorkItemRepository.listForTimeline(db, ctx, GUEST, { projectId: 'p1', q: 'x', fullTextMatchIds: ['w1'] }, { take: 5001 })],
+        ['countForTimeline (3.1b)', (db) => WorkItemRepository.countForTimeline(db, ctx, GUEST, { cycleId: 'c1' }, {})],
+        ['timelineContextRows (3.1b)', (db) => WorkItemRepository.timelineContextRows(db, ctx, GUEST, ['w1', 'w2'], 500)],
         ['searchSnippetSources (2.7f, descriptions and comments)', (db) => WorkItemRepository.searchSnippetSources(db, ctx, GUEST, { descriptionItemIds: ['w1'], commentIds: ['c1'] })],
     ];
 

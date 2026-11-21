@@ -252,6 +252,32 @@ export const workItemListSelect = {
 
 export type WorkItemListRow = Prisma.WorkItemGetPayload<{ select: typeof workItemListSelect }>;
 
+/**
+ * What the timeline reads per item (roadmap 3.1b): never a description, a
+ * comment or a custom-field value (titles are plaintext, ADR 0002 §11).
+ */
+export const workItemTimelineSelect = {
+    id: true,
+    number: true,
+    title: true,
+    projectId: true,
+    teamId: true,
+    typeId: true,
+    stateCategory: true,
+    assigneeId: true,
+    parentId: true,
+    sortKey: true,
+    startDate: true,
+    dueDate: true,
+    startedAt: true,
+    completedAt: true,
+    milestoneId: true,
+    version: true,
+    project: { select: { keyPrefix: true, name: true, dueDate: true, archivedAt: true } },
+} satisfies Prisma.WorkItemSelect;
+
+export type WorkItemTimelineRow = Prisma.WorkItemGetPayload<{ select: typeof workItemTimelineSelect }>;
+
 /** The fields every gated write reads first. */
 export const workItemGateSelect = {
     id: true,
@@ -476,6 +502,53 @@ export class WorkItemRepository {
             orderBy: sortOrderBy(page.sort) as Prisma.WorkItemOrderByWithRelationInput[],
             take: page.limit + 1,
             select: workItemListSelect,
+        });
+    }
+
+    /**
+     * The timeline's scope (roadmap 3.1b): the list's own `where`, so a
+     * timeline and a list with the same filters hold the same items, in
+     * manual order, at most `take` rows (the caller asks one past its limit
+     * to know it is over it, never to cut).
+     */
+    static async listForTimeline(
+        db: PrismaTx,
+        ctx: RequestContext,
+        v: ProjectVisibility,
+        filters: WorkItemFilters,
+        page: { take: number; keyHit?: KeyHit | null; today?: Date },
+    ): Promise<WorkItemTimelineRow[]> {
+        return db.workItem.findMany({
+            where: WorkItemRepository._buildWhere(ctx, v, filters, page.keyHit ?? null, page.today),
+            orderBy: [{ sortKey: 'asc' }, { id: 'asc' }],
+            take: page.take,
+            select: workItemTimelineSelect,
+        });
+    }
+
+    /** How many items the list's `where` holds: the count a too-large timeline answers with. */
+    static async countForTimeline(
+        db: PrismaTx,
+        ctx: RequestContext,
+        v: ProjectVisibility,
+        filters: WorkItemFilters,
+        page: { keyHit?: KeyHit | null; today?: Date },
+    ): Promise<number> {
+        return db.workItem.count({ where: WorkItemRepository._buildWhere(ctx, v, filters, page.keyHit ?? null, page.today) });
+    }
+
+    /**
+     * The timeline's context rows (3.1b): live items among `ids` in a project
+     * the caller sees (archived ones included, shown read-only), in id order,
+     * at most `take`.
+     */
+    static async timelineContextRows(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, ids: readonly string[], take: number): Promise<WorkItemTimelineRow[]> {
+        if (ids.length === 0 || take <= 0) return [];
+        return db.workItem.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: [...ids] }, deletedAt: null, AND: [projectVisibilityWhere(v, { includeArchived: true })] },
+            orderBy: { id: 'asc' },
+            take,
+            select: workItemTimelineSelect,
         });
     }
 

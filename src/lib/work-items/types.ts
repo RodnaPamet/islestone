@@ -202,6 +202,8 @@ export interface SavedViewData {
         direction?: 'asc' | 'desc';
         laneBy: string;
         columns?: string[];
+        /** The timeline's settings (3.1b). */
+        timeline?: { zoom: 'day' | 'week' | 'month' | 'quarter'; showCriticalPath: boolean; showNoDates: boolean };
     };
     createdByUserId: string;
     mine: boolean;

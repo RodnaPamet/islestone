@@ -27,7 +27,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import type { WorkflowStateCategory, WorkItemPriority } from '@prisma/client';
+import type { CustomFieldType, WorkflowStateCategory, WorkItemPriority } from '@prisma/client';
 
 import { emitAutomationEvent } from '../automation';
 import { logEvent } from '../events/audit';
@@ -274,6 +274,38 @@ async function resolveCycleFilter(db: PrismaTx, ctx: RequestContext, raw: string
 }
 
 /**
+ * The list's filters as the repository reads them (2.3 to 2.7): the request's
+ * facets, its `cf.<fieldId>` conditions parsed against their fields, `q`'s
+ * key hit and full-text matches, and `cycleId=current` resolved. The list
+ * and the timeline (3.1b) both call it, so a timeline and a list with the
+ * same filters hold the same items.
+ */
+export async function resolveListFiltersInTx(
+    db: PrismaTx,
+    ctx: RequestContext,
+    v: ProjectVisibility,
+    query: ListWorkItemsQuery,
+    sortFieldId: string | null = null,
+): Promise<{ listFilters: WorkItemFilters; keyHit: KeyHit | null; today: Date; sortField: { id: string; type: CustomFieldType } | null }> {
+    const { customFields: rawConditions, order: _order, dir: _dir, cursor: _cursor, limit: _limit, ...filters } = query;
+    void _order;
+    void _dir;
+    void _cursor;
+    void _limit;
+    const keyHit = await keyHitFor(db, ctx, query.q);
+    const today = todayInTz(new Date(), notificationsTz());
+    const { conditions, sortField } = await resolveListCustomFields(db, ctx, rawConditions ?? {}, sortFieldId);
+    const listFilters: WorkItemFilters = { ...filters, customFields: conditions };
+    // `q` also matches stemmed titles, descriptions and comments (2.7f,
+    // ADR 0008): the ids are the usecase's, never the request's.
+    listFilters.fullTextMatchIds = filters.q ? await fullTextMatchIdsFor(db, ctx, v, filters.q) : undefined;
+    // An empty parameter is no filter; a resolved empty list matches nothing.
+    if (filters.cycleId) listFilters.cycleId = await resolveCycleFilter(db, ctx, filters.cycleId);
+    else delete listFilters.cycleId;
+    return { listFilters, keyHit, today, sortField };
+}
+
+/**
  * The live list, one cursor page. Sorts (2.4, docs/pagination.md): a named
  * sort over the item's own columns, or `cf:<fieldId>`, a custom field's value
  * (empty values last). `cf.<fieldId>` conditions filter by a field.
@@ -286,20 +318,10 @@ export async function listWorkItems(ctx: RequestContext, query: ListWorkItemsQue
         throw badRequest(`Invalid order. Must be one of: ${LIST_SORTS.join(', ')}, or cf:<fieldId>.`);
     }
     const limit = clampLimit(query.limit);
-    const { customFields: rawConditions, order: _order, dir, cursor: rawCursor, ...filters } = query;
-    void _order;
+    const { dir, cursor: rawCursor } = query;
     return runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
-        const keyHit = await keyHitFor(db, ctx, query.q);
-        const today = todayInTz(new Date(), notificationsTz());
-        const { conditions, sortField } = await resolveListCustomFields(db, ctx, rawConditions ?? {}, sortFieldId);
-        const listFilters: WorkItemFilters = { ...filters, customFields: conditions };
-        // `q` also matches stemmed titles, descriptions and comments (2.7f,
-        // ADR 0008): the ids are the usecase's, never the request's.
-        listFilters.fullTextMatchIds = filters.q ? await fullTextMatchIdsFor(db, ctx, v, filters.q) : undefined;
-        // An empty parameter is no filter; a resolved empty list matches nothing.
-        if (filters.cycleId) listFilters.cycleId = await resolveCycleFilter(db, ctx, filters.cycleId);
-        else delete listFilters.cycleId;
+        const { listFilters, keyHit, today, sortField } = await resolveListFiltersInTx(db, ctx, v, query, sortFieldId);
         if (sortField) {
             const direction = dir ?? 'asc';
             const valueKind = CUSTOM_FIELD_TYPE_SPECS[sortField.type].column === 'dateValue' ? 'date' : 'string';

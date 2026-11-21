@@ -99,6 +99,31 @@ export class WorkItemRelationRepository {
         return { outgoing, incoming };
     }
 
+    /**
+     * Every blocks relation with either end among `ids` (the timeline, roadmap
+     * 3.1b), at most `take` (the caller asks one past its limit to refuse
+     * rather than cut). Served by `@@unique([tenantId, fromId, type, toId])`
+     * and `@@index([tenantId, toId, type])`. Ends are not filtered here: the
+     * caller keeps only the ends the reader may see.
+     */
+    static async blocksTouching(db: PrismaTx, ctx: RequestContext, ids: readonly string[], take: number) {
+        if (ids.length === 0) return [];
+        return db.workItemRelation.findMany({
+            where: { tenantId: ctx.tenantId, type: 'BLOCKS', OR: [{ fromId: { in: [...ids] } }, { toId: { in: [...ids] } }] },
+            orderBy: { id: 'asc' },
+            take,
+            select: { id: true, fromId: true, toId: true },
+        });
+    }
+
+    /** How many blocks relations touch `ids`: the count a too-large timeline answers with. */
+    static async countBlocksTouching(db: PrismaTx, ctx: RequestContext, ids: readonly string[]): Promise<number> {
+        if (ids.length === 0) return 0;
+        return db.workItemRelation.count({
+            where: { tenantId: ctx.tenantId, type: 'BLOCKS', OR: [{ fromId: { in: [...ids] } }, { toId: { in: [...ids] } }] },
+        });
+    }
+
     /** The ids among `ids` the reader may see (live, visible project). */
     static async visibleIds(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, ids: readonly string[]): Promise<Set<string>> {
         if (ids.length === 0) return new Set();

@@ -246,6 +246,14 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note: 'Counts over visible projects only.',
     },
     {
+        path: new RegExp(`^${T}\\/work-items\\/timeline$`),
+        methods: ['GET'],
+        permission: 'work_items.view',
+        note:
+            'The timeline (3.1b): the list\'s filters, at most 5,000 items, their blocks relations, ' +
+            'calendars and the engine\'s answer; project visibility narrows every read.',
+    },
+    {
         path: new RegExp(`^${T}\\/work-items\\/by-key\\/[^\\/]+$`),
         methods: ['GET'],
         permission: 'work_items.view',

@@ -643,7 +643,8 @@
         "layout": {
             "label": "Layout",
             "list": "List",
-            "board": "Board"
+            "board": "Board",
+            "timeline": "Timeline"
         },
         "lanes": {
             "label": "By label",
@@ -1319,6 +1320,91 @@
                 "dueOn": "due {date}",
                 "openShort": "Open"
             }
+        },
+        "timeline": {
+            "heading": "Timeline",
+            "loadFailed": "The timeline could not be loaded.",
+            "retry": "Try again",
+            "tooLarge": "Narrow the filter: {count, plural, one {# item} other {# items}} match, and a timeline shows at most {limit}.",
+            "tooLargeRelations": "Narrow the filter: these items have {count, plural, one {# blocks relation} other {# blocks relations}}, and a timeline reads at most {limit}.",
+            "cycle": "These items block each other in a loop ({keys}), so no schedule can be computed. Remove one of the blocks relations.",
+            "engineTooLarge": "Too many items to schedule. Narrow the filter.",
+            "view": "Show as",
+            "chart": "Chart",
+            "table": "Table",
+            "zoom": "Zoom",
+            "zoomLevel": {
+                "day": "Days",
+                "week": "Weeks",
+                "month": "Months",
+                "quarter": "Quarters"
+            },
+            "criticalPath": "Critical path",
+            "showNoDates": "No dates",
+            "summary": {
+                "finishes": "Finishes on {date}",
+                "critical": "{count, plural, =0 {Nothing on the critical path} one {# item on the critical path} other {# items on the critical path}}",
+                "late": "{count, plural, =0 {none late} one {# late} other {# late}}",
+                "projectDue": "Due {date}",
+                "projectLate": "late by {days, plural, one {# day} other {# days}}",
+                "noDates": "Add dates to see the critical path."
+            },
+            "chartLabel": "Timeline chart",
+            "chartDescription": "The chart shows each item as a bar from its start date to its due date. The schedule table shows the same rows and numbers and can be read with a keyboard or a screen reader.",
+            "legend": {
+                "label": "Legend",
+                "critical": "Critical path",
+                "late": "Late",
+                "conflict": "Conflict",
+                "today": "Today",
+                "nonWorking": "Non-working day",
+                "nonWorkingSeveral": "Non-working on every calendar in view",
+                "context": "Outside this view"
+            },
+            "hiddenDependencies": "{count, plural, one {# dependency to an item you cannot see is not shown.} other {# dependencies to items you cannot see are not shown.}}",
+            "omittedContext": "{count, plural, one {# item outside this view that a dependency reaches is not shown.} other {# items outside this view that dependencies reach are not shown.}}",
+            "contextGroup": "Outside this view",
+            "noDatesPanel": {
+                "heading": "No dates",
+                "description": "Items with neither a start date nor a due date are not on the chart.",
+                "empty": "Every item has a date.",
+                "count": "{count, plural, one {# item} other {# items}}"
+            },
+            "float": {
+                "days": "{days, plural, =0 {No float} one {# day of float} other {# days of float}}",
+                "late": "Late by {days, plural, one {# day} other {# days}}",
+                "none": "—"
+            },
+            "col": {
+                "key": "Key",
+                "title": "Title",
+                "state": "State",
+                "start": "Start",
+                "due": "Due",
+                "earliestStart": "Earliest start",
+                "earliestFinish": "Earliest finish",
+                "latestStart": "Latest start",
+                "latestFinish": "Latest finish",
+                "float": "Float",
+                "critical": "Critical path",
+                "conflicts": "Conflicts"
+            },
+            "criticalYes": "Critical",
+            "cancelled": "Cancelled",
+            "outside": "Outside this view",
+            "summaryRow": "Summary of its sub-items",
+            "tableEmpty": "No items match these filters.",
+            "tableCaption": "The schedule: every item on the timeline with its planned dates, earliest and latest dates and float.",
+            "criticalOnly": "Critical only",
+            "conflict": {
+                "STARTS_BEFORE_BLOCKER_FINISHES": "Starts before its blocker finishes",
+                "MISSES_MILESTONE_DUE_DATE": "Misses its milestone's due date",
+                "MISSES_PROJECT_DUE_DATE": "Misses the project's due date",
+                "DATES_REVERSED": "Start date is after the due date",
+                "STARTS_ON_NON_WORKING_DAY": "Starts on a non-working day"
+            },
+            "resource": "item",
+            "resourcePlural": "items"
         }
     },
     "settings": {

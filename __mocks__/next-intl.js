@@ -28,9 +28,54 @@ function lookup(namespace, key) {
         .reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), en);
 }
 
+/**
+ * ICU `{name, plural, =0 {…} one {…} other {…}}` as next-intl formats it in
+ * English: an exact `=n` branch first, then `one` for 1, else `other`; `#`
+ * is the number through `Intl.NumberFormat`. Nested arguments are left to
+ * `interpolate`. Without it a plural message rendered its raw source.
+ */
+function formatPlurals(str, params) {
+    let out = '';
+    let i = 0;
+    while (i < str.length) {
+        const head = /^\{(\w+),\s*plural,/.exec(str.slice(i));
+        if (!head || !Object.prototype.hasOwnProperty.call(params, head[1])) {
+            out += str[i];
+            i += 1;
+            continue;
+        }
+        // The argument's closing brace, matching nested braces.
+        let depth = 0;
+        let end = i;
+        for (; end < str.length; end++) {
+            if (str[end] === '{') depth++;
+            else if (str[end] === '}' && --depth === 0) break;
+        }
+        const body = str.slice(i + head[0].length, end);
+        const branches = {};
+        const re = /\s*(=\d+|\w+)\s*\{/g;
+        let m;
+        while ((m = re.exec(body))) {
+            let d = 1;
+            let j = re.lastIndex;
+            for (; j < body.length && d > 0; j++) {
+                if (body[j] === '{') d++;
+                else if (body[j] === '}') d--;
+            }
+            branches[m[1]] = body.slice(re.lastIndex, j - 1);
+            re.lastIndex = j;
+        }
+        const n = Number(params[head[1]]);
+        const chosen = branches[`=${n}`] ?? (n === 1 ? branches.one : undefined) ?? branches.other ?? '';
+        out += formatPlurals(chosen, params).replace(/#/g, new Intl.NumberFormat('en').format(n));
+        i = end + 1;
+    }
+    return out;
+}
+
 function interpolate(str, params) {
     if (typeof str !== 'string' || !params) return str;
-    return str.replace(/\{(\w+)\}/g, (m, name) =>
+    return formatPlurals(str, params).replace(/\{(\w+)\}/g, (m, name) =>
         Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : m,
     );
 }

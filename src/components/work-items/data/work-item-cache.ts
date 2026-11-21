@@ -31,6 +31,7 @@ import { useMemo } from 'react';
 import { useSWRConfig } from 'swr';
 
 import type { WorkItemDetailData, WorkItemPage, WorkItemRow } from '@/lib/work-items/types';
+import { placeRowInTimeline, removeRowFromTimeline, type TimelineResponse } from '@/lib/work-items/timeline';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 
 import { compareRows, rowBelongs, type WorkItemListFilters } from './list-filters';
@@ -44,6 +45,28 @@ export interface RegisteredList {
 }
 
 const lists = new Set<RegisteredList>();
+
+/**
+ * A mounted timeline (3.1b, `useWorkItemTimeline`). A write places the row in
+ * its cached copy and re-runs the scheduling engine there (the same module
+ * the server runs, decision 197); a row the timeline does not hold, or a bulk
+ * change, re-reads it.
+ */
+export interface RegisteredTimeline {
+    /** Apply a change to the cached timeline; `fn` answers `null` when it cannot place the change. */
+    update: (fn: (current: TimelineResponse) => TimelineResponse | null) => void;
+    revalidate: () => void;
+}
+
+const timelines = new Set<RegisteredTimeline>();
+
+/** Register a mounted timeline; returns the unregister function. */
+export function registerWorkItemTimeline(timeline: RegisteredTimeline): () => void {
+    timelines.add(timeline);
+    return () => {
+        timelines.delete(timeline);
+    };
+}
 
 /** Register a mounted list; returns the unregister function. */
 export function registerWorkItemList(list: RegisteredList): () => void {
@@ -126,6 +149,7 @@ export function useWorkItemCache(): WorkItemCache {
         () => ({
             applyRow(row, detail) {
                 for (const list of lists) list.update((pages) => placeRow(pages, list.filters, row));
+                for (const timeline of timelines) timeline.update((current) => placeRowInTimeline(current, row));
                 // Only a detail that is loaded: SWR drops an in-flight fetch's
                 // answer when its key is mutated after the fetch began, so a
                 // write landing while a sheet was still loading left it
@@ -138,9 +162,12 @@ export function useWorkItemCache(): WorkItemCache {
             },
             removeRow(id) {
                 for (const list of lists) list.update((pages) => removeRowFromPages(pages, id));
+                for (const timeline of timelines) timeline.update((current) => removeRowFromTimeline(current, id));
             },
             revalidateLists(match) {
                 for (const list of lists) if (!match || match(list.filters)) list.revalidate();
+                // A timeline reads its whole scope: any change a list re-reads for may move it.
+                for (const timeline of timelines) timeline.revalidate();
             },
             revalidateItem(id) {
                 return mutate(apiUrl(workItemDetailPath(id)));

@@ -238,6 +238,7 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         { route: 'work-items/deleted/route.ts', method: 'GET', key: 'work_items.delete', subject: 'the Deleted view', expect: ITEM_DELETE },
         // Counts over what the caller sees; a GUEST's are zero, still a 200.
         { route: 'work-items/metrics/route.ts', method: 'GET', key: 'work_items.view', subject: 'the counts', expect: WS_READ },
+        { route: 'work-items/timeline/route.ts', method: 'GET', key: 'work_items.view', subject: 'the timeline of the live items (3.1b)', reveals: (s) => s.workItemId, expect: LIST },
         { route: 'work-items/by-key/[key]/route.ts', method: 'GET', key: 'work_items.view', subject: 'an item by its key', expect: READ },
         { route: 'work-items/bulk/assign/route.ts', method: 'POST', key: 'work_items.assign', subject: 'a fresh item', fixture: 'item', body: (s) => ({ workItemIds: [s.workItemId], assigneeId: s.annId }), expect: ITEM_ASSIGN },
         { route: 'work-items/bulk/state/route.ts', method: 'POST', key: 'work_items.edit', subject: 'a fresh item', fixture: 'item', body: (s) => ({ workItemIds: [s.workItemId], stateCategory: 'STARTED' }), expect: ITEM_EDIT },

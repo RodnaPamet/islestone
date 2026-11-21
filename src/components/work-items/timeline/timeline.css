@@ -1,0 +1,166 @@
+/*
+ * The timeline widget's theme (roadmap 3.1b): SVAR's `--wx-*` variables
+ * mapped to Islestone's tokens, so both themes (`data-theme`) follow
+ * `src/styles/tokens.css`. Written fresh for Islestone.
+ *
+ * Why not `@layer components`: SVAR's own stylesheets are unlayered, and an
+ * unlayered rule beats every layered one whatever its specificity, so a
+ * layered override of the widget's variables would lose to the widget's
+ * defaults. Every rule here is scoped under `.isl-timeline` and reaches only
+ * the widget's own elements, so it never competes with a Tailwind utility on
+ * Islestone's elements.
+ *
+ * The widget's core stylesheet (`@svar-ui/react-core`) is not loaded: it
+ * carries `@font-face` rules naming `cdn.svar.dev`. The base variables it
+ * would define are defined here instead, and the few icons the chart shows
+ * (the tree's expand and collapse) are drawn with CSS.
+ */
+
+.isl-timeline {
+    --isl-timeline-critical: var(--content-error);
+    --isl-timeline-late: var(--border-error);
+    height: 100%;
+    min-height: 24rem;
+}
+
+.isl-timeline .wx-willow-theme {
+    height: 100%;
+    /* The base variables the core stylesheet would define. */
+    --wx-color-primary: var(--brand-default);
+    --wx-color-font: var(--content-default);
+    --wx-color-font-alt: var(--content-muted);
+    --wx-color-font-disabled: var(--content-subtle);
+    --wx-color-danger: var(--content-error);
+    --wx-color-success: var(--content-success);
+    --wx-color-link: var(--brand-default);
+    --wx-color-secondary-font: var(--brand-default);
+    --wx-background: var(--bg-default);
+    --wx-background-alt: var(--bg-subtle);
+    --wx-background-hover: var(--bg-muted);
+    --wx-font-family: inherit;
+    --wx-font-size: 13px;
+    --wx-font-size-sm: 12px;
+    --wx-line-height: 20px;
+    --wx-line-height-sm: 16px;
+    --wx-font-weight: 400;
+    --wx-font-weight-md: 600;
+    --wx-icon-color: var(--content-muted);
+    --wx-icon-size: 16px;
+    --wx-border: 1px solid var(--border-subtle);
+    --wx-border-color: var(--border-subtle);
+    --wx-box-shadow: none;
+    --wx-scrollbar-width: 10px;
+    --wx-input-border-radius: var(--radius-sm);
+    /* The table (grid) beside the chart. */
+    --wx-table-border: 1px solid var(--border-subtle);
+    --wx-table-header-background: var(--bg-subtle);
+    --wx-table-select-background: var(--bg-muted);
+    --wx-table-select-color: var(--content-default);
+    --wx-table-select-border: inset 3px 0 var(--brand-default);
+    --wx-table-fixed-column-border: 1px solid var(--border-default);
+    --wx-header-font-weight: 600;
+    --wx-grid-header-text-transform: none;
+    --wx-grid-body-row-border: 1px solid var(--border-subtle);
+    /* The chart. */
+    --wx-gantt-border-color: var(--border-subtle);
+    --wx-gantt-border: 1px solid var(--border-subtle);
+    --wx-gantt-icon-color: var(--content-muted);
+    --wx-gantt-bar-shadow: none;
+    --wx-gantt-bar-border-radius: var(--radius-sm);
+    --wx-gantt-milestone-border-radius: 2px;
+    --wx-gantt-task-color: var(--brand-default);
+    --wx-gantt-task-fill-color: var(--brand-emphasis);
+    --wx-gantt-task-border-color: var(--brand-emphasis);
+    --wx-gantt-task-font-color: var(--content-inverted);
+    --wx-gantt-summary-color: var(--content-muted);
+    --wx-gantt-summary-fill-color: var(--content-muted);
+    --wx-gantt-summary-border-color: var(--content-muted);
+    --wx-gantt-summary-font-color: var(--content-inverted);
+    --wx-gantt-milestone-color: var(--accent-default);
+    --wx-gantt-select-color: var(--bg-muted);
+    --wx-gantt-link-color: var(--content-subtle);
+    --wx-gantt-link-color-hovered: var(--content-muted);
+    --wx-gantt-link-critical-color: var(--isl-timeline-critical);
+    --wx-gantt-critical-color: var(--isl-timeline-critical);
+    --wx-gantt-holiday-background: var(--bg-subtle);
+    --wx-gantt-holiday-color: var(--content-muted);
+    --wx-timescale-font-color: var(--content-muted);
+    --wx-timescale-border: 1px solid var(--border-subtle);
+    color: var(--content-default);
+    background: var(--bg-default);
+}
+
+/* The tree's expand and collapse, without the icon font. */
+.isl-timeline .wx-toggle-icon {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    position: relative;
+    cursor: pointer;
+}
+.isl-timeline .wx-toggle-icon::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 5px;
+    border: 4px solid transparent;
+    border-left: 6px solid var(--content-muted);
+}
+.isl-timeline .wx-toggle-icon.wxi-menu-down::before {
+    top: 6px;
+    left: 4px;
+    border: 4px solid transparent;
+    border-top: 6px solid var(--content-muted);
+}
+
+/* Bars: Islestone's content element (taskTemplate) fills the bar. */
+.isl-timeline .isl-timeline-bar {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    width: 100%;
+    padding: 0 6px;
+    overflow: hidden;
+    border-radius: inherit;
+}
+.isl-timeline .isl-timeline-bar-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+}
+.isl-timeline .isl-timeline-bar[data-critical='true'] {
+    box-shadow: inset 0 0 0 2px var(--isl-timeline-critical);
+}
+.isl-timeline .isl-timeline-bar[data-late='true'] {
+    background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--isl-timeline-late) 45%, transparent) 6px 9px);
+}
+.isl-timeline .isl-timeline-bar[data-conflict='true']::after {
+    content: '';
+    flex: none;
+    margin-left: auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 9999px;
+    background: var(--content-warning);
+    box-shadow: 0 0 0 1px var(--bg-default);
+}
+.isl-timeline .isl-timeline-bar[data-context='true'],
+.isl-timeline .isl-timeline-bar[data-done='true'] {
+    opacity: 0.55;
+}
+.isl-timeline .isl-timeline-bar[data-kind='project-due'] {
+    box-shadow: inset 0 0 0 2px var(--content-error);
+}
+
+/* Cells: today and the days no calendar in view works. */
+.isl-timeline .isl-timeline-nonworking {
+    background: var(--bg-subtle);
+}
+.isl-timeline .isl-timeline-cycle {
+    box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--brand-default) 45%, transparent);
+}
+.isl-timeline .isl-timeline-today {
+    background: color-mix(in srgb, var(--brand-default) 14%, transparent);
+    box-shadow: inset 2px 0 0 var(--brand-default);
+}
