@@ -1,8 +1,8 @@
 'use client';
 
 /**
- * The timeline layout (roadmap 3.1b; ADR 0010; owner decisions 184 to 203):
- * read-only. One read (`useWorkItemTimeline`, the list's filters), one view
+ * The timeline layout (roadmap 3.1b and 3.1c; ADR 0010; owner decisions 184
+ * to 203). One read (`useWorkItemTimeline`, the list's filters), one view
  * model (`buildTimelineModel`), shown as the chart or the schedule table
  * (decision 203, remembered per viewer), with the "No dates" list beside the
  * chart (decision 185), the summary line ("Finishes on …", the critical
@@ -11,10 +11,20 @@
  * cannot see). Never an invented number: with no dated open item it says
  * "Add dates to see the critical path".
  *
+ * Changes (3.1c, decisions 194, 195 and 203): for a caller who edits work
+ * items (`canEdit`, the client permissions the board reads too), a dropped
+ * bar, a row's "Change dates" in the table or "Set dates" in the "No dates"
+ * list opens `ChangeDatesDialog`; a drawn link opens "ISL-1 blocks ISL-2?"
+ * and a link's delete goes through the undo toast; a row's "Dependencies"
+ * in the table adds and removes them by keyboard. Which rows may change is
+ * `editableRows`, read from the rows and the field sets the server sent
+ * (`useWorkConfig().fieldSetEntries`); every write is the API's
+ * (`useTimelineWrites`).
+ *
  * Written fresh for Islestone.
  */
 import { useTranslations } from 'next-intl';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { Button } from '@inflect/ui/components/ui/button';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
@@ -23,11 +33,22 @@ import { Switch } from '@/components/ui/switch';
 import { ToggleGroup } from '@/components/ui/toggle-group';
 import { Label } from '@/components/ui/label';
 
+import { useToast } from '@/components/ui/hooks';
+import { compileCalendar, toEpochDay } from '@/app-layer/domain/schedule/calendar';
+import { ApiClientError } from '@/lib/data/api-client';
+import { resolveFieldSet } from '@/lib/work-items/field-sets';
+import { proposeDates, type ItemDates } from '@/lib/work-items/reschedule';
+import type { TimelineRow } from '@/lib/work-items/timeline';
+
 import type { WorkItemListFilters } from '../data/list-filters';
+import { useTimelineWrites } from '../data/use-timeline-writes';
+import { useWorkConfig } from '../data/use-work-config';
 import { useWorkItemTimeline } from '../data/use-work-item-timeline';
+import { ChangeDatesDialog, type ChangeDatesConfirm } from './ChangeDatesDialog';
 import { TimelineChart } from './TimelineChart';
-import { TimelineScheduleTable, formatDay } from './TimelineScheduleTable';
-import { buildTimelineModel, type ChartTask, type ScheduleTableRow, type TimelineZoom } from './timeline-model';
+import { AddDependencyDialog, DependenciesDialog } from './TimelineDependencies';
+import { TimelineScheduleTable, formatDay, type ScheduleTableActions } from './TimelineScheduleTable';
+import { buildTimelineModel, editableRows, type ChartTask, type ScheduleTableRow, type TimelineZoom, type WidgetDrop } from './timeline-model';
 
 export interface TimelineSettings {
     zoom: TimelineZoom;
@@ -52,9 +73,21 @@ export interface TimelineViewProps {
     onOpen: (id: string) => void;
     /** A cycle's page: its days, shaded on the chart (`YYYY-MM-DD`, inclusive). */
     highlightRange?: { start: string; end: string };
+    /** The caller edits work items (3.1c): dates and dependencies can be changed from the timeline. */
+    canEdit?: boolean;
 }
 
-function NoDatesPanel({ rows, onOpen }: { rows: readonly ScheduleTableRow[]; onOpen: (id: string) => void }) {
+function NoDatesPanel({
+    rows,
+    onOpen,
+    canSetDates,
+    onSetDates,
+}: {
+    rows: readonly ScheduleTableRow[];
+    onOpen: (id: string) => void;
+    canSetDates?: (id: string) => boolean;
+    onSetDates?: (id: string) => void;
+}) {
     const tNoDates = useTranslations('workItems.timeline.noDatesPanel');
     return (
         <aside aria-labelledby="timeline-no-dates-heading" className="flex w-full flex-col gap-compact overflow-y-auto border-border-subtle p-compact md:w-64 md:border-l" data-testid="timeline-no-dates">
@@ -67,10 +100,13 @@ function NoDatesPanel({ rows, onOpen }: { rows: readonly ScheduleTableRow[]; onO
             ) : (
                 <ul className="space-y-tight">
                     {rows.map((r) => (
-                        <li key={r.id}>
-                            <button type="button" className="w-full truncate rounded-sm text-left text-sm hover:underline focus-visible:outline focus-visible:outline-2" onClick={() => onOpen(r.id)}>
+                        <li key={r.id} className="flex items-center gap-tight">
+                            <button type="button" className="min-w-0 flex-1 truncate rounded-sm text-left text-sm hover:underline focus-visible:outline focus-visible:outline-2" onClick={() => onOpen(r.id)}>
                                 <span className="font-mono text-xs text-content-muted">{r.key}</span> {r.title}
                             </button>
+                            {onSetDates && canSetDates?.(r.id) && (
+                                <Button type="button" variant="secondary" size="sm" text={tNoDates('setDates')} aria-label={tNoDates('setDatesLabel', { key: r.key })} onClick={() => onSetDates(r.id)} />
+                            )}
                         </li>
                     ))}
                 </ul>
@@ -79,9 +115,89 @@ function NoDatesPanel({ rows, onOpen }: { rows: readonly ScheduleTableRow[]; onO
     );
 }
 
-export function TimelineView({ filters, scopeProjectId, settings, onSettingsChange, mode, onModeChange, onOpen, highlightRange }: TimelineViewProps) {
+export function TimelineView({ filters, scopeProjectId, settings, onSettingsChange, mode, onModeChange, onOpen, highlightRange, canEdit = false }: TimelineViewProps) {
     const tView = useTranslations('workItems.timeline');
     const timeline = useWorkItemTimeline(filters);
+    const config = useWorkConfig();
+    const writes = useTimelineWrites();
+    const toast = useToast();
+    const data = timeline.data;
+
+    // A type's start and due date rules (2.4b-b: built-in rules are the type's across the workspace), for the types in view.
+    const hiddenDates = useMemo(() => {
+        const byType = new Map(
+            [...new Set((data?.rows ?? []).map((r) => r.typeId))].map((typeId) => {
+                const set = resolveFieldSet(config.fieldSetEntries, typeId);
+                return [typeId, { startDate: set.builtIn.startDate === 'HIDDEN', dueDate: set.builtIn.dueDate === 'HIDDEN' }] as const;
+            }),
+        );
+        return (row: TimelineRow) => byType.get(row.typeId) ?? { startDate: false, dueDate: false };
+    }, [config.fieldSetEntries, data]);
+    const editable = useMemo(() => (data ? editableRows(data, { canEdit, hiddenDates }) : { dates: new Set<string>(), dependencies: new Set<string>() }), [data, canEdit, hiddenDates]);
+    const rowById = useMemo(() => new Map((data?.rows ?? []).map((r) => [r.id, r])), [data]);
+
+    const [changing, setChanging] = useState<{ id: string; proposed: ItemDates } | null>(null);
+    const [linking, setLinking] = useState<{ fromId: string; toId: string } | null>(null);
+    const [managing, setManaging] = useState<string | null>(null);
+
+    const openChange = useCallback(
+        (id: string, drop?: WidgetDrop) => {
+            const row = rowById.get(id);
+            if (!row || !data) return;
+            let proposed: ItemDates = { startDate: row.startDate, dueDate: row.dueDate };
+            const cal = data.calendars.find((c) => c.id === row.calendarId);
+            if (drop && cal) {
+                proposed = proposeDates(row, compileCalendar({ id: cal.id, workingWeekdays: cal.workingWeekdays, holidays: cal.holidays.map((h) => toEpochDay(h)) }), drop.mode, drop.days);
+            }
+            setChanging({ id, proposed });
+        },
+        [rowById, data],
+    );
+    const confirmChange = useCallback(
+        (row: TimelineRow, choice: ChangeDatesConfirm) => {
+            setChanging(null);
+            if (choice.pushed.length > 0) writes.reschedule({ row, to: choice.to, pushed: choice.pushed });
+            else void writes.changeDates(row, choice.to);
+        },
+        [writes],
+    );
+    const addDependency = useCallback(
+        async (fromId: string, toId: string): Promise<string | null> => {
+            try {
+                await writes.addDependency(fromId, toId);
+                return null;
+            } catch (err) {
+                return err instanceof ApiClientError && err.reason ? err.reason : tView('dependency.failed');
+            }
+        },
+        [writes, tView],
+    );
+    const removeLink = useCallback(
+        (linkId: string) => {
+            const edge = data?.edges.find((e) => e.id === linkId);
+            const from = edge && rowById.get(edge.fromId);
+            const to = edge && rowById.get(edge.toId);
+            if (!edge || !from || !to) return;
+            if (!editable.dependencies.has(from.id) || !editable.dependencies.has(to.id)) {
+                toast.error(tView('dependency.notHere'));
+                return;
+            }
+            writes.removeDependency(edge, tView('dependency.question', { from: from.key, to: to.key }).replace(/\?$/, ''));
+        },
+        [data, rowById, editable, writes, toast, tView],
+    );
+    const tableActions = useMemo<ScheduleTableActions | undefined>(
+        () =>
+            canEdit
+                ? {
+                      datesEditable: (id) => editable.dates.has(id),
+                      dependenciesEditable: (id) => editable.dependencies.has(id),
+                      onChangeDates: (id) => openChange(id),
+                      onDependencies: (id) => setManaging(id),
+                  }
+                : undefined,
+        [canEdit, editable, openChange],
+    );
     const model = useMemo(
         () => (timeline.data ? buildTimelineModel(timeline.data, { scopeProjectId, showCriticalPath: settings.showCriticalPath }) : null),
         [timeline.data, scopeProjectId, settings.showCriticalPath],
@@ -161,7 +277,7 @@ export function TimelineView({ filters, scopeProjectId, settings, onSettingsChan
         const tableRows = settings.showCriticalPath ? model.table : model.table.map((r) => ({ ...r, critical: false }));
         body =
             mode === 'table' ? (
-                <TimelineScheduleTable rows={tableRows} onOpen={onOpen} />
+                <TimelineScheduleTable rows={tableRows} onOpen={onOpen} actions={tableActions} />
             ) : (
                 <div className="flex h-full min-h-0 flex-col md:flex-row">
                     <div className="min-h-0 min-w-0 flex-1">
@@ -177,6 +293,13 @@ export function TimelineView({ filters, scopeProjectId, settings, onSettingsChan
                             labels={labels}
                             floatLabel={floatLabel}
                             onOpen={onOpen}
+                            editable={canEdit}
+                            draggableIds={editable.dates}
+                            linkableIds={editable.dependencies}
+                            onDateDrop={openChange}
+                            onLinkDraw={(fromId, toId) => setLinking({ fromId, toId })}
+                            onLinkRefused={() => toast.error(tView('dependency.wrongType'))}
+                            onLinkRemove={removeLink}
                             fallback={
                                 <InlineNotice variant="error">
                                     {tView('loadFailed')} <Button variant="secondary" size="sm" text={tView('table')} onClick={() => onModeChange('table')} />
@@ -184,13 +307,16 @@ export function TimelineView({ filters, scopeProjectId, settings, onSettingsChan
                             }
                         />
                     </div>
-                    {settings.showNoDates && <NoDatesPanel rows={model.noDates} onOpen={onOpen} />}
+                    {settings.showNoDates && <NoDatesPanel rows={model.noDates} onOpen={onOpen} canSetDates={(id) => editable.dates.has(id)} onSetDates={(id) => openChange(id)} />}
                 </div>
             );
     }
 
     const summary = model?.ok ? model.summary : null;
-    const data = timeline.data;
+    const changingRow = changing ? rowById.get(changing.id) : undefined;
+    const linkFrom = linking ? rowById.get(linking.fromId) : undefined;
+    const linkTo = linking ? rowById.get(linking.toId) : undefined;
+    const managingRow = managing ? rowById.get(managing) : undefined;
     return (
         <section aria-labelledby="timeline-heading" className="flex h-full min-h-0 flex-col gap-compact" data-testid="timeline-view">
             <h2 id="timeline-heading" className="sr-only">
@@ -246,6 +372,28 @@ export function TimelineView({ filters, scopeProjectId, settings, onSettingsChan
                 </ul>
             )}
             <div className="min-h-0 flex-1">{body}</div>
+            {data && changing && changingRow && (
+                <ChangeDatesDialog
+                    data={data}
+                    row={changingRow}
+                    proposed={changing.proposed}
+                    hiddenDates={hiddenDates}
+                    onCancel={() => setChanging(null)}
+                    onConfirm={(choice) => confirmChange(changingRow, choice)}
+                    onOpen={onOpen}
+                />
+            )}
+            {linkFrom && linkTo && <AddDependencyDialog from={linkFrom} to={linkTo} onAdd={addDependency} onClose={() => setLinking(null)} />}
+            {data && managingRow && (
+                <DependenciesDialog
+                    data={data}
+                    row={managingRow}
+                    linkable={editable.dependencies}
+                    onAdd={addDependency}
+                    onRemove={(edge, label) => writes.removeDependency(edge, label)}
+                    onClose={() => setManaging(null)}
+                />
+            )}
         </section>
     );
 }

@@ -930,6 +930,33 @@ export class WorkItemRepository {
         return result.count;
     }
 
+    /**
+     * A change of dates across several locked items (roadmap 3.1c, decision
+     * 194, `rescheduleWorkItems`): each row gets its own start and due date
+     * and its version increases once. Every row must be one the caller locked
+     * ({@link lockForWrite}, decision 173) and still at the version it read,
+     * so the count answers whether every write landed. `sortKey` is never
+     * touched.
+     */
+    static async setDatesOfLocked(
+        db: PrismaTx,
+        ctx: RequestContext,
+        v: ProjectVisibility,
+        locked: LockedWorkItemIds,
+        changes: ReadonlyArray<{ id: string; version: number; startDate: Date | null; dueDate: Date | null }>,
+    ): Promise<number> {
+        if (!changes.every((c) => isLocked(locked, c.id))) throw new Error('setDatesOfLocked: a row is not locked');
+        let count = 0;
+        for (const c of changes) {
+            const result = await db.workItem.updateMany({
+                where: { id: c.id, tenantId: ctx.tenantId, deletedAt: null, version: c.version, AND: [projectVisibilityWhere(v)] },
+                data: { startDate: c.startDate, dueDate: c.dueDate, version: { increment: 1 } },
+            });
+            count += result.count;
+        }
+        return count;
+    }
+
     /** A `sortKey` write: no version bump (ADR 0002 §5). */
     static async setSortKey(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, id: string, sortKey: string) {
         const result = await db.workItem.updateMany({

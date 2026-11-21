@@ -33,6 +33,7 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${W}/bulk/assign/route.ts`]: { POST: 'work_items.assign' },
     [`${W}/bulk/state/route.ts`]: { POST: 'work_items.edit' },
     [`${W}/bulk/due/route.ts`]: { POST: 'work_items.edit' },
+    [`${W}/bulk/dates/route.ts`]: { POST: 'work_items.edit' },
     [`${W}/bulk/delete/route.ts`]: { POST: 'work_items.delete' },
     [`${W}/[workItemId]/route.ts`]: { GET: 'work_items.view', PATCH: 'work_items.edit', DELETE: 'work_items.delete' },
     [`${W}/[workItemId]/state/route.ts`]: { POST: 'work_items.edit' },

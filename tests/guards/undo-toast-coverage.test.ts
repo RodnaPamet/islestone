@@ -46,6 +46,7 @@ const SITE_CONTRACTS: Record<string, string> = {
     'src/components/recipient-lists/use-recipient-lists.ts': 'removing a person from a recipient list (Settings → Recipient lists and a project\'s lists, 2.7e)',
     'src/components/work-items/data/use-review.ts': 'removing a reviewer and removing a review step not yet opened (the detail\'s review section, 2.8b)',
     'src/components/settings/use-type-review-steps.ts': 'removing a default review step of a type (Settings → a type → Review steps, 2.8c)',
+    'src/components/work-items/data/use-timeline-writes.ts': 'a change of dates with the items it pushes later, held before it is sent, and removing a dependency (the timeline, 3.1c, decision 194)',
 };
 
 const HOOK_FILE = 'src/components/ui/hooks/use-toast-with-undo.ts';

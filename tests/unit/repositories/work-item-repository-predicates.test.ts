@@ -79,6 +79,7 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
         ['listByIds', (db) => WorkItemRepository.listByIds(db, ctx, GUEST, ['w1'])],
         ['updateVersioned', (db) => WorkItemRepository.updateVersioned(db, ctx, GUEST, 'w1', 3, { title: 't' })],
         ['bulkUpdate', (db) => WorkItemRepository.bulkUpdate(db, ctx, GUEST, locked(['w1']), { priority: 'LOW' })],
+        ['setDatesOfLocked', (db) => WorkItemRepository.setDatesOfLocked(db, ctx, GUEST, locked(['w1']), [{ id: 'w1', version: 2, startDate: null, dueDate: null }])],
         ['setSortKey', (db) => WorkItemRepository.setSortKey(db, ctx, GUEST, 'w1', 'V')],
         ['listSubItems', (db) => WorkItemRepository.listSubItems(db, ctx, GUEST, 'p1', { limit: 10 })],
         ['findByNumber', (db) => WorkItemRepository.findByNumber(db, ctx, GUEST, 'p1', 3)],

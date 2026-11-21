@@ -140,6 +140,10 @@ export interface WorkItemCache {
     revalidatePath: (path: string) => Promise<unknown>;
     /** Write a tenant-relative key directly (the detail's sub-resources). */
     setPath: <T>(path: string, fn: (current: T | undefined) => T | undefined) => Promise<unknown>;
+    /** Change every mounted timeline's cached copy (3.1c: a change of dates or a relation's removal, before it is sent). */
+    updateTimelines: (fn: (current: TimelineResponse) => TimelineResponse | null) => void;
+    /** Re-read every mounted timeline (after a refusal, or a change the client cannot place). */
+    revalidateTimelines: () => void;
 }
 
 export function useWorkItemCache(): WorkItemCache {
@@ -179,6 +183,12 @@ export function useWorkItemCache(): WorkItemCache {
                 // As above: never mark a key whose first read is still in flight.
                 if (cache.get(apiUrl(path))?.data === undefined) return Promise.resolve(undefined);
                 return mutate<T>(apiUrl(path), fn, { revalidate: false });
+            },
+            updateTimelines(fn) {
+                for (const timeline of timelines) timeline.update(fn);
+            },
+            revalidateTimelines() {
+                for (const timeline of timelines) timeline.revalidate();
             },
         }),
         [mutate, cache, apiUrl],

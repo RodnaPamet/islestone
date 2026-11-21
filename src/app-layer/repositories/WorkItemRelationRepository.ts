@@ -43,6 +43,30 @@ export class WorkItemRelationRepository {
         return rows.length > 0;
     }
 
+    /**
+     * The ids among `candidateIds` that `fromId` reaches through BLOCKS
+     * relations between LIVE items (roadmap 3.1c, decision 194: a pushed
+     * item must be downstream of the dragged one). The cycle check's
+     * recursive `UNION`, walking only relations whose far end is not
+     * deleted: a deleted item carries no schedule, so it relays nothing.
+     */
+    static async liveBlocksReach(db: PrismaTx, ctx: RequestContext, fromId: string, candidateIds: readonly string[]): Promise<Set<string>> {
+        if (candidateIds.length === 0) return new Set();
+        const rows = await db.$queryRaw<Array<{ id: string }>>`
+            WITH RECURSIVE reach AS (
+                SELECT e."toId" AS id FROM "WorkItemRelation" e
+                  JOIN "WorkItem" w ON w."id" = e."toId" AND w."tenantId" = e."tenantId"
+                 WHERE e."tenantId" = ${ctx.tenantId} AND e."type" = 'BLOCKS' AND e."fromId" = ${fromId} AND w."deletedAt" IS NULL
+                UNION
+                SELECT e."toId" FROM "WorkItemRelation" e
+                  JOIN reach ON e."fromId" = reach.id
+                  JOIN "WorkItem" w ON w."id" = e."toId" AND w."tenantId" = e."tenantId"
+                 WHERE e."tenantId" = ${ctx.tenantId} AND e."type" = 'BLOCKS' AND w."deletedAt" IS NULL
+            )
+            SELECT id FROM reach WHERE id = ANY(${[...new Set(candidateIds)]}::text[])`;
+        return new Set(rows.map((r) => r.id));
+    }
+
     static async find(db: PrismaTx, ctx: RequestContext, type: WorkItemRelationType, fromId: string, toId: string) {
         return db.workItemRelation.findFirst({ where: { tenantId: ctx.tenantId, type, fromId, toId }, select: { id: true } });
     }

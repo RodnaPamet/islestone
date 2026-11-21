@@ -146,6 +146,11 @@ const ROWS: readonly Row[] = [
     { name: 'POST /work-items/:id/assign to nobody', route: `${W}/assign/route.ts`, method: 'POST', fixture: 'strict', params: item, body: () => ({ assigneeId: null }), expect: unmet('assignee') },
     { name: 'POST /work-items/bulk/assign to nobody', route: `${T}/work-items/bulk/assign/route.ts`, method: 'POST', fixture: 'strict', params: () => ({}), body: (i) => ({ workItemIds: [i.item], assigneeId: null }), expect: unmet('assignee') },
     { name: 'POST /work-items/bulk/due to no date', route: `${T}/work-items/bulk/due/route.ts`, method: 'POST', fixture: 'strict', params: () => ({}), body: (i) => ({ workItemIds: [i.item], dueDate: null }), expect: unmet('dueDate') },
+    {
+        name: 'POST /work-items/bulk/dates clearing the due date (3.1c)', route: `${T}/work-items/bulk/dates/route.ts`, method: 'POST', fixture: 'strict', params: () => ({}),
+        body: (i) => ({ dragged: { id: i.item, version: Number(i.version), startDate: '2049-02-01', dueDate: null }, pushed: [] }),
+        expect: unmet('dueDate'),
+    },
     { name: 'PUT /work-items/:id/waiting-on to nobody', route: `${W}/waiting-on/route.ts`, method: 'PUT', fixture: 'strict', params: item, body: () => ({ userId: null }), expect: unmet('waitingOn') },
     { name: 'PUT /work-items/:id/cycle to none', route: `${W}/cycle/route.ts`, method: 'PUT', fixture: 'strict', params: item, body: () => ({ cycleId: null }), expect: unmet('cycle') },
     { name: 'PUT /work-items/:id/milestone to none', route: `${W}/milestone/route.ts`, method: 'PUT', fixture: 'strict', params: item, body: () => ({ milestoneId: null }), expect: unmet('milestone') },
@@ -180,6 +185,11 @@ const ROWS: readonly Row[] = [
         }),
     ),
     { name: 'PATCH /work-items/:id setting a hidden due date', route: `${W}/route.ts`, method: 'PATCH', fixture: 'hiding', params: item, body: () => ({ dueDate: '2049-03-01' }), expect: hidden('dueDate') },
+    {
+        name: 'POST /work-items/bulk/dates setting a hidden start date (3.1c)', route: `${T}/work-items/bulk/dates/route.ts`, method: 'POST', fixture: 'hiding', params: () => ({}),
+        body: (i) => ({ dragged: { id: i.item, version: Number(i.version), startDate: '2049-03-01', dueDate: null }, pushed: [] }),
+        expect: hidden('startDate'),
+    },
     { name: 'POST /work-items/:id/assign on the hiding type', route: `${W}/assign/route.ts`, method: 'POST', fixture: 'hiding', params: item, body: (i) => ({ assigneeId: i.ann }), expect: hidden('assignee') },
     { name: 'PUT /work-items/:id/waiting-on on the hiding type', route: `${W}/waiting-on/route.ts`, method: 'PUT', fixture: 'hiding', params: item, body: (i) => ({ userId: i.ann }), expect: hidden('waitingOn') },
     { name: 'PUT /work-items/:id/cycle on the hiding type', route: `${W}/cycle/route.ts`, method: 'PUT', fixture: 'hiding', params: item, body: (i) => ({ cycleId: i.cycle }), expect: hidden('cycle') },

@@ -68,6 +68,8 @@ export function unversionedWrites(root: string): string[] {
             // A review write that names the round (2.8b, `use-review.ts`'s `url(…)` paths under the item's review).
             const reviewVersioned = /['`]\/(send|withdraw)['`]/.test(args) || /\/skip`/.test(args) || (/^\s*'PUT'/.test(args) && /['`]\/steps['`]/.test(args));
             if ((versioned || reviewVersioned) && !/\bifMatch\b/.test(args)) out.push(rel);
+            // A change of dates from the timeline (3.1c, decision 194) carries each item's version in its body.
+            if (/\/work-items\/bulk\/dates['`]/.test(args) && !/\bversion\s*:/.test(args)) out.push(rel);
         }
     }
     return out;
@@ -114,6 +116,8 @@ describe('the detectors, against a planted repository', () => {
                 "apiSend('POST', url(`/steps/${s}/respond`), body);",
                 "apiSend('POST', url('/withdraw'));",
             ].join('\n'),
+            'src/components/work-items/data/dates.ts': "apiSend('POST', apiUrl('/work-items/bulk/dates'), { dragged: { id }, pushed: [] });\n",
+            'src/components/work-items/data/dates-ok.ts': "apiSend('POST', apiUrl('/work-items/bulk/dates'), { dragged: { id, version: v }, pushed: [] });\n",
             'src/app/t/[tenantSlug]/(app)/work-items/page.tsx': "const x = window.fetch('/y');\n",
         };
         for (const [rel, content] of Object.entries(plant)) {
@@ -132,7 +136,7 @@ describe('the detectors, against a planted repository', () => {
         expect(strayReads(root)).toEqual(['src/components/work-items/reads.tsx']);
     });
 
-    it('finds a versioned write without If-Match (a withdraw of the round among them), not a restore or a response', () => {
-        expect(unversionedWrites(root)).toEqual(['src/components/work-items/data/hook.ts', 'src/components/work-items/data/review.ts']);
+    it('finds a versioned write without If-Match (a withdraw of the round among them, a change of dates without versions), not a restore or a response', () => {
+        expect(unversionedWrites(root).sort()).toEqual(['src/components/work-items/data/dates.ts', 'src/components/work-items/data/hook.ts', 'src/components/work-items/data/review.ts']);
     });
 });

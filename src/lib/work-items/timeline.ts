@@ -248,3 +248,48 @@ export function removeRowFromTimeline(current: TimelineResponse, id: string): Ti
     };
     return { ...data, schedule: computeTimelineSchedule(data) };
 }
+
+/** New dates for rows of a cached timeline: what a change of dates (3.1c) previews and places. */
+export interface TimelineDateChange {
+    id: string;
+    startDate: string | null;
+    dueDate: string | null;
+    /** The version the server answered with, when it has. */
+    version?: number;
+}
+
+/**
+ * Rows given new dates, the engine re-run (3.1c): the browser's preview of a
+ * change before it is sent (decision 197), and its optimistic placement. A
+ * change naming a row the timeline does not hold is ignored.
+ */
+export function withRowDates(current: TimelineResponse, changes: readonly TimelineDateChange[]): TimelineResponse {
+    const byId = new Map(changes.map((c) => [c.id, c]));
+    const { schedule: _old, ...rest } = current;
+    void _old;
+    const data: TimelineData = {
+        ...rest,
+        rows: current.rows.map((r) => {
+            const c = byId.get(r.id);
+            return c ? { ...r, startDate: c.startDate, dueDate: c.dueDate, version: c.version ?? r.version } : r;
+        }),
+    };
+    return { ...data, schedule: computeTimelineSchedule(data) };
+}
+
+/** A relation taken out of a cached timeline (its removal behind the undo toast, 3.1c), the engine re-run. */
+export function withoutEdge(current: TimelineResponse, edgeId: string): TimelineResponse {
+    const { schedule: _old, ...rest } = current;
+    void _old;
+    const data: TimelineData = { ...rest, edges: current.edges.filter((e) => e.id !== edgeId) };
+    return { ...data, schedule: computeTimelineSchedule(data) };
+}
+
+/** A relation put back into a cached timeline (an undone removal), the engine re-run. */
+export function withEdge(current: TimelineResponse, edge: TimelineEdge): TimelineResponse {
+    if (current.edges.some((e) => e.id === edge.id)) return current;
+    const { schedule: _old, ...rest } = current;
+    void _old;
+    const data: TimelineData = { ...rest, edges: [...current.edges, edge] };
+    return { ...data, schedule: computeTimelineSchedule(data) };
+}
