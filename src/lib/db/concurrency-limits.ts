@@ -380,7 +380,7 @@ export const AUDIT_APPEND_TX_OPTIONS = {
  * {@link TENANT_TX_TIMEOUT_MS} would only have made every waiter wait longer.
  * The fix narrows what a waiter holds: `createWorkItem` waits its turn per
  * project in the process before opening a transaction
- * (`src/app-layer/usecases/project-create-queue.ts`). The transaction budget
+ * (`src/app-layer/usecases/project-sequence-queue.ts`). The transaction budget
  * is unchanged.
  */
 export const WORK_ITEM_CREATE_BURST_PER_PROJECT = 25;

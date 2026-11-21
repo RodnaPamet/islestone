@@ -47,6 +47,7 @@ import { endOpenRoundsOnClose } from './review-engine';
 import { assertReviewAllowsDone } from './review-defaults';
 import { lockWorkItemGraph } from './work-item-graph-lock';
 import { afterStateCommit, applyStateAudit, assertParentAllowed, getWorkItem, sortKeyForPosition } from './work-item';
+import { inProjectSequenceQueue } from './project-sequence-queue';
 import { assertProjectWritable, emitWatcherActivity, keyOf, loadWritableItem, throwWriteConflict } from './work-item-shared';
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
@@ -57,10 +58,29 @@ export interface Position {
     beforeId?: string;
 }
 
+/**
+ * The project of a visible item, read before a placement queues
+ * (`inProjectSequenceQueue`); `null` when it is not visible, and the write's
+ * own transaction then answers the 404.
+ */
+async function projectOfItem(ctx: RequestContext, id: string): Promise<string | null> {
+    return runInTenantContext(ctx, async (db) => {
+        const v = await visibleProjects(ctx, db);
+        const item = await WorkItemRepository.findVisible(db, ctx, v, id);
+        return item?.projectId ?? null;
+    });
+}
+
+/** Run a placement in its project's queue (decision 174), or directly when the item is not visible. */
+async function inPlacementQueue<T>(ctx: RequestContext, id: string, fn: () => Promise<T>): Promise<T> {
+    const projectId = await projectOfItem(ctx, id);
+    return projectId ? inProjectSequenceQueue(ctx.tenantId, projectId, fn) : fn();
+}
+
 export async function reorderWorkItem(ctx: RequestContext, id: string, position: Position) {
     assertCanEditWorkItems(ctx);
     if (!position.afterId && !position.beforeId) throw badRequest('Give afterId or beforeId.');
-    await runInTenantContext(ctx, async (db) => {
+    await inPlacementQueue(ctx, id, () => runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const item = await loadWritableItem(db, ctx, v, id);
         // Placements in one project are serialised on its key sequence row.
@@ -75,7 +95,7 @@ export async function reorderWorkItem(ctx: RequestContext, id: string, position:
             detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'updated', changedFields: ['sortKey'] },
             metadata: { afterId: position.afterId ?? null, beforeId: position.beforeId ?? null },
         });
-    });
+    }));
     return getWorkItem(ctx, id);
 }
 
@@ -91,10 +111,10 @@ export async function moveWorkItemOnBoard(
     expectedVersion?: number,
 ) {
     assertCanEditWorkItems(ctx);
-    const outcome = await runInTenantContext(ctx, async (db) => {
+    const placing = !!(input.position && (input.position.afterId || input.position.beforeId));
+    const write = () => runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const item = await loadWritableItem(db, ctx, v, id);
-        const placing = !!(input.position && (input.position.afterId || input.position.beforeId));
         // The sequence row BEFORE the item's row (decision 173's order: graph,
         // sequences, items), or a drop that changes the state would hold the
         // item and wait on the sequence a reorder of it holds.
@@ -131,6 +151,8 @@ export async function moveWorkItemOnBoard(
         }
         return change;
     });
+    // A drop that places the item waits in its project's queue (decision 174).
+    const outcome = placing ? await inPlacementQueue(ctx, id, write) : await write();
     if (outcome) await afterStateCommit(ctx, [outcome]);
     return getWorkItem(ctx, id);
 }

@@ -8,12 +8,12 @@
  * Before decision 174's fix, 24 of 25 such creates failed: each waiting
  * create held a pooled connection while it waited on the key-sequence row,
  * and the create at the head of the queue could not get the connection its
- * audit append needs (`src/app-layer/usecases/project-create-queue.ts`).
+ * audit append needs (`src/app-layer/usecases/project-sequence-queue.ts`).
  */
 import type { PrismaClient } from '@prisma/client';
 
 import { createProject } from '@/app-layer/usecases/project';
-import { queuedProjectCount } from '@/app-layer/usecases/project-create-queue';
+import { queuedProjectCount } from '@/app-layer/usecases/project-sequence-queue';
 import { createWorkItem } from '@/app-layer/usecases/work-item';
 import { WORK_ITEM_CREATE_BURST_PER_PROJECT } from '@/lib/db/concurrency-limits';
 

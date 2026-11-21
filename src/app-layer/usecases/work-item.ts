@@ -70,7 +70,7 @@ import {
 import { todayInTz } from '../notifications/work-item-due';
 import { lockWorkItemGraph } from './work-item-graph-lock';
 import { lockedSubset } from '../repositories/work-item-locks';
-import { inProjectCreateQueue } from './project-create-queue';
+import { inProjectSequenceQueue } from './project-sequence-queue';
 import { recordMentionsInTx } from './mention';
 import { endOpenRoundsOnClose, withdrawNewAssigneeRows, type ReviewNoticeOut } from './review-engine';
 import { assertReviewAllowsDone, copiedReviewDefaultsMetadata, copyTypeReviewDefaultsInTx } from './review-defaults';
@@ -807,7 +807,7 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
     const mentions = { notify: [] as string[] };
     // Creates in one project take turns before opening a transaction, so a
     // waiting create holds no pooled connection (decision 174).
-    const result = await inProjectCreateQueue(ctx.tenantId, input.projectId, () =>
+    const result = await inProjectSequenceQueue(ctx.tenantId, input.projectId, () =>
         runInTenantContext(ctx, (db) => createWorkItemInTx(db, ctx, input, { mentions }), input.templateId ? { timeout: 20_000 } : undefined),
     );
     // After the commit: the due reminder, the assignment bell and the waiting-on bell (2.4b),
