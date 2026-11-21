@@ -193,7 +193,8 @@ const config = {
             testEnvironment: 'node',
             testMatch: ['<rootDir>/tests/perf/**/*.test.ts'],
             setupFiles: ['<rootDir>/jest.setup.ts', '<rootDir>/tests/setup/perf-env.ts'],
-            setupFilesAfterEnv: ['<rootDir>/tests/setup/perf-timeout.ts'],
+            // The integration project's teardown: the audit stream's buffers and the clients.
+            setupFilesAfterEnv: ['<rootDir>/tests/setup/perf-timeout.ts', '<rootDir>/tests/setup/disconnect-after-suite.ts'],
         },
     ],
 };
