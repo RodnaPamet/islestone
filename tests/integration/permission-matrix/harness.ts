@@ -53,6 +53,7 @@ import { addWorkItemRelation } from '@/app-layer/usecases/work-item-relations';
 import { createWorkItemTemplate } from '@/app-layer/usecases/work-item-template';
 import { addQuestionType, listWorkItemTypes } from '@/app-layer/usecases/work-item-type';
 import { createWorkflowState } from '@/app-layer/usecases/workflow-state';
+import { addTeamHolidays, addWorkspaceHolidays, setTeamWorkingCalendar } from '@/app-layer/usecases/working-calendar';
 import { enqueue } from '@/app-layer/jobs/queue';
 import { verifyAuditChain } from '@/lib/audit';
 import { getPermissionsForRole } from '@/lib/permissions';
@@ -344,6 +345,20 @@ async function buildFixture(name: FixtureName, w: World, prisma: PrismaClient, c
         }
         case 'freshTeam':
             return { teamId: (await createTeam(owner, { name: `Team ${nextSeq()}` })).id };
+        case 'teamWithCalendar':
+        case 'teamHoliday': {
+            const team = await createTeam(owner, { name: `Calendar team ${nextSeq()}` });
+            await setTeamWorkingCalendar(owner, team.id, { timeZone: 'Europe/Sofia', workingWeekdays: [1, 2, 3, 4, 5] });
+            if (name === 'teamWithCalendar') return { teamId: team.id };
+            const added = await addTeamHolidays(owner, team.id, { holidays: [{ day: '2070-05-06', name: 'Team day' }] });
+            return { teamId: team.id, holidayId: added.calendar.holidays.find((h) => h.day === '2070-05-06')!.id };
+        }
+        case 'workspaceHoliday': {
+            const k = Number(nextSeq());
+            const dayKey = new Date(Date.UTC(2080, 0, 1) + k * 86_400_000).toISOString().slice(0, 10);
+            const added = await addWorkspaceHolidays(owner, { holidays: [{ day: dayKey, name: `Fixture day ${k}` }] });
+            return { holidayId: added.calendar.holidays.find((h) => h.day === dayKey)!.id };
+        }
         case 'freshState': {
             const st = await createWorkflowState(owner, s.teamId!, { name: `Spare ${nextSeq()}`, category: 'STARTED' });
             return { stateId: (st as { id: string }).id };

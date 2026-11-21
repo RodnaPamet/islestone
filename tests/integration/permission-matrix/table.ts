@@ -113,6 +113,9 @@ export type FixtureName =
     | 'freshWorkspaceList'
     | 'archivedWorkspaceList'
     | 'freshTeam'
+    | 'teamWithCalendar'
+    | 'teamHoliday'
+    | 'workspaceHoliday'
     | 'freshState'
     | 'freshLabel'
     | 'freshCycle'
@@ -418,6 +421,16 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
             body: () => ({ enabled: false, lengthWeeks: 2, firstStartsOn: '2052-02-05', upcomingCount: 2, rollover: 'NEXT_CYCLE' }),
             expect: MEMBER_WRITE,
         },
+        // Working calendars (3.1a, decision 193): managed under admin.manage, read under projects.view.
+        { route: 'working-calendar/route.ts', method: 'GET', key: 'projects.view', subject: "the workspace's and teams' working calendars", expect: WS_READ },
+        { route: 'working-calendar/route.ts', method: 'PUT', key: 'admin.manage', subject: "the workspace's working calendar", body: () => ({ timeZone: 'Europe/Sofia', workingWeekdays: [1, 2, 3, 4, 5] }), expect: ADMIN },
+        { route: 'working-calendar/holidays/route.ts', method: 'POST', key: 'admin.manage', subject: "a holiday on the workspace's calendar", body: (s) => ({ holidays: [{ day: day(n(s)), name: `Holiday ${s.seq}` }] }), expect: ADMIN },
+        { route: 'working-calendar/holidays/[holidayId]/route.ts', method: 'DELETE', key: 'admin.manage', subject: "a fresh holiday on the workspace's calendar", fixture: 'workspaceHoliday', expect: ADMIN },
+        { route: 'teams/[teamId]/working-calendar/route.ts', method: 'GET', key: 'projects.view', subject: "a team's working calendar", expect: WS_READ },
+        { route: 'teams/[teamId]/working-calendar/route.ts', method: 'PUT', key: 'admin.manage', subject: "a team's own working calendar", body: () => ({ timeZone: 'Europe/Sofia', workingWeekdays: [1, 2, 3, 4] }), expect: ADMIN },
+        { route: 'teams/[teamId]/working-calendar/route.ts', method: 'DELETE', key: 'admin.manage', subject: "a fresh team's own working calendar", fixture: 'teamWithCalendar', expect: ADMIN },
+        { route: 'teams/[teamId]/working-calendar/holidays/route.ts', method: 'POST', key: 'admin.manage', subject: "a holiday on a team's own calendar", fixture: 'teamWithCalendar', body: (s) => ({ holidays: [{ day: day(n(s)), name: `Team holiday ${s.seq}` }] }), expect: ADMIN },
+        { route: 'teams/[teamId]/working-calendar/holidays/[holidayId]/route.ts', method: 'DELETE', key: 'admin.manage', subject: "a fresh holiday on a team's own calendar", fixture: 'teamHoliday', expect: ADMIN },
         { route: 'cycles/route.ts', method: 'GET', key: 'cycles.view', subject: 'the cycles', expect: WS_READ },
         { route: 'cycles/route.ts', method: 'POST', key: 'cycles.manage', subject: 'a new one-day cycle', body: (s) => ({ teamId: s.teamId, startsOn: day(2 * n(s)), endsOn: day(2 * n(s)) }), expect: MEMBER_WRITE },
         { route: 'cycles/[cycleId]/route.ts', method: 'GET', key: 'cycles.view', subject: 'a cycle', expect: WS_READ },
