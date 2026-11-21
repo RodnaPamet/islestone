@@ -42,6 +42,7 @@ import { createWorkItem, deleteWorkItem, getWorkItem, listWorkItems, setWorkItem
 import { moveWorkItemToProject } from '@/app-layer/usecases/work-item-moves';
 import { getWorkItemViewConfig } from '@/app-layer/usecases/work-item-views';
 import { verifyAuditChain } from '@/lib/audit';
+import { getPermissionsForRole } from '@/lib/permissions';
 import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 
 import { prismaTestClient, resetDatabase } from '../helpers/db';
@@ -183,10 +184,14 @@ describeFn('cycles', () => {
             expect((await getWorkItem(owner, item.id)).cycleId).toBeNull();
         });
 
-        it('a GUEST sees no items, so no counts', async () => {
+        it('a GUEST is refused cycles (decision 204); one granted the read keys, as 8.4 will, sees no items, so no counts', async () => {
             const current = (await listCycles(owner, { teamId, status: 'current' }))[0]!;
-            expect((await getCycle(guest, current.id)).counts).toEqual({ scope: 0, started: 0, completed: 0 });
-            expect((await getCycleBurnUp(guest, current.id)).points.every((p) => p.scope === 0)).toBe(true);
+            await expect(listCycles(guest, { teamId })).rejects.toMatchObject({ status: 403 });
+            await expect(getCycle(guest, current.id)).rejects.toMatchObject({ status: 403 });
+            await expect(getCycleBurnUp(guest, current.id)).rejects.toMatchObject({ status: 403 });
+            const granted = { ...guest, appPermissions: getPermissionsForRole('VIEWER') };
+            expect((await getCycle(granted, current.id)).counts).toEqual({ scope: 0, started: 0, completed: 0 });
+            expect((await getCycleBurnUp(granted, current.id)).points.every((p) => p.scope === 0)).toBe(true);
         });
     });
 

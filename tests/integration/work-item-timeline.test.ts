@@ -10,11 +10,13 @@
  *   - the list's filters apply through the list's own `where`: the timeline
  *     and the list with the same filters hold the same items;
  *   - an item counts on its team's working calendar;
- *   - a GUEST sees no item and no relation (8.4 has not granted projects);
+ *   - a GUEST is refused (it holds no key until 8.4, owner decision 204);
+ *     one granted the read keys, as 8.4 will, sees no item and no relation;
  *   - a scope over 5,000 items is refused with the count, never cut; a
  *     narrower filter over the same project is read;
  *   - the route matrix: every role holding `work_items.view` is admitted, a
- *     role without it gets a 403 and an `AUTHZ_DENIED` row;
+ *     role without it (a GUEST among them) gets a 403 and an `AUTHZ_DENIED`
+ *     row;
  *   - the read writes nothing to the audit trail, and the chain verifies.
  *
  * Written fresh for Islestone.
@@ -169,8 +171,9 @@ describeFn('the timeline read (3.1b)', () => {
         }
     });
 
-    it('a GUEST sees no item and no relation', async () => {
-        const t = await getWorkItemTimeline(ctxs.GUEST, { projectId });
+    it('a GUEST is refused (decision 204); one granted the read keys, as 8.4 will, sees no item and no relation', async () => {
+        await expect(getWorkItemTimeline(ctxs.GUEST, { projectId })).rejects.toMatchObject({ status: 403 });
+        const t = await getWorkItemTimeline({ ...ctxs.GUEST, appPermissions: getPermissionsForRole('VIEWER') }, { projectId });
         expect(t).toMatchObject({ rows: [], edges: [], hiddenDependencies: 0 });
     });
 
@@ -213,11 +216,17 @@ describeFn('the timeline read (3.1b)', () => {
             return { status: res.status, body: (await res.json()) as TimelineResponse & { error?: { code: string } } };
         };
 
-        it.each(ROLES)('admits %s (work_items.view), a GUEST to an empty timeline', async (role) => {
+        it.each(ROLES.filter((r) => r !== 'GUEST'))('admits %s (work_items.view)', async (role) => {
             const res = await call(ctxs[role]);
             expect(res.status).toBe(200);
-            if (role === 'GUEST') expect(res.body.rows).toEqual([]);
-            else expect(res.body.rows.filter((r) => !r.context)).toHaveLength(6);
+            expect(res.body.rows.filter((r) => !r.context)).toHaveLength(6);
+        });
+
+        it('refuses a GUEST, who holds no key until 8.4 (decision 204), with a 403 and an AUTHZ_DENIED row naming the key', async () => {
+            const where = { tenantId, action: 'AUTHZ_DENIED', entity: 'Permission', entityId: 'work_items.view' };
+            const before = await prisma.auditLog.count({ where });
+            expect((await call(ctxs.GUEST)).status).toBe(403);
+            expect(await prisma.auditLog.count({ where })).toBe(before + 1);
         });
 
         it('refuses a role without work_items.view with a 403 and an AUTHZ_DENIED row', async () => {

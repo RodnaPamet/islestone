@@ -18,7 +18,7 @@
  * @module usecases/tenant-admin
  */
 import type { RequestContext } from '../types';
-import { assertCanRead } from '../policies/common';
+import { assertCanReadWorkItems } from '../policies/work-item.policies';
 import {
     assertCanManageMembers,
     assertCanChangeRoles,
@@ -132,7 +132,9 @@ export async function listTenantMembers(ctx: RequestContext) {
 // roster too, and a MEMBER or VIEWER has a real reason to read it. This
 // usecase returns the minimal safe shape — id, name, email and image, ACTIVE
 // rows only, no session counts, no role badges, no invite or deactivated rows
-// — to every member (`assertCanRead`). The shape is a contract with
+// — to every reader of work items (`assertCanReadWorkItems`, the key its route
+// takes, `work_items.view`; never a GUEST before 8.4, owner decision 204, so a
+// guest never reads members' names and emails). The shape is a contract with
 // `src/components/work-items/data/use-work-config.ts`; do not narrow it.
 
 export interface AssignableUser {
@@ -143,7 +145,7 @@ export interface AssignableUser {
 }
 
 export async function listAssignableUsers(ctx: RequestContext): Promise<AssignableUser[]> {
-    assertCanRead(ctx);
+    assertCanReadWorkItems(ctx);
     const memberships = await runInTenantContext(ctx, (db) =>
         db.tenantMembership.findMany({
             where: { tenantId: ctx.tenantId, status: 'ACTIVE' },

@@ -108,7 +108,7 @@ export function assertCanAssignWorkItems(ctx: RequestContext) {
  * the coarse write tier stands in.
  *
  * Built-in roles: OWNER, ADMIN and MEMBER hold `work_items.comment`; VIEWER
- * does not. GUEST holds it, and reaches no item until 8.4 grants it projects.
+ * does not. GUEST holds no key until 8.4 (owner decision 204).
  */
 export function assertCanCommentOnWorkItems(ctx: RequestContext) {
     const allowed = ctx.appPermissions ? ctx.appPermissions.work_items?.comment === true : ctx.permissions.canWrite;

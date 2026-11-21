@@ -4,9 +4,10 @@
  *
  *   - every route file under `intake/` is driven here (the population is read
  *     from git), each method once;
- *   - a VIEWER and a GUEST are refused every route that takes an `intake.*`
- *     key with a 403 and an `AUTHZ_DENIED` row; both pass the two
- *     `projects.view` routes' gate (a GUEST sees no project, so no form);
+ *   - a VIEWER is refused every route that takes an `intake.*` key with a
+ *     403 and an `AUTHZ_DENIED` row, and passes the two `projects.view`
+ *     routes' gate; a GUEST, who holds no key until 8.4 (owner decision 204),
+ *     is refused every route, those two included;
  *   - a MEMBER is admitted to every `intake.view` and `intake.triage` route
  *     and refused every `intake.manage` one with an audited 403;
  *   - an OWNER is admitted everywhere.
@@ -169,12 +170,17 @@ describeFn('the intake API', () => {
 
     const named = (cs: Call[]) => cs.map((c) => [`${c.method} ${c.file.replace(`${I}/`, '')}`, c] as const);
 
-    it.each(named(CALLS.filter((c) => c.key.startsWith('intake.'))))('a VIEWER and a GUEST are refused %s with a 403 and an AUTHZ_DENIED row', async (_n, c) => {
-        for (const role of ['VIEWER', 'GUEST'] as const) {
-            const before = await prisma.auditLog.count({ where: { tenantId, action: 'AUTHZ_DENIED' } });
-            expect({ role, status: (await call(role, c)).status }).toEqual({ role, status: 403 });
-            expect(await prisma.auditLog.count({ where: { tenantId, action: 'AUTHZ_DENIED' } })).toBe(before + 1);
-        }
+    it.each(named(CALLS.filter((c) => c.key.startsWith('intake.'))))('a VIEWER is refused %s with a 403 and an AUTHZ_DENIED row', async (_n, c) => {
+        const before = await prisma.auditLog.count({ where: { tenantId, action: 'AUTHZ_DENIED' } });
+        expect((await call('VIEWER', c)).status).toBe(403);
+        expect(await prisma.auditLog.count({ where: { tenantId, action: 'AUTHZ_DENIED' } })).toBe(before + 1);
+    });
+
+    it.each(named(CALLS))('a GUEST is refused %s with a 403 and an AUTHZ_DENIED row naming the key (decision 204)', async (_n, c) => {
+        const where = { tenantId, action: 'AUTHZ_DENIED', entity: 'Permission', entityId: c.key };
+        const before = await prisma.auditLog.count({ where });
+        expect((await call('GUEST', c)).status).toBe(403);
+        expect(await prisma.auditLog.count({ where })).toBe(before + 1);
     });
 
     it.each(named(CALLS.filter((c) => c.key === 'intake.manage')))('a MEMBER is refused %s with a 403 and an AUTHZ_DENIED row', async (_n, c) => {
@@ -195,9 +201,8 @@ describeFn('the intake API', () => {
         expect(status).toBeLessThan(500);
     });
 
-    it('a VIEWER sends a request through the open form; a GUEST, who sees no project, gets a 404', async () => {
+    it('a VIEWER sends a request through the open form', async () => {
         const send = CALLS.find((c) => c.file.endsWith('[formId]/requests/route.ts'))!;
         expect((await call('VIEWER', send)).status).toBe(201);
-        expect((await call('GUEST', send)).status).toBe(404);
     });
 });

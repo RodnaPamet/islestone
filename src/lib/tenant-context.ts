@@ -17,7 +17,7 @@ import type { Role, Tenant, TenantCustomRole, TenantMembership } from '@prisma/c
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { forbidden, notFound } from '@/lib/errors/types';
 import type { PermissionSet } from '@/lib/permissions';
-import { getPermissionsForRole, parsePermissionsJson } from '@/lib/permissions';
+import { effectiveRoleOfMembership, permissionsForMembership } from '@/lib/permissions';
 
 // ─── Permission shape ───
 
@@ -46,10 +46,10 @@ export interface TenantContext {
  * canRead: every role. canWrite: OWNER, ADMIN, MEMBER. canAdmin and
  * canExport: OWNER and ADMIN (matching `workspace.export`).
  *
- * GUEST's coarse `canWrite` is false although its granular
- * `work_items.create` and `comment` are true, so a usecase gated on the
- * coarse tier alone refuses a guest. That is harmless while GUEST is not
- * assignable; sub-phase 8.4 gates those usecases on the granular key.
+ * GUEST keeps `canRead` so the self-service usecases (its own notifications
+ * and preferences, which ask the coarse read tier and no key) answer it; it
+ * holds no granular key (owner decision 204), so every keyed route and
+ * usecase refuses it until sub-phase 8.4.
  */
 const ROLE_ORDER: Record<Role, number> = {
     OWNER: 5,
@@ -135,12 +135,11 @@ export async function resolveTenantContext(
     }
 
     // Resolve permissions: a custom role overrides the enum-based defaults
-    // when present, and its base becomes the effective (coarse) role.
+    // when present, and its base becomes the effective (coarse) role; a GUEST
+    // membership stays GUEST whatever it carries (decision 204).
     const { customRole, ...membershipRow } = membership;
-    const effectiveRole = customRole?.baseRole ?? membership.role;
-    const appPermissions = customRole
-        ? parsePermissionsJson(customRole.grantsJson, customRole.baseRole)
-        : getPermissionsForRole(membership.role);
+    const effectiveRole = effectiveRoleOfMembership(membership);
+    const appPermissions = permissionsForMembership(membership);
 
     return {
         tenant,

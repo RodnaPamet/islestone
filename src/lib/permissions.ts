@@ -118,9 +118,16 @@ const ALL_DOMAINS: Grants = Object.fromEntries(
  *           saves personal views: `views.create` and `views.edit`, never
  *           `views.share`, so a shared view stays with the roles that hold it
  *           (owner decision 60, 2026-11-20).
- *   GUEST   not assignable until sub-phase 8.4 scopes it to named projects:
- *           `view` on the work domains, plus creating and commenting on work
- *           items. No agents, automations or integrations.
+ *   GUEST   nothing (owner decision 204, 2026-11-21): until sub-phase 8.4
+ *           scopes guests to named projects, a guest holds no key, so every
+ *           `requirePermission` route refuses it with an audited 403 and
+ *           every usecase that asks a key refuses it too. What it keeps is
+ *           self-service, which asks no key: its own notifications and
+ *           notification preferences, its own MFA and its own sessions. 8.4
+ *           grants exactly what its project grants need. Not assignable
+ *           (`ASSIGNABLE_TENANT_ROLES`), and a GUEST membership resolves to
+ *           this set whatever custom role it carries
+ *           (`permissionsForMembership`).
  *
  * Backend authorisation must still verify the key at the route
  * (`requirePermission`) or in the usecase.
@@ -156,15 +163,10 @@ export function getPermissionsForRole(role: Role): PermissionSet {
         case 'VIEWER':
             return viewerPermissions();
         case 'GUEST':
-            return permissionSetOf({
-                workspace: ['view'],
-                projects: ['view'],
-                work_items: ['view', 'create', 'comment'],
-                views: ['view'],
-                cycles: ['view'],
-                docs: ['view'],
-                canvas: ['view'],
-            });
+            // Decision 204: no key at all until 8.4. The guest tripwire in the
+            // permission matrix (`tests/guards/permission-matrix-population.test.ts`)
+            // fails every guest cell once this grants anything.
+            return permissionSetOf({});
         default: {
             // Prisma's enum is closed; an unknown value gets the least
             // privileged set with workspace-wide standing (ADR 0006: the
@@ -385,17 +387,37 @@ export function parsePermissionsJson(json: unknown, baseRole: Role): PermissionS
  * The permission set a MEMBERSHIP resolves to — the custom role's, parsed over
  * its base role, when it has one; the built-in role's otherwise.
  *
- * The same expression `getTenantCtx` (via `src/lib/tenant-context.ts`) builds
- * `appPermissions` from, for a principal who is not the caller: a usecase that
- * must predict what ANOTHER member will be allowed to do reads it.
+ * A GUEST membership resolves to GUEST's set (nothing, decision 204) whatever
+ * custom role it carries: a custom role REPLACES the built-in set, so without
+ * this a guest carrying one built on MEMBER would read the workspace. No
+ * writer makes a GUEST membership before 8.4, and none moves a member who
+ * carries a custom role into GUEST; this is the gate behind them, as
+ * `resolveProjectVisibility` keeps a GUEST membership blind through its
+ * `membershipRole`.
+ *
+ * The one expression `resolveTenantContext` (`getTenantCtx`, the pages'
+ * context) and `resolveMemberContext` (jobs) build `appPermissions` from, and
+ * what a usecase that must predict what ANOTHER member will be allowed to do
+ * reads.
  */
 export function permissionsForMembership(membership: {
     role: Role;
     customRole: { grantsJson: unknown; baseRole: Role } | null;
 }): PermissionSet {
+    if (membership.role === 'GUEST') return getPermissionsForRole('GUEST');
     return membership.customRole
         ? parsePermissionsJson(membership.customRole.grantsJson, membership.customRole.baseRole)
         : getPermissionsForRole(membership.role);
+}
+
+/**
+ * The coarse role a MEMBERSHIP resolves to: the custom role's base when it
+ * carries one, its built-in role otherwise; a GUEST membership stays GUEST
+ * (see {@link permissionsForMembership}).
+ */
+export function effectiveRoleOfMembership(membership: { role: Role; customRole: { baseRole: Role } | null }): Role {
+    if (membership.role === 'GUEST') return 'GUEST';
+    return membership.customRole?.baseRole ?? membership.role;
 }
 
 // ─── Privilege-escalation guard ──────────────────────────────────────

@@ -10,7 +10,7 @@
  */
 import type { Role } from '@prisma/client';
 
-import { PERMISSION_SCHEMA, getPermissionsForRole } from '@/lib/permissions';
+import { PERMISSION_SCHEMA, effectiveRoleOfMembership, getPermissionsForRole, permissionsForMembership } from '@/lib/permissions';
 import type { PermissionSet } from '@/lib/permissions';
 import { hasPermission } from '@/lib/security/permission-middleware';
 
@@ -129,20 +129,20 @@ describe('the role matrix', () => {
         );
     });
 
-    it('GUEST reads, creates and comments on work items, and reaches no agent, automation or integration', () => {
-        expect(granted(getPermissionsForRole('GUEST'))).toEqual(
-            [
-                'workspace.view',
-                'projects.view',
-                'work_items.view',
-                'work_items.create',
-                'work_items.comment',
-                'views.view',
-                'cycles.view',
-                'docs.view',
-                'canvas.view',
-            ].sort(),
-        );
+    it('GUEST holds no key until 8.4 (owner decision 204): it reads no workspace data and writes nothing', () => {
+        expect(granted(getPermissionsForRole('GUEST'))).toEqual([]);
+    });
+
+    it('a GUEST membership resolves to nothing and stays GUEST whatever custom role it carries (decision 204)', () => {
+        const everything = Object.fromEntries(Object.entries(PERMISSION_SCHEMA).map(([d, actions]) => [d, Object.fromEntries(actions.map((a) => [a, true]))]));
+        const carried = { role: 'GUEST' as const, customRole: { baseRole: 'MEMBER' as const, grantsJson: everything } };
+        expect(granted(permissionsForMembership(carried))).toEqual([]);
+        expect(effectiveRoleOfMembership(carried)).toBe('GUEST');
+        // Any other membership keeps its custom role, as before.
+        const member = { role: 'VIEWER' as const, customRole: { baseRole: 'MEMBER' as const, grantsJson: everything } };
+        expect(granted(permissionsForMembership(member))).toContain('work_items.edit');
+        expect(effectiveRoleOfMembership(member)).toBe('MEMBER');
+        expect(effectiveRoleOfMembership({ role: 'VIEWER', customRole: null })).toBe('VIEWER');
     });
 
     it('intake (decision 92): Owners and Admins hold all three keys, Members read and triage, Viewers and Guests none', () => {
@@ -185,7 +185,9 @@ describe('hasPermission over the matrix', () => {
         ['VIEWER', 'views.edit', true],
         ['VIEWER', 'views.share', false],
         ['GUEST', 'views.create', false],
-        ['GUEST', 'work_items.comment', true],
+        ['GUEST', 'work_items.comment', false],
+        ['GUEST', 'work_items.view', false],
+        ['GUEST', 'projects.view', false],
         ['GUEST', 'agents.view', false],
         ['ADMIN', 'intake.manage', true],
         ['MEMBER', 'intake.manage', false],

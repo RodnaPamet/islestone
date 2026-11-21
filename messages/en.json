@@ -593,6 +593,10 @@
     "placeholders": {
         "title": "Not here yet"
     },
+    "noAccess": {
+        "title": "No access yet",
+        "body": "Your membership does not include any projects in this workspace yet. Your notifications are in the Inbox."
+    },
     "workItems": {
         "list": {
             "title": "Work items",
