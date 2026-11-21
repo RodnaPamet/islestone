@@ -120,6 +120,7 @@ export const PLAN_CHECK_EXEMPT: Readonly<Record<string, string>> = {
     'WorkItemRepository.findVisible': 'one item by primary key (the write gate)',
     'WorkItemRepository.findDeletedForRestore': 'one item by primary key',
     'WorkItemRepository.lockForWrite': 'the given ids by primary key, locked in id order (decision 173)',
+    'WorkItemRelationRepository.liveBlocksReach': 'a recursive walk of BLOCKS edges from one item, bounded by the reschedule cap (at most 100 items, decision 194) and read through the relation endpoint indexes (3.1c)',
     'WorkItemRepository.lockPurgeBatch': 'a purge batch\'s ids by primary key and the rows naming them as parent',
     'WorkItemRepository.listByIds': 'the given ids by primary key (a bounded bulk selection)',
     'WorkItemRepository.sortKeysOf': 'the given ids by primary key',
