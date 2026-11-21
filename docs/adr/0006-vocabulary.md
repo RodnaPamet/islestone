@@ -224,6 +224,7 @@ Owner sign-off: ____  Date: ____
 - **The roles are Owner, Admin, Member, Viewer and Guest** (`OWNER`, `ADMIN`, `MEMBER`, `VIEWER`, `GUEST`).
 - **They rank Owner > Admin > Member > Viewer > Guest, by breadth of access.** The owner chose "Owner>Admin>Member>Viewer>Guest". This is the order the 1.4 porting map recommends for declaring the `Role` enum (`docs/porting/maps/1.4.md`, "Enums"), so code that looks for the most senior member never lands on a guest.
 - **A user whose role cannot be resolved falls back to Viewer, never Guest.**
+- **Until roadmap 8.4 a Guest holds no permission key** (owner decision 204, 2026-11-21, recorded here because this section defines the roles): it reads and writes nothing of the workspace, and keeps only what is its own (its notifications and notification preferences, its MFA, its sessions). 8.4 opens what its project grants need.
 
 Because "member" is also the concept "anyone with a membership", text about permissions says either "the Member role" or "any member", never "members" alone where the two readings differ.
 
