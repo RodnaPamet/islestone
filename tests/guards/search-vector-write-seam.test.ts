@@ -13,6 +13,11 @@
  *      `SearchVectorRepository.replaceForSource`; a comment's soft delete must
  *      call `removeForSource`. The writers found are pinned, so a new one is
  *      a reviewed change here.
+ *   2b. The seam's bulk path, `insertBulkForSeed` (Hardening H2a, decision
+ *      171), has one caller: the scale seeder (`scripts/seed-scale/bulk.ts`).
+ *      No application code may write vectors in bulk, and nothing under
+ *      `scripts/` writes the table any other way (a script may read it: the
+ *      seed's verification counts it).
  *   3. Every full-text call in `src/` and in the migrations after 2.7b names
  *      the one configuration, `islestone_bg_en`, as a literal (a planner
  *      matches an expression index only on a constant, and nothing may fall
@@ -43,6 +48,26 @@ function tableTouchers(root: string): string[] {
             const src = fs.readFileSync(path.join(root, rel), 'utf8');
             return /"SearchVector"/.test(src) || /\.searchVector\b/.test(src);
         });
+}
+
+/** Files under scripts/ that write the table other than through the seam. */
+function scriptWriters(root: string): string[] {
+    return gitFiles(root)
+        .filter((rel) => rel.startsWith('scripts/') && /\.(ts|mts|mjs|js)$/.test(rel))
+        .filter((rel) => {
+            const src = fs.readFileSync(path.join(root, rel), 'utf8');
+            return /\b(INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+"SearchVector"/i.test(src) || /\.searchVector\s*\.\s*(create|createMany|update|updateMany|upsert|delete|deleteMany)\b/.test(src);
+        });
+}
+
+/** The one caller of the bulk path. */
+const BULK_CALLERS = ['scripts/seed-scale/bulk.ts'];
+
+/** Files other than the seam that call `insertBulkForSeed`. */
+function bulkCallers(root: string): string[] {
+    return gitFiles(root)
+        .filter((rel) => /\.(ts|tsx|mts)$/.test(rel) && rel !== SEAM && !rel.startsWith('tests/'))
+        .filter((rel) => /\binsertBulkForSeed\s*\(/.test(fs.readFileSync(path.join(root, rel), 'utf8')));
 }
 
 // ─── 2) The writers ───────────────────────────────────────────────────
@@ -137,6 +162,14 @@ describe('search vectors — one seam', () => {
         expect(tableTouchers(REPO_ROOT)).toEqual([]);
     });
 
+    it('nothing under scripts/ writes the table except through the seam', () => {
+        expect(scriptWriters(REPO_ROOT)).toEqual([]);
+    });
+
+    it("the seam's bulk path has exactly one caller, the scale seeder", () => {
+        expect(bulkCallers(REPO_ROOT)).toEqual(BULK_CALLERS);
+    });
+
     it('finds the writers of descriptions and comments (the population is real)', () => {
         expect(writers(REPO_ROOT).map((w) => `${w.file}#${w.fn}`)).toEqual([
             'src/app-layer/usecases/work-item-collab.ts#addComment',
@@ -183,6 +216,9 @@ describe('the detectors, against a planted repository', () => {
             ].join('\n'),
         );
         plant('src/app-layer/usecases/sneaky.ts', 'export const q = Prisma.sql`DELETE FROM "SearchVector"`;\n');
+        plant('scripts/seed-other.ts', 'await db.$executeRawUnsafe(`INSERT INTO "SearchVector" ("id") VALUES (1)`);\n');
+        plant('scripts/verify-other.ts', 'await db.$queryRawUnsafe(`SELECT count(*) FROM "SearchVector"`);\n');
+        plant('src/app-layer/usecases/bulky.ts', 'await SearchVectorRepository.insertBulkForSeed(db, ctx, rows);\n');
         plant('src/lib/fallback.ts', "// to_tsvector('english', x) in a comment is history\nexport const q = `to_tsvector('simple', title)`;\n");
         plant('prisma/migrations/20261208000000_later/migration.sql', "CREATE INDEX x ON y USING gin (to_tsvector('english', z));\n");
         plant('prisma/migrations/20261203120000_search_titles/migration.sql', "CREATE INDEX x ON y USING gin (to_tsvector('simple', z));\n");
@@ -198,6 +234,14 @@ describe('the detectors, against a planted repository', () => {
 
     it('flags SQL against the table outside the seam', () => {
         expect(tableTouchers(root)).toEqual(['src/app-layer/usecases/sneaky.ts']);
+    });
+
+    it('flags a script that writes the table, not one that reads it', () => {
+        expect(scriptWriters(root)).toEqual(['scripts/seed-other.ts']);
+    });
+
+    it('flags a caller of the bulk path outside the seeder', () => {
+        expect(bulkCallers(root)).toEqual(['src/app-layer/usecases/bulky.ts']);
     });
 
     it('flags another configuration in source and in a later migration, not in 2.7b\'s', () => {

@@ -49,6 +49,9 @@ export const SEARCH_MATCH_CAP = 1000;
 /** One page of sources the rebuild reads. */
 export const REBUILD_PAGE_SIZE = 500;
 
+/** The most sources one bulk seed statement writes (`insertBulkForSeed`). */
+export const SEED_BULK_MAX = 10_000;
+
 export class SearchVectorRepository {
     /**
      * Write (or replace) one source's vector from its plaintext, in the
@@ -78,6 +81,43 @@ export class SearchVectorRepository {
             ON CONFLICT ("tenantId", "commentId") WHERE "commentId" IS NOT NULL
             DO UPDATE SET "lexemes" = EXCLUDED."lexemes", "configName" = EXCLUDED."configName",
                           "revision" = EXCLUDED."revision", "updatedAt" = EXCLUDED."updatedAt"`);
+    }
+
+    /**
+     * The scale seeder's bulk path (Hardening H2a, owner decision 171;
+     * docs/performance.md): the vectors of many NEW sources in one statement,
+     * each computed by PostgreSQL from its plaintext through the same
+     * `searchableText` and the same configuration as `replaceForSource`, so a
+     * seeded vector equals the one the seam would have written. Inserts only,
+     * at most {@link SEED_BULK_MAX} sources; an empty text writes nothing. Its
+     * one caller is `scripts/seed-scale/` (`tests/guards/search-vector-write-seam.test.ts`
+     * pins it): the application writes a vector through `replaceForSource`,
+     * in the transaction that writes the text. Returns the rows written.
+     */
+    static async insertBulkForSeed(
+        db: PrismaTx,
+        ctx: RequestContext,
+        sources: ReadonlyArray<SearchVectorSource & { plaintext: string | null }>,
+    ): Promise<number> {
+        if (sources.length > SEED_BULK_MAX) throw new Error(`insertBulkForSeed takes at most ${SEED_BULK_MAX} sources`);
+        const ids: string[] = [];
+        const items: string[] = [];
+        const comments: Array<string | null> = [];
+        const texts: string[] = [];
+        for (const s of sources) {
+            const text = searchableText(s.plaintext);
+            if (!text) continue;
+            ids.push(randomUUID());
+            items.push(s.workItemId);
+            comments.push(s.commentId);
+            texts.push(text);
+        }
+        if (ids.length === 0) return 0;
+        return db.$executeRaw(Prisma.sql`
+            INSERT INTO "SearchVector" ("id", "tenantId", "workItemId", "commentId", "lexemes", "configName", "revision", "updatedAt")
+            SELECT t."id", ${ctx.tenantId}, t."workItemId", t."commentId",
+                   to_tsvector('islestone_bg_en', t."text"), 'islestone_bg_en', ${SEARCH_VECTOR_REVISION}, now()
+              FROM unnest(${ids}::text[], ${items}::text[], ${comments}::text[], ${texts}::text[]) AS t("id", "workItemId", "commentId", "text")`);
     }
 
     /** Remove one source's vector (a cleared description, a deleted comment). */

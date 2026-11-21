@@ -34,3 +34,5 @@ npm-debug.log*
 # The production env template is names only (deploy/.env.prod.example); the
 # real file lives on the VM.
 !deploy/.env.prod.example
+/.perf-cache/
+/perf-report/
