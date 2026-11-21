@@ -32,7 +32,8 @@ describeFn('the scale seeder (mini shape)', () => {
     });
 
     it('seeds both workspaces and verifies them; a second run keeps them', async () => {
-        const first = await seedScale({ shape: SHAPES.mini, bulkUrl: getTestDirectDatabaseUrl() });
+        // Small batches, so BLOCKS edges and sub-items cross from one batch into the next.
+        const first = await seedScale({ shape: SHAPES.mini, bulkUrl: getTestDirectDatabaseUrl(), batchSize: 64 });
         expect(first.seededSlugs).toEqual(['perf-mini', 'perf-mini-sibling']);
         const [a, b] = first.report.workspaces;
         for (const w of [a!, b!]) {

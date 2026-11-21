@@ -99,6 +99,8 @@ export interface SeedEnv {
     /** UTC midnight of the run day. */
     anchor: Date;
     log: (line: string) => void;
+    /** Items per bulk batch (5,000; the integration suite makes it small so edges cross batches). */
+    batchSize: number;
 }
 
 export function dayKey(d: Date): string {

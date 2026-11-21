@@ -16,7 +16,9 @@
  *     path (`SearchVectorRepository.insertBulkForSeed`: the same
  *     `searchableText`, the same `islestone_bg_en` configuration);
  *   - `WorkItemTransition` rows written by their trigger as the items land, and
- *     `priorityRank` by its trigger.
+ *     `priorityRank` by its trigger;
+ *   - a BLOCKS edge into a later batch written with that batch, once its
+ *     target exists (a parent is always in an earlier batch or the same one).
  *
  * No audit entries for these rows: the sample carries real ones (part 1.5 of
  * the map says what that leaves unmeasured). Every write inserts new rows;
@@ -75,8 +77,12 @@ export async function seedProjectBulk(
     const enc = (text: string) => encryptWithKey(dek, text);
     let comments = 0;
     let vectors = 0;
+    // An edge to a later batch's item waits until that item exists (its FK).
+    let deferred: Prisma.WorkItemRelationCreateManyInput[] = [];
+    const indexOf = new Map(ids.map((id, i) => [id, i] as const));
 
-    for (const batch of chunk(plans.slice(0, count), BATCH_SIZE)) {
+    for (const batch of chunk(plans.slice(0, count), env.batchSize)) {
+        const batchEnd = batch[batch.length - 1]!.index;
         const items: Prisma.WorkItemCreateManyInput[] = [];
         const labels: Prisma.WorkItemLabelCreateManyInput[] = [];
         const watchers: Prisma.WorkItemWatcherCreateManyInput[] = [];
@@ -179,12 +185,15 @@ export async function seedProjectBulk(
             }
         }
 
+        const ready = [...deferred, ...relations].filter((r) => indexOf.get(r.toId)! <= batchEnd);
+        deferred = [...deferred, ...relations].filter((r) => indexOf.get(r.toId)! > batchEnd);
+
         await bulk.$transaction(async (tx) => {
             await tx.workItem.createMany({ data: items });
             if (labels.length) await tx.workItemLabel.createMany({ data: labels });
             if (watchers.length) await tx.workItemWatcher.createMany({ data: watchers });
             if (values.length) await tx.customFieldValue.createMany({ data: values });
-            if (relations.length) await tx.workItemRelation.createMany({ data: relations });
+            if (ready.length) await tx.workItemRelation.createMany({ data: ready });
             if (commentRows.length) await tx.comment.createMany({ data: commentRows });
             for (const part of chunk(sources, SEED_BULK_MAX)) {
                 vectors += await SearchVectorRepository.insertBulkForSeed(tx, ws.owner, part);
@@ -192,6 +201,7 @@ export async function seedProjectBulk(
         }, TX);
         comments += commentRows.length;
     }
+    if (deferred.length) throw new Error(`seed-scale: ${deferred.length} relations of ${project.keyPrefix} point past its items`);
     env.log(`    ${project.keyPrefix}: ${count} items, ${comments} comments, ${vectors} vectors (bulk)`);
     return { ids, deleted, items: count, comments, vectors };
 }

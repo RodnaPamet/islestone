@@ -7,7 +7,7 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
-import { seedProjectBulk } from './bulk';
+import { BATCH_SIZE, seedProjectBulk } from './bulk';
 import { planProject } from './plan';
 import { stream } from './random';
 import { seedProjectSample } from './sample';
@@ -33,7 +33,15 @@ export interface SeedRun {
     seconds: number;
 }
 
-export async function seedScale(opts: { shape: Shape; seed?: string; bulkUrl: string; log?: (line: string) => void; verifyOnly?: boolean }): Promise<SeedRun> {
+export async function seedScale(opts: {
+    shape: Shape;
+    seed?: string;
+    bulkUrl: string;
+    log?: (line: string) => void;
+    verifyOnly?: boolean;
+    /** Items per bulk batch; defaults to BATCH_SIZE (5,000). */
+    batchSize?: number;
+}): Promise<SeedRun> {
     const started = Date.now();
     const log = opts.log ?? (() => undefined);
     const now = new Date();
@@ -41,6 +49,7 @@ export async function seedScale(opts: { shape: Shape; seed?: string; bulkUrl: st
         seed: opts.seed ?? DEFAULT_SEED,
         anchor: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())),
         log,
+        batchSize: opts.batchSize ?? BATCH_SIZE,
     };
     const bulk = bulkClient(opts.bulkUrl);
     const slugs = workspaceSlugs(opts.shape);
