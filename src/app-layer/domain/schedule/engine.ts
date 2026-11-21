@@ -169,10 +169,9 @@ export function computeSchedule(input: ScheduleInput): ScheduleResult {
     }
 
     // ── 2. Summaries ───────────────────────────────────────────────────
-    const parentOf = (id: string): string | null => {
-        const p = byId.get(id)!.parentId;
-        return p !== null && byId.has(p) ? p : null;
-    };
+    const parents = new Map<string, string>();
+    for (const item of input.items) if (item.parentId !== null && byId.has(item.parentId)) parents.set(item.id, item.parentId);
+    const parentOf = (id: string): string | null => parents.get(id) ?? null;
     const children = new Map<string, string[]>();
     for (const item of input.items) {
         const p = parentOf(item.id);
@@ -282,13 +281,19 @@ export function computeSchedule(input: ScheduleInput): ScheduleResult {
         };
     });
     const indegree = new Array<number>(nodes.length).fill(0);
-    const sortedEdges = [...leafEdges.values()].sort((x, y) => x.a - y.a || x.b - y.b);
-    for (const { a, b } of sortedEdges) {
+    const leafEdgeList = [...leafEdges.values()];
+    for (const { a, b } of leafEdgeList) {
         nodes[a]!.succs.push(b);
         nodes[b]!.preds.push(a);
         nodes[a]!.isolated = false;
         nodes[b]!.isolated = false;
         indegree[b]! += 1;
+    }
+    // Neighbours in id order, whatever order the edges came in.
+    const byIndex = (x: number, y: number) => x - y;
+    for (const n of nodes) {
+        if (n.succs.length > 1) n.succs.sort(byIndex);
+        if (n.preds.length > 1) n.preds.sort(byIndex);
     }
 
     // ── 4. Order ───────────────────────────────────────────────────────
@@ -310,7 +315,8 @@ export function computeSchedule(input: ScheduleInput): ScheduleResult {
         const n = nodes[i]!;
         const c = n.cal;
         const item = n.item;
-        const blockers = n.preds.map((p) => nodes[p]!).filter((p) => p.release !== null);
+        // The blockers that constrain it: every predecessor with a release day.
+        const preds = n.preds;
         if (item.status === 'done') {
             if (n.unscheduled) {
                 n.es = n.ef = nextWorkingDay(c, asOf);
@@ -327,11 +333,17 @@ export function computeSchedule(input: ScheduleInput): ScheduleResult {
             n.es = s;
             n.ef = Math.max(addWorkingDays(c, s, n.duration - 1), nextWorkingDay(c, asOf));
             n.release = n.ef + 1;
-            for (const b of blockers) if (!isClosed(b) && s < b.release!) n.conflicts.add('STARTS_BEFORE_BLOCKER_FINISHES');
+            for (const p of preds) {
+                const b = nodes[p]!;
+                if (b.release !== null && !isClosed(b) && s < b.release) n.conflicts.add('STARTS_BEFORE_BLOCKER_FINISHES');
+            }
         } else {
             let base = asOf;
             if (n.notBefore !== null && n.notBefore > base) base = n.notBefore;
-            for (const b of blockers) if (b.release! > base) base = b.release!;
+            for (const p of preds) {
+                const r = nodes[p]!.release;
+                if (r !== null && r > base) base = r;
+            }
             n.es = nextWorkingDay(c, base);
             if (n.duration > 0) {
                 n.ef = addWorkingDays(c, n.es, n.duration - 1);
@@ -340,7 +352,12 @@ export function computeSchedule(input: ScheduleInput): ScheduleResult {
                 n.ef = n.es;
                 n.release = isFloating(n) ? null : n.es;
             }
-            if (n.conflictStart !== null) for (const b of blockers) if (!isClosed(b) && n.conflictStart < b.release!) n.conflicts.add('STARTS_BEFORE_BLOCKER_FINISHES');
+            if (n.conflictStart !== null) {
+                for (const p of preds) {
+                    const b = nodes[p]!;
+                    if (b.release !== null && !isClosed(b) && n.conflictStart < b.release) n.conflicts.add('STARTS_BEFORE_BLOCKER_FINISHES');
+                }
+            }
         }
     }
 
@@ -403,7 +420,7 @@ export function computeSchedule(input: ScheduleInput): ScheduleResult {
         });
     }
     const criticalEdgeKeys = new Map<string, ScheduleEdge>();
-    for (const { a, b, origins } of sortedEdges) {
+    for (const { a, b, origins } of leafEdgeList) {
         if (!critical.has(a) || !critical.has(b)) continue;
         const na = nodes[a]!;
         const nb = nodes[b]!;

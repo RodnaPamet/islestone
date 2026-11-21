@@ -90,6 +90,8 @@ export interface ViewProject {
     name: string;
     keyPrefix: string;
     archived: boolean;
+    /** The project's due date, `YYYY-MM-DD` (roadmap 3.1, decision 188). */
+    dueDate?: string | null;
 }
 
 export interface ViewState {

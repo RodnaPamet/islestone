@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 
 import { ProjectMilestonesLink } from '@/components/milestones/ProjectMilestonesLink';
+import { ProjectDueDate } from '@/components/projects/ProjectDueDate';
 import { ProjectRecipientListsLink } from '@/components/recipient-lists/ProjectRecipientListsLink';
 import { ProjectTemplatesButton } from '@/components/work-items/templates/ProjectTemplatesButton';
 import { WorkConfigProvider } from '@/components/work-items/data/use-work-config';
@@ -30,6 +31,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ tenant
                 manageCustomFields={workConfig.manageCustomFields && !project.archived}
                 headerLinks={
                     <>
+                        <ProjectDueDate projectId={project.id} projectName={project.name} dueDate={project.dueDate ?? null} canEdit={workConfig.editProject && !project.archived} />
                         <ProjectMilestonesLink keyPrefix={project.keyPrefix} />
                         <ProjectRecipientListsLink keyPrefix={project.keyPrefix} />
                         {templateAffordances(ctx).manageItemTemplates && !project.archived && (

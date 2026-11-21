@@ -503,6 +503,55 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'admin.manage',
         note: "Set a built-in field's rule for a type: types are workspace settings (decision 112).",
     },
+    // ── Working calendars (roadmap 3.1a; owner decisions 189 to 193) ──
+    {
+        path: new RegExp(`^${T}\\/working-calendar$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: "The workspace's working calendar and which teams have their own.",
+    },
+    {
+        path: new RegExp(`^${T}\\/working-calendar$`),
+        methods: ['PUT'],
+        permission: 'admin.manage',
+        note: 'Working calendars are workspace settings under admin.manage (decision 193).',
+    },
+    {
+        path: new RegExp(`^${T}\\/working-calendar\\/holidays$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note: "Add holidays to the workspace's working calendar (decision 190).",
+    },
+    {
+        path: new RegExp(`^${T}\\/working-calendar\\/holidays\\/[^\\/]+$`),
+        methods: ['DELETE'],
+        permission: 'admin.manage',
+        note: "Remove a holiday from the workspace's working calendar.",
+    },
+    {
+        path: new RegExp(`^${T}\\/teams\\/[^\\/]+\\/working-calendar$`),
+        methods: ['GET'],
+        permission: 'projects.view',
+        note: "A team's own working calendar, or none while it uses the workspace's.",
+    },
+    {
+        path: new RegExp(`^${T}\\/teams\\/[^\\/]+\\/working-calendar$`),
+        methods: ['PUT', 'DELETE'],
+        permission: 'admin.manage',
+        note: "Give a team its own working calendar, change it, or remove it (decision 193).",
+    },
+    {
+        path: new RegExp(`^${T}\\/teams\\/[^\\/]+\\/working-calendar\\/holidays$`),
+        methods: ['POST'],
+        permission: 'admin.manage',
+        note: "Add holidays to a team's own working calendar.",
+    },
+    {
+        path: new RegExp(`^${T}\\/teams\\/[^\\/]+\\/working-calendar\\/holidays\\/[^\\/]+$`),
+        methods: ['DELETE'],
+        permission: 'admin.manage',
+        note: "Remove a holiday from a team's own working calendar.",
+    },
     // ── Default review steps per type (sub-phase 2.8c; owner decisions 149, 159, 160) ──
     {
         path: new RegExp(`^${T}\\/work-item-types\\/[^\\/]+\\/review-steps$`),

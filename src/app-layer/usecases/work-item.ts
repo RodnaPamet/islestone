@@ -76,6 +76,7 @@ import { endOpenRoundsOnClose, withdrawNewAssigneeRows, type ReviewNoticeOut } f
 import { assertReviewAllowsDone, copiedReviewDefaultsMetadata, copyTypeReviewDefaultsInTx } from './review-defaults';
 import {
     assertProjectWritable,
+    assertStartNotAfterDue,
     emitAssignedBells,
     emitDueBell,
     emitMentionBells,
@@ -670,6 +671,8 @@ export async function createWorkItemInTx(
         };
     }
     const fieldSkipped = checked.skipped;
+    // Start after due is refused (3.1a, ADR 0010 §3), whichever path brought the dates.
+    assertStartNotAfterDue(plan.startDate, plan.dueDate);
     const description = plan.description ? sanitizePlainText(plan.description) : null;
     const labelIds = uniqueIds(plan.labelIds ?? []);
 
@@ -1005,6 +1008,10 @@ export async function updateWorkItem(ctx: RequestContext, id: string, input: Upd
         if (patch.dueDate !== undefined) named.dueDate = patch.dueDate;
         const fieldSet = await loadFieldSet(db, ctx, patch.typeId ?? before.typeId, before.projectId);
         checkWrite(fieldSet, named, { open });
+        // A date change must not put the start after the due date (3.1a, ADR 0010 §3).
+        if (patch.startDate !== undefined || patch.dueDate !== undefined) {
+            assertStartNotAfterDue(patch.startDate !== undefined ? patch.startDate : before.startDate, patch.dueDate !== undefined ? patch.dueDate : before.dueDate);
+        }
         if (patch.typeId) {
             const current = await WorkItemRepository.getById(db, ctx, v, id);
             if (current) checkTypeChange(fieldSet, { ...itemFieldValues(current), ...named }, { open });
@@ -1494,6 +1501,8 @@ export async function bulkSetWorkItemDueDate(ctx: RequestContext, input: { workI
         const items = await WorkItemRepository.listByIds(db, ctx, v, locked);
         for (const item of items) assertProjectWritable(item.project);
         await assertBulkFieldWrite(db, ctx, items, { dueDate: input.dueDate });
+        const reversed = dueDate ? items.filter((i) => i.startDate && i.startDate.getTime() > dueDate.getTime()) : [];
+        if (reversed.length > 0) assertStartNotAfterDue(reversed[0]!.startDate, dueDate, reversed.map((i) => i.id));
         await WorkItemRepository.bulkUpdate(db, ctx, v, lockedSubset(locked, items.map((i) => i.id)), { dueDate });
         for (const item of items) {
             await logEvent(db, ctx, {

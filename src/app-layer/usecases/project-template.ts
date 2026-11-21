@@ -15,7 +15,8 @@
  *   save a project again.
  * - Used by `createProject` in its own transaction (`applyProjectTemplateInTx`):
  *   the fields, milestones (dates counted from creation), item templates and
- *   starter items with their sub-items. No team and no workflow is created;
+ *   starter items with their sub-items, and (roadmap 3.1, decision 188) the
+ *   project's due date counted from creation unless the request names one. No team and no workflow is created;
  *   types and labels are matched by name, and a name that matches nothing is
  *   reported, never created and never silently dropped. Starter items go
  *   through `templateToCreateInput`, the one projection from a template.
@@ -91,6 +92,7 @@ export function sanitizedContent(content: ProjectTemplateContent): ProjectTempla
         ...(content.fieldSetEntries
             ? { fieldSetEntries: content.fieldSetEntries.map((r) => ({ typeName: clean(r.typeName), fieldName: clean(r.fieldName), requirement: r.requirement })).filter((r) => r.typeName && r.fieldName) }
             : {}),
+        ...(content.projectDueInDays !== undefined ? { projectDueInDays: content.projectDueInDays } : {}),
     };
 }
 
@@ -141,7 +143,13 @@ export async function listProjectTemplates(ctx: RequestContext, opts: { includeA
 // ─── Save as template ─────────────────────────────────────────────────────
 
 /** Build a content document from a project as it is (live fields, milestones, item templates, open items). */
-async function captureProject(db: PrismaTx, ctx: RequestContext, projectId: string, includeItems: boolean): Promise<ProjectTemplateContent> {
+async function captureProject(
+    db: PrismaTx,
+    ctx: RequestContext,
+    projectId: string,
+    includeItems: boolean,
+    projectDueDate: Date | null,
+): Promise<ProjectTemplateContent> {
     const v = await visibleProjects(ctx, db);
     const on = today();
     const [fields, milestones, itemTemplates, types, labels, rules] = await Promise.all([
@@ -198,6 +206,8 @@ async function captureProject(db: PrismaTx, ctx: RequestContext, projectId: stri
             };
         }),
         items,
+        // The project's due date as an offset from today (3.1, decision 188).
+        projectDueInDays: offset(projectDueDate),
         // The project's custom-field rules (2.4b-b), for the live fields the template carries.
         fieldSetEntries: rules.flatMap((r) => {
             const fieldName = fields.find((f) => f.id === r.customFieldId)?.name;
@@ -219,7 +229,7 @@ export async function saveProjectAsTemplate(
         if (await ProjectTemplateRepository.nameTaken(db, ctx, name)) {
             throw new ConflictError(`There is already a project template named ${name}.`, { reason: 'TEMPLATE_NAME_TAKEN' });
         }
-        const content = ProjectTemplateContentSchema.parse(await captureProject(db, ctx, project.id, input.includeItems ?? false));
+        const content = ProjectTemplateContentSchema.parse(await captureProject(db, ctx, project.id, input.includeItems ?? false, project.dueDate));
         const contentJson = JSON.stringify(content);
         if (Buffer.byteLength(contentJson, 'utf8') > TEMPLATE_LIMITS.contentBytes) {
             throw new ConflictError('This project holds too much to save as a template. Save it without its items.', { reason: 'TEMPLATE_TOO_LARGE' });
@@ -296,6 +306,8 @@ export interface AppliedTemplate {
     counts: { customFields: number; milestones: number; itemTemplates: number; items: number };
     /** What the content named that the workspace does not hold (`type:<name>`, `label:<name>`, `field:<name>`, …). */
     skipped: string[];
+    /** The project's due date the template gave it (3.1, decision 188); absent when it gave none or the request named one. */
+    projectDueDate?: Date;
 }
 
 /**
@@ -306,7 +318,7 @@ export interface AppliedTemplate {
 export async function applyProjectTemplateInTx(
     db: PrismaTx,
     ctx: RequestContext,
-    project: { id: string; teamId: string; keyPrefix: string },
+    project: { id: string; teamId: string; keyPrefix: string; dueDateNamed?: boolean },
     templateId: string,
 ): Promise<AppliedTemplate> {
     assertCanUseProjectTemplates(ctx);
@@ -394,6 +406,13 @@ export async function applyProjectTemplateInTx(
     if (entryRows.length > 0) {
         await FieldSetRepository.createMany(db, ctx, entryRows);
         await audit('WORK_ITEM_TYPE_FIELD_SET', 'Project', project.id, `Set ${entryRows.length} field rule(s) in ${project.keyPrefix} from a template`);
+    }
+
+    // The project's due date, dated from today (3.1, decision 188), unless the request named one.
+    let projectDueDate: Date | undefined;
+    if (!project.dueDateNamed && content.projectDueInDays !== undefined && content.projectDueInDays !== null) {
+        projectDueDate = addDays(on, content.projectDueInDays);
+        await ProjectRepository.setDueDateAtCreate(db, ctx, project.id, projectDueDate);
     }
 
     // Milestones, dated from today.
@@ -497,5 +516,5 @@ export async function applyProjectTemplateInTx(
             counts.items++;
         }
     }
-    return { projectTemplateId: template.id, counts, skipped: [...new Set(skipped)] };
+    return { projectTemplateId: template.id, counts, skipped: [...new Set(skipped)], ...(projectDueDate ? { projectDueDate } : {}) };
 }

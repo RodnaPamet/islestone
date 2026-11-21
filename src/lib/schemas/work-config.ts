@@ -39,12 +39,15 @@ export const UpdateWorkflowStateSchema = z
 
 export const DeleteWorkflowStateSchema = z.object({ moveToStateId: Id.optional() }).strict();
 
+/** A project's due date (roadmap 3.1, decision 188): `YYYY-MM-DD`, or `null` for none. */
+const ProjectDueDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'A date is YYYY-MM-DD.').nullable();
+
 export const CreateProjectSchema = z
-    .object({ teamId: Id, name: Name, keyPrefix: z.string().trim().min(2).max(10), templateId: Id.optional() })
+    .object({ teamId: Id, name: Name, keyPrefix: z.string().trim().min(2).max(10), templateId: Id.optional(), dueDate: ProjectDueDate.optional() })
     .strict();
 
 export const UpdateProjectSchema = z
-    .object({ name: Name.optional(), keyPrefix: z.string().trim().min(2).max(10).optional(), teamId: Id.optional() })
+    .object({ name: Name.optional(), keyPrefix: z.string().trim().min(2).max(10).optional(), teamId: Id.optional(), dueDate: ProjectDueDate.optional() })
     .strict();
 
 export const ArchiveProjectSchema = z.object({ archived: z.boolean() }).strict();

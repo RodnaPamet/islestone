@@ -116,16 +116,17 @@ async function makeOccurrenceInTx(db: PrismaTx, owner: RequestContext, rule: Rec
     };
     const occurrenceOn = dayKey(plan.make.on);
     const projected = templateToCreateInput(itemSource, { dueDate: occurrenceOn }, await templateUseContextInTx(db, owner, { id: found.projectId, teamId: found.teamId }, peopleNamedBy(itemSource)));
-    // A start date keeps its distance from the due date.
-    const startDate =
-        source.startDate && source.dueDate
-            ? dayKey(addDays(plan.make.on, -daysBetween(new Date(`${source.startDate}T00:00:00Z`), new Date(`${source.dueDate}T00:00:00Z`))))
-            : null;
+    // A start date keeps its distance from the due date. A source whose start
+    // is after its due date (written before 3.1a) gives the copy no start, so
+    // the copy is never refused as START_AFTER_DUE; it is named in `skipped`.
+    const lead = source.startDate && source.dueDate ? daysBetween(new Date(`${source.startDate}T00:00:00Z`), new Date(`${source.dueDate}T00:00:00Z`)) : null;
+    const startDate = lead !== null && lead >= 0 ? dayKey(addDays(plan.make.on, -lead)) : null;
+    const startSkipped = lead !== null && lead < 0 ? ['startDate:afterDue'] : [];
     // Waiting on (2.4b, owner decision 106): the copy takes its source's,
     // while that person is an active member; otherwise none, named in `skipped`.
     const waiting = source.waitingOnUserId;
     const waitingActive = waiting ? (await MembershipRepository.listActiveUserIds(db, owner, [waiting])).has(waiting) : false;
-    const skipped = waiting && !waitingActive ? [...projected.skipped, `waitingOn:${waiting}`] : projected.skipped;
+    const skipped = [...(waiting && !waitingActive ? [...projected.skipped, `waitingOn:${waiting}`] : projected.skipped), ...startSkipped];
     const item = await createWorkItemInTx(
         db,
         owner,

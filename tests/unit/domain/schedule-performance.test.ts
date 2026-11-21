@@ -80,6 +80,9 @@ describe('computeSchedule at 5,000 items and 10,000 relations', () => {
         expect(input.edges.length).toBe(10_000);
         const first = computeSchedule(input);
         expect(first.ok).toBe(true);
+        // Warm the JIT before measuring: a page load and a preview run the
+        // engine on optimised code, not its first interpreted pass.
+        for (let k = 0; k < 10; k += 1) computeSchedule(input);
         const times: number[] = [];
         for (let k = 0; k < 30; k += 1) {
             const t0 = performance.now();

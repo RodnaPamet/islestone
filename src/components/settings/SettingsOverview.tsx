@@ -21,7 +21,7 @@ import type { WorkConfigAffordances } from '@/lib/work-items/types';
 
 import { useLabels, useProjects, useProjectTemplates, useTeams, useWorkItemTypes } from './settings-data';
 
-const SECTIONS = ['teams', 'workItemTypes', 'labels', 'projects', 'projectTemplates', 'intake', 'notifications', 'recipientLists'] as const;
+const SECTIONS = ['teams', 'workItemTypes', 'labels', 'projects', 'projectTemplates', 'workingCalendars', 'intake', 'notifications', 'recipientLists'] as const;
 type SectionKey = (typeof SECTIONS)[number];
 
 const SECTION_PATH: Record<SectionKey, string> = {
@@ -30,6 +30,7 @@ const SECTION_PATH: Record<SectionKey, string> = {
     labels: '/settings/labels',
     projects: '/settings/projects',
     projectTemplates: '/settings/project-templates',
+    workingCalendars: '/settings/working-calendars',
     intake: '/settings/intake',
     notifications: '/settings/notifications',
     recipientLists: '/settings/recipient-lists',
@@ -51,6 +52,7 @@ export function SettingsOverview({ title, affordances }: { title: string; afford
         labels: labels.data?.length,
         projects: projects.data?.filter((x) => !x.archivedAt).length,
         projectTemplates: projectTemplates.data?.length,
+        workingCalendars: undefined,
         intake: undefined,
         notifications: undefined,
         recipientLists: undefined,

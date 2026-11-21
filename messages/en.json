@@ -947,11 +947,23 @@
                 "name": "Name",
                 "key": "Key",
                 "team": "Team",
-                "status": "Status"
+                "status": "Status",
+                "dueDate": "Due date"
             },
             "archived": "Archived",
             "active": "Active",
-            "empty": "No projects yet."
+            "empty": "No projects yet.",
+            "dueDate": {
+                "label": "Due {date}",
+                "none": "No due date",
+                "change": "Change due date",
+                "title": "Due date of {name}",
+                "hint": "A date every work item in the project should be finished by: the schedule shows what misses it. It moves no date.",
+                "field": "Due date",
+                "saved": "Due date saved",
+                "save": "Save",
+                "failed": "The due date could not be saved. Try again."
+            }
         },
         "toast": {
             "failed": "That change could not be saved. Try again.",
@@ -1341,6 +1353,11 @@
                 "body": "Starting points for new projects, saved from an existing project.",
                 "open": "Manage project templates"
             },
+            "workingCalendars": {
+                "title": "Working calendars",
+                "body": "The working weekdays, holidays and time zone the schedule and review steps count working days on, for the workspace and for each team.",
+                "open": "Manage working calendars"
+            },
             "intake": {
                 "title": "Intake",
                 "body": "Turn on intake per project, choose who is told about new requests, and build the forms people send them through.",
@@ -1518,7 +1535,8 @@
                 "key": "Key",
                 "team": "Team",
                 "status": "Status",
-                "recipientLists": "Recipient lists"
+                "recipientLists": "Recipient lists",
+                "dueDate": "Due date"
             },
             "created": "Project {name} created",
             "archiveTitle": "Archive {name}?",
@@ -1544,7 +1562,13 @@
             "includeItemsHint": "Its open work items and their open sub-items become the new project's starter work items.",
             "savedAsTemplate": "Saved {name} as a project template.",
             "recipientLists": "Lists",
-            "recipientListsOf": "Recipient lists of {name}"
+            "recipientListsOf": "Recipient lists of {name}",
+            "dueDate": "Due date",
+            "dueDateHint": "Optional. A date every work item in the project should be finished by: the schedule shows what misses it. It moves no date.",
+            "editDueDate": "Change due date",
+            "editDueDateNamed": "Change the due date of {name}",
+            "editDueDateTitle": "Due date of {name}",
+            "dueDateSaved": "Due date of {name} saved"
         },
         "projectTemplates": {
             "title": "Project templates",
@@ -1768,6 +1792,61 @@
             "empty": "No default review steps. New items of this type start with none.",
             "resource": "review step",
             "resourcePlural": "review steps"
+        },
+        "workingCalendars": {
+            "title": "Working calendars",
+            "description": "Working days are counted on these: review steps' due days, and the schedule. A team's own calendar replaces the workspace's for its work items. Changing a calendar moves no date already set.",
+            "readOnly": "Only workspace admins change working calendars.",
+            "loadFailed": "The working calendars could not be loaded. Try again.",
+            "failed": "That did not work. Try again.",
+            "saved": "Working calendar saved",
+            "workspaceHeading": "Workspace calendar",
+            "defaultNote": "Not saved yet: the workspace counts Monday to Friday, with no holidays, in {timeZone}. Saving or adding a holiday keeps it.",
+            "name": "Name",
+            "nameRequired": "A working calendar needs a name.",
+            "timeZone": "Time zone",
+            "timeZoneHint": "Today is this time zone's date for the calendar's work items.",
+            "workingWeekdays": "Working weekdays",
+            "weekdaysRequired": "Choose at least one working weekday.",
+            "weekday": {
+                "1": "Monday",
+                "2": "Tuesday",
+                "3": "Wednesday",
+                "4": "Thursday",
+                "5": "Friday",
+                "6": "Saturday",
+                "7": "Sunday"
+            },
+            "save": "Save working calendar",
+            "holidaysHeading": "Holidays",
+            "holidaysTable": "Holidays",
+            "noHolidays": "No holidays yet.",
+            "holidayDay": "Date",
+            "holidayName": "Holiday",
+            "actions": "Actions",
+            "addHoliday": "Add holiday",
+            "dayRequired": "Choose the holiday's date.",
+            "holidayNameRequired": "Name the holiday.",
+            "removeHoliday": "Remove",
+            "removeHolidayNamed": "Remove the holiday {name} ({day})",
+            "holidayRemoved": "Holiday {name} ({day}) removed",
+            "copyYear": "Copy {from}'s holidays to {to}",
+            "copyWorkspace": "Copy the workspace's holidays",
+            "copied": "{count, plural, =0 {No holiday added} one {# holiday added} other {# holidays added}}. Check the ones whose date moves each year.",
+            "nothingToCopy": "Nothing to copy: those dates are already here.",
+            "teamsHeading": "Team calendars",
+            "teamsBody": "A team with its own calendar counts working days on it instead of the workspace's.",
+            "noTeams": "No teams yet.",
+            "teamOwn": "Its own calendar",
+            "teamUsesWorkspace": "Uses the workspace calendar",
+            "teamTitle": "Working calendar of {team}",
+            "teamDescription": "The team's own working calendar replaces the workspace's for the team's work items.",
+            "teamUsesWorkspaceHeading": "Uses the workspace calendar",
+            "teamUsesWorkspaceBody": "This team counts working days on the workspace calendar. Give it its own to set other working weekdays, holidays or a time zone.",
+            "giveOwn": "Give this team its own calendar",
+            "teamCalendarHeading": "Team calendar",
+            "useWorkspace": "Use the workspace calendar",
+            "teamCalendarRemoved": "{team} uses the workspace calendar again"
         }
     },
     "views": {

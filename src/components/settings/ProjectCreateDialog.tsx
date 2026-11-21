@@ -12,6 +12,9 @@
  * admin. Whether the viewer may create a project at all is the caller's
  * server-side answer: this dialog is opened only where it is offered.
  *
+ * Roadmap 3.1a (decision 188): an optional Due date, a deadline for the
+ * project's schedule; a template's due date applies when none is chosen.
+ *
  * Sub-phase 2.5c: a "Template" picker lists the workspace's live project
  * templates (`GET /project-templates`, which takes the same key as the
  * create); the server applies the chosen one in the create's transaction,
@@ -25,6 +28,8 @@ import { useState } from 'react';
 
 import { useMayOpenSettings } from '@/components/layout/nav-config';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+import { DatePicker } from '@/components/ui/date-picker/date-picker';
+import { parseYMD, toYMD } from '@/components/ui/date-picker/date-utils';
 import { FormField } from '@/components/ui/form-field';
 import { useToast } from '@/components/ui/hooks';
 import { Input } from '@/components/ui/input';
@@ -53,6 +58,7 @@ export function ProjectCreateDialog({
     const [teamId, setTeamId] = useState('');
     const [keyPrefix, setKeyPrefix] = useState('');
     const [templateId, setTemplateId] = useState('');
+    const [dueDate, setDueDate] = useState<string | null>(null);
     const { data: templates } = useProjectTemplates(open);
 
     // Each opening starts empty: reset on the closed-to-open transition only,
@@ -65,6 +71,7 @@ export function ProjectCreateDialog({
             setTeamId('');
             setKeyPrefix('');
             setTemplateId('');
+            setDueDate(null);
         }
     }
 
@@ -84,6 +91,7 @@ export function ProjectCreateDialog({
                 name: value,
                 keyPrefix: keyPrefix.trim().toUpperCase(),
                 ...(templateId ? { templateId } : {}),
+                ...(dueDate ? { dueDate } : {}),
             });
             toast.success(t('projects.created', { name: value }));
             const skipped = project.fromTemplate?.skipped ?? [];
@@ -149,6 +157,9 @@ export function ProjectCreateDialog({
                     autoComplete="off"
                     className="font-mono"
                 />
+            </FormField>
+            <FormField label={t('projects.dueDate')} description={t('projects.dueDateHint')}>
+                <DatePicker id="project-due-date-input" value={parseYMD(dueDate)} onChange={(d) => setDueDate(toYMD(d))} clearable />
             </FormField>
         </SettingsFormModal>
     );

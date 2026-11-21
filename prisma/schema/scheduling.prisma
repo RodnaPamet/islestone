@@ -1,0 +1,48 @@
+/// Working calendars (roadmap 3.1a; ADR 0010 §5; owner decisions 189 to 193).
+/// One workspace calendar (`teamId` NULL, at most one per workspace) and at
+/// most one per team, which replaces the workspace's for the team's items.
+/// A workspace with no row counts Monday to Friday in `NOTIFICATIONS_TZ`.
+/// What Prisma cannot declare (the two partial uniques, the weekday and
+/// length CHECKs) lives in migration `20261212120000_working_calendars`.
+model WorkingCalendar {
+  id              String   @id @default(cuid())
+  tenantId        String
+  /// NULL: the workspace's calendar.
+  teamId          String?
+  /// Plaintext, sanitised; at most 80 characters (CHECK).
+  name            String
+  /// IANA time zone: "today" for the calendar's items.
+  timeZone        String
+  /// ISO weekdays, 1 (Monday) to 7 (Sunday): non-empty, ascending, unique (CHECK).
+  workingWeekdays Int[]
+  /// Bumped by every change, holidays included.
+  version         Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant   Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  team     Team?                    @relation(fields: [teamId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  holidays WorkingCalendarHoliday[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, teamId])
+}
+
+/// A date a working calendar does not count (ADR 0006 "Holiday"), entered by
+/// hand (decision 190).
+model WorkingCalendarHoliday {
+  id         String   @id @default(cuid())
+  tenantId   String
+  calendarId String
+  /// Date-only.
+  day        DateTime @db.Date
+  /// Plaintext, sanitised; at most 80 characters (CHECK).
+  name       String
+  createdAt  DateTime @default(now())
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  calendar WorkingCalendar @relation(fields: [calendarId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([calendarId, day])
+  @@index([tenantId, calendarId, day])
+}

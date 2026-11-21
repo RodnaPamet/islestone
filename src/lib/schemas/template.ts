@@ -8,7 +8,8 @@
  * - A project template's content is a versioned document
  *   (`ProjectTemplateContentSchema`, version 1), stored as one encrypted
  *   string: custom fields with options, milestones with `dueInDays`, item
- *   templates and starter items with sub-items. Types and labels are named,
+ *   templates and starter items with sub-items, and (roadmap 3.1) the
+ *   project's due date as `projectDueInDays`. Types and labels are named,
  *   not referenced by id, because they are matched against the workspace and
  *   the new project's team when the template is used. People are not carried.
  */
@@ -118,6 +119,12 @@ export const ProjectTemplateContentSchema = z
             .array(z.object({ typeName: Name, fieldName: Name, requirement: z.enum(['REQUIRED', 'HIDDEN']) }).strict())
             .max(TEMPLATE_LIMITS.fields * 20)
             .optional(),
+        /**
+         * The project's due date as days from creation (roadmap 3.1, owner
+         * decision 188). Optional: content saved before has none, and `null`
+         * is a project without one.
+         */
+        projectDueInDays: DueInDays.nullable().optional(),
     })
     .strict()
     .superRefine((c, ctx) => {

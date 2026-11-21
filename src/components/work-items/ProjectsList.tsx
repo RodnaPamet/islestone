@@ -62,6 +62,7 @@ export function ProjectsList({
                 { id: 'key', header: t('projects.col.key'), cell: ({ row }) => <span className="font-mono text-xs">{row.original.keyPrefix}</span> },
                 { id: 'team', header: t('projects.col.team'), cell: ({ row }) => teamName.get(row.original.teamId) ?? '' },
                 { id: 'status', header: t('projects.col.status'), cell: ({ row }) => (row.original.archived ? t('projects.archived') : t('projects.active')) },
+                { id: 'dueDate', header: t('projects.col.dueDate'), cell: ({ row }) => <span className="tabular-nums">{row.original.dueDate ?? ''}</span> },
             ]),
         [t, tenantHref, teamName],
     );
@@ -90,7 +91,7 @@ export function ProjectsList({
                     onCreated={(project: SettingsProject) => {
                         setCreated((prev) => [
                             ...prev,
-                            { id: project.id, teamId: project.teamId, name: project.name, keyPrefix: project.keyPrefix, archived: project.archivedAt !== null },
+                            { id: project.id, teamId: project.teamId, name: project.name, keyPrefix: project.keyPrefix, archived: project.archivedAt !== null, dueDate: project.dueDate ?? null },
                         ]);
                         router.refresh();
                     }}

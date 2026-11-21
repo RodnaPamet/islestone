@@ -20,6 +20,8 @@ import { Button } from '@inflect/ui/components/ui/button';
 import { CustomFieldsManager } from '@/components/work-items/fields/CustomFieldsManager';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { EntityListPage } from '@/components/layout/EntityListPage';
+import { DatePicker } from '@/components/ui/date-picker/date-picker';
+import { parseYMD, toYMD } from '@/components/ui/date-picker/date-utils';
 import { FormField } from '@/components/ui/form-field';
 import { useToast } from '@/components/ui/hooks';
 import { Input } from '@/components/ui/input';
@@ -47,6 +49,8 @@ export function ProjectsSettings({ affordances, templates = NO_TEMPLATES }: { af
     const { send, revalidate } = useSettingsApi();
     const [creating, setCreating] = useState(false);
     const [renaming, setRenaming] = useState<SettingsProject | null>(null);
+    const [datingDue, setDatingDue] = useState<SettingsProject | null>(null);
+    const [dueDate, setDueDate] = useState<string | null>(null);
     const [archiving, setArchiving] = useState<SettingsProject | null>(null);
     const [fieldsOf, setFieldsOf] = useState<SettingsProject | null>(null);
     const [name, setName] = useState('');
@@ -79,6 +83,7 @@ export function ProjectsSettings({ affordances, templates = NO_TEMPLATES }: { af
             { id: 'key', header: t('projects.col.key'), cell: ({ row }) => <span className="font-mono text-xs">{row.original.keyPrefix}</span> },
             { id: 'team', header: t('projects.col.team'), cell: ({ row }) => teamName.get(row.original.teamId) ?? '' },
             { id: 'status', header: t('projects.col.status'), cell: ({ row }) => (row.original.archivedAt ? t('common.archived') : t('common.active')) },
+            { id: 'dueDate', header: t('projects.col.dueDate'), cell: ({ row }) => <span className="tabular-nums">{row.original.dueDate ?? ''}</span> },
             {
                 // A project's recipient lists (2.7e): its own page, read by every member.
                 id: 'recipientLists',
@@ -111,6 +116,18 @@ export function ProjectsSettings({ affordances, templates = NO_TEMPLATES }: { af
                                               onClick={() => {
                                                   setName(project.name);
                                                   setRenaming(project);
+                                              }}
+                                          />
+                                      )}
+                                      {affordances.editProject && (
+                                          <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              text={t('projects.editDueDate')}
+                                              aria-label={t('projects.editDueDateNamed', { name: project.name })}
+                                              onClick={() => {
+                                                  setDueDate(project.dueDate ?? null);
+                                                  setDatingDue(project);
                                               }}
                                           />
                                       )}
@@ -192,6 +209,19 @@ export function ProjectsSettings({ affordances, templates = NO_TEMPLATES }: { af
         }
     };
 
+    const saveDueDate = async (): Promise<string | null> => {
+        const project = datingDue;
+        if (!project) return null;
+        try {
+            await send('PATCH', projectPath(project.id), { dueDate });
+            await revalidate(SETTINGS_PATHS.projects);
+            toast.success(t('projects.dueDateSaved', { name: project.name }));
+            return null;
+        } catch (err) {
+            return refusalText(err, t('common.failed'));
+        }
+    };
+
     const archive = async (): Promise<string | null> => {
         const project = archiving;
         if (!project) return null;
@@ -249,6 +279,17 @@ export function ProjectsSettings({ affordances, templates = NO_TEMPLATES }: { af
             >
                 <FormField label={t('common.name')} required>
                     <Input id="project-name-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} autoFocus />
+                </FormField>
+            </SettingsFormModal>
+            <SettingsFormModal
+                open={datingDue !== null}
+                onOpenChange={(v) => !v && setDatingDue(null)}
+                title={t('projects.editDueDateTitle', { name: datingDue?.name ?? '' })}
+                submitLabel={t('common.save')}
+                onSubmit={saveDueDate}
+            >
+                <FormField label={t('projects.dueDate')} description={t('projects.dueDateHint')}>
+                    <DatePicker id="project-due-date-input" value={parseYMD(dueDate)} onChange={(d) => setDueDate(toYMD(d))} clearable />
                 </FormField>
             </SettingsFormModal>
             {fieldsOf && (
