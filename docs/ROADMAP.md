@@ -303,6 +303,12 @@ Each needs ADR 0006 rows before its first model or label (rule 1), and two need 
 #### 3.3 Calendar (M)
 - **Source:** inflect-compliance calendar usecases and user calendar connections.
 - **Prompt:** "Port the calendar surface: a calendar view of items, cycles and milestones, and two-way sync of due dates to Google and Microsoft calendars through the ported connection model. Event titles pushed outside carry item titles only."
+- **ADR amendments** (made with the decisions below): ADR 0011 "External calendar sync" (Accepted); ADR 0006 gains the rows Calendar connection, Synced event and Calendar sync settings.
+- **Owner decisions, 2026-11-21 (decisions 225 to 244; `docs/porting/maps/3.3.md`, open questions 1 to 20).** Every recommendation was accepted except questions 3, 5 and 12:
+  - **What syncs:** due dates pushed, only a moved day read back (225); the person's open assigned items (226); **the milestones of their projects as read-only events**, a moved one undone with a notification (**227, the owner's choice B**); a separate "Islestone" calendar (228); **the title plus an absolute link back** (**229, the owner's choice B**), private and free.
+  - **Conflicts:** Islestone wins unless its date is the one last pushed, a losing change undone with one in-app notification (230); a timed or multi-day event means its last day (231); a deleted event stops that item syncing (232); pushed within a minute, read every 15 minutes (233).
+  - **Who and how:** an Owner or Admin switch behind the operator's (234); anyone who sees work items connects, Viewers as a read-only feed (235); **the sign-in apps reused** for calendar, through a hand-written flow outside the auth library's seam asking only the calendar scope, and Google's revoke endpoint never called (**236, the owner's choice B**); inflect's Microsoft admin consent (237); tokens in the encryption manifest (238); a leaving member's events deleted before the token (239); Google and Microsoft listed as sub-processors (240).
+  - **The view and delivery:** moves through 3.1c's "Change dates" (241); inflect's month grid (242); the names and ADR 0011 (243); three pull requests, 3.3a the view, 3.3b connections, the push and milestone events, 3.3c the read-back (244).
 
 #### 3.4 Time tracking (M)
 - **Prompt:** "Add time entries (timer and manual), estimates in points or hours per team, timesheets with weekly approval, and a billable-rate cascade of project, member, workspace. Write it fresh; the open-source time trackers are AGPL and are reference reading only."
