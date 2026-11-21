@@ -93,6 +93,9 @@ model Tenant {
   // Sub-phase 2.8c: default review steps per type.
   workItemTypeReviewSteps         WorkItemTypeReviewStep[]
   workItemTypeReviewStepReviewers WorkItemTypeReviewStepReviewer[]
+  // Roadmap 3.1a: working calendars (ADR 0010).
+  workingCalendars                WorkingCalendar[]
+  workingCalendarHolidays         WorkingCalendarHoliday[]
 
   teams                  Team[]
   workflowStates         WorkflowState[]

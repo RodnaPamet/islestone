@@ -339,6 +339,8 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             'WorkItemTypeReviewStepReviewer',
             'WorkItemWatcher',
             'WorkflowState',
+            'WorkingCalendar',
+            'WorkingCalendarHoliday',
         ]);
     });
 

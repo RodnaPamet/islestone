@@ -49,6 +49,9 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     WorkItemReviewer: 'tests/integration/reviews.test.ts',
     WorkItemTypeReviewStep: 'tests/integration/review-defaults.test.ts',
     WorkItemTypeReviewStepReviewer: 'tests/integration/review-defaults.test.ts',
+    // Roadmap 3.1a.
+    WorkingCalendar: 'tests/integration/working-calendars.test.ts',
+    WorkingCalendarHoliday: 'tests/integration/working-calendars.test.ts',
     // Sub-phases 2.1–2.2.
     Team: 'tests/integration/work-tables-isolation.test.ts',
     WorkflowState: 'tests/integration/work-tables-isolation.test.ts',

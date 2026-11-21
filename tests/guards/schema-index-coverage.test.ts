@@ -123,6 +123,8 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
 
 /** Tenant models whose list queries are fully served by Layers A + B, with the reason. */
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // Roadmap 3.1a. A workspace's calendars (the workspace's and one per team, at most CALENDARS_TAKE).
+    WorkingCalendar: 'A workspace\'s calendars: @@index([tenantId, teamId]); holidays come in the select, by @@index([tenantId, calendarId, day]).',
     // Sub-phase 2.8a. An item's rounds (at most REVIEW_ROUNDS_TAKE) and the
     // open rounds of a page of items or one state; a person's pending reviewer
     // rows, an item's, and the due job's page.
@@ -241,7 +243,7 @@ describe('schema-index-coverage — parser sanity', () => {
     it('parses the tenancy models, their indexes and their relation FK groups', () => {
         const membership = MODELS.find((m) => m.name === 'TenantMembership');
         expect(MODELS.map((m) => m.name).sort()).toEqual([
-            'Account', 'AuditLog', 'AuditOutbox', 'Comment', 'CustomField', 'CustomFieldOption', 'CustomFieldValue', 'Cycle', 'CycleSchedule', 'IntakeBlockedSender', 'IntakeFollowUp', 'IntakeForm', 'IntakeInboundEmail', 'IntakeNotifyMember', 'IntakeRequest', 'Label', 'Mention', 'Milestone', 'Notification', 'NotificationOutbox', 'NotificationPreference', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Project', 'ProjectIntake', 'ProjectKeyPrefix', 'ProjectKeySequence', 'ProjectTemplate', 'RecipientList', 'RecipientListMember', 'SavedView', 'SearchVector', 'Team', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken', 'WorkItem', 'WorkItemKeyAlias', 'WorkItemLabel', 'WorkItemLink', 'WorkItemRecurrence', 'WorkItemRelation', 'WorkItemReviewRound', 'WorkItemReviewStep', 'WorkItemReviewStepList', 'WorkItemReviewer', 'WorkItemTemplate', 'WorkItemTemplateLabel', 'WorkItemTransition', 'WorkItemType', 'WorkItemTypeField', 'WorkItemTypeReviewStep', 'WorkItemTypeReviewStepReviewer', 'WorkItemWatcher', 'WorkflowState',
+            'Account', 'AuditLog', 'AuditOutbox', 'Comment', 'CustomField', 'CustomFieldOption', 'CustomFieldValue', 'Cycle', 'CycleSchedule', 'IntakeBlockedSender', 'IntakeFollowUp', 'IntakeForm', 'IntakeInboundEmail', 'IntakeNotifyMember', 'IntakeRequest', 'Label', 'Mention', 'Milestone', 'Notification', 'NotificationOutbox', 'NotificationPreference', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Project', 'ProjectIntake', 'ProjectKeyPrefix', 'ProjectKeySequence', 'ProjectTemplate', 'RecipientList', 'RecipientListMember', 'SavedView', 'SearchVector', 'Team', 'Tenant', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken', 'WorkItem', 'WorkItemKeyAlias', 'WorkItemLabel', 'WorkItemLink', 'WorkItemRecurrence', 'WorkItemRelation', 'WorkItemReviewRound', 'WorkItemReviewStep', 'WorkItemReviewStepList', 'WorkItemReviewer', 'WorkItemTemplate', 'WorkItemTemplateLabel', 'WorkItemTransition', 'WorkItemType', 'WorkItemTypeField', 'WorkItemTypeReviewStep', 'WorkItemTypeReviewStepReviewer', 'WorkItemWatcher', 'WorkflowState', 'WorkingCalendar', 'WorkingCalendarHoliday',
         ]);
         expect(membership?.fieldIdName).toBe('id');
         expect(membership?.blockIndexes).toContainEqual(['tenantId', 'status']);

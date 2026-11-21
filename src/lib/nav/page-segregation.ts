@@ -93,6 +93,9 @@ export const SUBPAGES: readonly string[] = [
     // Sub-phase 2.7e: the workspace's recipient lists, and a project's.
     '/settings/recipient-lists',
     '/projects/[projectKey]/recipient-lists',
+    // Roadmap 3.1a: the workspace's working calendar, and a team's.
+    '/settings/working-calendars',
+    '/settings/working-calendars/[teamId]',
 ] as const;
 
 /**

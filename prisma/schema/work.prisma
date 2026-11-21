@@ -29,12 +29,14 @@ model Team {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  workflowStates WorkflowState[]
-  projects       Project[]
-  labels         Label[]
-  cycleSchedule  CycleSchedule?
-  cycles         Cycle[]
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflowStates   WorkflowState[]
+  projects         Project[]
+  labels           Label[]
+  cycleSchedule    CycleSchedule?
+  cycles           Cycle[]
+  /// The team's own working calendar, when it has one (roadmap 3.1a, ADR 0010 §5).
+  workingCalendars WorkingCalendar[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, name])
@@ -81,6 +83,9 @@ model Project {
   /// The current prefix of the project's keys (`ISL` in `ISL-123`). Every
   /// prefix it has had is in `ProjectKeyPrefix`; no prefix is ever reused.
   keyPrefix       String
+  /// The project's due date (roadmap 3.1, owner decision 188, ADR 0002 §16):
+  /// date-only, optional, a deadline for the schedule and nothing else.
+  dueDate         DateTime? @db.Date
   version         Int       @default(1)
   archivedAt      DateTime?
   deletedAt       DateTime?

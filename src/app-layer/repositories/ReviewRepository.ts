@@ -466,7 +466,7 @@ export class ReviewRepository {
                 userId: true,
                 stepId: true,
                 step: { select: { name: true, dueOn: true } },
-                workItem: { select: { id: true, title: true, number: true, projectId: true, project: { select: { keyPrefix: true } } } },
+                workItem: { select: { id: true, title: true, number: true, projectId: true, teamId: true, project: { select: { keyPrefix: true } } } },
                 user: {
                     select: {
                         tenantMemberships: {

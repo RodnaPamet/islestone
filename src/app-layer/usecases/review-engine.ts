@@ -23,6 +23,11 @@
  *     active assignee of an open item when a round completes or is returned;
  *     untouched when a round is withdrawn.
  *
+ * Due days (decision 151, ADR 0009 §13 as amended by decisions 191 and 192)
+ * count working days on the item's team's working calendar, else the
+ * workspace's, from "today" in that calendar's zone (`resolveWorkingCalendars`);
+ * a stored `dueOn` never moves.
+ *
  * Written fresh for Islestone. "Zero is never complete" is inflect-compliance's
  * legacy-access invariant 5 (its `CLAUDE.md`), pattern only, no code copied.
  */
@@ -30,9 +35,8 @@ import type { ReviewStepMode } from '@prisma/client';
 
 import { logEvent } from '../events/audit';
 import { afterStepEnds, evaluateStep, nextPendingStep } from '../domain/review-steps';
-import { addWorkingDays } from '../domain/working-days';
+import { epochDayToDate, todayIn, workingDaysAfter } from '../domain/schedule/calendar';
 import { formatKey } from '../domain/work-item-key';
-import { todayInTz } from '../notifications/work-item-due';
 import { resolveListRecipients } from '../notifications/recipient-list';
 import type { ReviewNotice } from '../notifications/review';
 import type { ProjectVisibility } from '../policies/project-visibility';
@@ -41,7 +45,7 @@ import { RecipientListRepository } from '../repositories/RecipientListRepository
 import { ReviewRepository, type NewStep, type ReviewRoundRow, type ReviewStepRow } from '../repositories/ReviewRepository';
 import { WorkItemRepository, type WorkItemGateRow } from '../repositories/WorkItemRepository';
 import type { RequestContext } from '../types';
-import { env } from '@/env';
+import { resolveWorkingCalendars } from './working-calendar';
 import type { PrismaTx } from '@/lib/db-context';
 import { ConflictError } from '@/lib/errors/types';
 
@@ -59,10 +63,6 @@ export type ReviewItem = WorkItemGateRow;
 
 /** The reasons a reviewer row is withdrawn (the CHECK `WorkItemReviewer_withdrawn`). */
 export type WithdrawnReason = 'MEMBER_REMOVED' | 'STEP_ENDED' | 'REMOVED_BY_PERSON' | 'BECAME_ASSIGNEE' | 'NOT_ELIGIBLE';
-
-function tz(): string {
-    return (env.NOTIFICATIONS_TZ as string | undefined) || 'UTC';
-}
 
 function itemRef(item: ReviewItem) {
     return { id: item.id, title: item.title, key: formatKey(item.project.keyPrefix, item.number) };
@@ -167,7 +167,11 @@ export async function openStepInTx(
     }
     const toAdd = eligible.userIds.filter((id) => !already.has(id)).map((userId) => ({ userId, viaRecipientListId: eligible.via.get(userId) ?? null }));
     await ReviewRepository.addReviewers(db, ctx, step, toAdd);
-    const dueOn = addWorkingDays(todayInTz(now, tz()), step.dueInWorkingDays);
+    // Working days on the item's team's calendar, else the workspace's, and
+    // "today" in that calendar's zone (ADR 0009 §13 as amended, decision 192).
+    // The day is stored: no later change to a calendar moves it.
+    const calendar = (await resolveWorkingCalendars(db, ctx, [item.teamId])).forTeam(item.teamId);
+    const dueOn = epochDayToDate(workingDaysAfter(calendar.compiled, todayIn(calendar.timeZone, now), step.dueInWorkingDays));
     await ReviewRepository.openStep(db, ctx, step.id, now, dueOn);
     await logEvent(db, ctx, {
         action: 'WORK_ITEM_REVIEW_STEP_OPENED',

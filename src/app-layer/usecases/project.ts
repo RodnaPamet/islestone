@@ -12,6 +12,12 @@
  *   - Archiving keeps the items readable but out of the default list and the
  *     metrics, and refuses writes with `PROJECT_ARCHIVED` (409).
  *   - The purge job hard-deletes a project past the window with its items.
+ *   - A project's due date (roadmap 3.1, decision 188, ADR 0002 §16) is
+ *     optional and date-only: a deadline for the schedule and nothing else.
+ *     It moves no item or milestone, is never refused against their dates,
+ *     and rings nothing. Set on create (`projects.create`) and on edit
+ *     (`projects.edit`); audited by naming the field. Returned as
+ *     `YYYY-MM-DD`.
  *
  * Written fresh for Islestone.
  */
@@ -33,6 +39,22 @@ import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db-context';
 import { ConflictError, badRequest, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { fromEpochDay, toEpochDay } from '../domain/schedule/calendar';
+
+/** A project as the API returns it: the due date as `YYYY-MM-DD` (never through a time zone). */
+function toProjectDto<T extends { dueDate: Date | null }>(row: T): Omit<T, 'dueDate'> & { dueDate: string | null } {
+    return { ...row, dueDate: row.dueDate ? fromEpochDay(toEpochDay(row.dueDate)) : null };
+}
+
+/** A request's `YYYY-MM-DD` as the date-only column's value; a non-date is a 400. */
+function parseProjectDueDate(raw: string | null): Date | null {
+    if (raw === null) return null;
+    try {
+        return new Date(toEpochDay(raw) * 86_400_000);
+    } catch {
+        throw badRequest(`${raw} is not a date.`, { reason: 'DUE_DATE_INVALID' });
+    }
+}
 
 function checkedPrefix(raw: string): string {
     const prefix = normaliseKeyPrefix(raw);
@@ -52,7 +74,7 @@ async function assertPrefixFree(db: PrismaTx, ctx: RequestContext, prefix: strin
 
 export async function listProjects(ctx: RequestContext, opts: { teamId?: string; includeArchived?: boolean } = {}) {
     assertCanReadWorkConfig(ctx);
-    return runInTenantContext(ctx, async (db) => ProjectRepository.list(db, ctx, await visibleProjects(ctx, db), opts));
+    return runInTenantContext(ctx, async (db) => (await ProjectRepository.list(db, ctx, await visibleProjects(ctx, db), opts)).map(toProjectDto));
 }
 
 export async function getProject(ctx: RequestContext, projectId: string) {
@@ -60,7 +82,7 @@ export async function getProject(ctx: RequestContext, projectId: string) {
     return runInTenantContext(ctx, async (db) => {
         const project = await ProjectRepository.getVisible(db, ctx, await visibleProjects(ctx, db), projectId);
         if (!project) throw notFound('Project not found');
-        return project;
+        return toProjectDto(project);
     });
 }
 
@@ -71,33 +93,52 @@ export async function getProject(ctx: RequestContext, projectId: string) {
  */
 const TEMPLATE_TX = { timeout: 60_000 };
 
-export async function createProject(ctx: RequestContext, input: { teamId: string; name: string; keyPrefix: string; templateId?: string }) {
+export async function createProject(
+    ctx: RequestContext,
+    input: { teamId: string; name: string; keyPrefix: string; templateId?: string; dueDate?: string | null },
+) {
     assertCanCreateProject(ctx);
     const name = sanitizePlainText(input.name).trim();
     const keyPrefix = checkedPrefix(input.keyPrefix);
+    const dueDate = input.dueDate !== undefined ? parseProjectDueDate(input.dueDate) : undefined;
     return runInTenantContext(ctx, async (db) => {
         if (!(await TeamRepository.getById(db, ctx, input.teamId))) throw notFound('Team not found');
         await assertPrefixFree(db, ctx, keyPrefix);
         await ensureDefaultWorkItemTypes(db, ctx);
-        const project = await ProjectRepository.create(db, ctx, { teamId: input.teamId, name, keyPrefix });
+        const created = await ProjectRepository.create(db, ctx, { teamId: input.teamId, name, keyPrefix, dueDate });
         // A project template (2.5c) is applied in this transaction: a failure
         // part-way leaves no project. What it named and the workspace does not
         // hold is reported in the response and in the PROJECT_CREATED entry.
-        const fromTemplate = input.templateId ? await applyProjectTemplateInTx(db, ctx, { id: project.id, teamId: input.teamId, keyPrefix }, input.templateId) : null;
+        // Its due-date offset (decision 188) applies unless the request names a due date.
+        const fromTemplate = input.templateId
+            ? await applyProjectTemplateInTx(db, ctx, { id: created.id, teamId: input.teamId, keyPrefix, dueDateNamed: dueDate !== undefined }, input.templateId)
+            : null;
+        const project = toProjectDto(fromTemplate?.projectDueDate !== undefined ? { ...created, dueDate: fromTemplate.projectDueDate } : created);
         await logEvent(db, ctx, {
             action: 'PROJECT_CREATED',
             entityType: 'Project',
             entityId: project.id,
             details: `Created project ${name} (${keyPrefix})`,
-            detailsJson: { category: 'entity_lifecycle', entityName: 'Project', operation: 'created', summary: 'PROJECT_CREATED' },
-            metadata: { teamId: input.teamId, keyPrefix, ...(fromTemplate ? { projectTemplateId: fromTemplate.projectTemplateId, ...fromTemplate.counts, templateSkipped: fromTemplate.skipped } : {}) },
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'Project',
+                operation: 'created',
+                summary: 'PROJECT_CREATED',
+                ...(project.dueDate ? { changedFields: ['dueDate'] } : {}),
+            },
+            metadata: {
+                teamId: input.teamId,
+                keyPrefix,
+                ...(fromTemplate ? { projectTemplateId: fromTemplate.projectTemplateId, ...fromTemplate.counts, templateSkipped: fromTemplate.skipped } : {}),
+            },
         });
         return fromTemplate ? { ...project, fromTemplate: { counts: fromTemplate.counts, skipped: fromTemplate.skipped } } : project;
     }, input.templateId ? TEMPLATE_TX : undefined);
 }
 
-export async function updateProject(ctx: RequestContext, projectId: string, input: { name?: string; keyPrefix?: string; teamId?: string }) {
+export async function updateProject(ctx: RequestContext, projectId: string, input: { name?: string; keyPrefix?: string; teamId?: string; dueDate?: string | null }) {
     assertCanEditProject(ctx);
+    const requestedDue = input.dueDate !== undefined ? parseProjectDueDate(input.dueDate) : undefined;
     return runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const project = await ProjectRepository.getVisible(db, ctx, v, projectId);
@@ -114,9 +155,10 @@ export async function updateProject(ctx: RequestContext, projectId: string, inpu
                 keyPrefix = next;
             }
         }
-        if (name === undefined && keyPrefix === undefined) return project;
+        const dueDate = requestedDue !== undefined && (requestedDue?.getTime() ?? null) !== (project.dueDate?.getTime() ?? null) ? requestedDue : undefined;
+        if (name === undefined && keyPrefix === undefined && dueDate === undefined) return toProjectDto(project);
         await ProjectRepository.lock(db, ctx, projectId);
-        await ProjectRepository.update(db, ctx, projectId, { name, keyPrefix, previousPrefix: project.keyPrefix });
+        await ProjectRepository.update(db, ctx, projectId, { name, keyPrefix, previousPrefix: project.keyPrefix, dueDate });
         await logEvent(db, ctx, {
             action: 'PROJECT_UPDATED',
             entityType: 'Project',
@@ -126,11 +168,11 @@ export async function updateProject(ctx: RequestContext, projectId: string, inpu
                 category: 'entity_lifecycle',
                 entityName: 'Project',
                 operation: 'updated',
-                changedFields: [...(name !== undefined ? ['name'] : []), ...(keyPrefix ? ['keyPrefix'] : [])],
+                changedFields: [...(name !== undefined ? ['name'] : []), ...(keyPrefix ? ['keyPrefix'] : []), ...(dueDate !== undefined ? ['dueDate'] : [])],
             },
             metadata: keyPrefix ? { fromPrefix: project.keyPrefix, toPrefix: keyPrefix } : undefined,
         });
-        return ProjectRepository.getVisible(db, ctx, v, projectId);
+        return toProjectDto((await ProjectRepository.getVisible(db, ctx, v, projectId))!);
     });
 }
 
@@ -140,7 +182,7 @@ export async function setProjectArchived(ctx: RequestContext, projectId: string,
         const v = await visibleProjects(ctx, db);
         const project = await ProjectRepository.getVisible(db, ctx, v, projectId);
         if (!project) throw notFound('Project not found');
-        if (Boolean(project.archivedAt) === archived) return project;
+        if (Boolean(project.archivedAt) === archived) return toProjectDto(project);
         await ProjectRepository.setArchived(db, ctx, projectId, archived ? new Date() : null);
         await logEvent(db, ctx, {
             action: archived ? 'PROJECT_ARCHIVED' : 'PROJECT_UNARCHIVED',
@@ -149,7 +191,7 @@ export async function setProjectArchived(ctx: RequestContext, projectId: string,
             details: `${archived ? 'Archived' : 'Unarchived'} project ${project.name}`,
             detailsJson: { category: 'entity_lifecycle', entityName: 'Project', operation: 'updated', changedFields: ['archivedAt'] },
         });
-        return ProjectRepository.getVisible(db, ctx, v, projectId);
+        return toProjectDto((await ProjectRepository.getVisible(db, ctx, v, projectId))!);
     });
 }
 
@@ -187,6 +229,6 @@ export async function restoreProject(ctx: RequestContext, projectId: string) {
             details: `Restored project ${project.name}`,
             detailsJson: { category: 'entity_lifecycle', entityName: 'Project', operation: 'restored' },
         });
-        return ProjectRepository.getVisible(db, ctx, v, projectId);
+        return toProjectDto((await ProjectRepository.getVisible(db, ctx, v, projectId))!);
     });
 }

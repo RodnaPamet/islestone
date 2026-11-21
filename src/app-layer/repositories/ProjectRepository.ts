@@ -19,6 +19,7 @@ export const projectSelect = {
     teamId: true,
     name: true,
     keyPrefix: true,
+    dueDate: true,
     version: true,
     archivedAt: true,
     deletedAt: true,
@@ -123,9 +124,9 @@ export class ProjectRepository {
         });
     }
 
-    static async create(db: PrismaTx, ctx: RequestContext, data: { teamId: string; name: string; keyPrefix: string }) {
+    static async create(db: PrismaTx, ctx: RequestContext, data: { teamId: string; name: string; keyPrefix: string; dueDate?: Date | null }) {
         const project = await db.project.create({
-            data: { tenantId: ctx.tenantId, teamId: data.teamId, name: data.name, keyPrefix: data.keyPrefix },
+            data: { tenantId: ctx.tenantId, teamId: data.teamId, name: data.name, keyPrefix: data.keyPrefix, dueDate: data.dueDate ?? null },
             select: projectSelect,
         });
         await db.projectKeyPrefix.create({
@@ -140,13 +141,14 @@ export class ProjectRepository {
         db: PrismaTx,
         ctx: RequestContext,
         id: string,
-        data: { name?: string; keyPrefix?: string; previousPrefix?: string },
+        data: { name?: string; keyPrefix?: string; previousPrefix?: string; dueDate?: Date | null },
     ) {
         const result = await db.project.updateMany({
             where: { id, tenantId: ctx.tenantId, deletedAt: null },
             data: {
                 ...(data.name !== undefined ? { name: data.name } : {}),
                 ...(data.keyPrefix !== undefined ? { keyPrefix: data.keyPrefix } : {}),
+                ...(data.dueDate !== undefined ? { dueDate: data.dueDate } : {}),
                 version: { increment: 1 },
             },
         });
@@ -158,6 +160,15 @@ export class ProjectRepository {
             await db.projectKeyPrefix.create({ data: { tenantId: ctx.tenantId, prefix: data.keyPrefix, projectId: id } });
         }
         return result;
+    }
+
+    /**
+     * The due date a project template gives the project it makes (3.1,
+     * decision 188), in `createProject`'s own transaction: part of the
+     * create, so the version does not move.
+     */
+    static async setDueDateAtCreate(db: PrismaTx, ctx: RequestContext, id: string, dueDate: Date) {
+        return db.project.updateMany({ where: { id, tenantId: ctx.tenantId, deletedAt: null }, data: { dueDate } });
     }
 
     static async setArchived(db: PrismaTx, ctx: RequestContext, id: string, archivedAt: Date | null) {

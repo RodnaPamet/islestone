@@ -270,6 +270,7 @@ export const workItemGateSelect = {
     milestoneId: true,
     sortKey: true,
     startedAt: true,
+    startDate: true,
     dueDate: true,
     version: true,
     deletedAt: true,

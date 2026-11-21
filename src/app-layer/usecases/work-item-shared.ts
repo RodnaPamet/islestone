@@ -37,7 +37,7 @@ import type { ReviewNoticeOut } from './review-engine';
 import { env } from '@/env';
 import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db-context';
-import { AppError, ConflictError, notFound } from '@/lib/errors/types';
+import { AppError, ConflictError, badRequest, notFound } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
 import { tenantMyWorkPath, tenantWorkItemPath } from '@/lib/work-item-paths';
 
@@ -137,6 +137,23 @@ export async function loadWritableItem(db: PrismaTx, ctx: RequestContext, v: Pro
 export function assertProjectWritable(project: { archivedAt: Date | null }) {
     if (project.archivedAt) {
         throw new ConflictError('The project is archived; unarchive it to change its work items.', { reason: 'PROJECT_ARCHIVED' });
+    }
+}
+
+/**
+ * Start after due is refused on write (roadmap 3.1a, ADR 0010 §3): 400
+ * `START_AFTER_DUE`. Date-only values compare as their `YYYY-MM-DD` keys.
+ * Rows written before 3.1 may break it: the schedule reports them
+ * (`DATES_REVERSED`), and a write that changes neither date never asks.
+ */
+export function assertStartNotAfterDue(startDate: Date | string | null | undefined, dueDate: Date | string | null | undefined, workItemIds?: readonly string[]) {
+    const start = typeof startDate === 'string' ? startDate : dateOnly(startDate);
+    const due = typeof dueDate === 'string' ? dueDate : dateOnly(dueDate);
+    if (start && due && start > due) {
+        throw badRequest(`The start date (${start}) is after the due date (${due}).`, {
+            reason: 'START_AFTER_DUE',
+            ...(workItemIds ? { workItemIds: [...workItemIds] } : {}),
+        });
     }
 }
 

@@ -70,6 +70,9 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // Sub-phase 2.7e. A project's lists fall back to the project.
     '/settings/recipient-lists': { href: '/settings', label: 'Settings' },
     '/projects/[projectKey]/recipient-lists': { href: '/projects/[projectKey]', label: 'Project' },
+    // Roadmap 3.1a. A team's working calendar falls back to the calendars page.
+    '/settings/working-calendars': { href: '/settings', label: 'Settings' },
+    '/settings/working-calendars/[teamId]': { href: '/settings/working-calendars', label: 'Working calendars' },
 };
 
 /**

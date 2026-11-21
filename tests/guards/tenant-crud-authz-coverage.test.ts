@@ -20,7 +20,7 @@ import { gitFiles } from '../helpers/git-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const T = 'src/app/api/t/[tenantSlug]';
-const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates', 'intake', 'search', 'recipient-lists'].map((r) => `${T}/${r}/`);
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates', 'intake', 'search', 'recipient-lists', 'working-calendar'].map((r) => `${T}/${r}/`);
 
 type Spec = Partial<Record<'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', string>>;
 const W = `${T}/work-items`;
@@ -101,6 +101,13 @@ const SPEC: Readonly<Record<string, Spec>> = {
     // Sub-phase 2.4b-b (decision 112): built-in rules under admin.manage, custom-field rules under projects.edit.
     [`${T}/work-item-types/[typeId]/fields/route.ts`]: { GET: 'projects.view', PUT: 'admin.manage' },
     [`${T}/work-item-types/[typeId]/review-steps/route.ts`]: { GET: 'projects.view', PUT: 'admin.manage' },
+    // Roadmap 3.1a (decision 193): working calendars read under projects.view, written under admin.manage.
+    [`${T}/working-calendar/route.ts`]: { GET: 'projects.view', PUT: 'admin.manage' },
+    [`${T}/working-calendar/holidays/route.ts`]: { POST: 'admin.manage' },
+    [`${T}/working-calendar/holidays/[holidayId]/route.ts`]: { DELETE: 'admin.manage' },
+    [`${T}/teams/[teamId]/working-calendar/route.ts`]: { GET: 'projects.view', PUT: 'admin.manage', DELETE: 'admin.manage' },
+    [`${T}/teams/[teamId]/working-calendar/holidays/route.ts`]: { POST: 'admin.manage' },
+    [`${T}/teams/[teamId]/working-calendar/holidays/[holidayId]/route.ts`]: { DELETE: 'admin.manage' },
     [`${T}/projects/[projectId]/type-fields/route.ts`]: { GET: 'projects.view', PUT: 'projects.edit' },
     [`${T}/projects/[projectId]/custom-fields/[fieldId]/route.ts`]: { PATCH: 'projects.edit' },
     [`${T}/projects/[projectId]/custom-fields/[fieldId]/options/route.ts`]: { POST: 'projects.edit' },

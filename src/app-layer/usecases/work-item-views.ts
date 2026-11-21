@@ -18,6 +18,7 @@ import { WorkItemTypeRepository } from '../repositories/WorkItemTypeRepository';
 import { viewCyclesInTx } from './cycle';
 import { viewMilestonesInTx } from './milestone';
 import { fieldSetEntriesForViewsInTx } from './field-set';
+import { dateOnly } from './work-item-shared';
 import { assertCanReadWorkItems } from '../policies/work-item.policies';
 import { assertCanReadWorkConfig } from '../policies/work-config.policies';
 import { visibleProjects } from '../policies/project-visibility';
@@ -56,6 +57,7 @@ export async function getWorkItemViewConfig(
                 name: p.name,
                 keyPrefix: p.keyPrefix,
                 archived: p.archivedAt !== null,
+                dueDate: dateOnly(p.dueDate),
             })),
             teams: teams.map((t) => ({ id: t.id, name: t.name })),
             states: states.map((s) => ({ id: s.id, teamId: s.teamId, name: s.name, category: s.category, isDefault: s.isDefault })),

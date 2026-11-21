@@ -15,6 +15,7 @@ import { useSWRConfig } from 'swr';
 import { ApiClientError, apiSend } from '@/lib/data/api-client';
 import { useTenantSWR } from '@/lib/data/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import type { TeamWorkingCalendarData, WorkingCalendarsOverview } from '@/lib/scheduling/working-calendar';
 import type { BuiltInField, FieldRequirementValue } from '@/lib/work-items/field-sets';
 import type { ProjectTemplateSummary, WorkflowStateCategory } from '@/lib/work-items/types';
 
@@ -56,6 +57,8 @@ export interface SettingsProject {
     teamId: string;
     name: string;
     keyPrefix: string;
+    /** `YYYY-MM-DD` or null (roadmap 3.1, decision 188). */
+    dueDate?: string | null;
     archivedAt: string | null;
 }
 
@@ -70,6 +73,9 @@ export const SETTINGS_PATHS = {
     projectTemplates: '/project-templates',
     /** Every project template with what it holds, for Settings → Project templates (2.5c; admins). */
     projectTemplatesAll: '/project-templates?includeArchived=1',
+    /** The workspace's working calendar and which teams have their own (3.1a). */
+    workingCalendars: '/working-calendar',
+    teamWorkingCalendar: (teamId: string) => `/teams/${encodeURIComponent(teamId)}/working-calendar`,
 } as const;
 
 export const useTeams = () => useTenantSWR<SettingsTeam[]>(SETTINGS_PATHS.teams);
@@ -83,6 +89,9 @@ export const useTypeFields = (typeId: string) =>
 export const useProjects = () => useTenantSWR<SettingsProject[]>(SETTINGS_PATHS.projects);
 export const useProjectTemplates = (enabled = true) => useTenantSWR<ProjectTemplateSummary[]>(enabled ? SETTINGS_PATHS.projectTemplates : null);
 export const useAllProjectTemplates = () => useTenantSWR<ProjectTemplateSummary[]>(SETTINGS_PATHS.projectTemplatesAll);
+
+export const useWorkingCalendars = () => useTenantSWR<WorkingCalendarsOverview>(SETTINGS_PATHS.workingCalendars);
+export const useTeamWorkingCalendar = (teamId: string) => useTenantSWR<TeamWorkingCalendarData>(SETTINGS_PATHS.teamWorkingCalendar(teamId));
 
 /** The refusal a person reads: the server's sentence, or `fallback`. */
 export function refusalText(err: unknown, fallback: string): string {
