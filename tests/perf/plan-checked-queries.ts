@@ -57,7 +57,7 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'list: project, label filter', methods: ['WorkItemRepository.list'], indexes: ['WorkItemLabel_tenantId_labelId_workItemId_idx'], maxBuffers: 1100 },
     { name: 'list: project, custom-field filter', methods: ['WorkItemRepository.list'], indexes: ['CustomFieldValue_tenantId_fieldId_optionId_idx'], maxBuffers: 2100 },
     { name: 'list: project, sorted by a custom field', methods: ['WorkItemRepository.listByCustomField'], indexes: ['CustomFieldValue_tenantId_fieldId_optionId_idx'], maxBuffers: 5500 },
-    { name: 'list: q (titles, stemmed titles, contents)', methods: ['WorkItemRepository.titleFullTextIds', 'SearchVectorRepository.matchItems', 'WorkItemRepository.list'], indexes: ['WorkItem_search_title_fts', 'SearchVector_search_lexemes'], maxBuffers: 20000, conditions: [{ index: 'WorkItem_search_title_fts', operator: '@@' }, { index: 'SearchVector_search_lexemes', operator: '@@' }, { index: 'WorkItem_search_title_trgm', operator: '~~*' }], knownFinding: F1 },
+    { name: 'list: q (titles, stemmed titles, contents)', methods: ['WorkItemRepository.titleFullTextIds', 'SearchVectorRepository.matchItems', 'WorkItemRepository.list'], indexes: ['WorkItem_search_title_fts'], maxBuffers: 20000, conditions: [{ index: 'WorkItem_search_title_fts', operator: '@@' }, { index: 'SearchVector_search_lexemes', operator: '@@' }, { index: 'WorkItem_search_title_trgm', operator: '~~*' }], knownFinding: F1 },
     { name: 'list: the Deleted view', methods: ['WorkItemRepository.listDeleted'], indexes: ['WorkItem_tenantId_deletionId_idx|WorkItem_deletedAt_idx'], maxBuffers: 1800 },
     // ── The board: one column of the large project ────────────────────────
     { name: 'board: one column (by state)', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_stateId_sortKey_idx'], maxBuffers: 800 },
@@ -75,7 +75,7 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'my work: watching', methods: ['WorkItemRepository.list'], indexes: ['WorkItemWatcher_tenantId_userId_idx'], maxBuffers: 1600 },
     { name: 'my work: due soon', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx|WorkItem_tenantId_assigneeId_sortKey_id_idx'], maxBuffers: 1600 },
     // ── The detail and what the sheet loads beside it ──────────────────────
-    { name: 'detail: the item', methods: ['WorkItemRepository.getById'], indexes: ['WorkItem_pkey|WorkItem_id_tenantId_key'], maxBuffers: 100 },
+    { name: 'detail: the item', methods: ['WorkItemRepository.getById'], indexes: ['WorkItem_pkey|WorkItem_id_tenantId_key|WorkItem_id_projectId_tenantId_key'], maxBuffers: 100 },
     { name: 'detail: comments', methods: ['CommentRepository.list'], indexes: ['Comment_tenantId_workItemId_createdAt_idx'], maxBuffers: 100 },
     { name: 'detail: sub-items and their progress', methods: ['WorkItemRepository.listSubItems', 'WorkItemRepository.subItemProgress'], indexes: ['WorkItem_tenantId_parentId_sortKey_idx'], maxBuffers: 100 },
     { name: 'detail: the subtree and ancestors', methods: ['WorkItemRepository.liveSubtree', 'WorkItemRepository.subtreeHeight', 'WorkItemRepository.ancestors'], indexes: ['WorkItem_tenantId_parentId_sortKey_idx'], maxBuffers: 150 },
@@ -86,7 +86,7 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'counts: items in a state', methods: ['TeamRepository.countItemsInState', 'ReviewRepository.itemsInStateRequiringReview', 'WorkItemRepository.lockInState'], indexes: ['WorkItem_tenantId_stateId_idx'], maxBuffers: 6500 },
     // ── Search: the palette's raw reads ────────────────────────────────────
     { name: 'search: titles (trigram and full text)', methods: ['WorkItemRepository.searchTitles'], indexes: ['WorkItem_search_title_fts|WorkItem_search_title_trgm'], maxBuffers: 2500, conditions: [{ index: 'WorkItem_search_title_trgm', operator: '~~*' }, { index: 'WorkItem_search_title_fts', operator: '@@' }], knownFinding: F1 },
-    { name: 'search: contents and snippets', methods: ['SearchVectorRepository.matchItems', 'WorkItemRepository.findSearchRows', 'WorkItemRepository.searchSnippetSources'], indexes: ['SearchVector_search_lexemes'], maxBuffers: 18000, conditions: [{ index: 'SearchVector_search_lexemes', operator: '@@' }], knownFinding: F1 },
+    { name: 'search: contents and snippets', methods: ['SearchVectorRepository.matchItems', 'WorkItemRepository.findSearchRows', 'WorkItemRepository.searchSnippetSources'], indexes: [], noIndexBecause: 'finding F1: under row-level security the lexemes index is read on tenantId alone or not at all (at 100k the planner walks every item instead); its condition is the failing check', maxBuffers: 18000, conditions: [{ index: 'SearchVector_search_lexemes', operator: '@@' }], knownFinding: F1 },
     // ── The timeline (3.1b) and the calendars it reads (3.1a) ──────────────
     { name: 'timeline: scope, count and relations', methods: ['WorkItemRepository.listForTimeline', 'WorkItemRepository.countForTimeline', 'WorkItemRepository.timelineContextRows'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 1200 },
     {
@@ -104,7 +104,7 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'templates: open items of a project', methods: ['WorkItemRepository.openItemsForTemplate'], indexes: ['WorkItem_tenantId_parentId_sortKey_idx|WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 1700 },
     // ── Jobs: reminders, the digest, the purge, the rebalance, the rebuild ─
     { name: 'job: due reminders', methods: ['WorkItemRepository.dueCandidates'], indexes: ['WorkItem_tenantId_stateCategory_dueDate_idx|WorkItem_tenantId_projectId_dueDate_id_idx|WorkItem_tenantId_dueDate_id_idx'], maxBuffers: 150 },
-    { name: 'job: the daily digest', methods: ['WorkItemRepository.digestDueItems'], indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx'], maxBuffers: 1100 },
+    { name: 'job: the daily digest', methods: ['WorkItemRepository.digestDueItems'], indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx|WorkItem_tenantId_dueDate_id_idx'], maxBuffers: 1100 },
     { name: 'job: the purge sweep', methods: ['WorkItemRepository.purgeableIds'], indexes: ['WorkItem_deletedAt_idx'], maxBuffers: 150 },
     { name: 'job: a purged project', methods: ['WorkItemRepository.countLiveInProject', 'WorkItemRepository.projectItemIds'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx|WorkItem_tenantId_projectId_number_key|WorkItem_tenantId_projectId_createdAt_id_idx'], maxBuffers: 400 },
     { name: 'job: the sort-key rebalance', methods: ['WorkItemRepository.projectsNeedingRebalance', 'WorkItemRepository.orderedPage'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 500 },

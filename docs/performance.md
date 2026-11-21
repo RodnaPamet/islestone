@@ -40,7 +40,7 @@ Every run ends with `verify.ts`, on a fresh seed and on a restored dump alike: r
 
 `scripts/seed-scale/cache.sh save|restore <database> <file>` runs `pg_dump --format=custom` and `pg_restore --jobs=4` inside the container `scripts/ci-postgres.sh` started (the runner's own client tools are older than the image's PostgreSQL 17), then `ANALYZE`. CI caches the dump under `hashFiles('prisma/migrations/**', 'scripts/seed-scale/**', 'deploy/postgres/**')`; a change to any of those reseeds. A change to a usecase the seeder calls does not invalidate the cache; the integration suite's `mini` seed covers it.
 
-Measured on the development machine (4 CPUs, 16 GB, Docker): the 10k shape seeds and verifies in about 2 minutes into a 262 MB database; its dump is 38 MB and restores in about 4 seconds. See the H2 map's "As built (H2a)" for the 100k run.
+Measured on the development machine (4 CPUs, 16 GB, Docker), with PgBouncer in front as CI runs it: the 10k shape seeds and verifies in about 2 minutes (112 s) into a 261 MB database; its dump is 38 MB, and a restore with its verification takes 11 s. The 100k shape seeds and verifies in about 16 minutes (978 s) into a 2.4 GB database: too slow and too large for every pull request, which is why the nightly (H2b) caches it.
 
 ### What the seed leaves out
 
@@ -85,7 +85,7 @@ A budget only goes down. A count that grows with the page size or the workspace 
 
 ## In CI
 
-`ci.yml`'s `Performance (10k)` job, on every pull request: Postgres with `pg_stat_statements` and PgBouncer (`scripts/ci-postgres.sh islestone_perf --pgbouncer --pg-stat-statements`); the cached dump restored, or the shape seeded, dumped and cached; the restored seed verified; then `npm run test:perf`, blocking. About 4 minutes with a warm cache, 6 cold.
+`ci.yml`'s `Performance (10k)` job, on every pull request: Postgres with `pg_stat_statements` and PgBouncer (`scripts/ci-postgres.sh islestone_perf --pgbouncer --pg-stat-statements`); the cached dump restored, or the shape seeded, dumped and cached; the restored seed verified; then `npm run test:perf`, blocking. Locally the steps after `npm ci` took about 25 s with a warm cache (restore and verify 11 s, the perf project 11 s) and about 2.5 minutes cold.
 
 Locally, beside another run, under other container names and ports:
 
@@ -101,6 +101,21 @@ npm run test:perf
 
 The create scenario adds five items to the seeded workspace, so re-verify only a fresh seed or a restored dump.
 
+## The 100k run (once, in H2a)
+
+The perf project ran once against the 100k shape (`PERF_SHAPE=100k`, both URLs direct; buffers reported, not judged). Every plan kept its rules (no sequential scan on a guarded table but F2's, every expected index used, two of them an equivalent one the planner preferred at that size), and every statements-per-request count was identical to 10k's: nothing reads per row or per item. The buffers H2b's budgets must start from, besides the first pages that stayed flat (a project's list 386, the workspace's 455, a board column 407, My Work's assigned 555, the detail 33):
+
+| Query | 10k | 100k | Why |
+|---|---:|---:|---|
+| Search: contents and snippets | 12,278 | 511,194 | F1: the planner walks every item and probes its vectors |
+| The list's `q` | 14,365 | 524,430 | F1, the same read |
+| The search-index rebuild | 11,661 | 126,464 | F2 (and a sequential scan of `WorkItem` too) |
+| A member's removal | 5,863 | 43,856 | the lock takes every row of the heaviest member (about 20,000) |
+| A list sorted by a custom field | 2,693 | 12,186 | the field's value rows in value order, then the items |
+| Items in a state | 3,151 | 10,325 | a state's delete locks every item in it |
+| Search: titles | 1,200 | 10,320 | F1 |
+| My Work: to review | 77 | 7,689 | the sample's few reviewer rows read whole |
+
 ## Findings
 
 What H2a's checks found on the 10k seed (decision 172: fixed before the gate closes, or reported when the fix is large).
@@ -109,6 +124,6 @@ What H2a's checks found on the 10k seed (decision 172: fixed before the gate clo
 |---|---|---|
 | — | Three reads ordered across projects and read every matching row before sorting: the Work items page's default (the whole workspace in manual order), My Work's "Assigned to me" in manual order (the heaviest member's 2,160 items read and sorted for one page: 2,088 buffers at 10k, about 13,000 at 100k), and the Work items page by due date across projects. | **Fixed:** migration `20261213120000_list_scale_indexes` adds `WorkItem(tenantId, sortKey, id)`, `(tenantId, assigneeId, sortKey, id)` and `(tenantId, dueDate, id)`, with their Layer C entries; the three reads now walk their index for one page (403, 483 and 1,294 buffers). |
 | — | A member's removal locked its rows with one `OR` across `assigneeId`, `waitingOnUserId`, a person value and the reviewer rows, which no index serves. | **Fixed:** `WorkItemRepository.lockItemsOfPerson` takes a `UNION` of one indexed read per reason; the lock itself still takes every row it names. |
-| F1 | **Full-text and trigram conditions are filters under row-level security.** `@@` (`ts_match_vq`), `ILIKE` (`texticlike`) and `%` are not `LEAKPROOF`, so PostgreSQL may not use a user condition built on them as an index condition ahead of the RLS policy's qual: `WorkItem_search_title_fts`, `WorkItem_search_title_trgm` and `SearchVector_search_lexemes` are read on `tenantId` alone, every row of the workspace is fetched and filtered (36,481 vectors for a search matching 3,264; the same search as the superuser reads 1,836 buffers instead of 2,303, and a rare word a handful). Every search and the list's `q` cost grows with the workspace. `tests/integration/search.test.ts` checks the plans as the superuser, so it never saw it. | **Reported.** A security decision: marking those functions `LEAKPROOF` (a migration as the superuser, after reviewing that they raise no data-dependent errors), or reading the matches through a narrowly scoped `SECURITY DEFINER` function that applies the workspace itself. The three plan checks carry `knownFinding: F1`. |
+| F1 | **Full-text and trigram conditions are filters under row-level security.** `@@` (`ts_match_vq`), `ILIKE` (`texticlike`) and `%` are not `LEAKPROOF`, so PostgreSQL may not use a user condition built on them as an index condition ahead of the RLS policy's qual: `WorkItem_search_title_fts`, `WorkItem_search_title_trgm` and `SearchVector_search_lexemes` are read on `tenantId` alone, every row of the workspace is fetched and filtered (36,481 vectors for a search matching 3,264; the same search as the superuser reads 1,836 buffers instead of 2,303, and a rare word a handful). Every search and the list's `q` cost grows with the workspace: at 100k one palette search touched 511,194 buffers. `tests/integration/search.test.ts` checks the plans as the superuser, so it never saw it. | **Reported.** A security decision: marking those functions `LEAKPROOF` (a migration as the superuser, after reviewing that they raise no data-dependent errors), or reading the matches through a narrowly scoped `SECURITY DEFINER` function that applies the workspace itself. The three plan checks carry `knownFinding: F1`. |
 | F2 | **The search-index rebuild's stale-page reads hash-join the workspace's whole vector table** (`staleDescriptionPage`, `staleCommentPage`: sequential scans of `SearchVector` and `Comment`, 11,652 buffers at 10k). Nightly with nothing stale that is one pass; a forced rebuild (the admin route) repeats it for every page of 500, quadratic in the workspace. | **Reported.** A keyset walk over a tenant-leading id index with `NOT EXISTS` probes, or collecting the stale ids once. The plan check carries `knownFinding: F2`. |
 | — | The workspace-wide list sorted by updated, created, priority or key reads every matching item before sorting (as the three fixed reads did). Not in the map's scenario list; each would need one more `WorkItem` index. | **Reported** for H2b's 100k measurements to decide. |
