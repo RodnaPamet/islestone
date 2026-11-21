@@ -166,7 +166,11 @@ export interface MatrixRow {
 const READ = c('ok', 'ok', 'ok', 'ok', g('hidden'), 'ok', 'ok');
 /** A list filtered by project visibility: everyone sees the subject; a GUEST gets the list without it. */
 const LIST = c('ok', 'ok', 'ok', 'ok', g('empty'), 'ok', 'ok');
-/** A workspace-level read under a key every role holds, touching no project (teams, types, labels, the roster). */
+/**
+ * A workspace-level read under a key every role holds, touching no project (teams, types, labels, the roster).
+ * A GUEST is answered today: OPEN QUESTION for the owner (H2 map, part 3, "As built"): decision 176 says a
+ * guest "sees nothing", the map reads it as "no project". These cells assert today's 200s, tagged until 8.4.
+ */
 const WS_READ = c('ok', 'ok', 'ok', 'ok', g('ok'), 'ok', 'ok');
 /** `work_items.edit`: OWNER, ADMIN, MEMBER; the narrowed member has lost it. */
 const ITEM_EDIT = c('ok', 'ok', 'ok', 'denied', g('denied'), 'denied', 'denied');
@@ -444,7 +448,7 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         { route: 'recipient-lists/[listId]/members/route.ts', method: 'PATCH', key: 'admin.manage', subject: 'a workspace list', params: (s) => ({ listId: s.workspaceListId }), body: (s) => ({ add: [s.raeId] }), expect: ADMIN },
         { route: 'recipient-lists/[listId]/archive/route.ts', method: 'POST', key: 'admin.manage', subject: 'a fresh workspace list', fixture: 'freshWorkspaceList', expect: ADMIN },
         { route: 'recipient-lists/[listId]/restore/route.ts', method: 'POST', key: 'admin.manage', subject: 'an archived workspace list', fixture: 'archivedWorkspaceList', expect: ADMIN },
-        // The pickers' roster: every member reads it.
+        // The pickers' roster: every member reads it, names and emails. A GUEST too, today: see WS_READ's open question.
         { route: 'users/assignable/route.ts', method: 'GET', key: 'work_items.view', subject: 'the member roster', expect: WS_READ },
         { route: 'search/route.ts', method: 'GET', key: 'projects.view', subject: 'a search matching a visible item', query: (s) => ({ q: s.searchTerm }), reveals: (s) => s.sharedItemId, expect: LIST },
         { route: 'views/route.ts', method: 'GET', key: 'views.view', subject: 'the saved views', reveals: (s) => s.viewId, expect: c('ok', 'ok', 'ok', 'ok', g('ok'), 'ok', 'ok') },
