@@ -170,7 +170,17 @@ describe(`plan checks on the seeded database (PERF_SHAPE=${process.env.PERF_SHAP
     beforeAll(async () => {
         direct = directClient();
         world = await loadPerfWorld(direct);
-    });
+        // Deterministic statistics, so a plan does not flip between runs: the
+        // visibility map set (index-only scans fetch no heap pages at random),
+        // and ANALYZE sampling every row at 10k (300 x 1,000 rows), where the
+        // default target samples 30,000 at random and the same query could
+        // take another plan on the next run.
+        await direct.$executeRawUnsafe('VACUUM');
+        await direct.$transaction(async (tx) => {
+            await tx.$executeRawUnsafe('SET LOCAL default_statistics_target = 1000');
+            await tx.$executeRawUnsafe('ANALYZE');
+        }, { timeout: 600_000 });
+    }, 900_000);
 
     afterAll(async () => {
         await direct?.$disconnect();

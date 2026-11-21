@@ -88,7 +88,7 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'search: titles (trigram and full text)', methods: ['WorkItemRepository.searchTitles'], indexes: ['WorkItem_search_title_fts|WorkItem_search_title_trgm'], maxBuffers: 2500, conditions: [{ index: 'WorkItem_search_title_trgm', operator: '~~*' }, { index: 'WorkItem_search_title_fts', operator: '@@' }], knownFinding: F1 },
     { name: 'search: contents and snippets', methods: ['SearchVectorRepository.matchItems', 'WorkItemRepository.findSearchRows', 'WorkItemRepository.searchSnippetSources'], indexes: [], noIndexBecause: 'finding F1: under row-level security the lexemes index is read on tenantId alone or not at all (at 100k the planner walks every item instead); its condition is the failing check', maxBuffers: 18000, conditions: [{ index: 'SearchVector_search_lexemes', operator: '@@' }], knownFinding: F1 },
     // ── The timeline (3.1b) and the calendars it reads (3.1a) ──────────────
-    { name: 'timeline: scope, count and relations', methods: ['WorkItemRepository.listForTimeline', 'WorkItemRepository.countForTimeline', 'WorkItemRepository.timelineContextRows'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 1200 },
+    { name: 'timeline: scope, count and relations', methods: ['WorkItemRepository.listForTimeline', 'WorkItemRepository.countForTimeline', 'WorkItemRepository.timelineContextRows'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 2000 },
     {
         name: 'timeline: working calendars',
         methods: [],

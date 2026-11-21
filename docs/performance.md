@@ -55,6 +55,8 @@ Measured on the development machine (4 CPUs, 16 GB, Docker), with PgBouncer in f
 
 **How a plan is captured.** `plans.test.ts` imports `plan-env.ts` first: the application's client connects DIRECTLY to Postgres with `auto_explain` loaded for the session through libpq startup options (`session_preload_libraries`, `log_min_duration=0`, `log_analyze`, `log_buffers`, `log_format=json`, `log_level=notice`; PgBouncer would refuse the options), and every pg client records the NOTICE each statement's plan arrives in. Each named query runs its real repository methods with realistic arguments, as the heavy member, inside `runInTenantContext`: as `app_user`, with row-level security on, exactly as a request runs them. Nothing is re-planned from copied SQL.
 
+**Deterministic plans.** Before it checks anything the suite runs `VACUUM` (so index-only scans fetch no heap pages at random) and `ANALYZE` with `default_statistics_target = 1000`, which samples every row at 10k: with the default target the sample is 30,000 random rows and a query could take another plan, and another buffer count, on the next run (H2a saw the content search swing between 14,000 and 23,000 buffers before this). Three runs on one seed, and runs on two fresh seeds, then measured the same within a few buffers.
+
 **What each query must hold** (`judgePlans`, `conditionMisses` in `plan-capture.ts`, unit-tested in `tests/unit/perf/plan-capture.test.ts`):
 
 - no `Seq Scan` on `WorkItem`, `Comment`, `SearchVector`, `WorkItemTransition` or `AuditLog`;
