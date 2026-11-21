@@ -435,6 +435,7 @@ function WorkItemsViewBody({
                                     onModeChange={setTimelineMode}
                                     onOpen={(id) => setSheetId(id)}
                                     highlightRange={cycleRange}
+                                    canEdit={perms.edit}
                                 />
                             </ListPageShell.Body>
                             {sheet}

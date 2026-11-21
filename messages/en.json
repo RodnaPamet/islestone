@@ -1372,7 +1372,9 @@
                 "heading": "No dates",
                 "description": "Items with neither a start date nor a due date are not on the chart.",
                 "empty": "Every item has a date.",
-                "count": "{count, plural, one {# item} other {# items}}"
+                "count": "{count, plural, one {# item} other {# items}}",
+                "setDates": "Set dates",
+                "setDatesLabel": "Set dates for {key}"
             },
             "float": {
                 "days": "{days, plural, =0 {No float} one {# day of float} other {# days of float}}",
@@ -1391,7 +1393,8 @@
                 "latestFinish": "Latest finish",
                 "float": "Float",
                 "critical": "Critical path",
-                "conflicts": "Conflicts"
+                "conflicts": "Conflicts",
+                "actions": "Actions"
             },
             "criticalYes": "Critical",
             "cancelled": "Cancelled",
@@ -1408,7 +1411,71 @@
                 "STARTS_ON_NON_WORKING_DAY": "Starts on a non-working day"
             },
             "resource": "item",
-            "resourcePlural": "items"
+            "resourcePlural": "items",
+            "change": {
+                "open": "Change dates",
+                "openLabel": "Change dates for {key}",
+                "title": "Change dates for {key}",
+                "was": "Now: {dates}",
+                "noDate": "no date",
+                "start": "Start date",
+                "due": "Due date",
+                "hiddenDate": "This type hides this date.",
+                "startAfterDue": "The start date is after the due date.",
+                "unchanged": "Choose new dates to see what they change.",
+                "cycle": "These items block each other in a loop, so no schedule can be computed.",
+                "tooLarge": "Too many items to schedule.",
+                "noEffect": "Nothing else on this timeline moves.",
+                "movedHeading": "Earliest start moves",
+                "movedLater": "{days, plural, one {# working day later} other {# working days later}}",
+                "movedEarlier": "{days, plural, one {# working day earlier} other {# working days earlier}}",
+                "criticalHeading": "Become critical",
+                "notCriticalHeading": "No longer critical",
+                "conflictsHeading": "New conflicts",
+                "pushHeading": "Items it pushes later",
+                "alsoMove": "Also move the {count, plural, one {# item} other {# items}} it pushes later",
+                "overLimit": "{count} items would move; move fewer at a time (at most {limit} at once).",
+                "fromTo": "{from} → {to}",
+                "notMovedHeading": "Not moved",
+                "notMoved": {
+                    "started": "not moved: started",
+                    "undated": "not moved: no dates",
+                    "hidden": "not moved: its type hides the date",
+                    "archived": "not moved: its project is archived",
+                    "reversed": "not moved: its start date is after its due date"
+                },
+                "confirm": "Change dates",
+                "cancel": "Cancel",
+                "moving": "Moving {key} and {count, plural, one {# item} other {# items}}.",
+                "dependencyRemoved": "Dependency removed: {label}."
+            },
+            "dependency": {
+                "open": "Dependencies",
+                "openLabel": "Dependencies of {key}",
+                "addTitle": "Add dependency",
+                "question": "{from} blocks {to}?",
+                "explain": "{to} cannot start until {from} is finished.",
+                "confirm": "Add dependency",
+                "cancel": "Cancel",
+                "close": "Close",
+                "manageTitle": "Dependencies of {key}",
+                "blockedByHeading": "Blocked by",
+                "blocksHeading": "Blocks",
+                "none": "None on this timeline.",
+                "remove": "Remove",
+                "removeLabel": "Remove: {relation}",
+                "addHeading": "Add a dependency",
+                "directionLabel": "Relation",
+                "direction": {
+                    "blockedBy": "{key} is blocked by",
+                    "blocks": "{key} blocks"
+                },
+                "otherLabel": "Work item",
+                "otherPlaceholder": "Choose a work item",
+                "failed": "The dependency could not be added.",
+                "wrongType": "Draw a dependency from the end of one bar to the start of the next, between items you can change.",
+                "notHere": "This dependency cannot be removed here."
+            }
         }
     },
     "settings": {

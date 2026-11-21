@@ -8,12 +8,15 @@ import {
     computeTimelineSchedule,
     placeRowInTimeline,
     removeRowFromTimeline,
+    withEdge,
+    withoutEdge,
+    withRowDates,
     scheduleInputOf,
     type TimelineData,
     type TimelineResponse,
     type TimelineRow,
 } from '@/lib/work-items/timeline';
-import { buildTimelineModel, cellContainsDay, criticalLinkCss, leafSpan, nonWorkingEverywhere, toWidgetTask, treeOrder, type ChartTask } from '@/components/work-items/timeline/timeline-model';
+import { buildTimelineModel, cellContainsDay, criticalLinkCss, dropFromWidget, editableRows, leafSpan, nonWorkingEverywhere, toWidgetTask, treeOrder, type ChartTask } from '@/components/work-items/timeline/timeline-model';
 
 import { toEpochDay } from '@/app-layer/domain/schedule/calendar';
 
@@ -336,5 +339,54 @@ describe('the widget mapping and the cells', () => {
             ['c', 'p'],
             ['orphan', 0],
         ]);
+    });
+});
+
+describe('changes from the timeline (3.1c)', () => {
+    it('reads a drop from the widget: both dates a move, one a resize, anything else nothing', () => {
+        expect(dropFromWidget({ diff: 3, task: { start: 1, end: 2 } })).toEqual({ mode: 'move', days: 3 });
+        expect(dropFromWidget({ diff: -2, task: { start: 1 } })).toEqual({ mode: 'start', days: -2 });
+        expect(dropFromWidget({ diff: 1, task: { end: 1 } })).toEqual({ mode: 'end', days: 1 });
+        expect(dropFromWidget({ diff: 0, task: { start: 1, end: 2 } })).toBeNull();
+        expect(dropFromWidget({ task: { progress: 40 } })).toBeNull();
+        expect(dropFromWidget({ diff: 1.5, task: { start: 1 } })).toBeNull();
+        expect(dropFromWidget(null)).toBeNull();
+    });
+
+    it('offers dates only on open or started scope rows of unarchived projects whose type shows them; dependencies on every scope row of an unarchived project', () => {
+        const resp = respond(
+            data(
+                [
+                    row('a', { startDate: '2026-03-02', dueDate: '2026-03-03' }),
+                    row('b', { stateCategory: 'STARTED', dueDate: '2026-03-05', actualStart: '2026-03-02' }),
+                    row('c', { stateCategory: 'DONE', startDate: '2026-03-02', actualStart: '2026-03-02', actualFinish: '2026-03-02' }),
+                    row('d', { context: true, startDate: '2026-03-02' }),
+                    row('e', { projectId: 'p2', startDate: '2026-03-02' }),
+                    row('f', { typeId: 'hiding', startDate: '2026-03-02' }),
+                    row('g', { typeId: 'hiding' }),
+                    row('h', { startDate: '2026-03-02' }),
+                    row('h1', { parentId: 'h', startDate: '2026-03-03' }),
+                ],
+                { projects: [{ id: 'p1', name: 'P', keyPrefix: 'ISL', dueDate: null, archived: false }, { id: 'p2', name: 'A', keyPrefix: 'ARC', dueDate: null, archived: true }] },
+            ),
+        );
+        const hiddenDates = (r: TimelineRow) => ({ startDate: r.typeId === 'hiding', dueDate: false });
+        const sets = editableRows(resp, { canEdit: true, hiddenDates });
+        expect([...sets.dates].sort()).toEqual(['a', 'b', 'g', 'h1']);
+        expect([...sets.dependencies].sort()).toEqual(['a', 'b', 'c', 'f', 'g', 'h', 'h1']);
+        const none = editableRows(resp, { canEdit: false, hiddenDates });
+        expect([none.dates.size, none.dependencies.size]).toEqual([0, 0]);
+    });
+
+    it('places new dates and takes a relation out and back, re-running the engine', () => {
+        const resp = respond(data([row('a', { startDate: '2026-03-02', dueDate: '2026-03-03' }), row('b', { startDate: '2026-03-04', dueDate: '2026-03-04' })], { edges: [{ id: 'r1', fromId: 'a', toId: 'b' }] }));
+        const moved = withRowDates(resp, [{ id: 'a', startDate: '2026-03-02', dueDate: '2026-03-05', version: 9 }]);
+        expect(moved.rows.find((r) => r.id === 'a')).toMatchObject({ dueDate: '2026-03-05', version: 9 });
+        const b = moved.schedule.ok ? moved.schedule.items.find((i) => i.id === 'b')! : null;
+        expect(b?.conflicts).toContain('STARTS_BEFORE_BLOCKER_FINISHES');
+        const cut = withoutEdge(moved, 'r1');
+        expect(cut.edges).toEqual([]);
+        expect(cut.schedule.ok && cut.schedule.items.find((i) => i.id === 'b')!.conflicts).toEqual([]);
+        expect(withEdge(cut, { id: 'r1', fromId: 'a', toId: 'b' }).edges).toHaveLength(1);
     });
 });

@@ -255,6 +255,17 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         { route: 'work-items/bulk/assign/route.ts', method: 'POST', key: 'work_items.assign', subject: 'a fresh item', fixture: 'item', body: (s) => ({ workItemIds: [s.workItemId], assigneeId: s.annId }), expect: ITEM_ASSIGN },
         { route: 'work-items/bulk/state/route.ts', method: 'POST', key: 'work_items.edit', subject: 'a fresh item', fixture: 'item', body: (s) => ({ workItemIds: [s.workItemId], stateCategory: 'STARTED' }), expect: ITEM_EDIT },
         { route: 'work-items/bulk/due/route.ts', method: 'POST', key: 'work_items.edit', subject: 'a fresh item', fixture: 'item', body: (s) => ({ workItemIds: [s.workItemId], dueDate: '2051-01-02' }), expect: ITEM_EDIT },
+        // A change of dates from the timeline (3.1c, decision 194): a fresh item is at version 1.
+        {
+            route: 'work-items/bulk/dates/route.ts', method: 'POST', key: 'work_items.edit', subject: "a fresh item's dates (3.1c)", fixture: 'item',
+            body: (s) => ({ dragged: { id: s.workItemId, version: 1, startDate: '2051-01-02', dueDate: '2051-01-09' }, pushed: [] }),
+            expect: ITEM_EDIT,
+        },
+        {
+            route: 'work-items/bulk/dates/route.ts', method: 'POST', key: 'work_items.edit', subject: 'an item in an archived project (3.1c)',
+            body: (s) => ({ dragged: { id: s.archivedItemId, version: 1, startDate: '2051-01-02', dueDate: '2051-01-09' }, pushed: [] }),
+            expect: ARCHIVED_ITEM_EDIT,
+        },
         { route: 'work-items/bulk/delete/route.ts', method: 'POST', key: 'work_items.delete', subject: 'a fresh item', fixture: 'item', body: (s) => ({ workItemIds: [s.workItemId] }), expect: ITEM_DELETE },
         { route: `${W}/route.ts`, method: 'GET', key: 'work_items.view', subject: 'an item in a visible project', expect: READ },
         { route: `${W}/route.ts`, method: 'GET', key: 'work_items.view', subject: 'an item in an archived project (reads allowed)', params: (s) => ({ workItemId: s.archivedItemId }), expect: READ },

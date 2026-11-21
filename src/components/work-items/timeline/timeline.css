@@ -164,3 +164,31 @@
     background: color-mix(in srgb, var(--brand-default) 14%, transparent);
     box-shadow: inset 2px 0 0 var(--brand-default);
 }
+
+/*
+ * Changing dates and dependencies (3.1c). The widget is not `readonly` for a
+ * caller who edits work items, so it draws its own handles: the link handles
+ * show only on bars a link may join, the progress marker never (items carry
+ * no progress), and a bar that may not move keeps the pointer cursor. The
+ * link delete button's icon comes from the icon font, which is not loaded:
+ * it is drawn here.
+ */
+.isl-timeline .wx-progress-marker,
+.isl-timeline .wx-progress-wrapper {
+    display: none;
+}
+.isl-timeline .wx-bar:not(:has(> [data-linkable='true'])) > .wx-link {
+    display: none;
+}
+.isl-timeline[data-editable='true'] .wx-bar:has(> [data-draggable='true']) {
+    cursor: grab;
+}
+.isl-timeline .wx-bar:not(:has(> [data-draggable='true'])) {
+    cursor: pointer;
+}
+.isl-timeline .wx-delete-button-icon::before {
+    content: '\00d7';
+    font-style: normal;
+    font-size: 14px;
+    line-height: 1;
+}

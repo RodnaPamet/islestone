@@ -286,6 +286,12 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note: 'Bulk state and due-date changes.',
     },
     {
+        path: new RegExp(`^${T}\\/work-items\\/bulk\\/dates$`),
+        methods: ['POST'],
+        permission: 'work_items.edit',
+        note: 'A change of dates from the timeline with the items it pushes later (3.1c, decision 194).',
+    },
+    {
         path: new RegExp(`^${T}\\/work-items\\/bulk\\/delete$`),
         methods: ['POST'],
         permission: 'work_items.delete',

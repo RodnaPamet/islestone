@@ -37,6 +37,7 @@ import { MembershipRepository } from '../repositories/MembershipRepository';
 import { MentionRepository } from '../repositories/MentionRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
 import { ReviewRepository } from '../repositories/ReviewRepository';
+import { WorkItemRelationRepository } from '../repositories/WorkItemRelationRepository';
 import { SEARCH_MATCH_CAP, SearchVectorRepository } from '../repositories/SearchVectorRepository';
 import { TeamRepository } from '../repositories/TeamRepository';
 import { WorkItemTypeRepository } from '../repositories/WorkItemTypeRepository';
@@ -77,6 +78,7 @@ import { assertReviewAllowsDone, copiedReviewDefaultsMetadata, copyTypeReviewDef
 import {
     assertProjectWritable,
     assertStartNotAfterDue,
+    dateOnly,
     emitAssignedBells,
     emitDueBell,
     emitMentionBells,
@@ -1559,6 +1561,204 @@ export async function bulkSetWorkItemDueDate(ctx: RequestContext, input: { workI
         });
     }
     return bulkResults(ids, new Set(outcome.map((i) => i.id)));
+}
+
+// ─── A change of dates from the timeline (3.1c) ───────────────────────────
+
+/** One item's dates in {@link rescheduleWorkItems}: the version the caller read, and both dates as they are to be stored. */
+export interface RescheduleDates {
+    id: string;
+    version: number;
+    startDate: string | null;
+    dueDate: string | null;
+}
+
+/** The dragged item and the items it pushes later (decision 194). */
+export interface RescheduleInput {
+    dragged: RescheduleDates;
+    pushed: readonly RescheduleDates[];
+}
+
+/**
+ * "Also move the N items it pushes later" (roadmap 3.1c; ADR 0010 §6; owner
+ * decision 194): the dragged item's new dates and those of the items
+ * downstream of it, all or nothing, in one transaction:
+ *
+ *   1. the workspace's graph lock FIRST (the relations the downstream check
+ *      reads cannot change under it), then every item's row in id order
+ *      (decision 173), then the rows read;
+ *   2. each item's version equals the one sent, or 409 `VERSION_CONFLICT`
+ *      naming the stale items, nothing written;
+ *   3. each pushed item is reached from the dragged one through BLOCKS
+ *      relations between live items (400 `NOT_DOWNSTREAM`: this is not a
+ *      general bulk-date tool), and its dates only move later: a date it has
+ *      moves to the same day or later, at least one strictly, and no date is
+ *      added or cleared (400 `PUSH_NOT_LATER`);
+ *   4. every item open (409 `ITEM_CLOSED`), in a writable project (409
+ *      `PROJECT_ARCHIVED`), its field set showing the dates written (400
+ *      `FIELD_HIDDEN`; the dragged item's required dates not cleared, 400
+ *      `FIELD_SET_UNMET`) and its start not after its due date (400
+ *      `START_AFTER_DUE`);
+ *   5. one versioned write per item (each version increases once; `sortKey`
+ *      untouched), one `WORK_ITEM_UPDATED` per item naming both dates with
+ *      their old and new values, the change's `rescheduleId` and, on a pushed
+ *      item, `pushedBy`; one `WORK_ITEMS_RESCHEDULED` on the dragged item.
+ *
+ * After the commit: each item's due bell for today's window and one watcher
+ * entry per item, as the bulk due-date change does. A person's act only:
+ * agents propose schedule changes (ADR 0003, roadmap 7.5), never this.
+ */
+export async function rescheduleWorkItems(ctx: RequestContext, input: RescheduleInput) {
+    assertCanEditWorkItems(ctx);
+    const changes = [input.dragged, ...input.pushed];
+    const ids = changes.map((c) => c.id);
+    if (new Set(ids).size !== ids.length) throw badRequest('Each work item may appear once.');
+    const rescheduleId = randomUUID();
+    const outcome = await runInTenantContext(ctx, async (db) => {
+        // FIRST: the graph lock, then the rows in id order (decision 173).
+        await lockWorkItemGraph(db, ctx.tenantId);
+        const v = await visibleProjects(ctx, db);
+        const locked = await WorkItemRepository.lockForWrite(db, ctx, ids);
+        const items = await WorkItemRepository.listByIds(db, ctx, v, locked);
+        const byId = new Map(items.map((i) => [i.id, i]));
+        if (changes.some((c) => !byId.has(c.id))) throw notFound('Work item not found');
+
+        const stale = changes.filter((c) => byId.get(c.id)!.version !== c.version);
+        if (stale.length > 0) {
+            throw new ConflictError('Some of these work items changed since you read them; nothing was moved.', {
+                reason: 'VERSION_CONFLICT',
+                workItemIds: stale.map((c) => c.id),
+                versions: Object.fromEntries(stale.map((c) => [c.id, byId.get(c.id)!.version])),
+            });
+        }
+
+        const reached = await WorkItemRelationRepository.liveBlocksReach(db, ctx, input.dragged.id, input.pushed.map((p) => p.id));
+        const notDownstream = input.pushed.filter((p) => !reached.has(p.id));
+        if (notDownstream.length > 0) {
+            throw badRequest(`${keyOf(byId.get(notDownstream[0]!.id)!)} is not downstream of ${keyOf(byId.get(input.dragged.id)!)}.`, {
+                reason: 'NOT_DOWNSTREAM',
+                workItemIds: notDownstream.map((p) => p.id),
+            });
+        }
+        const notLater = input.pushed.filter((p) => !movesLaterOnly(byId.get(p.id)!, p));
+        if (notLater.length > 0) {
+            throw badRequest(`${keyOf(byId.get(notLater[0]!.id)!)} may only move later, keeping the dates it has.`, {
+                reason: 'PUSH_NOT_LATER',
+                workItemIds: notLater.map((p) => p.id),
+            });
+        }
+
+        const closed = changes.filter((c) => isClosedCategory(byId.get(c.id)!.stateCategory));
+        if (closed.length > 0) {
+            throw new ConflictError(`${keyOf(byId.get(closed[0]!.id)!)} is closed; its dates are history.`, {
+                reason: 'ITEM_CLOSED',
+                workItemIds: closed.map((c) => c.id),
+            });
+        }
+        for (const c of changes) assertProjectWritable(byId.get(c.id)!.project);
+
+        // The field set of each item's type (2.4b-b): the dates it writes.
+        const byProject = new Map<string, RescheduleDates[]>();
+        for (const c of changes) {
+            const projectId = byId.get(c.id)!.projectId;
+            byProject.set(projectId, [...(byProject.get(projectId) ?? []), c]);
+        }
+        for (const [projectId, group] of byProject) {
+            // guardrail-allow: n+1 — one field-set read per project of the change (at most BULK_MAX items).
+            const sets = await loadFieldSets(db, ctx, group.map((c) => byId.get(c.id)!.typeId), projectId);
+            for (const c of group) {
+                const item = byId.get(c.id)!;
+                const named: FieldValues = {};
+                if (c.startDate !== dateOnly(item.startDate)) named.startDate = parseDateOnly(c.startDate);
+                if (c.dueDate !== dateOnly(item.dueDate)) named.dueDate = parseDateOnly(c.dueDate);
+                checkWrite(sets.get(item.typeId)!, named, { open: true, subject: keyOf(item) });
+            }
+        }
+        for (const c of changes) assertStartNotAfterDue(c.startDate, c.dueDate, [c.id]);
+
+        const count = await WorkItemRepository.setDatesOfLocked(
+            db,
+            ctx,
+            v,
+            lockedSubset(locked, ids),
+            changes.map((c) => ({ id: c.id, version: c.version, startDate: parseDateOnly(c.startDate), dueDate: parseDateOnly(c.dueDate) })),
+        );
+        if (count !== changes.length) await throwWriteConflict(db, ctx, v, changes.find((c) => byId.has(c.id))!.id);
+
+        for (const c of changes) {
+            const item = byId.get(c.id)!;
+            const from = { startDate: dateOnly(item.startDate), dueDate: dateOnly(item.dueDate) };
+            const changedFields = (['startDate', 'dueDate'] as const).filter((f) => from[f] !== c[f]);
+            const pushed = c.id !== input.dragged.id;
+            await logEvent(db, ctx, {
+                action: 'WORK_ITEM_UPDATED',
+                entityType: 'WorkItem',
+                entityId: c.id,
+                details: pushed
+                    ? `Moved the dates of ${keyOf(item)}, pushed later by ${keyOf(byId.get(input.dragged.id)!)}`
+                    : `Changed the dates of ${keyOf(item)}`,
+                detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'updated', changedFields: [...changedFields] },
+                metadata: {
+                    changedFields: [...changedFields],
+                    startDate: { from: from.startDate, to: c.startDate },
+                    dueDate: { from: from.dueDate, to: c.dueDate },
+                    rescheduleId,
+                    ...(pushed ? { pushedBy: input.dragged.id } : {}),
+                },
+            });
+        }
+        await logEvent(db, ctx, {
+            action: 'WORK_ITEMS_RESCHEDULED',
+            entityType: 'WorkItem',
+            entityId: input.dragged.id,
+            details: `Changed the dates of ${keyOf(byId.get(input.dragged.id)!)} and moved ${input.pushed.length} items it pushes later`,
+            detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'updated', changedFields: ['startDate', 'dueDate'] },
+            metadata: { rescheduleId, pushedIds: input.pushed.map((p) => p.id), pushedCount: input.pushed.length },
+        });
+        return changes.map((c) => ({ change: c, item: byId.get(c.id)! }));
+    });
+
+    await emitWatcherActivity(
+        ctx,
+        outcome.map(({ change }) => ({
+            workItemId: change.id,
+            kind: 'updated' as const,
+            discriminator: rescheduleId,
+            detail: [change.startDate ? `start date ${change.startDate}` : null, change.dueDate ? `due date ${change.dueDate}` : null].filter(Boolean).join(', ') || 'dates cleared',
+        })),
+    );
+    for (const { change, item } of outcome) {
+        await emitDueBell(ctx, {
+            id: item.id,
+            title: item.title,
+            key: keyOf(item),
+            dueDate: parseDateOnly(change.dueDate),
+            assigneeId: item.assigneeId,
+            waitingOnUserId: item.waitingOnUserId,
+            stateCategory: item.stateCategory,
+        });
+    }
+    return { rescheduleId, items: outcome.map(({ change }) => ({ id: change.id, version: change.version + 1, startDate: change.startDate, dueDate: change.dueDate })) };
+}
+
+/**
+ * A pushed item only moves later (decision 194): each date it has moves to
+ * the same day or later, at least one of them strictly, and it gains or loses
+ * no date (dates are moved, never cleared, so no required date can empty).
+ */
+function movesLaterOnly(item: { startDate: Date | null; dueDate: Date | null }, to: RescheduleDates): boolean {
+    const was = { startDate: dateOnly(item.startDate), dueDate: dateOnly(item.dueDate) };
+    let later = false;
+    for (const f of ['startDate', 'dueDate'] as const) {
+        const a = was[f];
+        const b = to[f];
+        if ((a === null) !== (b === null)) return false;
+        if (a !== null && b !== null) {
+            if (b < a) return false;
+            if (b > a) later = true;
+        }
+    }
+    return later;
 }
 
 // ─── Metrics, activity, sub-items ─────────────────────────────────────────

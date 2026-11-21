@@ -127,6 +127,24 @@ export const BulkWorkItemStateSchema = z
 
 export const BulkWorkItemDueDateSchema = z.object({ workItemIds: BulkIds, dueDate: DateOnly.nullable() }).strict();
 
+/**
+ * One item's new dates in a change from the timeline (roadmap 3.1c, decision
+ * 194): the version the browser read (checked against the locked row) and
+ * both dates as they are to be stored.
+ */
+const RescheduleDates = z
+    .object({ id: Id, version: z.number().int().min(1), startDate: DateOnly.nullable(), dueDate: DateOnly.nullable() })
+    .strict();
+
+/**
+ * `POST /work-items/bulk/dates`: the dragged item and the items it pushes
+ * later, at most `BULK_MAX` in all (decision 194), all or nothing.
+ */
+export const RescheduleWorkItemsSchema = z
+    .object({ dragged: RescheduleDates, pushed: z.array(RescheduleDates).max(BULK_MAX - 1) })
+    .strict()
+    .refine((b) => new Set([b.dragged.id, ...b.pushed.map((p) => p.id)]).size === b.pushed.length + 1, 'Each work item appears once.');
+
 export const BulkWorkItemDeleteSchema = z.object({ workItemIds: BulkIds }).strict();
 
 /**

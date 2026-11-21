@@ -477,3 +477,59 @@ export function criticalLinkCss(ids: readonly string[]): string {
         .join('\n');
 }
 
+
+/** What a dropped bar asks (3.1c): how it was dragged, and by how many days. */
+export interface WidgetDrop {
+    mode: 'move' | 'start' | 'end';
+    days: number;
+}
+
+/**
+ * Read the widget's `update-task` action at the end of a drag: `diff` is the
+ * drag in day cells (`lengthUnit="day"`), and the task names the date or
+ * dates it moves (both for a move, one for a resize). Anything else (a
+ * progress drag, an editor's save) is `null`, refused without a dialog.
+ */
+export function dropFromWidget(ev: { diff?: unknown; task?: unknown } | null | undefined): WidgetDrop | null {
+    if (!ev || typeof ev.diff !== 'number' || !Number.isInteger(ev.diff) || ev.diff === 0) return null;
+    const task = ev.task && typeof ev.task === 'object' ? (ev.task as Record<string, unknown>) : {};
+    const start = 'start' in task;
+    const end = 'end' in task;
+    if (start && end) return { mode: 'move', days: ev.diff };
+    if (start) return { mode: 'start', days: ev.diff };
+    if (end) return { mode: 'end', days: ev.diff };
+    return null;
+}
+
+/**
+ * What the timeline lets a person change (3.1c, step 6 of the map), as two
+ * sets of row ids, built once per answer:
+ *
+ *   - **dates**: a caller who edits work items, on an open or started item
+ *     of the scope (not a context row, a summary, a done or cancelled item,
+ *     or one in an archived project) whose type shows every date it carries
+ *     and at least one;
+ *   - **dependencies** (decision 195): a caller who edits work items, on an
+ *     item of the scope in an unarchived project. The relation route decides
+ *     the rest (a cycle): its refusal is shown.
+ */
+export function editableRows(
+    resp: TimelineResponse,
+    options: { canEdit: boolean; hiddenDates: (row: TimelineRow) => { startDate: boolean; dueDate: boolean } },
+): { dates: ReadonlySet<string>; dependencies: ReadonlySet<string> } {
+    const dates = new Set<string>();
+    const dependencies = new Set<string>();
+    if (!options.canEdit) return { dates, dependencies };
+    const archived = new Set(resp.projects.filter((p) => p.archived).map((p) => p.id));
+    const summaries = new Set(resp.schedule.ok ? resp.schedule.items.filter((i) => i.summary).map((i) => i.id) : []);
+    for (const row of resp.rows) {
+        if (row.context || archived.has(row.projectId)) continue;
+        dependencies.add(row.id);
+        if (row.stateCategory === 'DONE' || row.stateCategory === 'CANCELLED' || summaries.has(row.id)) continue;
+        const hidden = options.hiddenDates(row);
+        if (hidden.startDate && hidden.dueDate) continue;
+        if ((row.startDate && hidden.startDate) || (row.dueDate && hidden.dueDate)) continue;
+        dates.add(row.id);
+    }
+    return { dates, dependencies };
+}

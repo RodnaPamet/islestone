@@ -116,6 +116,11 @@ const CALLS: Call[] = [
     { file: `${W}/bulk/assign/route.ts`, method: 'POST', path: () => '/work-items/bulk/assign', params: (i) => P(i), body: (i) => ({ workItemIds: [i.other], assigneeId: null }), write: true, key: 'work_items.assign' },
     { file: `${W}/bulk/state/route.ts`, method: 'POST', path: () => '/work-items/bulk/state', params: (i) => P(i), body: (i) => ({ workItemIds: [i.other], stateCategory: 'STARTED' }), write: true, key: 'work_items.edit' },
     { file: `${W}/bulk/due/route.ts`, method: 'POST', path: () => '/work-items/bulk/due', params: (i) => P(i), body: (i) => ({ workItemIds: [i.other], dueDate: '2031-01-02' }), write: true, key: 'work_items.edit' },
+    // Roadmap 3.1c: a change of dates from the timeline (a stale version is a 409, never a 403).
+    {
+        file: `${W}/bulk/dates/route.ts`, method: 'POST', path: () => '/work-items/bulk/dates', params: (i) => P(i),
+        body: (i) => ({ dragged: { id: i.other, version: 1, startDate: '2031-01-02', dueDate: '2031-01-03' }, pushed: [] }), write: true, key: 'work_items.edit',
+    },
     { file: `${W}/bulk/delete/route.ts`, method: 'POST', path: () => '/work-items/bulk/delete', params: (i) => P(i), body: () => ({ workItemIds: ['nothing-here'] }), write: true, key: 'work_items.delete' },
     { file: `${W}/[workItemId]/route.ts`, method: 'GET', path: (i) => `/work-items/${i.item}`, params: (i) => P(i, { workItemId: i.item }), itemRead: true, write: false, key: 'work_items.view' },
     { file: `${W}/[workItemId]/route.ts`, method: 'PATCH', path: (i) => `/work-items/${i.other}`, params: (i) => P(i, { workItemId: i.other }), body: () => ({ priority: 'LOW' }), write: true, key: 'work_items.edit' },
