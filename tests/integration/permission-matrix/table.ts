@@ -19,23 +19,29 @@
  * Outcomes (one per cell):
  *   - `ok`       2xx; no `AUTHZ_DENIED` row for the request; a list row's
  *                `reveals` id is in the response.
- *   - `empty`    2xx, and the `reveals` text is NOT in the response: a
- *                GUEST's list (it sees no project), or a change to another
- *                member's own row that changes nothing (`"updated":1` absent).
+ *   - `empty`    2xx, and the `reveals` text is NOT in the response: another
+ *                member's notification in the caller's bell, or a change to
+ *                another member's own row that changes nothing (`"updated":1`
+ *                absent).
  *   - `denied`   403 from `requirePermission`: exactly one `AUTHZ_DENIED` row
  *                for the request, on entity `Permission`, naming `key`.
  *   - `refused`  403 decided past the route's key (the usecase): no
  *                `Permission` row; one other `AUTHZ_DENIED` row when the
  *                row's `refusedAudit` is true (the default), none when false.
- *   - `hidden`   404: the subject is not visible to the caller (a GUEST, who
- *                sees no project until 8.4).
+ *   - `hidden`   404: the subject is not visible to the caller. (No cell
+ *                expects it today; 8.4's guest cells will, for a project
+ *                outside a guest's grant.)
  *   - `archived` 409 with `details.reason` `PROJECT_ARCHIVED`: admitted, the
  *                project refuses writes.
  *
- * GUEST cells (decision 176) are tagged `until: '8.4'` with `g(...)`: they
- * assert today's rule, a guest sees nothing and does nothing. The tripwire
- * (`guestTripwire` below, run by the population guard) fails once 8.4
- * changes who a guest may see while any guest cell still carries the tag.
+ * GUEST cells (decisions 176 and 204) are tagged `until: '8.4'` with `g(...)`:
+ * they assert today's rule, a guest sees nothing and does nothing. A guest
+ * holds no key, so on every keyed route its cell is `denied` (audited); only
+ * the key-free, self-service rows (its own notifications and preferences, its
+ * own MFA and sessions) answer it. The tripwire (`guestTripwire` below, run by
+ * the population guard) fails once 8.4 changes who a guest may see or what it
+ * holds while any guest cell still carries the tag, and before then fails a
+ * tagged cell on a keyed row that is not `denied`.
  *
  * The two custom roles (decision 175):
  *   - MEMBER_NO_EDIT       built on MEMBER with `work_items.edit` off: a
@@ -165,16 +171,21 @@ export interface MatrixRow {
 // ─── Hand-written patterns ──────────────────────────────────────────────
 // Each names who holds what, as the decisions state it; never computed.
 
-/** A read under `work_items.view` / `projects.view` of something in a visible project: everyone; a GUEST sees no project. */
-const READ = c('ok', 'ok', 'ok', 'ok', g('hidden'), 'ok', 'ok');
-/** A list filtered by project visibility: everyone sees the subject; a GUEST gets the list without it. */
-const LIST = c('ok', 'ok', 'ok', 'ok', g('empty'), 'ok', 'ok');
 /**
- * A workspace-level read under a key every role holds, touching no project (teams, types, labels, the roster).
- * A GUEST is answered today: OPEN QUESTION for the owner (H2 map, part 3, "As built"): decision 176 says a
- * guest "sees nothing", the map reads it as "no project". These cells assert today's 200s, tagged until 8.4.
+ * A GUEST on any keyed route: refused by `requirePermission`, audited (owner decision 204: until 8.4 a guest
+ * holds no key, so it reads nothing, not even workspace configuration or the roster, and writes nothing).
  */
-const WS_READ = c('ok', 'ok', 'ok', 'ok', g('ok'), 'ok', 'ok');
+const GUEST_DENIED = g('denied');
+/** A read under `work_items.view` / `projects.view` of something in a visible project: every workspace-wide role. */
+const READ = c('ok', 'ok', 'ok', 'ok', GUEST_DENIED, 'ok', 'ok');
+/** A list filtered by project visibility: every workspace-wide role sees the subject. */
+const LIST = c('ok', 'ok', 'ok', 'ok', GUEST_DENIED, 'ok', 'ok');
+/**
+ * A workspace-level read under a key every workspace-wide role holds, touching no project (teams, types,
+ * labels, cycles, working calendars, workspace recipient lists, the roster). The H2d open question, decided
+ * by decision 204: a GUEST is refused these too.
+ */
+const WS_READ = c('ok', 'ok', 'ok', 'ok', GUEST_DENIED, 'ok', 'ok');
 /** `work_items.edit`: OWNER, ADMIN, MEMBER; the narrowed member has lost it. */
 const ITEM_EDIT = c('ok', 'ok', 'ok', 'denied', g('denied'), 'denied', 'denied');
 /** `work_items.assign`: OWNER, ADMIN, MEMBER and the narrowed member. */
@@ -189,7 +200,10 @@ const ADMIN = c('ok', 'ok', 'denied', 'denied', g('denied'), 'denied', 'denied')
 const OWNER_ONLY = c('ok', 'denied', 'denied', 'denied', g('denied'), 'denied', 'denied');
 /** `intake.view` / `intake.triage`: OWNER, ADMIN, MEMBER and the narrowed member. */
 const INTAKE = c('ok', 'ok', 'ok', 'denied', g('denied'), 'ok', 'denied');
-/** The caller's own rows (notifications, preferences, MFA, sessions): every member, a GUEST too. */
+/**
+ * The caller's own rows (notifications, preferences, MFA, sessions; key-free, self-service): every member,
+ * a GUEST too. Decision 204 keeps exactly these open to a guest before 8.4.
+ */
 const SELF = c('ok', 'ok', 'ok', 'ok', g('ok'), 'ok', 'ok');
 /** A write into an archived project by a caller the key admits. */
 const ARCHIVED_ITEM_EDIT = c('archived', 'archived', 'archived', 'denied', g('denied'), 'denied', 'denied');
@@ -224,19 +238,17 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         {
             route: 'work-items/route.ts', method: 'POST', key: 'work_items.create', subject: 'a create in a visible project',
             body: (s) => ({ projectId: s.projectId, typeId: s.typeId, title: `matrix create ${s.seq}` }),
-            // A GUEST holds work_items.create, but the usecase asks for the write tier first
-            // (assertCanCreateWorkItems), which a GUEST lacks: refused, unaudited, before any project is read.
             refusedAudit: false,
-            expect: c('ok', 'ok', 'ok', 'denied', g('refused'), 'ok', 'denied'),
+            expect: c('ok', 'ok', 'ok', 'denied', g('denied'), 'ok', 'denied'),
         },
         {
             route: 'work-items/route.ts', method: 'POST', key: 'work_items.create', subject: 'a create in an archived project',
             body: (s) => ({ projectId: s.archivedProjectId, typeId: s.typeId, title: `matrix archived ${s.seq}` }),
             refusedAudit: false,
-            expect: c('archived', 'archived', 'archived', 'denied', g('refused'), 'archived', 'denied'),
+            expect: c('archived', 'archived', 'archived', 'denied', g('denied'), 'archived', 'denied'),
         },
         { route: 'work-items/deleted/route.ts', method: 'GET', key: 'work_items.delete', subject: 'the Deleted view', expect: ITEM_DELETE },
-        // Counts over what the caller sees; a GUEST's are zero, still a 200.
+        // Counts over what the caller sees.
         { route: 'work-items/metrics/route.ts', method: 'GET', key: 'work_items.view', subject: 'the counts', expect: WS_READ },
         { route: 'work-items/timeline/route.ts', method: 'GET', key: 'work_items.view', subject: 'the timeline of the live items (3.1b)', reveals: (s) => s.workItemId, expect: LIST },
         { route: 'work-items/by-key/[key]/route.ts', method: 'GET', key: 'work_items.view', subject: 'an item by its key', expect: READ },
@@ -258,31 +270,31 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         { route: `${W}/comments/route.ts`, method: 'GET', key: 'work_items.view', subject: 'an item', expect: READ },
         {
             route: `${W}/comments/route.ts`, method: 'POST', key: 'work_items.comment', subject: 'a comment on a visible item', body: (s) => ({ body: `matrix comment ${s.seq}` }),
-            // The widened viewer comments; a plain VIEWER does not; a GUEST holds the key and sees no project.
-            expect: c('ok', 'ok', 'ok', 'denied', g('hidden'), 'ok', 'ok'),
+            // The widened viewer comments; a plain VIEWER does not.
+            expect: c('ok', 'ok', 'ok', 'denied', g('denied'), 'ok', 'ok'),
         },
         {
             route: `${W}/comments/route.ts`, method: 'POST', key: 'work_items.comment', subject: 'a comment on an item in an archived project',
             params: (s) => ({ workItemId: s.archivedItemId }), body: (s) => ({ body: `matrix archived comment ${s.seq}` }),
-            expect: c('archived', 'archived', 'archived', 'denied', g('hidden'), 'archived', 'archived'),
+            expect: c('archived', 'archived', 'archived', 'denied', g('denied'), 'archived', 'archived'),
         },
         {
             route: `${W}/comments/[commentId]/route.ts`, method: 'PATCH', key: 'work_items.comment', subject: "the caller's own comment", fixture: 'ownComment', body: () => ({ body: 'edited by its author' }),
-            expect: c('ok', 'ok', 'ok', 'denied', g('hidden'), 'ok', 'ok'),
+            expect: c('ok', 'ok', 'ok', 'denied', g('denied'), 'ok', 'ok'),
         },
         {
             route: `${W}/comments/[commentId]/route.ts`, method: 'PATCH', key: 'work_items.comment', subject: "another member's comment", fixture: 'othersComment', body: () => ({ body: 'edited by someone else' }),
             // Only the author edits (owner decision, 2026-11-19), an admin included; the refusal is audited.
-            expect: c('refused', 'refused', 'refused', 'denied', g('hidden'), 'refused', 'refused'),
+            expect: c('refused', 'refused', 'refused', 'denied', g('denied'), 'refused', 'refused'),
         },
         {
             route: `${W}/comments/[commentId]/route.ts`, method: 'DELETE', key: 'work_items.comment', subject: "the caller's own comment", fixture: 'ownComment',
-            expect: c('ok', 'ok', 'ok', 'denied', g('hidden'), 'ok', 'ok'),
+            expect: c('ok', 'ok', 'ok', 'denied', g('denied'), 'ok', 'ok'),
         },
         {
             route: `${W}/comments/[commentId]/route.ts`, method: 'DELETE', key: 'work_items.comment', subject: "another member's comment", fixture: 'othersComment',
             // An admin moderates; anyone else is refused, audited.
-            expect: c('ok', 'ok', 'refused', 'denied', g('hidden'), 'refused', 'refused'),
+            expect: c('ok', 'ok', 'refused', 'denied', g('denied'), 'refused', 'refused'),
         },
         { route: `${W}/watchers/route.ts`, method: 'GET', key: 'work_items.view', subject: 'an item', expect: READ },
         { route: `${W}/watchers/route.ts`, method: 'POST', key: 'work_items.view', subject: 'the caller watching a visible item (self)', expect: READ },
@@ -306,9 +318,9 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         {
             route: `${W}/recurrence/route.ts`, method: 'PUT', key: 'work_items.create', subject: 'a fresh item with a due date', fixture: 'itemWithDue', body: () => ({ frequency: 'WEEKLY' }),
             // Decision 72: the route takes work_items.create and the usecase asserts work_items.edit too.
-            // The narrowed member holds create, not edit; a GUEST holds create, not edit. Neither refusal is audited.
+            // The narrowed member holds create, not edit: refused, unaudited.
             refusedAudit: false,
-            expect: c('ok', 'ok', 'ok', 'denied', g('refused'), 'refused', 'denied'),
+            expect: c('ok', 'ok', 'ok', 'denied', g('denied'), 'refused', 'denied'),
         },
         { route: `${W}/recurrence/route.ts`, method: 'DELETE', key: 'work_items.edit', subject: "a fresh item's repeat", fixture: 'itemWithRecurrence', expect: ITEM_EDIT },
         { route: `${W}/answer/route.ts`, method: 'PUT', key: 'work_items.edit', subject: 'a fresh question and a comment on it', fixture: 'question', body: (s) => ({ commentId: s.commentId }), expect: ITEM_EDIT },
@@ -327,19 +339,19 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         {
             route: `${RV}/steps/[stepId]/respond/route.ts`, method: 'POST', key: 'work_items.view', subject: 'an open step naming the caller', fixture: 'reviewOpenNamingCaller',
             body: () => ({ outcome: 'SIGNED_OFF' }),
-            // Decision 160: the read key and being named. A GUEST cannot be named (it sees no project).
-            expect: c('ok', 'ok', 'ok', 'ok', g('hidden'), 'ok', 'ok'),
+            // Decision 160: the read key and being named.
+            expect: c('ok', 'ok', 'ok', 'ok', g('denied'), 'ok', 'ok'),
         },
         {
             route: `${RV}/steps/[stepId]/respond/route.ts`, method: 'POST', key: 'work_items.view', subject: 'an open step that named the caller, who was then made the assignee',
             fixture: 'reviewCallerNamedThenAssigned', body: () => ({ outcome: 'SIGNED_OFF' }),
             // Decision 158: the assignee never reviews; the refusal is audited.
-            expect: c('refused', 'refused', 'refused', 'refused', g('hidden'), 'refused', 'refused'),
+            expect: c('refused', 'refused', 'refused', 'refused', g('denied'), 'refused', 'refused'),
         },
         {
             route: `${RV}/steps/[stepId]/respond/route.ts`, method: 'POST', key: 'work_items.view', subject: 'an open step not naming the caller', fixture: 'reviewOpen',
             body: () => ({ outcome: 'SIGNED_OFF' }),
-            expect: c('refused', 'refused', 'refused', 'refused', g('hidden'), 'refused', 'refused'),
+            expect: c('refused', 'refused', 'refused', 'refused', g('denied'), 'refused', 'refused'),
         },
         {
             route: `${RV}/steps/[stepId]/skip/route.ts`, method: 'POST', key: 'work_items.edit', subject: 'an open step sent by another, the item assigned to another', fixture: 'reviewOpen',
@@ -437,7 +449,7 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         { route: 'cycles/[cycleId]/route.ts', method: 'GET', key: 'cycles.view', subject: 'a cycle', expect: WS_READ },
         { route: 'cycles/[cycleId]/route.ts', method: 'PATCH', key: 'cycles.manage', subject: 'a cycle', body: (s) => ({ name: `Cycle ${s.seq}` }), expect: MEMBER_WRITE },
         { route: 'cycles/[cycleId]/route.ts', method: 'DELETE', key: 'cycles.manage', subject: 'a fresh cycle', fixture: 'freshCycle', expect: MEMBER_WRITE },
-        // Counts only what the caller sees; a GUEST's burn-up is empty, still a 200.
+        // Counts only what the caller sees.
         { route: 'cycles/[cycleId]/burn-up/route.ts', method: 'GET', key: 'cycles.view', subject: "a cycle's burn-up", expect: WS_READ },
         { route: 'work-item-types/route.ts', method: 'GET', key: 'projects.view', subject: 'the types', expect: WS_READ },
         { route: 'work-item-types/route.ts', method: 'POST', key: 'admin.manage', subject: 'a new type', body: (s) => ({ name: `Type ${s.seq}` }), expect: ADMIN },
@@ -462,10 +474,10 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         { route: 'recipient-lists/[listId]/members/route.ts', method: 'PATCH', key: 'admin.manage', subject: 'a workspace list', params: (s) => ({ listId: s.workspaceListId }), body: (s) => ({ add: [s.raeId] }), expect: ADMIN },
         { route: 'recipient-lists/[listId]/archive/route.ts', method: 'POST', key: 'admin.manage', subject: 'a fresh workspace list', fixture: 'freshWorkspaceList', expect: ADMIN },
         { route: 'recipient-lists/[listId]/restore/route.ts', method: 'POST', key: 'admin.manage', subject: 'an archived workspace list', fixture: 'archivedWorkspaceList', expect: ADMIN },
-        // The pickers' roster: every member reads it, names and emails. A GUEST too, today: see WS_READ's open question.
+        // The pickers' roster: every workspace-wide member reads it, names and emails; never a GUEST (decision 204).
         { route: 'users/assignable/route.ts', method: 'GET', key: 'work_items.view', subject: 'the member roster', expect: WS_READ },
         { route: 'search/route.ts', method: 'GET', key: 'projects.view', subject: 'a search matching a visible item', query: (s) => ({ q: s.searchTerm }), reveals: (s) => s.sharedItemId, expect: LIST },
-        { route: 'views/route.ts', method: 'GET', key: 'views.view', subject: 'the saved views', reveals: (s) => s.viewId, expect: c('ok', 'ok', 'ok', 'ok', g('ok'), 'ok', 'ok') },
+        { route: 'views/route.ts', method: 'GET', key: 'views.view', subject: 'the saved views', reveals: (s) => s.viewId, expect: c('ok', 'ok', 'ok', 'ok', g('denied'), 'ok', 'ok') },
         {
             route: 'views/route.ts', method: 'POST', key: 'views.create', subject: 'a personal view',
             body: (s) => ({ name: `Mine ${s.seq}`, visibility: 'PERSONAL', config: { filters: {} } }),
@@ -478,7 +490,7 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
             // Decision 60: no views.share for a VIEWER; refused past the key, audited.
             expect: c('ok', 'ok', 'ok', 'refused', g('denied'), 'ok', 'refused'),
         },
-        { route: 'views/[viewId]/route.ts', method: 'GET', key: 'views.view', subject: "another member's shared view", expect: c('ok', 'ok', 'ok', 'ok', g('ok'), 'ok', 'ok') },
+        { route: 'views/[viewId]/route.ts', method: 'GET', key: 'views.view', subject: "another member's shared view", expect: c('ok', 'ok', 'ok', 'ok', g('denied'), 'ok', 'ok') },
         {
             route: 'views/[viewId]/route.ts', method: 'PATCH', key: 'views.edit', subject: "another member's shared view", body: () => ({ name: 'Renamed view' }),
             // Decision 59: only the creator changes a view; an admin never edits one.
@@ -618,27 +630,48 @@ export interface GuestRuleState {
     readonly guestSeesNoProject: boolean;
     /** `ASSIGNABLE_TENANT_ROLES` leaves GUEST out. */
     readonly guestUnassignable: boolean;
+    /**
+     * Decision 204: a GUEST holds no permission key (`getPermissionsForRole('GUEST')`, and a GUEST
+     * membership carrying a custom role through `permissionsForMembership`), stays GUEST on the
+     * coarse ladder whatever custom role it carries, and its coarse tier is read-only (the
+     * self-service routes ask `canRead` and no key).
+     */
+    readonly guestHoldsNothing: boolean;
     /** The fingerprint of the visibility rule's code ({@link PRE_8_4_VISIBILITY_SHA}). */
     readonly visibilitySourceSha: string;
 }
 
+/** A GUEST cell as the tripwire reads it: the row's name, its route key (null: key-free, self-service) and the cell. */
+export interface GuestCellEntry {
+    readonly name: string;
+    readonly key: string | null;
+    readonly cell: Cell;
+}
+
 /**
- * The guest tripwire (decision 176). While every signal says guests are as
- * they were before 8.4, every GUEST cell must carry the `until: '8.4'` tag.
- * Once 8.4 changes any of them (a guest given projects, the role made
- * assignable, the visibility functions rewritten), every tagged cell is a
- * failure until it is rewritten for the new rule and its tag removed.
+ * The guest tripwire (decisions 176 and 204). While every signal says guests
+ * are as they were before 8.4, every GUEST cell must carry the `until: '8.4'`
+ * tag, and a tagged cell on a keyed row must be `denied` (a guest holds no
+ * key, so `requirePermission` refuses it, audited). Once 8.4 changes any
+ * signal (a guest given projects or a key, the role made assignable, the
+ * visibility functions rewritten), every tagged cell is a failure until it is
+ * rewritten for the new rule and its tag removed.
  */
-export function guestTripwire(state: GuestRuleState, pinnedSha: string, cells: readonly { name: string; cell: Cell }[]): string[] {
-    const arrived = !state.guestSeesNoProject || !state.guestUnassignable || state.visibilitySourceSha !== pinnedSha;
+export function guestTripwire(state: GuestRuleState, pinnedSha: string, cells: readonly GuestCellEntry[]): string[] {
+    const arrived = !state.guestSeesNoProject || !state.guestUnassignable || !state.guestHoldsNothing || state.visibilitySourceSha !== pinnedSha;
     if (arrived) {
         return cells
             .filter((x) => isTaggedGuestCell(x.cell))
-            .map((x) => `${x.name}: the GUEST cell is tagged until 8.4, and guests' rule has changed (project visibility, assignability or the visibility functions). Rewrite the cell for the new rule and remove its tag.`);
+            .map((x) => `${x.name}: the GUEST cell is tagged until 8.4, and guests' rule has changed (project visibility, permission keys, assignability or the visibility functions). Rewrite the cell for the new rule and remove its tag.`);
     }
-    return cells
-        .filter((x) => !isTaggedGuestCell(x.cell))
-        .map((x) => `${x.name}: a GUEST cell must be tagged until 8.4 (g(...)) while a guest sees no project (decision 176).`);
+    return [
+        ...cells
+            .filter((x) => !isTaggedGuestCell(x.cell))
+            .map((x) => `${x.name}: a GUEST cell must be tagged until 8.4 (g(...)) while a guest sees no project (decision 176).`),
+        ...cells
+            .filter((x) => isTaggedGuestCell(x.cell) && x.key !== null && outcomeOf(x.cell) !== 'denied')
+            .map((x) => `${x.name}: a guest holds no key until 8.4 (decision 204), so its cell on a route keyed \`${x.key}\` must be denied.`),
+    ];
 }
 
 /**
@@ -648,6 +681,8 @@ export function guestTripwire(state: GuestRuleState, pinnedSha: string, cells: r
  * whitespace collapsed (`visibilityFingerprint` in the guard). 8.4 reads the
  * grant table there ("Takes the transaction client so 8.4 can read the grant
  * table here"), so its change trips every tagged guest cell. Never update
- * this value without rewriting the guest cells: it is the tripwire.
+ * this value without rewriting the guest cells: it is the tripwire. (What a
+ * guest HOLDS is the `guestHoldsNothing` signal, read from the running
+ * permission code, not hashed.)
  */
 export const PRE_8_4_VISIBILITY_SHA = '639c2f460d458db8e1b353b07a987b28fc80ddd7320bedbf7bbd624f1f329966';
