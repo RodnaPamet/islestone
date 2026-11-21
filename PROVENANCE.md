@@ -2153,6 +2153,16 @@ Built by [`docs/porting/maps/3.1.md`](docs/porting/maps/3.1.md) (its 3.1b part) 
 | `src/lib/work-items/timeline.ts`, `src/app-layer/usecases/work-item-timeline.ts`, the timeline route, the 3.1b changes to `work-item.ts` (`resolveListFiltersInTx`), `WorkItemRepository.ts`, `WorkItemRelationRepository.ts`, `route-permissions.ts`, `saved-view.ts`; `src/components/work-items/timeline/` (`TimelineView.tsx`, `TimelineChart.tsx`, `TimelineScheduleTable.tsx`, `timeline-model.ts`), `data/use-work-item-timeline.ts`, the 3.1b changes to `work-item-cache.ts`, `WorkItemsView.tsx`, `LayoutToggle.tsx` | ADR 0010, the 3.1 map | — | — | Islestone-owned | Written fresh. |
 | `tests/guards/svar-core-only.test.ts`, `tests/unit/work-items/timeline-model.test.ts`, `tests/integration/work-item-timeline.test.ts`, `tests/rendered/timeline.test.tsx`, `tests/e2e/timeline.spec.ts` | — | — | — | Islestone-owned | Written fresh. |
 
+## Changing dates from the timeline (sub-phase 3.1c)
+
+Built by [`docs/porting/maps/3.1.md`](docs/porting/maps/3.1.md) (its 3.1c part) under owner decisions 182 to 203 (194 and 195 above all) and [ADR 0010](docs/adr/0010-scheduling-and-working-calendars.md). **Nothing was copied.** SVAR's 2.8.3 `dist` was read again for the shape of the actions the adapter now reads before refusing them (pattern only, no code copied).
+
+| File | Source | Commit | Licence | Action | Changes |
+|---|---|---|---|---|---|
+| `src/components/work-items/timeline/svar-adapter.tsx` (the `update-task` drop's `diff` in day cells and the dates it names, `drag-task`, `add-link`'s `type` from the handles drawn, `delete-link`; re-initialisation on a new tasks array), `timeline-model.ts` (`dropFromWidget`) | `github.com/svar-widgets/react-gantt` (`chart/Bars.jsx`, `Gantt.jsx`) and `github.com/svar-widgets/gantt` (`packages/store/src/DataStore.ts`), read in the installed 2.8.3 `dist` | `24f381a37e1e7175ef690aa3f1079a4bf5ad4004` and `ba701283bc4f982f758a6b37fd2d63e6324c5424` (v2.8.3) | MIT | PATTERN | Pattern only, no code copied. |
+| `src/lib/work-items/reschedule.ts`, the 3.1c changes to `src/lib/work-items/timeline.ts`, `work-item.ts` (`rescheduleWorkItems`), `WorkItemRepository.ts` (`setDatesOfLocked`), `WorkItemRelationRepository.ts` (`liveBlocksReach`), `src/lib/schemas/work-item.ts`, `route-permissions.ts`, the `work-items/bulk/dates` route; `src/components/work-items/timeline/` (`ChangeDatesDialog.tsx`, `TimelineDependencies.tsx`, and the 3.1c changes to `TimelineView.tsx`, `TimelineScheduleTable.tsx`, `timeline-model.ts`, `timeline.css`), `data/use-timeline-writes.ts`, the 3.1c changes to `work-item-cache.ts` and `WorkItemsView.tsx` | ADR 0010, the 3.1 map | — | — | Islestone-owned | Written fresh. |
+| `tests/unit/work-items/reschedule.test.ts`, `tests/rendered/timeline-changes.test.tsx`, `tests/rendered/timeline-chart-changes.test.tsx`, `tests/integration/work-item-reschedule.test.ts`, `tests/e2e/timeline-changes.spec.ts` | — | — | — | Islestone-owned | Written fresh. |
+
 ## Adopted
 
 | Component | Source (repository and path) | Commit | Licence | What was taken | Changes |
