@@ -97,10 +97,13 @@ export function useNavSections(): NavSectionDef[] {
         {
             title: t('workspace'),
             items: [
-                { key: 'workItems', href: tenantHref(NAV_PATHS.workItems), label: t('workItems'), icon: GridLayoutRows },
-                { key: 'projects', href: tenantHref(NAV_PATHS.projects), label: t('projects'), icon: Folder },
-                // Sub-phase 2.5a. Every role reads cycles (`cycles.view`); the page asks the key on the server.
-                { key: 'cycles', href: tenantHref(NAV_PATHS.cycles), label: t('cycles'), icon: CalendarRefresh },
+                // Each workspace row shows to a holder of the key its page asks on the
+                // server. Every workspace-wide role holds them; a GUEST holds none until
+                // 8.4 (owner decision 204), so its sidebar is My Work and Inbox.
+                { key: 'workItems', href: tenantHref(NAV_PATHS.workItems), label: t('workItems'), icon: GridLayoutRows, visible: perms.work_items?.view === true },
+                { key: 'projects', href: tenantHref(NAV_PATHS.projects), label: t('projects'), icon: Folder, visible: perms.projects?.view === true },
+                // Sub-phase 2.5a (`cycles.view`).
+                { key: 'cycles', href: tenantHref(NAV_PATHS.cycles), label: t('cycles'), icon: CalendarRefresh, visible: perms.cycles?.view === true },
                 {
                     key: 'intake',
                     href: tenantHref(NAV_PATHS.intake),
@@ -110,8 +113,8 @@ export function useNavSections(): NavSectionDef[] {
                     ...(pending > 0 ? { badge: pending, badgeLabel: t('intakeBadge', { count: pending }) } : {}),
                 },
                 // Every member who sees projects may send a request through an open form.
-                { key: 'forms', href: tenantHref(NAV_PATHS.forms), label: t('forms'), icon: InputField },
-                { key: 'views', href: tenantHref(NAV_PATHS.views), label: t('views'), icon: Views },
+                { key: 'forms', href: tenantHref(NAV_PATHS.forms), label: t('forms'), icon: InputField, visible: perms.projects?.view === true },
+                { key: 'views', href: tenantHref(NAV_PATHS.views), label: t('views'), icon: Views, visible: perms.views?.view === true },
             ],
         },
     ];
@@ -120,10 +123,12 @@ export function useNavSections(): NavSectionDef[] {
     // each page asserts its own; this filter keeps a gated row off the
     // sidebar. Fail-closed: an item with `visible` set shows only when it is
     // strictly `true`, so a permission bag missing a key hides the row.
-    return sections.map((section) => ({
-        ...section,
-        items: section.items.filter((item) => item.visible === undefined || item.visible === true),
-    }));
+    return sections
+        .map((section) => ({
+            ...section,
+            items: section.items.filter((item) => item.visible === undefined || item.visible === true),
+        }))
+        .filter((section) => section.items.length > 0);
 }
 
 /** Whether the current member may open Settings (see `mayOpenSettings`). */
