@@ -40,6 +40,8 @@ import { Gantt as TimelineWidget, Willow } from '@svar-ui/react-gantt';
 import type { IApi, ITask } from '@svar-ui/react-gantt';
 import { useCallback, useMemo, type FC } from 'react';
 
+import { useTheme } from '@/components/theme/ThemeProvider';
+
 import { addOneDay, cellContainsDay, criticalLinkCss, epochDayOfLocal, localDate, toWidgetTask, type ChartLink, type ChartTask, type TimelineZoom } from './timeline-model';
 
 /** Every action that would change a task or a link: refused while the timeline is read-only (3.1b). */
@@ -89,7 +91,7 @@ const ZOOM_SCALES: Record<TimelineZoom, { cellWidth: number; scales: Array<{ uni
         ],
     },
     week: {
-        cellWidth: 70,
+        cellWidth: 60,
         scales: [
             { unit: 'month', step: 1, format: (d) => d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) },
             { unit: 'week', step: 1, format: (d) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) },
@@ -132,6 +134,8 @@ export default function SvarTimelineAdapter(props: TimelineAdapterProps) {
     const widgetLinks = useMemo(() => links.map((l) => ({ id: l.id, source: l.source, target: l.target, type: 'e2s' as const, lag: 0 })), [links]);
     const asOfDay = useMemo(() => epochDayOfLocal(localDate(asOf)), [asOf]);
     const { cellWidth, scales } = ZOOM_SCALES[zoom];
+    // The widget reads its grid colour from the theme once, when it mounts: a theme change remounts it.
+    const { theme } = useTheme();
 
     const highlightTime = useCallback(
         (date: Date, unit: string) => {
@@ -149,8 +153,8 @@ export default function SvarTimelineAdapter(props: TimelineAdapterProps) {
 
     const columns = useMemo(
         () => [
-            { id: 'islKey', header: labels.key, width: 90, template: (_v: unknown, row: ITask) => String(row.islKey ?? '') },
-            { id: 'text', header: labels.title, width: 220, flexgrow: 1 },
+            { id: 'islKey', header: labels.key, width: 80, template: (_v: unknown, row: ITask) => String(row.islKey ?? '') },
+            { id: 'text', header: labels.title, width: 170, flexgrow: 1 },
             { id: 'islFloat', header: labels.float, width: 110, align: 'center' as const, template: (_v: unknown, row: ITask) => String(row.islFloat ?? '') },
         ],
         [labels.key, labels.title, labels.float],
@@ -170,7 +174,7 @@ export default function SvarTimelineAdapter(props: TimelineAdapterProps) {
     return (
         <div className="isl-timeline">
             <style>{criticalLinkCss(criticalLinkIds)}</style>
-            <Willow fonts={false}>
+            <Willow key={theme} fonts={false}>
                 <TimelineWidget
                     tasks={widgetTasks}
                     links={widgetLinks}
@@ -187,7 +191,7 @@ export default function SvarTimelineAdapter(props: TimelineAdapterProps) {
                     zoom={false}
                     readonly
                     columns={columns}
-                    gridWidth={420}
+                    gridWidth={360}
                     highlightTime={highlightTime}
                     taskTemplate={BarContent}
                     init={init}

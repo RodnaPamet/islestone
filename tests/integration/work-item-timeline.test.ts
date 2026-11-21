@@ -207,7 +207,7 @@ describeFn('the timeline read (3.1b)', () => {
     describe('the route', () => {
         const call = async (ctx: RequestContext) => {
             getTenantCtxMock.mockResolvedValue({ ...ctx, requestId: `${TAG}-${Math.random()}` });
-            const mod = (await import('../../src/app/api/t/[tenantSlug]/work-items/timeline/route')) as Record<string, Handler>;
+            const mod = (await import('../../src/app/api/t/[tenantSlug]/work-items/timeline/route')) as unknown as Record<string, Handler>;
             const req = new NextRequest(`http://localhost/api/t/${TAG}/work-items/timeline?projectId=${projectId}`, { headers: { 'x-forwarded-for': '10.0.0.7' } });
             const res = await mod.GET!(req, { params: Promise.resolve({ tenantSlug: TAG }) });
             return { status: res.status, body: (await res.json()) as TimelineResponse & { error?: { code: string } } };

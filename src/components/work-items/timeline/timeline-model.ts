@@ -325,7 +325,7 @@ export function buildTimelineModel(resp: TimelineResponse, options: TimelineMode
 
     // The span the chart shows: every bar and today, with a margin.
     const bounds = tasks.length > 0 ? { start: tasks.map((t) => t.start).reduce(minDay), end: tasks.map((t) => t.end).reduce(maxDay) } : { start: resp.asOf, end: resp.asOf };
-    const range = { start: addDays(minDay(bounds.start, resp.asOf), -7), end: addDays(maxDay(bounds.end, resp.asOf), 21) };
+    const range = { start: addDays(minDay(bounds.start, resp.asOf), -3), end: addDays(maxDay(bounds.end, resp.asOf), 21) };
 
     return {
         ok: true,

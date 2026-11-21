@@ -221,11 +221,28 @@ export function TimelineView({ filters, scopeProjectId, settings, onSettingsChan
             {data && data.omittedContextRows > 0 && <InlineNotice variant="info">{tView('omittedContext', { count: data.omittedContextRows })}</InlineNotice>}
             {mode === 'chart' && model?.ok && (
                 <ul aria-label={tView('legend.label')} className="flex flex-wrap gap-default text-xs text-content-muted">
-                    {settings.showCriticalPath && <li>{tView('legend.critical')}</li>}
-                    <li>{tView('legend.late')}</li>
-                    <li>{tView('legend.conflict')}</li>
-                    <li>{tView('legend.today')}</li>
-                    <li>{new Set(data?.rows.map((r) => r.calendarId)).size > 1 ? tView('legend.nonWorkingSeveral') : tView('legend.nonWorking')}</li>
+                    {settings.showCriticalPath && (
+                        <li className="flex items-center gap-tight">
+                            <span aria-hidden className="inline-block h-3 w-5 rounded-sm border-2 border-[var(--content-error)]" />
+                            {tView('legend.critical')}
+                        </li>
+                    )}
+                    <li className="flex items-center gap-tight">
+                        <span aria-hidden className="inline-block h-3 w-5 rounded-sm bg-[repeating-linear-gradient(135deg,transparent_0_3px,var(--border-error)_3px_5px)]" />
+                        {tView('legend.late')}
+                    </li>
+                    <li className="flex items-center gap-tight">
+                        <span aria-hidden className="inline-block size-2 rounded-full bg-[var(--content-warning)]" />
+                        {tView('legend.conflict')}
+                    </li>
+                    <li className="flex items-center gap-tight">
+                        <span aria-hidden className="inline-block h-3 w-1 bg-[var(--brand-default)]" />
+                        {tView('legend.today')}
+                    </li>
+                    <li className="flex items-center gap-tight">
+                        <span aria-hidden className="inline-block h-3 w-3 border border-border-subtle bg-bg-subtle" />
+                        {new Set(data?.rows.map((r) => r.calendarId)).size > 1 ? tView('legend.nonWorkingSeveral') : tView('legend.nonWorking')}
+                    </li>
                 </ul>
             )}
             <div className="min-h-0 flex-1">{body}</div>
