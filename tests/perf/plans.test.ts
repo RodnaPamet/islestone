@@ -156,6 +156,13 @@ const RUNNERS: Record<string, Runner> = {
         await WorkItemRepository.listForCalendar(db, ctx, v, { projectId: w.projectId }, { ...window, take: 2001, today: today() });
         return WorkItemRepository.countWithoutDueDate(db, ctx, v, { projectId: w.projectId }, { today: today() });
     },
+    // The push window as the calendar sync job reads it (decision 226): 30 days back, a year ahead.
+    "calendar sync: a member's items and projects": async (w, db, ctx, v) => {
+        const window = { from: new Date(today().getTime() - 30 * DAY), to: new Date(today().getTime() + 365 * DAY) };
+        await WorkItemRepository.listAssignedForCalendarSync(db, ctx, v, w.heavyUserId, { ...window, take: 1001 });
+        await WorkItemRepository.countAssignedForCalendarSync(db, ctx, v, w.heavyUserId, window);
+        return WorkItemRepository.projectsWithOpenAssigned(db, ctx, v, w.heavyUserId, 1000);
+    },
     'timeline: working calendars': async (w, db, ctx) => {
         await resolveWorkingCalendars(db, ctx, [w.teamId]);
         return resolveWorkingCalendars(db, ctx);

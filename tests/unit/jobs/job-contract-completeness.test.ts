@@ -23,6 +23,7 @@ import { SCHEDULED_JOBS } from '@/app-layer/jobs/schedules';
  */
 const EXPECTED_SCHEDULED_JOB_NAMES: readonly string[] = [
     'audit-outbox-flush',
+    'calendar-sync-dispatch',
     'cycle-rollover',
     'goal-purge',
     'health-check',

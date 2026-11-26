@@ -56,6 +56,8 @@ function adminDb(status: 'ACTIVE' | 'DEACTIVATED', admins: number) {
         // Sub-phase 3.2a: goals and initiatives the member leads lose their lead.
         goal: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
         initiative: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        // Roadmap 3.3b: the member's calendar connections move to DISCONNECTING.
+        calendarConnection: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
         // Sub-phase 2.8a: the member's reviewer rows still asked are withdrawn first.
         workItemReviewer: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
         tenantMembership: {

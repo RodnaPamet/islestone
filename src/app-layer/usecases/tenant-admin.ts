@@ -56,6 +56,8 @@ import { InitiativeRepository } from '../repositories/InitiativeRepository';
 import { WorkItemTemplateRepository } from '../repositories/TemplateRepository';
 import { withdrawReviewerRowsOfUser } from './review-engine';
 import { emitReviewNotices } from './work-item-shared';
+import { CalendarSyncRepository } from '../repositories/CalendarSyncRepository';
+import { enqueueTeardowns } from './calendar-sync-enqueue';
 
 // Safety cap on the two whole-tenant membership scans below. Both feed
 // surfaces that legitimately want every member (the admin roster, and the
@@ -675,6 +677,21 @@ export async function removeTenantMember(
             });
         }
 
+        // Roadmap 3.3b (decision 239): their calendar connections move to
+        // DISCONNECTING here; the teardown after the commit deletes Islestone's
+        // events from their calendars, then the token, then the rows.
+        const calendarConnections = (await CalendarSyncRepository.connectionsOfUser(db, ctx, membership.userId)).map((c) => c.id);
+        if ((await CalendarSyncRepository.markDisconnecting(db, ctx, calendarConnections)) > 0) {
+            await logEvent(db, ctx, {
+                action: 'CALENDAR_CONNECTIONS_TORN_DOWN_ON_MEMBER_REMOVAL',
+                entityType: 'TenantMembership',
+                entityId: membership.id,
+                details: `Removing ${calendarConnections.length} calendar connection(s) of a member being removed`,
+                detailsJson: { category: 'entity_lifecycle', entityName: 'CalendarConnection', operation: 'updated', changedFields: ['state'] },
+                metadata: { connectionCount: calendarConnections.length },
+            });
+        }
+
         await db.tenantMembership.delete({
             where: { id: input.membershipId },
         });
@@ -696,10 +713,11 @@ export async function removeTenantMember(
             },
         });
 
-        return { id: membership.id, userId: membership.userId, reviewNotices: reviews.notices };
+        return { id: membership.id, userId: membership.userId, reviewNotices: reviews.notices, calendarConnections };
     });
     // After the commit: the review steps the removal decided, or left with nobody.
     await emitReviewNotices(ctx, removed.reviewNotices);
+    await enqueueTeardowns(ctx.tenantId, removed.calendarConnections);
     return { id: removed.id, userId: removed.userId };
 }
 

@@ -42,6 +42,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { ConflictError, badRequest, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { fromEpochDay, toEpochDay } from '../domain/schedule/calendar';
+import { enqueueCalendarSync } from './calendar-sync-enqueue';
 
 /** A project as the API returns it: the due date as `YYYY-MM-DD` (never through a time zone). */
 function toProjectDto<T extends { dueDate: Date | null }>(row: T): Omit<T, 'dueDate'> & { dueDate: string | null } {
@@ -185,7 +186,7 @@ export async function updateProject(ctx: RequestContext, projectId: string, inpu
 
 export async function setProjectArchived(ctx: RequestContext, projectId: string, archived: boolean) {
     assertCanArchiveProject(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const out = await runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const project = await ProjectRepository.getVisible(db, ctx, v, projectId);
         if (!project) throw notFound('Project not found');
@@ -200,11 +201,14 @@ export async function setProjectArchived(ctx: RequestContext, projectId: string,
         });
         return toProjectDto((await ProjectRepository.getVisible(db, ctx, v, projectId))!);
     });
+    // Roadmap 3.3b (decision 233): every member's calendar that may show it, within a minute.
+    await enqueueCalendarSync(ctx, 'workspace');
+    return out;
 }
 
 export async function deleteProject(ctx: RequestContext, projectId: string) {
     assertCanArchiveProject(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const out = await runInTenantContext(ctx, async (db) => {
         const project = await ProjectRepository.getVisible(db, ctx, await visibleProjects(ctx, db), projectId);
         if (!project) throw notFound('Project not found');
         await ProjectRepository.softDelete(db, ctx, projectId);
@@ -217,11 +221,14 @@ export async function deleteProject(ctx: RequestContext, projectId: string) {
         });
         return { deleted: true };
     });
+    // Roadmap 3.3b (decision 233): every member's calendar that may show it, within a minute.
+    await enqueueCalendarSync(ctx, 'workspace');
+    return out;
 }
 
 export async function restoreProject(ctx: RequestContext, projectId: string) {
     assertCanArchiveProject(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const out = await runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const project = await ProjectRepository.getAny(db, ctx, projectId);
         // A guest restores nothing it could not see once restored.
@@ -238,4 +245,7 @@ export async function restoreProject(ctx: RequestContext, projectId: string) {
         });
         return toProjectDto((await ProjectRepository.getVisible(db, ctx, v, projectId))!);
     });
+    // Roadmap 3.3b (decision 233): every member's calendar that may show it, within a minute.
+    await enqueueCalendarSync(ctx, 'workspace');
+    return out;
 }

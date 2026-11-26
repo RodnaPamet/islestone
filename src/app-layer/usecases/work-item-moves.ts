@@ -52,6 +52,7 @@ import { assertProjectWritable, emitWatcherActivity, keyOf, loadWritableItem, th
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
 import { ConflictError, badRequest, notFound } from '@/lib/errors/types';
+import { enqueueCalendarSyncForItems } from './calendar-sync-enqueue';
 
 export interface Position {
     afterId?: string;
@@ -309,5 +310,7 @@ export async function moveWorkItemToProject(ctx: RequestContext, id: string, inp
     await emitWatcherActivity(ctx, [
         { workItemId: id, kind: 'updated', discriminator: `move:${outcome.toKey}`, detail: `moved from ${outcome.fromKey} to ${outcome.toKey}` },
     ]);
+    // Roadmap 3.3b (decision 233): a moved item's key, and so its link, changed.
+    await enqueueCalendarSyncForItems(ctx, [id]);
     return { ...outcome, item: await getWorkItem(ctx, id) };
 }

@@ -47,6 +47,12 @@ const ON_DEMAND_JOBS: Readonly<Record<string, string>> = {
     'intake-email-fetch':
         'One per inbound email delivery: dispatched by receiveInboundEmailEvent behind ' +
         'POST /api/intake/email/resend (sub-phase 2.6c).',
+    'calendar-sync-connection':
+        "One connection's calendar push: dispatched by enqueueConnectionSync from the 15-minute " +
+        'calendar-sync-dispatch, the connect callback and enqueueCalendarSync after a change (roadmap 3.3b, decision 233).',
+    'calendar-teardown':
+        "One connection's teardown (decision 239): dispatched by enqueueTeardowns after a disconnect, " +
+        'a member removal, the switch turned off or the consent withdrawn, and by the dispatcher (roadmap 3.3b).',
 };
 
 function registeredExecutorJobsIn(src: string): string[] {

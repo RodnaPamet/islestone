@@ -354,6 +354,18 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
         }
     }
 
+    // ── 5b. The calendar OAuth callbacks (roadmap 3.3b) ──
+    // Signed-in GETs outside `/api/t/` (each provider returns to one fixed
+    // URI), so the tenant read tier above does not see them: the same budget,
+    // keyed by IP and user under their own name.
+    if (req.method === 'GET' && pathname.startsWith('/api/integrations/calendar/')) {
+        const userId = (token.sub as string | undefined) ?? null;
+        const rl = await checkApiReadRateLimit(req, userId, 'calendarcallback');
+        if (!rl.ok && rl.response) {
+            return rl.response;
+        }
+    }
+
     // ── 6. Authenticated and authorized → proceed ──
     return NextResponse.next();
 }
