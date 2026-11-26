@@ -45,6 +45,7 @@ import { EMAIL_NOT_VERIFIED_SIGN_IN_ERROR } from '@/lib/auth/register-refusals';
 import type { Role } from '@prisma/client';
 import { edgeLogger } from '@/lib/observability/edge-logger';
 import { hashForLookup } from '@/lib/security/encryption';
+import { hasAsciiLookalike } from '@/lib/email-lookalike';
 import { graphHeaders } from '@/lib/http/graph-headers';
 import {
     pendingAfterMembershipRefresh,
@@ -647,6 +648,17 @@ export const authOptions: NextAuthOptions = {
                     // tenant scope or retention policy. The hash is the same
                     // per-identifier key the other auth events log.
                     identifierHash: user.email ? hashEmailForLog(user.email) : undefined,
+                });
+                return false;
+            }
+
+            // A provider's address holding a character that folds into ASCII
+            // would hash as the account it imitates (decision 252).
+            if (account.provider !== 'credentials' && user.email && hasAsciiLookalike(user.email)) {
+                edgeLogger.warn('signIn rejected: look-alike email address', {
+                    component: 'auth',
+                    provider: account.provider,
+                    identifierHash: hashEmailForLog(user.email),
                 });
                 return false;
             }

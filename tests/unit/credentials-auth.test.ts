@@ -229,6 +229,13 @@ describe('authenticateWithPassword — failure modes collapse to credentials_inv
         expect(mockFindUnique).not.toHaveBeenCalled();
     });
 
+    it('returns credentials_invalid for a look-alike address without a lookup (decision 252)', async () => {
+        // The Kelvin sign lower-cases to "k", so this would hash as "kai@example.com".
+        const result = await authenticateWithPassword({ email: '\u212Aai@example.com', password: 'anything' });
+        expect(result).toEqual({ ok: false, reason: 'credentials_invalid' });
+        expect(mockFindUnique).not.toHaveBeenCalled();
+    });
+
     it('returns credentials_invalid when password is empty', async () => {
         const result = await authenticateWithPassword({ email: 'a@b.co', password: '' });
         expect(result).toEqual({ ok: false, reason: 'credentials_invalid' });

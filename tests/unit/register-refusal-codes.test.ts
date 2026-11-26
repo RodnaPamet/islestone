@@ -144,6 +144,17 @@ describe('POST /api/auth/register refusal codes', () => {
         expect(isWrappedDek(arg.data.encryptedDek)).toBe(true);
     });
 
+    it('refuses a look-alike address before any lookup or breach check (decision 252)', async () => {
+        // The Kelvin sign lower-cases to "k": the account would hash as "kai@example.com".
+        // The body schema's ASCII-only address format refuses it first; the
+        // route's own EMAIL_LOOKALIKE check stands behind it.
+        const res = await post({ ...base, email: '\u212Aai@example.com', orgName: 'Acme' });
+        expect(res.status).toBe(400);
+        expect(mockFindUser).not.toHaveBeenCalled();
+        expect(mockHibp).not.toHaveBeenCalled();
+        expect(mockCreateUser).not.toHaveBeenCalled();
+    });
+
     it('every code has a sentence in each catalogue', () => {
         for (const catalogue of [en]) {
             for (const code of REGISTER_REFUSALS) {

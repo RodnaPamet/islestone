@@ -40,18 +40,12 @@ export function asciiLower(value: string): string {
 }
 
 /**
- * Whether `value` holds a character outside ASCII that changes case into
- * ASCII (`K`, the Kelvin sign, lower-cases to `k`; `ſ` upper-cases to `S`).
- * The workspace's address lookups fold case fully (`hashForLookup`), so such
- * an address would be taken for the ASCII one it imitates (H2f).
+ * Re-exported from `@/lib/email-lookalike`, where the account paths read it
+ * too (decision 252): the workspace's address lookups fold case fully
+ * (`hashForLookup`), so such an address would be taken for the ASCII one it
+ * imitates (H2f).
  */
-export function hasAsciiLookalike(value: string): boolean {
-    for (const ch of value) {
-        if (ch.charCodeAt(0) < 0x80) continue;
-        if (/[\x00-\x7f]/.test(ch.toLowerCase()) || /[\x00-\x7f]/.test(ch.toUpperCase())) return true;
-    }
-    return false;
-}
+export { hasAsciiLookalike } from '@/lib/email-lookalike';
 
 /** The intake address `address` names on `domain`, or null. ASCII case-insensitive; anything not printable ASCII is no intake address. */
 export function parseIntakeAddress(address: string, domain: string): IntakeAddress | null {

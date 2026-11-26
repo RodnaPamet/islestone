@@ -51,6 +51,7 @@ import { env } from '@/env';
 import { sendEmail } from '@/lib/mailer';
 import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
+import { hasAsciiLookalike } from '@/lib/email-lookalike';
 
 import { hashPassword, verifyPassword } from './passwords';
 import {
@@ -110,7 +111,8 @@ export async function issuePasswordReset(
     opts: IssuePasswordResetOptions = {},
 ): Promise<void> {
     const identifier = normaliseEmail(email);
-    if (!identifier) return;
+    // A look-alike address (decision 252) is a silent no-op, as an unknown one is.
+    if (!identifier || hasAsciiLookalike(email)) return;
 
     const user = await prisma.user.findUnique({
         where: { emailHash: hashForLookup(identifier) },

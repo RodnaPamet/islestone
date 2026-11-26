@@ -32,6 +32,7 @@ import type { OrgContext } from '@/app-layer/types';
 import { logger } from '@/lib/observability/logger';
 import { prisma } from '@/lib/prisma';
 import { hashForLookup } from '@/lib/security/encryption';
+import { hasAsciiLookalike, LOOKALIKE_EMAIL_MESSAGE } from '@/lib/email-lookalike';
 import { appendOrgAuditEntry } from '@/lib/audit/org-audit-writer';
 import { provisionOrgAdminToTenants, type ProvisionResult } from './org-provisioning';
 import type { InviteRefusal } from '@/lib/invite-refusals';
@@ -97,6 +98,11 @@ export async function createOrgInviteToken(
     assertCanManageOrgInvites(ctx);
     const normalizedEmail = input.email.toLowerCase().trim();
     if (!normalizedEmail) throw badRequest('email is required');
+    // Decision 252: a look-alike address would hash as the one it imitates.
+    // Asked of the raw input: lower-casing turns the Kelvin sign into "k".
+    if (hasAsciiLookalike(input.email)) {
+        throw badRequest(LOOKALIKE_EMAIL_MESSAGE, { reason: 'EMAIL_LOOKALIKE' });
+    }
     if (input.role !== 'ORG_ADMIN' && input.role !== 'ORG_READER') {
         throw badRequest(
             `Invalid role '${String(input.role)}' — must be ORG_ADMIN or ORG_READER`,
