@@ -72,6 +72,11 @@ function latestDefinitions(root: string): { latest: Map<string, Found>; unparsed
     return { latest, unparsed };
 }
 
+/** Escapes every regular-expression metacharacter, backslash included. */
+function escapeRegExp(text: string): string {
+    return text.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+}
+
 /** Every problem with the search functions as the migrations define them. */
 function definitionProblems(root: string, specs: readonly SearchDefinerSpec[]): string[] {
     const problems: string[] = [];
@@ -86,7 +91,7 @@ function definitionProblems(root: string, specs: readonly SearchDefinerSpec[]): 
         for (const p of definerProblems(spec, hit.def)) problems.push(`${spec.name}: ${p}`);
         const hash = bodySha256(hit.def.body);
         if (hash !== spec.bodySha256) problems.push(`${spec.name}: body sha256 ${hash}, pinned ${spec.bodySha256}`);
-        const sig = `${spec.name}\\(${spec.argTypes.replace(/[[\]]/g, '\\$&')}\\)`;
+        const sig = `${escapeRegExp(spec.name)}\\(${escapeRegExp(spec.argTypes)}\\)`;
         if (!new RegExp(`ALTER FUNCTION ${sig} OWNER TO ${SEARCH_DEFINER_ROLE};`).test(hit.sql)) problems.push(`${spec.name}: not owned by ${SEARCH_DEFINER_ROLE}`);
         if (!new RegExp(`REVOKE ALL ON FUNCTION ${sig} FROM PUBLIC;`).test(hit.sql)) problems.push(`${spec.name}: EXECUTE not revoked from PUBLIC`);
         const grants = [...hit.sql.matchAll(new RegExp(`GRANT [^;]* ON FUNCTION ${spec.name}\\b[^;]*;`, 'g'))].map((m) => m[0]);
