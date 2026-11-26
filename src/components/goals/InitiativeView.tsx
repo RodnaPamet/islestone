@@ -280,7 +280,7 @@ export function InitiativeView({
                         )}
                     </span>
                 </div>
-                <DataTable<InitiativeProjectRow>
+                <DataTable
                     data={detail.projects}
                     columns={columns}
                     getRowId={(r) => r.id}
