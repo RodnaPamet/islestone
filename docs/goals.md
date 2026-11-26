@@ -1,6 +1,6 @@
 # Goals and initiatives
 
-Sub-phase 3.2 (`docs/porting/maps/3.2.md`; ADR 0002 §2 and §17; ADR 0006 "Goal and roadmap words of sub-phase 3.2"; owner decisions 205 to 224). This page describes what is built. **3.2a is built**: the model, an item's direct goal, archive, soft delete, restore and the purge, the routes, the ancestry and the list's filters. Progress, health and the Goals and Initiatives pages are 3.2b's; the roadmap is 3.2c's. None of them exists yet.
+Sub-phase 3.2 (`docs/porting/maps/3.2.md`; ADR 0002 §2 and §17; ADR 0006 "Goal and roadmap words of sub-phase 3.2"; owner decisions 205 to 224). This page describes what is built. **3.2a and 3.2b are built**: the model, an item's direct goal, archive, soft delete, restore and the purge, the routes, the ancestry and the list's filters (3.2a); progress, health, the Roadmap sidebar entry with the Goals and Initiatives pages, and a goal's and an initiative's pages (3.2b). The roadmap itself, its chart and the Roadmap page, is 3.2c's and does not exist yet.
 
 ## The chain
 
@@ -20,13 +20,13 @@ Goals and initiatives are records above projects, never work items (principle 3)
 | Status | `GoalStatus`: Planned, Started, Completed, Cancelled (decision 208), any order | `InitiativeStatus`, the same four |
 | Due date | date-only, optional; not a scheduling-engine deadline (decision 210) | the same |
 | Lead | `leadUserId`: one ACTIVE member, any role but Guest (decision 209); RESTRICT, cleared on member removal | the same |
-| Health | `Health` and who set it when (decisions 205 and 214); written from 3.2b, never by 3.2a | the same |
+| Health | `Health` and who set it when (decisions 205 and 214), set by a person only (below) | the same |
 | Archive | `archivedAt`, only while Completed or Cancelled (CHECK) | the same |
 | Soft delete | `deletedAt`, `deletedByUserId`, `deletionId` (both or neither, CHECK) | the same |
 
-`Project.initiativeId` names at most one initiative; `WorkItem.goalId` one goal. The four links (`Goal.parentId`, `Initiative.goalId`, `Project.initiativeId`, `WorkItem.goalId`) are composite keys to `(id, tenantId)`, each `ON DELETE SET NULL` on its own column, so the purge alone deletes a row and the database clears every link to it without touching `tenantId`. Prisma cannot declare the column list; the migrations do, and `tests/integration/goals.test.ts` reads it from the catalogue.
+`Project.initiativeId` names at most one initiative; `WorkItem.goalId` one goal (migration `20261215120100`); the progress index is migration `20261216120000_work_item_progress_index` (below). The four links (`Goal.parentId`, `Initiative.goalId`, `Project.initiativeId`, `WorkItem.goalId`) are composite keys to `(id, tenantId)`, each `ON DELETE SET NULL` on its own column, so the purge alone deletes a row and the database clears every link to it without touching `tenantId`. Prisma cannot declare the column list; the migrations do, and `tests/integration/goals.test.ts` reads it from the catalogue.
 
-Both tables are tenant tables with the standard policies; `app_user` holds DELETE on them for the purge alone. The transition trigger does not watch `goalId`. `[tenantId, goalId, stateCategory]` backs the item's goal key, the `goalId` filter and (3.2b) a goal's direct items; the project-path progress index `[tenantId, projectId, stateCategory]` lands with 3.2b's counts (on the 10k seed it moved three existing list and job plans off their indexes, so 3.2a does not add it unused).
+Both tables are tenant tables with the standard policies; `app_user` holds DELETE on them for the purge alone. The transition trigger does not watch `goalId`. `[tenantId, goalId, stateCategory]` backs the item's goal key, the `goalId` filter and a goal's direct items; the project path's progress count reads `WorkItem_progress_project_path` (below).
 
 ## The tree rules
 
@@ -73,9 +73,39 @@ The `goals` domain (decision 213): `goals.view` reads goals and initiatives, `go
 | `PUT /projects/:id/initiative` | `projects.edit` | `setProjectInitiative` |
 | `PUT /work-items/:id/goal` | `work_items.edit` | `setWorkItemGoal` |
 | `GET /work-items/:id/ancestry` | `work_items.view` | `getWorkItemAncestry` |
+| `PUT /goals/:id/health`, `PUT /initiatives/:id/health` (3.2b) | `goals.manage` | `setGoalHealth`, `setInitiativeHealth` (a person only) |
 
-Every write is audited in its transaction, naming changed fields and never the description: `GOAL_CREATED`, `GOAL_UPDATED`, `GOAL_MOVED`, `GOAL_ARCHIVED`, `GOAL_UNARCHIVED`, `GOAL_DELETED` (the group's ids and counts), `GOAL_RESTORED`, the same `INITIATIVE_*`, `PROJECT_UPDATED` naming `initiativeId`, `WORK_ITEM_GOAL_CHANGED`, a lead cleared on member removal (`GOAL_UPDATED` / `INITIATIVE_UPDATED`, `reason: 'member_removed'`), and `GOALS_PURGED`.
+Every write is audited in its transaction, naming changed fields and never the description: `GOAL_CREATED`, `GOAL_UPDATED`, `GOAL_MOVED`, `GOAL_ARCHIVED`, `GOAL_UNARCHIVED`, `GOAL_DELETED` (the group's ids and counts), `GOAL_RESTORED`, `GOAL_HEALTH_SET` (the old and new values), the same `INITIATIVE_*`, `PROJECT_UPDATED` naming `initiativeId`, `WORK_ITEM_GOAL_CHANGED`, a lead cleared on member removal (`GOAL_UPDATED` / `INITIATIVE_UPDATED`, `reason: 'member_removed'`), and `GOALS_PURGED`.
+
+## Progress (3.2b)
+
+Derived on every read, never stored, cached or computed by a job (decision 212), by the pure `src/app-layer/domain/progress.ts` (2.5b's milestone progress reads it too, unchanged):
+
+- **`{ scope, done, started }`**: scope is every counted item not cancelled, done the Done ones, started the Started ones. Zero items is "No items", never complete and never 100 %.
+- **An initiative** counts the live, visible, non-cancelled items, sub-items included, of its live projects, archived projects included (finished projects are usually archived); deleted projects and items are left out.
+- **A goal** counts the same through every live initiative of the goal and of every live goal below it, **plus** every such item naming the goal or a live goal below it directly (decision 211), each item once. Two grouped reads do it: `WorkItemRepository.countsByProjects` (per project and category) and `countsByGoals` (per direct goal, project and category); `goalProgress` adds a direct row only when its project is not already on the goal's project path, so an item reached both ways is counted through its project and never again. A property test holds it to a naive per-item count.
+- **The reads are fixed** whatever the number of goals or initiatives shown (`usecases/goal-progress.ts`): the live goal tree (at most 2,000 goals), their live initiatives, those initiatives' visible projects (at most 10,000; above either, 422 `GOAL_PROGRESS_TOO_LARGE`), the two counts and the workspace calendar. A goal or initiative reaching more than 1,000 projects shows no progress but the count (`tooManyProjects`), never a cut count.
+- **"Late"**: a due date before today in the workspace calendar's zone (as 3.1, decision 191) with open items. On an initiative's projects table, a project is late when its own due date has passed with open items, and its late milestones are counted by 2.5b's rule.
+- **The index.** `WorkItem_progress_project_path` on `("tenantId", "projectId", "stateCategory") WHERE "deletedAt" IS NULL AND "stateCategory" <> 'CANCELLED'`, partial and in SQL only (migration `20261216120000`; Prisma cannot declare the predicate). `countsByProjects` is raw SQL naming that literal, because Prisma binds an enum as a cast of a text parameter, which the planner cannot prove implies the predicate. A plain `[tenantId, projectId, stateCategory]` index, measured on the 10k seed, pulled the list sorted by key, the templates' open items and a purged project's read off their indexes (the last at 418 buffers against its 400); partial, no other read's predicate implies it, and every plan check keeps its index. Both counts are plan-checked (`counts: progress, the project path`, `…, the direct goal path`).
+- The lists and both pages carry each row's progress and "late"; the Deleted views show none. 3.4's estimates may later weight progress by points; that is a later decision.
+
+## Health (3.2b)
+
+- `PUT /goals/:id/health` and `PUT /initiatives/:id/health` (`goals.manage`, `If-Match` optional), body `{ health: 'ON_TRACK' | 'AT_RISK' | 'OFF_TRACK' | 'COMPLETED' | null }`; `null` is "No health set".
+- **A person only** (decision 214): an API key or an agent (`apiKeyId`), a job (`actorType` other than a user) and the workspace's system user are refused with the hash-chained `AUTHZ_DENIED` entry a `requirePermission` denial writes, then 403 `NOT_A_PERSON` (`setsHealthAsPerson` in `goal.policies.ts`; `goalAffordances().setHealth` asks the same). No proposal kind sets health.
+- **Independent of the status** (decision 205): setting health changes nothing else, and no status, progress or "late" changes health. A Started goal with health Completed and a Completed one with health Off track are both stored and shown, always with the field's name ("Status: Started · Health: Completed").
+- Recorded on the row (`health`, `healthSetAt`, `healthSetByUserId`) and audited `GOAL_HEALTH_SET` / `INITIATIVE_HEALTH_SET` with `fromHealth` and `toHealth`. Setting the value it already has records it again (a person confirming it). Archived: 409 `ARCHIVED`; deleted: 404.
+- **The history** (decision 207: no written update) is those audit entries, newest first, the last 50 (`ActivityRepository.healthHistory`, `[tenantId, entityId, createdAt]`), on each page.
+
+## The pages (3.2b)
+
+- **Navigation** (decision 222). One sidebar entry, **Roadmap**, for a holder of `goals.view`, current on every page under `/roadmap`. Its pages are Goals (`/roadmap/goals`) and Initiatives (`/roadmap/initiatives`), main pages with a tab bar between them; the Roadmap page (`/roadmap`) is 3.2c's, and until it exists the entry opens Goals. A goal's page (`/roadmap/goals/<id>`) and an initiative's page (`/roadmap/initiatives/<id>`) are subpages falling back to Goals and Initiatives. The command palette lists Goals and Initiatives.
+- **Goals**: the tree as indented rows (each under its nearest shown ancestor), with status, lead, due date, health, progress and "Late"; filters by status, health, lead and archived (the shared filter system, synced to the URL); a Deleted view with Restore; "Goal" for a holder of `goals.manage`.
+- **Initiatives**: the same, with the goal each serves and a goal filter.
+- **A goal's page**: the ancestors as a breadcrumb, status and health with their names, description, due date and lead, the health control and its history, progress, the child goals and initiatives with theirs, the count of items naming it directly (with a link to the Work items page filtered by the goal), "Add child goal" (refused past three levels, with the reason) and "Add initiative", Archive (Completed or Cancelled only) and Delete through the undo toast.
+- **An initiative's page**, the roadmap's "portfolio page" (decision 221): its goal and the goal's ancestors as a breadcrumb, the health control and history, progress, and a projects table (project, team, due date, progress, "Late", late milestones, archived projects greyed). "Add project" links a visible project not already in it (`projects.edit`, through `PUT /projects/:id/initiative`; a project in another initiative moves); a holder of `projects.create` may create one through the one project dialog with the initiative chosen; removing a project goes through the undo toast. Its slice of the roadmap is 3.2c's.
+- Every write follows `goalAffordances` (and the page's `createProject`), asked on the server (`src/lib/server/goal-pages.server.ts`); components in `src/components/goals/`, whose deletes and project removal go through the undo toast (`use-goals.ts`, in `SITE_CONTRACTS`). Copy is `roadmap.*`, `goals.*` and `initiatives.*`.
 
 ## Later
 
-Progress over both paths (`domain/progress.ts`), health set by a person, the Roadmap sidebar entry with the Goals and Initiatives pages, and a goal's and an initiative's pages are 3.2b; the roadmap is 3.2c. 3.4's estimates may later weight progress by points; that is a later decision.
+The roadmap (3.2c): `getRoadmap`, the engine's span for bars, the read-only chart, its table and the Roadmap page, where the entry then opens.
