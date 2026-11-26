@@ -110,14 +110,15 @@ describe('the graph queue and the project queue', () => {
     });
 
     it('lockWorkItemGraph refuses to run outside its workspace\'s turn, and runs inside it', async () => {
-        const db = { $executeRawUnsafe: jest.fn(async () => 0) };
+        const exec = jest.fn(async () => 0);
+        const db = { $executeRawUnsafe: exec } as unknown as Parameters<typeof lockWorkItemGraph>[0];
         await expect(lockWorkItemGraph(db, 't1')).rejects.toThrow(/inWorkItemGraphQueue/);
         await expect(inWorkItemGraphQueue('t2', () => lockWorkItemGraph(db, 't1'))).rejects.toThrow(/inWorkItemGraphQueue/);
-        expect(db.$executeRawUnsafe).not.toHaveBeenCalled();
+        expect(exec).not.toHaveBeenCalled();
         await inWorkItemGraphQueue('t1', async () => {
             expect(holdsWorkItemGraphTurn('t1')).toBe(true);
             await lockWorkItemGraph(db, 't1');
         });
-        expect(db.$executeRawUnsafe).toHaveBeenCalledTimes(1);
+        expect(exec).toHaveBeenCalledTimes(1);
     });
 });
