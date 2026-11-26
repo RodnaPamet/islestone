@@ -109,6 +109,16 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'search: contents and snippets', methods: ['SearchVectorRepository.matchItems', 'WorkItemRepository.findSearchRows', 'WorkItemRepository.searchSnippetSources'], indexes: ['SearchVector_search_lexemes', 'WorkItem_search_live_ids', 'Comment_search_live_ids'], maxBuffers: 5000, maxBuffers100k: 174000, conditions: [{ index: 'SearchVector_search_lexemes', operator: '@@' }] },
     // ── The timeline (3.1b) and the calendars it reads (3.1a) ──────────────
     { name: 'timeline: scope, count and relations', methods: ['WorkItemRepository.listForTimeline', 'WorkItemRepository.countForTimeline', 'WorkItemRepository.timelineContextRows'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 2000, maxBuffers100k: 6300 },
+    // ── The calendar (3.3a): a month grid's 42 days, its count and the undated items ──
+    // 10k: 2,576 buffers measured for the workspace (the window read per visible project on the
+    // project-leading due-date index, about 730 items; the undated count a tenant bitmap), 466 for a
+    // project. 100k: NOT MEASURED (3.3a could not seed 100k for lack of disk): a workspace month there holds
+    // about 7,300 items, over the 2,000 limit, so the read becomes the refusal (2,001 rows, the window's
+    // count and the undated count over about 40,000 items): about 20,000 buffers estimated, budget twice
+    // that; a project month about ten times the 10k figure. Replace both with about twice the nightly's
+    // first 100k measurement.
+    { name: 'calendar: workspace, a month grid', methods: ['WorkItemRepository.listForCalendar', 'WorkItemRepository.countForCalendar', 'WorkItemRepository.countWithoutDueDate'], indexes: ['WorkItem_tenantId_dueDate_id_idx|WorkItem_tenantId_projectId_dueDate_id_idx'], maxBuffers: 5200, maxBuffers100k: 40000 },
+    { name: 'calendar: project, a month grid', methods: ['WorkItemRepository.listForCalendar', 'WorkItemRepository.countWithoutDueDate'], indexes: ['WorkItem_tenantId_projectId_dueDate_id_idx'], maxBuffers: 1000, maxBuffers100k: 10000 },
     {
         name: 'timeline: working calendars',
         methods: [],

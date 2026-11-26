@@ -211,6 +211,9 @@ export const WorkItemQuerySchema = z.object({
     deleted: z.enum(['true', '1']).optional(),
 });
 
+/** The calendar view's window (3.3a): two dates, both inclusive; the usecase bounds its length. */
+export const CalendarWindowSchema = z.object({ from: DateOnly, to: DateOnly });
+
 export const PageQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).optional(),
     cursor: z.string().max(1000).optional(),

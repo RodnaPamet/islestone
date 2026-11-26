@@ -95,6 +95,9 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
         ['listForTimeline (3.1b, the list\'s where)', (db) => WorkItemRepository.listForTimeline(db, ctx, GUEST, { projectId: 'p1', q: 'x', fullTextMatchIds: ['w1'] }, { take: 5001 })],
         ['countForTimeline (3.1b)', (db) => WorkItemRepository.countForTimeline(db, ctx, GUEST, { cycleId: 'c1' }, {})],
         ['timelineContextRows (3.1b)', (db) => WorkItemRepository.timelineContextRows(db, ctx, GUEST, ['w1', 'w2'], 500)],
+        ['listForCalendar (3.3a, the list\'s where and the window)', (db) => WorkItemRepository.listForCalendar(db, ctx, GUEST, { projectId: 'p1', q: 'x', fullTextMatchIds: ['w1'] }, { from: new Date('2026-01-01'), to: new Date('2026-02-11'), take: 2001 })],
+        ['countForCalendar (3.3a)', (db) => WorkItemRepository.countForCalendar(db, ctx, GUEST, { cycleId: 'c1' }, { from: new Date('2026-01-01'), to: new Date('2026-02-11') })],
+        ['countWithoutDueDate (3.3a)', (db) => WorkItemRepository.countWithoutDueDate(db, ctx, GUEST, { milestoneId: 'm1' }, {})],
         ['searchSnippetSources (2.7f, descriptions and comments)', (db) => WorkItemRepository.searchSnippetSources(db, ctx, GUEST, { descriptionItemIds: ['w1'], commentIds: ['c1'] })],
     ];
 

@@ -66,6 +66,31 @@ export class MilestoneRepository {
         });
     }
 
+    /**
+     * The milestones of the named projects due in `[from, to]` (the
+     * calendar's markers, 3.3a); by due date, then id; at most `take`.
+     */
+    static async datedInWindow(db: PrismaTx, ctx: Ctx, projectIds: readonly string[], from: Date, to: Date, take: number) {
+        if (projectIds.length === 0) return [];
+        return db.milestone.findMany({
+            where: { tenantId: ctx.tenantId, projectId: { in: [...projectIds] }, dueDate: { gte: from, lte: to } },
+            orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+            take,
+            select: { id: true, projectId: true, name: true, dueDate: true },
+        });
+    }
+
+    /** The named milestones (a calendar's `milestoneId` filter, 3.3a), at most as many as named. */
+    static async byIds(db: PrismaTx, ctx: Ctx, ids: readonly string[]) {
+        if (ids.length === 0) return [];
+        return db.milestone.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: [...ids] } },
+            orderBy: { id: 'asc' },
+            take: ids.length,
+            select: { id: true, projectId: true, name: true, dueDate: true },
+        });
+    }
+
     static async getById(db: PrismaTx, ctx: Ctx, id: string): Promise<MilestoneRow | null> {
         return db.milestone.findFirst({ where: { id, tenantId: ctx.tenantId }, select: milestoneSelect });
     }

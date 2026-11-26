@@ -305,6 +305,30 @@ export const workItemTimelineSelect = {
 
 export type WorkItemTimelineRow = Prisma.WorkItemGetPayload<{ select: typeof workItemTimelineSelect }>;
 
+/**
+ * What the calendar view reads per item (roadmap 3.3a): never a description,
+ * a comment or a custom-field value (titles are plaintext, ADR 0002 §11).
+ */
+export const workItemCalendarSelect = {
+    id: true,
+    number: true,
+    title: true,
+    projectId: true,
+    teamId: true,
+    typeId: true,
+    stateCategory: true,
+    assigneeId: true,
+    parentId: true,
+    cycleId: true,
+    milestoneId: true,
+    startDate: true,
+    dueDate: true,
+    version: true,
+    project: { select: { keyPrefix: true, name: true, dueDate: true, archivedAt: true } },
+} satisfies Prisma.WorkItemSelect;
+
+export type WorkItemCalendarRow = Prisma.WorkItemGetPayload<{ select: typeof workItemCalendarSelect }>;
+
 /** The fields every gated write reads first. */
 export const workItemGateSelect = {
     id: true,
@@ -626,6 +650,58 @@ export class WorkItemRepository {
             orderBy: { id: 'asc' },
             take,
             select: workItemTimelineSelect,
+        });
+    }
+
+    /** The list's `where` with one more condition (the calendar's window, its undated items). */
+    private static _withCondition(base: Prisma.WorkItemWhereInput, extra: Prisma.WorkItemWhereInput): Prisma.WorkItemWhereInput {
+        const and = base.AND === undefined ? [] : Array.isArray(base.AND) ? base.AND : [base.AND];
+        return { ...base, AND: [...and, extra] };
+    }
+
+    /**
+     * The calendar's items (3.3a): the list's `where` and a due date in
+     * `[from, to]` (both date-only, inclusive), by due date, then manual
+     * order, at most `take` (the caller reads one past its limit).
+     */
+    static async listForCalendar(
+        db: PrismaTx,
+        ctx: RequestContext,
+        v: ProjectVisibility,
+        filters: WorkItemFilters,
+        page: { from: Date; to: Date; take: number; keyHit?: KeyHit | null; today?: Date },
+    ): Promise<WorkItemCalendarRow[]> {
+        return db.workItem.findMany({
+            where: WorkItemRepository._withCondition(WorkItemRepository._buildWhere(ctx, v, filters, page.keyHit ?? null, page.today), { dueDate: { gte: page.from, lte: page.to } }),
+            orderBy: [{ dueDate: 'asc' }, { sortKey: 'asc' }, { id: 'asc' }],
+            take: page.take,
+            select: workItemCalendarSelect,
+        });
+    }
+
+    /** How many items the calendar's window holds: the count a too-large calendar answers with. */
+    static async countForCalendar(
+        db: PrismaTx,
+        ctx: RequestContext,
+        v: ProjectVisibility,
+        filters: WorkItemFilters,
+        page: { from: Date; to: Date; keyHit?: KeyHit | null; today?: Date },
+    ): Promise<number> {
+        return db.workItem.count({
+            where: WorkItemRepository._withCondition(WorkItemRepository._buildWhere(ctx, v, filters, page.keyHit ?? null, page.today), { dueDate: { gte: page.from, lte: page.to } }),
+        });
+    }
+
+    /** The scope's items with no due date (3.3a): counted on the calendar's summary line, never drawn. */
+    static async countWithoutDueDate(
+        db: PrismaTx,
+        ctx: RequestContext,
+        v: ProjectVisibility,
+        filters: WorkItemFilters,
+        page: { keyHit?: KeyHit | null; today?: Date },
+    ): Promise<number> {
+        return db.workItem.count({
+            where: WorkItemRepository._withCondition(WorkItemRepository._buildWhere(ctx, v, filters, page.keyHit ?? null, page.today), { dueDate: null }),
         });
     }
 

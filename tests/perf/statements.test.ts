@@ -59,6 +59,12 @@ interface Scenario {
  * (32). docs/performance.md, "Statements per request", lists them. A budget
  * only ever goes down.
  */
+/** The 42 days around today, as the calendar view first asks for them. */
+function monthGrid(): string {
+    const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+    return `from=${day(-14)}&to=${day(27)}`;
+}
+
 const SCENARIOS: Scenario[] = [
     { name: 'list: one project, first page', file: `${ROUTES}/work-items/route.ts`, method: 'GET', path: (w) => `/work-items?projectId=${w.projectId}&limit=50`, budget: 8 },
     { name: 'board: one column of the large project', file: `${ROUTES}/work-items/route.ts`, method: 'GET', path: (w) => `/work-items?projectId=${w.bigProjectId}&stateId=${w.stateId}&limit=50`, budget: 8 },
@@ -74,6 +80,11 @@ const SCENARIOS: Scenario[] = [
     // The roadmap (3.2c): the map's budget is at most 7 statements whatever the workspace's size.
     { name: 'roadmap: the whole workspace', file: `${ROUTES}/roadmap/route.ts`, method: 'GET', path: () => '/roadmap', budget: 7 },
     { name: 'roadmap: grouped by goal', file: `${ROUTES}/roadmap/route.ts`, method: 'GET', path: () => '/roadmap?groupBy=goal', budget: 7 },
+    // The calendar (3.3a): a month grid around today (42 days), the workspace's and one project's: the
+    // tenant binding, the visible projects, the window's items, the undated count, the cycles, the
+    // milestones and the working calendar (8 measured on the 10k seed, either way).
+    { name: 'calendar: the workspace, a month grid', file: `${ROUTES}/work-items/calendar/route.ts`, method: 'GET', path: () => `/work-items/calendar?${monthGrid()}`, budget: 8 },
+    { name: 'calendar: one project, a month grid', file: `${ROUTES}/work-items/calendar/route.ts`, method: 'GET', path: (w) => `/work-items/calendar?projectId=${w.projectId}&${monthGrid()}`, budget: 8 },
     {
         name: 'create: one item with a description',
         file: `${ROUTES}/work-items/route.ts`,

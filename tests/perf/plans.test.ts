@@ -144,6 +144,18 @@ const RUNNERS: Record<string, Runner> = {
         await WorkItemRepository.countForTimeline(db, ctx, v, { projectId: w.projectId }, { today: today() });
         return WorkItemRepository.timelineContextRows(db, ctx, v, rows.slice(0, 500).map((r) => r.id), 500);
     },
+    // A month grid around today (42 days), as the calendar view first reads it.
+    'calendar: workspace, a month grid': async (w, db, ctx, v) => {
+        const window = { from: new Date(today().getTime() - 14 * DAY), to: new Date(today().getTime() + 27 * DAY) };
+        await WorkItemRepository.listForCalendar(db, ctx, v, {}, { ...window, take: 2001, today: today() });
+        await WorkItemRepository.countForCalendar(db, ctx, v, {}, { ...window, today: today() });
+        return WorkItemRepository.countWithoutDueDate(db, ctx, v, {}, { today: today() });
+    },
+    'calendar: project, a month grid': async (w, db, ctx, v) => {
+        const window = { from: new Date(today().getTime() - 14 * DAY), to: new Date(today().getTime() + 27 * DAY) };
+        await WorkItemRepository.listForCalendar(db, ctx, v, { projectId: w.projectId }, { ...window, take: 2001, today: today() });
+        return WorkItemRepository.countWithoutDueDate(db, ctx, v, { projectId: w.projectId }, { today: today() });
+    },
     'timeline: working calendars': async (w, db, ctx) => {
         await resolveWorkingCalendars(db, ctx, [w.teamId]);
         return resolveWorkingCalendars(db, ctx);
