@@ -408,6 +408,10 @@ Immediate email is offered for requested and returned: decision 132's `IMMEDIATE
 
 The reminders are deduplicated per window, step and person (a step's due day is fixed when it opens): ACTIVE members whose role sees the project, live items in live, unarchived projects, in pages of 500. The digest lists the day's unread review rows of a member's daily types, like the other work-item types.
 
+## Calendar changes not applied (3.3c)
+
+Owner decisions 227 and 230 ([docs/calendar-sync.md](calendar-sync.md), "The read-back"; ADR 0011 §1). One bell type, `CALENDAR_CHANGE_NOT_APPLIED` (migration `20261219120000_notification_type_calendar_change`, alone), written by `createCalendarChangeNotAppliedNotification` (`src/app-layer/notifications/calendar-change.ts`), which asks `isInAppTypeEnabled` first like every writer: to the member whose moved calendar day was not applied (a stale change, a refused edit, a moved milestone event). It names the item's key (and sets `workItemId`) or the milestone's name and links to it; never text. **In-app only, never email**: `IN_APP_ONLY_TYPES` in `src/lib/notifications/preferences.ts` (the default `{ inApp: true, email: 'OFF' }`, `emailChoicesFor` offers OFF alone, `choiceRefusal` answers 400 `EMAIL_NOT_OFFERED`, `resolveDelivery` never mails it) and the CHECK `NotificationPreference_in_app_only_types` (migration `20261219120100_calendar_read_back`). One per synced event and changed day (the dedupe key carries the event's client id and the day). The workspace may mute it like any listed type (`in-app-types.ts`).
+
 ## Retention (2.7c)
 
 Owner decision 135. The nightly `notification-purge` (03:10 UTC) deletes, per
