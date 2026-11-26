@@ -1,10 +1,16 @@
 /**
  * Daily job: rebalance a project's `sortKey`s once any of its keys passes
  * the length bound (64 characters, ADR 0002 §5). Keys grow only when many
- * inserts land in one gap; rewriting the project's live items with evenly
- * spaced short keys (`keysBetween(null, null, n)`) keeps their order and
- * resets the growth. `sortKey` is not part of the version, so nothing else
- * changes.
+ * inserts land in one gap; rewriting the project's items with evenly spaced
+ * short keys (`keysBetween(null, null, n)`) keeps their order and resets the
+ * growth. `sortKey` is not part of the version, so nothing else changes.
+ *
+ * Deleted items are rewritten too, in the same order (issue #110). A deleted
+ * item keeps its key until the purge, and a restore brings it back with it:
+ * left out, a restored item sorted by its old long key among the new short
+ * ones instead of in its place, and a project whose only long key was a
+ * deleted one was selected and rewritten every night until the purge.
+ * Rewritten with the rest, it keeps its place between its old neighbours.
  *
  * Per workspace, inside its context; per project, one transaction holding
  * the project's key-sequence row lock, which every placement in the project
@@ -16,6 +22,7 @@ import { buildTenantSystemJobContext } from '../context-system';
 import { keysBetween, SORT_KEY_REBALANCE_LENGTH } from '../domain/fractional-index';
 import { ProjectRepository } from '../repositories/ProjectRepository';
 import { WorkItemRepository } from '../repositories/WorkItemRepository';
+import { isLocked } from '../repositories/work-item-locks';
 import { runInTenantContext } from '@/lib/db-context';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { logger } from '@/lib/observability/logger';
@@ -52,7 +59,7 @@ export async function processSortKeyRebalance(options: { tenantId?: string } = {
                         let after: CursorPayload | undefined;
                         for (;;) {
                             // guardrail-allow: n+1 — the project's items in order, one bounded page per pass.
-                            const page = await WorkItemRepository.orderedPage(db, ctx, projectId, after, PAGE);
+                            const page = await WorkItemRepository.orderedPageIncludingDeleted(db, ctx, projectId, after, PAGE);
                             ordered.push(...page.map((r) => r.id));
                             const last = page[page.length - 1];
                             if (page.length < PAGE || !last) break;
@@ -62,9 +69,14 @@ export async function processSortKeyRebalance(options: { tenantId?: string } = {
                         // the rewrites (in sort order) never wait on a row while
                         // holding another a bulk writer wants (decision 173).
                         const locked = await WorkItemRepository.lockForWrite(db, ctx, ordered);
-                        const keys = keysBetween(null, null, ordered.length);
+                        // A deleted row the purge removed between the read and the
+                        // lock is gone; every other row is held now, and no
+                        // placement, move or restore changes a key without the
+                        // sequence row this transaction holds.
+                        const present = ordered.filter((id) => isLocked(locked, id));
+                        const keys = keysBetween(null, null, present.length);
                         let i = 0;
-                        for (const id of ordered) {
+                        for (const id of present) {
                             await WorkItemRepository.rewriteSortKey(db, ctx, locked, id, keys[i]!);
                             i += 1;
                         }

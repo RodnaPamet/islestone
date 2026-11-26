@@ -59,7 +59,13 @@ import {
     assertCanReadWorkItems,
 } from '../policies/work-item.policies';
 import { visibleProjects, type ProjectVisibility } from '../policies/project-visibility';
-import { keyBetween } from '../domain/fractional-index';
+import {
+    collidingRestoredRows,
+    keyBetween,
+    planRestoredSortKeys,
+    type LiveSortKeyNeighbours,
+    type RestoredSortKeyRow,
+} from '../domain/fractional-index';
 import { fitsDepthCap, MAX_SUB_ITEM_DEPTH } from '../domain/work-item-graph';
 import { formatKey, parseKey } from '../domain/work-item-key';
 import {
@@ -70,7 +76,7 @@ import {
 } from '../domain/workflow-state';
 import { todayInTz } from '../notifications/work-item-due';
 import { lockWorkItemGraph } from './work-item-graph-lock';
-import { lockedSubset } from '../repositories/work-item-locks';
+import { lockedSubset, type LockedWorkItemIds } from '../repositories/work-item-locks';
 import { inProjectSequenceQueue } from './project-sequence-queue';
 import { inWorkItemGraphQueue } from './work-item-graph-queue';
 import { enqueueCalendarSync, enqueueCalendarSyncForItems } from './calendar-sync-enqueue';
@@ -1516,14 +1522,66 @@ export async function bulkDeleteWorkItems(ctx: RequestContext, workItemIds: read
 }
 
 /**
+ * New keys for the restored rows a live row now shares a key with (issue
+ * #110), each placed where it was: between the live rows around its old
+ * `(sortKey, id)` (`planRestoredSortKeys`). The caller holds the project's
+ * sequence row, which every placement takes, and the group's rows. A
+ * `sortKey` write does not bump the version. Returns how many changed.
+ */
+async function rekeyRestoredRows(
+    db: PrismaTx,
+    ctx: RequestContext,
+    projectId: string,
+    rows: readonly RestoredSortKeyRow[],
+    locked: LockedWorkItemIds,
+): Promise<number> {
+    const live = await WorkItemRepository.liveSortKeysAmong(db, ctx, projectId, rows.map((r) => r.sortKey));
+    const colliding = collidingRestoredRows(rows, live);
+    if (colliding.size === 0) return 0;
+    const neighbours = new Map<string, LiveSortKeyNeighbours>();
+    for (const row of rows.filter((r) => colliding.has(r.id))) {
+        const anchor = { sortKey: row.sortKey, id: row.id };
+        // guardrail-allow: n+1 — two reads per colliding row (a key a placement minted again while it was deleted; one in practice).
+        const prev = await WorkItemRepository.prevSortKeyBefore(db, ctx, projectId, anchor);
+        // guardrail-allow: n+1 — as above.
+        let next = await WorkItemRepository.nextSortKeyAfter(db, ctx, projectId, anchor);
+        // Live rows that share a key (written before this fix) leave no room
+        // between them: the row goes after the last of them.
+        for (let step = 0; prev && next && next.sortKey === prev.sortKey && step < 100; step++) {
+            // guardrail-allow: n+1 — steps past live rows sharing one key, at most 100.
+            next = await WorkItemRepository.nextSortKeyAfter(db, ctx, projectId, next);
+        }
+        neighbours.set(row.id, { prev: prev?.sortKey ?? null, next: next?.sortKey ?? null });
+    }
+    const planned = planRestoredSortKeys(rows, colliding, neighbours);
+    for (const [id, sortKey] of planned) {
+        // guardrail-allow: n+1 — one row per colliding restored row, each locked by the caller.
+        await WorkItemRepository.rewriteSortKey(db, ctx, locked, id, sortKey);
+    }
+    return planned.size;
+}
+
+/** The project of a deleted item the caller may restore, read before the restore queues; `null` lets the restore's own transaction answer. */
+async function projectOfDeletedItem(ctx: RequestContext, id: string): Promise<string | null> {
+    return runInTenantContext(ctx, async (db) => (await WorkItemRepository.findDeletedForRestore(db, ctx, await visibleProjects(ctx, db), id))?.projectId ?? null);
+}
+
+/**
  * Restore every row deleted together with this item. Refused while the
  * project is deleted (restore the project), while it is archived, and while
  * a parent of the group is deleted under another deletion (restore the
- * parent first). Numbers never collide: they are never reused.
+ * parent first). Numbers never collide: they are never reused. A restored
+ * row comes back in its place in the order: the rebalance keeps deleted rows
+ * in order with the rest, and a row whose kept key a placement minted again
+ * while it was deleted gets a new one between its old neighbours, under the
+ * project's sequence row, so the restore waits its turn in the project's
+ * queue (decision 174) and takes the sequence row before the item rows
+ * (issue #110).
  */
 export async function restoreWorkItem(ctx: RequestContext, id: string) {
     assertCanDeleteWorkItems(ctx);
-    const out = await runInTenantContext(ctx, async (db) => {
+    const projectId = await projectOfDeletedItem(ctx, id);
+    const restore = () => runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const item = await WorkItemRepository.findDeletedForRestore(db, ctx, v, id);
         if (!item || !item.deletionId) throw notFound('Deleted work item not found');
@@ -1531,8 +1589,10 @@ export async function restoreWorkItem(ctx: RequestContext, id: string) {
             throw new ConflictError('The project is deleted; restore the project first.', { reason: 'PROJECT_DELETED' });
         }
         assertProjectWritable(item.project);
-        // The whole deletion group locked in id order before it is checked
-        // and restored (decision 173), then read again under the lock.
+        // The project's sequence row first (the order across kinds), then the
+        // whole deletion group in id order before it is checked and restored
+        // (decision 173), then read again under the lock.
+        await ProjectRepository.lockSequences(db, ctx, [item.projectId]);
         const locked = await WorkItemRepository.lockForWrite(db, ctx, (await WorkItemRepository.idsOfDeletion(db, ctx, item.deletionId)).map((r) => r.id));
         const group = await WorkItemRepository.idsOfDeletion(db, ctx, item.deletionId);
         const inGroup = new Set(group.map((r) => r.id));
@@ -1541,6 +1601,9 @@ export async function restoreWorkItem(ctx: RequestContext, id: string) {
         if (blocked.length > 0) {
             throw new ConflictError('A parent of this work item is deleted; restore the parent first.', { reason: 'PARENT_DELETED' });
         }
+        // A deletion is one subtree, and a subtree lies in one project.
+        const placed = group.filter((r) => r.projectId === item.projectId);
+        const rekeyed = await rekeyRestoredRows(db, ctx, item.projectId, placed, lockedSubset(locked, placed.map((r) => r.id)));
         const count = await WorkItemRepository.restoreDeletion(db, ctx, item.deletionId, lockedSubset(locked, [...inGroup]));
         await logEvent(db, ctx, {
             action: 'WORK_ITEM_RESTORED',
@@ -1548,10 +1611,11 @@ export async function restoreWorkItem(ctx: RequestContext, id: string) {
             entityId: id,
             details: `Restored work item ${keyOf(item)}`,
             detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'restored' },
-            metadata: { deletionId: item.deletionId, restoredCount: count },
+            metadata: { deletionId: item.deletionId, restoredCount: count, sortKeysReplaced: rekeyed },
         });
         return { restored: true, count };
     });
+    const out = await (projectId ? inProjectSequenceQueue(ctx.tenantId, projectId, restore) : restore());
     await enqueueCalendarSyncForItems(ctx, [id]);
     return out;
 }

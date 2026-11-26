@@ -111,3 +111,76 @@ export function keysBetween(a: string | null, b: string | null, n: number): stri
     const left = Math.floor((n - 1) / 2);
     return [...keysBetween(a, mid, left), mid, ...keysBetween(mid, b, n - 1 - left)];
 }
+
+/** A row coming back from a soft delete: its id and the key it kept. */
+export interface RestoredSortKeyRow {
+    id: string;
+    sortKey: string;
+}
+
+/** The live keys just before and just after a restored row's place, in `(sortKey, id)` order. */
+export interface LiveSortKeyNeighbours {
+    prev: string | null;
+    next: string | null;
+}
+
+function byKeyThenId(a: RestoredSortKeyRow, b: RestoredSortKeyRow): number {
+    if (a.sortKey !== b.sortKey) return a.sortKey < b.sortKey ? -1 : 1;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * The restored rows whose kept key is no longer theirs alone (issue #110): a
+ * live row of the project holds it (a placement made while they were
+ * deleted computes its key among live rows only, so it can mint the very
+ * key a deleted row kept), or an earlier restored row in `(sortKey, id)`
+ * order has the same one.
+ */
+export function collidingRestoredRows(rows: readonly RestoredSortKeyRow[], liveKeys: ReadonlySet<string>): Set<string> {
+    const out = new Set<string>();
+    const seen = new Set<string>();
+    for (const row of [...rows].sort(byKeyThenId)) {
+        if (liveKeys.has(row.sortKey) || seen.has(row.sortKey)) out.add(row.id);
+        seen.add(row.sortKey);
+    }
+    return out;
+}
+
+/**
+ * New keys for the colliding restored rows (issue #110), each in its old
+ * place: between the live rows around its `(sortKey, id)` (`neighbours`, read
+ * by the caller under the project's sequence row) and after every restored
+ * row before it, before every restored row after it that keeps its key. A
+ * row that does not collide keeps its key, so the result names only the
+ * rows that change. Every key in the project is then distinct, and the
+ * order by key is the order by `(old key, id)`. Requires, for each colliding
+ * row, `prev < next` (the caller steps past live rows that share a key).
+ */
+export function planRestoredSortKeys(
+    rows: readonly RestoredSortKeyRow[],
+    colliding: ReadonlySet<string>,
+    neighbours: ReadonlyMap<string, LiveSortKeyNeighbours>,
+): Map<string, string> {
+    const sorted = [...rows].sort(byKeyThenId);
+    const out = new Map<string, string>();
+    let floor: string | null = null;
+    sorted.forEach((row, i) => {
+        if (!colliding.has(row.id)) {
+            floor = row.sortKey;
+            return;
+        }
+        const around = neighbours.get(row.id);
+        if (!around) throw new InvalidSortKeyError(`No live neighbours for the restored row ${row.id}.`);
+        const lower: string | null = floor !== null && (around.prev === null || floor > around.prev) ? floor : around.prev;
+        let upper = around.next;
+        for (const later of sorted.slice(i + 1)) {
+            if (colliding.has(later.id) || (lower !== null && later.sortKey <= lower)) continue;
+            if (upper === null || later.sortKey < upper) upper = later.sortKey;
+            break;
+        }
+        const key = keyBetween(lower, upper);
+        out.set(row.id, key);
+        floor = key;
+    });
+    return out;
+}

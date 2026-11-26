@@ -9,6 +9,9 @@ import fc from 'fast-check';
 import {
     InvalidSortKeyError,
     SORT_KEY_DIGITS,
+    collidingRestoredRows,
+    planRestoredSortKeys,
+    type LiveSortKeyNeighbours,
     SORT_KEY_REBALANCE_LENGTH,
     isValidSortKey,
     keyBetween,
@@ -106,5 +109,73 @@ describe('fractional index — the edges', () => {
     it('compares by code unit, never localeCompare (mixed case)', () => {
         const k = keyBetween('Z', 'a');
         expect('Z' < k && k < 'a').toBe(true);
+    });
+});
+
+/**
+ * Restored rows (issue #110): a row back from a soft delete whose kept key a
+ * live row now holds, or another restored row holds, gets a new key in its
+ * old place. The neighbours are computed from the full live list as the
+ * restore reads them (the live rows just before and after the row's
+ * `(sortKey, id)`, stepping past live rows sharing a key).
+ */
+describe('fractional index — restored rows keep their place', () => {
+    type Row = { id: string; sortKey: string };
+    const byKeyId = (a: Row, b: Row) => cmp(a.sortKey, b.sortKey) || cmp(a.id, b.id);
+
+    function neighboursFrom(live: readonly Row[], rows: readonly Row[], colliding: ReadonlySet<string>) {
+        const sorted = [...live].sort(byKeyId);
+        const out = new Map<string, LiveSortKeyNeighbours>();
+        for (const r of rows.filter((x) => colliding.has(x.id))) {
+            const before = sorted.filter((l) => byKeyId(l, r) < 0);
+            const after = sorted.filter((l) => byKeyId(l, r) > 0);
+            const prev = before[before.length - 1] ?? null;
+            let next = after[0] ?? null;
+            let i = 0;
+            while (prev && next && next.sortKey === prev.sortKey) next = after[++i] ?? null;
+            out.set(r.id, { prev: prev?.sortKey ?? null, next: next?.sortKey ?? null });
+        }
+        return out;
+    }
+
+    // Short keys from a small alphabet, so collisions between live and restored rows are common.
+    const shortKey = fc
+        .array(fc.constantFrom('1', '5', 'A', 'V', 'z'), { minLength: 1, maxLength: 3 })
+        .map((d) => d.join(''));
+
+    it('every key in the project is distinct afterwards, and the order is the order by (old key, id)', () => {
+        fc.assert(
+            fc.property(
+                fc.uniqueArray(shortKey, { minLength: 0, maxLength: 12 }),
+                fc.array(shortKey, { minLength: 1, maxLength: 8 }),
+                (liveKeys, groupKeys) => {
+                    const live = liveKeys.map((k, i) => ({ id: `l${String(i).padStart(2, '0')}`, sortKey: k }));
+                    const rows = groupKeys.map((k, i) => ({ id: `g${String(i).padStart(2, '0')}`, sortKey: k }));
+                    const colliding = collidingRestoredRows(rows, new Set(liveKeys));
+                    const planned = planRestoredSortKeys(rows, colliding, neighboursFrom(live, rows, colliding));
+                    expect([...planned.keys()].sort()).toEqual([...colliding].sort());
+                    const after = [...live, ...rows.map((r) => ({ id: r.id, sortKey: planned.get(r.id) ?? r.sortKey }))];
+                    expect(new Set(after.map((r) => r.sortKey)).size).toBe(after.length);
+                    expect(after.every((r) => isValidSortKey(r.sortKey))).toBe(true);
+                    const expected = [...live, ...rows].sort(byKeyId).map((r) => r.id);
+                    expect([...after].sort((a, b) => cmp(a.sortKey, b.sortKey)).map((r) => r.id)).toEqual(expected);
+                },
+            ),
+            { numRuns: 1500 },
+        );
+    });
+
+    it('a restored row that collides with nothing keeps its key', () => {
+        const rows = [{ id: 'g1', sortKey: 'V' }];
+        expect(collidingRestoredRows(rows, new Set(['A', 'z'])).size).toBe(0);
+        expect(planRestoredSortKeys(rows, new Set(), new Map()).size).toBe(0);
+    });
+
+    it('between two live rows that share its key, it goes after both', () => {
+        const live = [{ id: 'a', sortKey: 'V' }, { id: 'c', sortKey: 'V' }, { id: 'd', sortKey: 'z' }];
+        const rows = [{ id: 'b', sortKey: 'V' }];
+        const colliding = collidingRestoredRows(rows, new Set(['V', 'z']));
+        const key = planRestoredSortKeys(rows, colliding, neighboursFrom(live, rows, colliding)).get('b')!;
+        expect('V' < key && key < 'z').toBe(true);
     });
 });

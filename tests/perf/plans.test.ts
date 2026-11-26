@@ -171,6 +171,8 @@ const RUNNERS: Record<string, Runner> = {
         const last = await WorkItemRepository.lastSortKey(db, ctx, w.projectId);
         const [row] = await WorkItemRepository.list(db, ctx, v, { projectId: w.projectId }, { ...page('manual'), limit: 1 });
         await WorkItemRepository.nextSortKeyAfter(db, ctx, w.projectId, { sortKey: row!.sortKey, id: row!.id });
+        // A restore's check for a key a live row holds (issue #110).
+        await WorkItemRepository.liveSortKeysAmong(db, ctx, w.projectId, [row!.sortKey, last ?? row!.sortKey]);
         return WorkItemRepository.prevSortKeyBefore(db, ctx, w.projectId, { sortKey: last ?? row!.sortKey, id: row!.id });
     },
     "removal: a member's items": (w, db, ctx) => WorkItemRepository.lockItemsOfPerson(db, ctx, w.heavyUserId, []),
@@ -193,7 +195,7 @@ const RUNNERS: Record<string, Runner> = {
     },
     'job: the sort-key rebalance': async (w, db, ctx) => {
         await WorkItemRepository.projectsNeedingRebalance(db, ctx, SORT_KEY_REBALANCE_LENGTH);
-        return WorkItemRepository.orderedPage(db, ctx, w.projectId, undefined, 500);
+        return WorkItemRepository.orderedPageIncludingDeleted(db, ctx, w.projectId, undefined, 500);
     },
     'job: the search-index rebuild': async (w, db, ctx) => {
         // One page of each kind, through the keyset (after 'c', which sorts before every cuid): a page
