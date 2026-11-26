@@ -26,6 +26,7 @@ interface Update {
     'package-ecosystem': string;
     directory: string;
     'commit-message'?: { prefix?: string; 'prefix-development'?: string; include?: string };
+    'versioning-strategy'?: string;
     ignore?: Ignore[];
 }
 
@@ -41,6 +42,12 @@ const heldFrom = (u: Update, name: string): string[] | undefined =>
     u.ignore?.find((i) => i['dependency-name'] === name)?.versions;
 
 describe('Dependabot configuration', () => {
+    it('npm never rewrites a range that already accepts the new version (the mirrored packages/ui/package.json, #98)', () => {
+        // `increase` raised every range's floor, so a minor bump rewrote the
+        // byte-for-byte mirror of inflect's @inflect/ui and failed `Shared UI`.
+        expect(update('npm')['versioning-strategy']).toBe('increase-if-necessary');
+    });
+
     it('every ecosystem titles its pull requests as Conventional Commits', () => {
         expect(config.updates.length).toBeGreaterThan(0);
         for (const u of config.updates) {
