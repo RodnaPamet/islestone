@@ -61,6 +61,7 @@ import { hasPermission } from '@/lib/security/permission-key';
 import { recordCalendarSyncOutcome, type CalendarSyncOutcome } from '@/lib/observability/business-metrics';
 import { logger } from '@/lib/observability/logger';
 import { env } from '@/env';
+import { todayClock } from '@/lib/clock';
 import { todayInTz } from '../notifications/work-item-due';
 
 const DAY_MS = 86_400_000;
@@ -71,7 +72,7 @@ const PROJECTS_TAKE = 1_000;
 
 /** The push window (decision 226): from 30 days ago to a year ahead, today in `NOTIFICATIONS_TZ`, date-only. */
 export function syncWindow(now: Date = new Date()): { from: Date; to: Date } {
-    const today = todayInTz(now, env.NOTIFICATIONS_TZ);
+    const today = todayInTz(todayClock(env.NOTIFICATIONS_TZ, now), env.NOTIFICATIONS_TZ);
     return { from: new Date(today.getTime() - CALENDAR_SYNC_PAST_DAYS * DAY_MS), to: new Date(today.getTime() + CALENDAR_SYNC_FUTURE_DAYS * DAY_MS) };
 }
 
