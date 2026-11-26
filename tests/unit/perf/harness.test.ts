@@ -20,7 +20,8 @@ const runSource = fs.readFileSync(path.join(ROOT, 'scripts/perf/run.mjs'), 'utf8
 
 /**
  * Decision 167's table (docs/porting/maps/H2.md part 1.4), and for the
- * timeline H3's (docs/porting/maps/3.1.md, "Performance"): the ceiling of
+ * timeline H3's (docs/porting/maps/3.1.md, "Performance"), and for the
+ * roadmap 3.2c's (docs/porting/maps/3.2.md, "The read"): the ceiling of
  * every budget. A budget may go down; it never goes above these.
  */
 const DECIDED: Record<string, Record<'10k' | '100k', { p50?: number; p95: number }>> = {
@@ -35,6 +36,7 @@ const DECIDED: Record<string, Record<'10k' | '100k', { p50?: number; p95: number
     'detail-sheet': { '10k': { p50: 150, p95: 350 }, '100k': { p50: 150, p95: 350 } },
     'my-work': { '10k': { p50: 300, p95: 600 }, '100k': { p50: 400, p95: 800 } },
     timeline: { '10k': { p50: 400, p95: 900 }, '100k': { p50: 400, p95: 900 } },
+    roadmap: { '10k': { p50: 300, p95: 700 }, '100k': { p50: 300, p95: 700 } },
     create: { '10k': { p95: 400 }, '100k': { p95: 400 } },
     edit: { '10k': { p95: 400 }, '100k': { p95: 400 } },
     move: { '10k': { p95: 400 }, '100k': { p95: 400 } },

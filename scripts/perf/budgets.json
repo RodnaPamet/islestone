@@ -61,6 +61,12 @@
       "enforced": false,
       "reportedBecause": "H3's budget (docs/porting/maps/3.1.md, 'Performance'; issue #73): the 5,000-item project it names is not in the seed yet"
     },
+    "roadmap": {
+      "label": "Roadmap read, the whole workspace (GET /roadmap)",
+      "budgets": { "10k": { "p50": 300, "p95": 700 }, "100k": { "p50": 300, "p95": 700 } },
+      "enforced": false,
+      "reportedBecause": "3.2c's budget (docs/porting/maps/3.2.md, 'The read') is for a reference seed of 500 projects and 100,000 items; the seed holds 10 or 20 projects, so the read it measures is far smaller than the one the budget names"
+    },
     "create": {
       "write": true,
       "label": "Write: create with a description",
