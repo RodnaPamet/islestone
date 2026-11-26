@@ -10,3 +10,6 @@ src/types/tanstack-table.d.ts -text
 # The Bulgarian dictionary (sub-phase 2.7f): pinned by sha256 (ADR 0007 E10),
 # so a checkout must never rewrite its line endings.
 deploy/postgres/tsearch_data/** -text
+# The intake email seed corpus (Hardening H2f): raw messages with CRLF line
+# endings, NUL bytes and Latin-1; a checkout must hand them over byte for byte.
+tests/fixtures/intake-email-corpus/** -text

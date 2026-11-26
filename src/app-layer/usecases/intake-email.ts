@@ -55,10 +55,10 @@ import { contentFromFields, contentFromRaw, type InboundContent } from '@/lib/in
 import { retrieveReceivedEmail, ResendTerminalError } from '@/lib/intake/email/resend-api';
 import { downloadRawEmail } from '@/lib/intake/email/resend-download';
 import { intakeEmailDomain, isInboundEmailOpen } from '@/lib/intake/email/switch';
+import { cleanRequesterName } from '@/lib/intake/requester-name';
 import { intakeReference } from '@/lib/intake/reference';
 import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
-import { sanitizePlainText } from '@/lib/security/sanitize';
 
 /** Per address: emails an hour and a day; per sender on an address: an hour (docs/porting/maps/2.6.md). */
 export const INBOUND_THROTTLE = { addressPerHour: 30, addressPerDay: 300, senderPerHour: 10 } as const;
@@ -335,7 +335,7 @@ export async function processInboundEmail(input: { tenantId: string; inboundId: 
         const authenticated = c.senderCheck === 'VERIFIED' && c.fromAddress !== null;
         const member = authenticated && fromHash ? await IntakeEmailRepository.activeMemberByEmailHash(db, ctx, fromHash) : null;
         const replyToken = mintReplyToken();
-        const name = c.fromName ? sanitizePlainText(c.fromName).replace(/\s+/g, ' ').trim().slice(0, 100) || null : null;
+        const name = cleanRequesterName(c.fromName);
         const created = await IntakeRepository.createRequest(db, ctx, {
             projectId: row.projectId,
             channel: 'EMAIL',

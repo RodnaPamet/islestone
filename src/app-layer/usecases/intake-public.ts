@@ -59,12 +59,12 @@ import { cleanText, cleanTitle, enqueueRequesterNotices, notifyIntakeReceived, s
 import { runInTenantContext } from '@/lib/db-context';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { AppError, ConflictError, badRequest, notFound } from '@/lib/errors/types';
-import { compilePublicIntakeRequestSchema, INTAKE_LIMITS, readDefinition, type IntakeAnswer, type IntakeFormDefinition } from '@/lib/intake/form-definition';
+import { compilePublicIntakeRequestSchema, readDefinition, type IntakeAnswer, type IntakeFormDefinition } from '@/lib/intake/form-definition';
+import { cleanRequesterName } from '@/lib/intake/requester-name';
 import { isPublicIntakeOpen } from '@/lib/intake/public-switch';
 import { issueFormToken, verifyFormToken, verifyProofOfWork } from '@/lib/intake/public/form-token';
 import { intakeReference } from '@/lib/intake/reference';
 import { hashForLookup } from '@/lib/security/encryption';
-import { sanitizePlainText } from '@/lib/security/sanitize';
 
 /** A form's public id: 16 random bytes, base64url (`createIntakeForm`). */
 const PUBLIC_ID = /^[A-Za-z0-9_-]{22}$/;
@@ -247,7 +247,7 @@ export async function submitPublicIntakeRequest(publicId: string, raw: unknown, 
         requesterEmail?: string;
         wantsUpdates?: boolean;
     };
-    const name = input.requesterName ? sanitizePlainText(input.requesterName).replace(/\s+/g, ' ').trim().slice(0, INTAKE_LIMITS.requesterName) || null : null;
+    const name = cleanRequesterName(input.requesterName);
     const email = input.requesterEmail ? input.requesterEmail.trim() : null;
     const updatesRequested = input.wantsUpdates === true && email !== null;
 

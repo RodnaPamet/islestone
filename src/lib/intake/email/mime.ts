@@ -7,7 +7,9 @@
  *
  * Bounded on purpose, because the message is untrusted input: at most
  * `MAX_DEPTH` levels of nesting and `MAX_PARTS` parts; anything past those is
- * counted as dropped rather than parsed. Written fresh for Islestone rather
+ * counted as dropped rather than parsed; and at most `MAX_TEXT_PART_BYTES` of
+ * a text part decoded. Every step is linear in the message's length
+ * (Hardening H2f fuzzes it: tests/unit/intake/fuzz/email-parsers.test.ts). Written fresh for Islestone rather
  * than taking a mail library: the surface is small, and every byte of it is
  * tested here (tests/unit/intake/email-parsing.test.ts).
  */
@@ -15,6 +17,11 @@ import { decodeCharset, decodeEncodedWords } from './rfc2047';
 
 export const MAX_DEPTH = 8;
 export const MAX_PARTS = 200;
+/**
+ * How much of a text part's encoded body is decoded (512 KB): far more than
+ * the 10,000 characters a request keeps, even as quoted-printable or HTML.
+ */
+export const MAX_TEXT_PART_BYTES = 512 * 1024;
 
 export interface ParsedHeaders {
     /** Every value of a header, in order (names lower-cased). */
@@ -147,6 +154,13 @@ export function parseEmail(raw: Uint8Array | string): ParsedEmail {
         const disposition = parseParams(h.get('content-disposition') ?? 'inline');
         if (ct.type.startsWith('multipart/') && ct.params.boundary) {
             for (const part of splitMultipart(b, ct.params.boundary)) {
+                // Past the cap a part is only counted: its headers are not read
+                // (what `walk` would do with it, without the work; H2f).
+                if (parts >= MAX_PARTS) {
+                    parts++;
+                    out.attachments++;
+                    continue;
+                }
                 const split = splitHead(part.startsWith('\r\n') || part.startsWith('\n') ? `\r\n${part}` : part);
                 walk(headerMap(Buffer.from(split.head, 'latin1').toString('utf8')), split.body, depth + 1);
             }
@@ -155,7 +169,10 @@ export function parseEmail(raw: Uint8Array | string): ParsedEmail {
         const named = Boolean(disposition.params.filename || ct.params.name);
         const isAttachment = disposition.type === 'attachment' || named;
         if (!isAttachment && (ct.type === 'text/plain' || ct.type === 'text/html')) {
-            const text = decodeCharset(decodeTransfer(b, h.get('content-transfer-encoding')), ct.params.charset);
+            // Only the first `MAX_TEXT_PART_BYTES` of a text part are decoded:
+            // the request keeps 10,000 characters of it, so decoding the rest
+            // of a 10 MB part is work for nothing (H2f).
+            const text = decodeCharset(decodeTransfer(b.slice(0, MAX_TEXT_PART_BYTES), h.get('content-transfer-encoding')), ct.params.charset);
             if (ct.type === 'text/plain' && out.text === null) out.text = text;
             else if (ct.type === 'text/html' && out.html === null) out.html = text;
             return;

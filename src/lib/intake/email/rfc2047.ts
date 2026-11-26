@@ -6,13 +6,31 @@
  * for Islestone.
  */
 
-export function decodeCharset(bytes: Uint8Array, charset: string | undefined): string {
-    const label = (charset || 'utf-8').trim().toLowerCase();
+const UTF8 = new TextDecoder('utf-8');
+/**
+ * Decoders by label, an unknown label mapped to UTF-8. Building a decoder for
+ * an unknown label throws, and a header of thousands of encoded words naming
+ * one threw thousands of times (Hardening H2f's fuzzing). Bounded: labels are
+ * the sender's to choose.
+ */
+const decoders = new Map<string, TextDecoder>();
+const MAX_CACHED_LABELS = 256;
+
+function decoderFor(label: string): TextDecoder {
+    const cached = decoders.get(label);
+    if (cached) return cached;
+    let decoder = UTF8;
     try {
-        return new TextDecoder(label === 'us-ascii' ? 'utf-8' : label).decode(bytes);
+        decoder = new TextDecoder(label === 'us-ascii' ? 'utf-8' : label);
     } catch {
-        return new TextDecoder('utf-8').decode(bytes);
+        // an unknown charset decodes as UTF-8 with replacement characters
     }
+    if (decoders.size < MAX_CACHED_LABELS) decoders.set(label, decoder);
+    return decoder;
+}
+
+export function decodeCharset(bytes: Uint8Array, charset: string | undefined): string {
+    return decoderFor((charset || 'utf-8').trim().toLowerCase()).decode(bytes);
 }
 
 function decodeQ(text: string): Uint8Array {
