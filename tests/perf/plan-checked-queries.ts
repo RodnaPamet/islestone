@@ -16,8 +16,13 @@
  * plus read) all its statements may touch on the 10k seed, so a plan that
  * uses the index but walks most of it is caught. Each budget is about twice
  * what H2a measured, closer where the count is fixed by the data (the locks
- * take every row they name) or held by a known finding; a budget only goes
- * down (docs/performance.md, "Plan checks"). At another shape the buffers
+ * take every row they name) or held by a known finding; the search
+ * budgets are about twice what the fix of finding F1 measured (decision
+ * 245, issue #78); a budget only goes down
+ * (docs/performance.md, "Plan checks"). A search function's own statement is
+ * captured too (`auto_explain.log_nested_statements`), so its index and the
+ * operator in its condition are checked, and its buffers are counted once,
+ * in the function scan that ran it. At another shape the buffers
  * are reported, not judged: the 100k budgets arrive with the nightly (H2b).
  */
 
@@ -39,9 +44,6 @@ export interface PlanCheckedQuery {
     knownFinding?: { id: string; fails: 'conditions' | 'seqScans' };
 }
 
-/** Finding F1 (docs/performance.md): full-text and trigram conditions are filters under row-level security. */
-const F1 = { id: 'F1', fails: 'conditions' } as const;
-
 export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     // ── The list, in each sort the API offers (one project) ───────────────
     { name: 'list: project, manual order', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 700 },
@@ -57,7 +59,7 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'list: project, label filter', methods: ['WorkItemRepository.list'], indexes: ['WorkItemLabel_tenantId_labelId_workItemId_idx'], maxBuffers: 1100 },
     { name: 'list: project, custom-field filter', methods: ['WorkItemRepository.list'], indexes: ['CustomFieldValue_tenantId_fieldId_optionId_idx'], maxBuffers: 2100 },
     { name: 'list: project, sorted by a custom field', methods: ['WorkItemRepository.listByCustomField'], indexes: ['CustomFieldValue_tenantId_fieldId_optionId_idx'], maxBuffers: 5500 },
-    { name: 'list: q (titles, stemmed titles, contents)', methods: ['WorkItemRepository.titleFullTextIds', 'SearchVectorRepository.matchItems', 'WorkItemRepository.list'], indexes: ['WorkItem_search_title_fts'], maxBuffers: 20000, conditions: [{ index: 'WorkItem_search_title_fts', operator: '@@' }, { index: 'SearchVector_search_lexemes', operator: '@@' }, { index: 'WorkItem_search_title_trgm', operator: '~~*' }], knownFinding: F1 },
+    { name: 'list: q (titles, stemmed titles, contents)', methods: ['WorkItemRepository.titleFullTextIds', 'SearchVectorRepository.matchItems', 'WorkItemRepository.titleSubstringIds', 'WorkItemRepository.list'], indexes: ['WorkItem_search_title_fts', 'WorkItem_search_title_trgm', 'SearchVector_search_lexemes'], maxBuffers: 7000, conditions: [{ index: 'WorkItem_search_title_fts', operator: '@@' }, { index: 'SearchVector_search_lexemes', operator: '@@' }, { index: 'WorkItem_search_title_trgm', operator: '~~*' }] },
     { name: 'list: the Deleted view', methods: ['WorkItemRepository.listDeleted'], indexes: ['WorkItem_tenantId_deletionId_idx|WorkItem_deletedAt_idx'], maxBuffers: 1800 },
     // ── The board: one column of the large project ────────────────────────
     { name: 'board: one column (by state)', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_stateId_sortKey_idx'], maxBuffers: 800 },
@@ -85,8 +87,8 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'counts: milestones', methods: ['WorkItemRepository.countsByMilestone'], indexes: ['WorkItem_tenantId_milestoneId_stateCategory_idx'], maxBuffers: 250 },
     { name: 'counts: items in a state', methods: ['TeamRepository.countItemsInState', 'ReviewRepository.itemsInStateRequiringReview', 'WorkItemRepository.lockInState'], indexes: ['WorkItem_tenantId_stateId_idx'], maxBuffers: 6500 },
     // ── Search: the palette's raw reads ────────────────────────────────────
-    { name: 'search: titles (trigram and full text)', methods: ['WorkItemRepository.searchTitles'], indexes: ['WorkItem_search_title_fts|WorkItem_search_title_trgm'], maxBuffers: 2500, conditions: [{ index: 'WorkItem_search_title_trgm', operator: '~~*' }, { index: 'WorkItem_search_title_fts', operator: '@@' }], knownFinding: F1 },
-    { name: 'search: contents and snippets', methods: ['SearchVectorRepository.matchItems', 'WorkItemRepository.findSearchRows', 'WorkItemRepository.searchSnippetSources'], indexes: [], noIndexBecause: 'finding F1: under row-level security the lexemes index is read on tenantId alone or not at all (at 100k the planner walks every item instead); its condition is the failing check', maxBuffers: 18000, conditions: [{ index: 'SearchVector_search_lexemes', operator: '@@' }], knownFinding: F1 },
+    { name: 'search: titles (trigram and full text)', methods: ['WorkItemRepository.searchTitleIds'], indexes: ['WorkItem_search_title_fts', 'WorkItem_search_title_trgm'], maxBuffers: 1800, conditions: [{ index: 'WorkItem_search_title_trgm', operator: '~~*' }, { index: 'WorkItem_search_title_fts', operator: '@@' }] },
+    { name: 'search: contents and snippets', methods: ['SearchVectorRepository.matchItems', 'WorkItemRepository.findSearchRows', 'WorkItemRepository.searchSnippetSources'], indexes: ['SearchVector_search_lexemes', 'WorkItem_search_live_ids', 'Comment_search_live_ids'], maxBuffers: 5000, conditions: [{ index: 'SearchVector_search_lexemes', operator: '@@' }] },
     // ── The timeline (3.1b) and the calendars it reads (3.1a) ──────────────
     { name: 'timeline: scope, count and relations', methods: ['WorkItemRepository.listForTimeline', 'WorkItemRepository.countForTimeline', 'WorkItemRepository.timelineContextRows'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 2000 },
     {

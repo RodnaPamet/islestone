@@ -30,6 +30,12 @@ case "$action" in
     restore)
         test -s "$file" || { echo "cache.sh: no dump at $file" >&2; exit 1; }
         docker cp "$file" "$container:$inside"
+        # A dump holds no roles. app_user comes from prisma/init-roles.sh; the
+        # owner of the search functions (owner decision 245, migration
+        # 20261214120000_search_definer_functions) is made here as that
+        # migration makes it, so the dump's ownership and grants restore.
+        docker exec "$container" psql -v ON_ERROR_STOP=1 -q -U "$user" -d "$db" -c \
+            "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'app_search_definer') THEN CREATE ROLE app_search_definer NOLOGIN; END IF; END \$\$; ALTER ROLE app_search_definer NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION BYPASSRLS CONNECTION LIMIT 0;"
         docker exec "$container" pg_restore --jobs=4 --exit-on-error -U "$user" -d "$db" "$inside"
         docker exec "$container" rm -f "$inside"
         # Planner statistics are not in a dump.

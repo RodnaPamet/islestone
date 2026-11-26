@@ -9,7 +9,7 @@ import { Prisma } from '@prisma/client';
 
 import type { PrismaTx } from '@/lib/db-context';
 import { SEARCH_ROW_CAP, containsPattern, prefixPattern } from '@/lib/search/query';
-import { projectRowVisibilityWhere, projectVisibilitySql, type ProjectVisibility } from '../policies/project-visibility';
+import { projectRowVisibilityWhere, projectVisibilityArgs, type ProjectVisibility } from '../policies/project-visibility';
 import type { RequestContext } from '../types';
 
 export const PROJECT_LIST_TAKE = 200;
@@ -27,7 +27,7 @@ export const projectSelect = {
     updatedAt: true,
 } satisfies Prisma.ProjectSelect;
 
-/** One search candidate (`ProjectRepository.searchNames`). */
+/** One search row (`ProjectRepository.findSearchRows`, after `searchNameIds`). */
 export interface ProjectSearchRow {
     id: string;
     name: string;
@@ -38,35 +38,42 @@ export class ProjectRepository {
     /**
      * Live, visible, unarchived projects whose name holds the query
      * (substring, `Project_search_name_trgm`) or all of its words (full text
-     * through `islestone_bg_en`, `Project_search_name_fts`), or whose key prefix is the query
-     * (the unique `(tenantId, keyPrefix)`). Ordered so the best candidates
-     * make the cut; bounded by `limit` (at most `SEARCH_ROW_CAP`). Raw SQL
-     * because Prisma cannot order by a rank (sub-phase 2.7b, docs/search.md);
-     * the query is a bind parameter.
+     * through `islestone_bg_en`, `Project_search_name_fts`), or whose key
+     * prefix is the query, as ids in candidate order (prefix, exact name,
+     * name prefix, rank, similarity, id); bounded by `limit` (at most
+     * `SEARCH_ROW_CAP`, which the function also caps). The read is the
+     * SECURITY DEFINER function `search_project_names` (owner decision 245,
+     * docs/search.md): it reads the workspace from `app.tenant_id` and
+     * filters it, `deletedAt`, `archivedAt` and visibility itself. The query
+     * and the patterns are bind parameters.
      */
-    static async searchNames(
+    static async searchNameIds(
         db: PrismaTx,
-        ctx: RequestContext,
+        _ctx: RequestContext,
         v: ProjectVisibility,
         query: string,
         opts: { limit: number },
-    ): Promise<ProjectSearchRow[]> {
+    ): Promise<Array<{ id: string; ordinal: number }>> {
         const limit = Math.min(Math.max(1, Math.floor(opts.limit)), SEARCH_ROW_CAP);
-        return db.$queryRaw<ProjectSearchRow[]>(Prisma.sql`
-            SELECT p."id", p."name", p."keyPrefix"
-              FROM "Project" p
-             WHERE p."tenantId" = ${ctx.tenantId}
-               AND ${projectVisibilitySql(v, { projectAlias: 'p', projectIdColumn: 'p."id"' })}
-               AND (p."name" ILIKE ${containsPattern(query)}
-                    OR to_tsvector('islestone_bg_en', p."name") @@ plainto_tsquery('islestone_bg_en', ${query})
-                    OR p."keyPrefix" = upper(${query}))
-             ORDER BY (p."keyPrefix" = upper(${query})) DESC,
-                      (lower(p."name") = lower(${query})) DESC,
-                      (p."name" ILIKE ${prefixPattern(query)}) DESC,
-                      ts_rank(to_tsvector('islestone_bg_en', p."name"), plainto_tsquery('islestone_bg_en', ${query})) DESC,
-                      similarity(p."name", ${query}) DESC,
-                      p."id" ASC
-             LIMIT ${limit}`);
+        const rows = await db.$queryRaw<Array<{ id: string; ordinal: number }>>(Prisma.sql`
+            SELECT t."id", t."ordinal"
+              FROM search_project_names(${query}::text, ${containsPattern(query)}::text, ${prefixPattern(query)}::text,
+                                        ${projectVisibilityArgs(v)}, ${limit}::integer) t
+             ORDER BY t."ordinal"`);
+        return rows.map((r) => ({ id: r.id, ordinal: Number(r.ordinal) }));
+    }
+
+    /**
+     * The search rows of projects found by `searchNameIds`: live, visible,
+     * unarchived, by id, under row-level security; at most `SEARCH_ROW_CAP`.
+     */
+    static async findSearchRows(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, ids: readonly string[]): Promise<ProjectSearchRow[]> {
+        if (ids.length === 0) return [];
+        return db.project.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: [...ids] }, AND: [projectRowVisibilityWhere(v)] },
+            take: SEARCH_ROW_CAP,
+            select: { id: true, name: true, keyPrefix: true },
+        });
     }
 
     static async list(

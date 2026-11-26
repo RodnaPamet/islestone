@@ -3,8 +3,12 @@
  * against a real Postgres:
  *
  *   - migration `20261203120000_search_titles`: the two extensions and the
- *     four tenant-leading GIN indexes, and the planner using them for the
- *     search reads and for the list's `q` filter as Prisma renders it;
+ *     four tenant-leading GIN indexes, and the planner searching them with
+ *     their operators AS `app_user`, under row-level security, inside the
+ *     search functions (owner decision 245; before them every search read the
+ *     workspace's whole index entry, finding F1, which a check as the
+ *     superuser could not see); the list's `q` with a broad query, which
+ *     filters by the pattern itself;
  *   - `searchWorkspace`: substring and any-order word matches, a typed key
  *     (current prefix and a move's alias) ranked first, wildcards matched as
  *     text, deleted items and archived or deleted projects never offered,
@@ -19,8 +23,7 @@
  * covers the configuration and the stored vectors).
  */
 import { NextRequest } from 'next/server';
-import { PrismaClient, type Prisma } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
+import type { PrismaClient } from '@prisma/client';
 
 import type { RequestContext } from '@/app-layer/types';
 
@@ -38,7 +41,9 @@ import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { MAX_PER_TYPE_LIMIT } from '@/lib/search/types';
 
-import { getTestDatabaseUrl, prismaTestClient, resetDatabase } from '../helpers/db';
+import { prismaTestClient, resetDatabase } from '../helpers/db';
+import { nestedSearchPlans } from '../helpers/search-plans';
+import { conditionMisses } from '../perf/plan-capture';
 import { makeRequestContext } from '../helpers/make-context';
 import { seedWorkItem, seedWorkWorld, type WorkWorld } from '../helpers/work-fixture';
 
@@ -212,22 +217,22 @@ describeFn('workspace search (2.7b)', () => {
     it('row-level security alone hides another workspace, whatever the query asks', async () => {
         // The read runs in B's context but names A's workspace: RLS returns nothing.
         const ctxB = makeRequestContext('OWNER', { tenantId: tenantB, tenantSlug: TAG_B, userId: ownerB });
+        // Since decision 245 the search function reads the workspace from the
+        // transaction's `app.tenant_id`: A's context finds B's rows, never A's.
         const rows = await runInTenantContext(ctxB, (db) =>
-            WorkItemRepository.searchTitles(db, ctxA(), resolveProjectVisibility(ctxA()), 'login', { limit: 10 }),
+            WorkItemRepository.searchTitleIds(db, ctxA(), resolveProjectVisibility(ctxA()), 'login', { limit: 10 }),
         );
-        expect(rows).toEqual([]);
-        const own = await runInTenantContext(ctxB, (db) => WorkItemRepository.searchTitles(db, ctxB, resolveProjectVisibility(ctxB), 'login', { limit: 10 }));
+        expect(rows.map((r) => r.id)).toEqual([items.other!.id]);
+        const byId = await runInTenantContext(ctxB, (db) => WorkItemRepository.findSearchRows(db, ctxA(), resolveProjectVisibility(ctxA()), [items.fix!.id]));
+        expect(byId).toEqual([]);
+        const own = await runInTenantContext(ctxB, (db) => WorkItemRepository.searchTitleIds(db, ctxB, resolveProjectVisibility(ctxB), 'login', { limit: 10 }));
         expect(own.map((r) => r.id)).toEqual([items.other!.id]);
     });
 
     // ─── The planner ────────────────────────────────────────────────
 
-    describe('the indexes serve the reads', () => {
-        let logged: PrismaClient | null = null;
-        const queries: Array<{ query: string; params: string }> = [];
-
+    describe('the indexes serve the reads, as app_user (decision 245)', () => {
         beforeAll(async () => {
-            // Enough live rows in A that a full scan is not the cheap plan.
             // Enough live rows in each workspace (20,000) that the planner
             // weighs the indexes as it would in a busy workspace; with a few
             // thousand it reads one project's btree and filters instead.
@@ -250,40 +255,32 @@ describeFn('workspace search (2.7b)', () => {
             }
             await prisma.$executeRawUnsafe('ANALYZE "WorkItem"');
             await prisma.$executeRawUnsafe('ANALYZE "Project"');
-            const base = new PrismaClient({ adapter: new PrismaPg({ connectionString: getTestDatabaseUrl() }), log: [{ emit: 'event', level: 'query' }] });
-            (base as unknown as { $on: (e: 'query', cb: (ev: { query: string; params: string }) => void) => void }).$on('query', (ev) => queries.push(ev));
-            logged = base;
         });
 
-        afterAll(async () => {
-            await logged?.$disconnect();
+        const nestedPlans = (sql: string, params: unknown[]) => nestedSearchPlans(tenantA, sql, params);
+
+        it('the title search searches the trigram and full-text indexes with their operators', async () => {
+            const plans = await nestedPlans(
+                `SELECT * FROM search_work_item_titles($1, $2, $3, NULL, true, '{}', 15)`,
+                ['redirect login', '%redirect login%', 'redirect login%'],
+            );
+            expect(plans).toHaveLength(1);
+            expect(conditionMisses(plans, [{ index: 'WorkItem_search_title_trgm', operator: '~~*' }, { index: 'WorkItem_search_title_fts', operator: '@@' }])).toEqual([]);
         });
 
-        async function planOf(sql: string, params: unknown[]): Promise<string> {
-            const rows = await prisma.$transaction(async (tx) => {
-                await tx.$executeRawUnsafe('SET LOCAL enable_seqscan = off');
-                return tx.$queryRawUnsafe<Array<{ 'QUERY PLAN': unknown }>>(`EXPLAIN (FORMAT JSON) ${sql}`, ...params);
-            });
-            return JSON.stringify(rows[0]!['QUERY PLAN']);
-        }
-
-        it('the title search uses the trigram and full-text indexes', async () => {
-            let captured: Prisma.Sql | null = null;
-            const recorder = { $queryRaw: async (s: Prisma.Sql) => ((captured = s), []) } as never;
-            await WorkItemRepository.searchTitles(recorder, ctxA(), { kind: 'ALL' }, 'redirect login', { limit: 15 });
-            const plan = await planOf(captured!.text, captured!.values);
-            expect(plan).toContain('WorkItem_search_title_trgm');
-            expect(plan).toContain('WorkItem_search_title_fts');
+        it("the list's q searches the trigram index (substring) and the stemmed title index (words) with their operators", async () => {
+            const substring = await nestedPlans(`SELECT * FROM search_work_item_title_substring($1, true, '{}', 1000)`, ['%redirect%']);
+            expect(conditionMisses(substring, [{ index: 'WorkItem_search_title_trgm', operator: '~~*' }])).toEqual([]);
+            const words = await nestedPlans(`SELECT * FROM search_work_item_title_words($1, true, '{}', 1000)`, ['redirect']);
+            expect(conditionMisses(words, [{ index: 'WorkItem_search_title_fts', operator: '@@' }])).toEqual([]);
         });
 
-        it('the list filter q, as Prisma renders it, uses the trigram index', async () => {
-            const where = WorkItemRepository._buildWhere(ctxA(), { kind: 'ALL' }, { q: 'redirect' });
-            queries.length = 0;
-            await logged!.workItem.findMany({ where, select: { id: true } });
-            const q = queries.find((e) => /ILIKE/i.test(e.query));
-            expect(q).toBeDefined();
-            const plan = await planOf(q!.query, JSON.parse(q!.params) as unknown[]);
-            expect(plan).toContain('WorkItem_search_title_trgm');
+        it("a broad q (the cap of title matches reached) filters the list by the pattern itself, and still finds only matches", async () => {
+            const list = await listWorkItems(ctxA(), { q: 'widget', limit: 25 });
+            expect(list.items).toHaveLength(25);
+            expect(list.items.every((i) => i.title.includes('widget'))).toBe(true);
+            const narrow = await listWorkItems(ctxA(), { q: 'widget 19999' });
+            expect(narrow.items.map((i) => i.title)).toEqual([expect.stringMatching(/ widget 19999$/)]);
         });
     });
 

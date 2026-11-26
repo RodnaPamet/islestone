@@ -71,23 +71,16 @@ export function projectVisibilityWhere(v: ProjectVisibility, opts: VisibilityOpt
 }
 
 /**
- * The SQL form of {@link projectVisibilityWhere}, for the one raw read that
- * needs it: search (sub-phase 2.7b), whose ranking Prisma cannot express.
- * The caller names the project's alias and the column holding the project
- * id (`p`, `w."projectId"`); the fragment is ANDed into its `WHERE`: the project is live and unarchived (search never offers an archived
- * project's items), and for GRANTED visibility its id is one of the grant.
- * An empty grant matches nothing (`= ANY('{}')` is false).
+ * The visibility input of the search functions (owner decision 245; migration
+ * `20261214120000_search_definer_functions`, docs/search.md): whether every
+ * live project is visible, or the granted ids. Each function applies it
+ * itself, beside the project's own `deletedAt IS NULL AND archivedAt IS NULL`
+ * (search never offers an archived project's items), so the repositories bind
+ * these two values and nothing else. An empty grant matches nothing.
  */
-export function projectVisibilitySql(v: ProjectVisibility, opts: { projectAlias: string; projectIdColumn: string }): Prisma.Sql {
-    // Both are identifiers the caller writes in code, never input; refuse
-    // anything that is not one, so the fragment cannot carry SQL.
-    if (!/^[a-z_]+$/.test(opts.projectAlias) || !/^[a-z_]+\."[A-Za-z]+"$/.test(opts.projectIdColumn)) {
-        throw new Error('projectVisibilitySql: an alias and a column reference only');
-    }
-    const p = Prisma.raw(opts.projectAlias);
-    const live = Prisma.sql`${p}."deletedAt" IS NULL AND ${p}."archivedAt" IS NULL`;
-    if (v.kind === 'ALL') return live;
-    return Prisma.sql`${live} AND ${Prisma.raw(opts.projectIdColumn)} = ANY(${[...v.projectIds]}::text[])`;
+export function projectVisibilityArgs(v: ProjectVisibility): Prisma.Sql {
+    if (v.kind === 'ALL') return Prisma.sql`${true}::boolean, ${[] as string[]}::text[]`;
+    return Prisma.sql`${false}::boolean, ${[...v.projectIds]}::text[]`;
 }
 
 /**

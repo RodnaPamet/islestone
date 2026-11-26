@@ -7,7 +7,8 @@
  * registry to the code: every static method of a class under
  * `src/app-layer/repositories/` that READS `WorkItem`, `Comment` or
  * `SearchVector` (a Prisma read on `workItem`, `comment` or `searchVector`,
- * or raw SQL naming one of the three tables) is named by a query's `methods`
+ * raw SQL naming one of the three tables, or a call of a search function
+ * that reads one) is named by a query's `methods`
  * or carries a reason in PLAN_CHECK_EXEMPT, and neither list names a method
  * that does not exist or no longer reads one. A new list query cannot avoid
  * the check.
@@ -24,10 +25,21 @@ import ts from 'typescript';
 
 import { PLAN_CHECK_EXEMPT, PLAN_CHECKED_QUERIES } from '../perf/plan-checked-queries';
 import { gitEnvFor, gitFiles, REPO_ROOT } from '../helpers/git-files';
+import { SEARCH_DEFINER_FUNCTIONS } from '../helpers/search-definer';
 
 const PRISMA_READ = /\.(workItem|comment|searchVector)\s*\.\s*(findMany|findFirst|findUnique|findFirstOrThrow|findUniqueOrThrow|count|aggregate|groupBy)\s*\(/;
 const RAW_READ = /\$queryRaw/;
 const GUARDED_TABLE = /"(WorkItem|Comment|SearchVector)"/;
+/**
+ * A search function that reads a guarded table (owner decision 245): a call
+ * names no table, but the function's body reads them
+ * (`tests/helpers/search-definer.ts`).
+ */
+const GUARDED_SEARCH_FUNCTION = new RegExp(
+    `\\b(${SEARCH_DEFINER_FUNCTIONS.filter((f) => Object.values(f.tables).some((t) => t !== 'Project'))
+        .map((f) => f.name)
+        .join('|')})\\s*\\(`,
+);
 
 /** `Class.method` of every repository method that reads a guarded table. */
 function readers(root: string): string[] {
@@ -39,7 +51,7 @@ function readers(root: string): string[] {
                 for (const member of node.members) {
                     if (!ts.isMethodDeclaration(member) || !member.body) continue;
                     const body = member.body.getText(sf);
-                    if (PRISMA_READ.test(body) || (RAW_READ.test(body) && GUARDED_TABLE.test(body))) out.add(`${node.name.text}.${member.name.getText(sf)}`);
+                    if (PRISMA_READ.test(body) || (RAW_READ.test(body) && (GUARDED_TABLE.test(body) || GUARDED_SEARCH_FUNCTION.test(body)))) out.add(`${node.name.text}.${member.name.getText(sf)}`);
                 }
                 return;
             }
@@ -102,6 +114,8 @@ describe('the detector, against a planted repository', () => {
                 '    static async write(db) { return db.workItem.create({ data: {} }); }',
                 '    static async other(db) { return db.label.findMany({ take: 1 }); }',
                 '    static async rawOther(db) { return db.$queryRaw`SELECT 1 FROM "Label"`; }',
+                '    static async viaFunction(db) { return db.$queryRaw`SELECT t."id" FROM search_item_contents(${q}) t`; }',
+                '    static async projectsOnly(db) { return db.$queryRaw`SELECT t."id" FROM search_project_names(${q}) t`; }',
                 '}',
             ].join('\n'),
         );
@@ -110,7 +124,7 @@ describe('the detector, against a planted repository', () => {
 
     afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
-    it('finds Prisma reads and raw reads of a guarded table in repositories only', () => {
-        expect(readers(root)).toEqual(['PlantedRepository.list', 'PlantedRepository.raw']);
+    it('finds Prisma reads, raw reads of a guarded table and calls of a search function reading one, in repositories only', () => {
+        expect(readers(root)).toEqual(['PlantedRepository.list', 'PlantedRepository.raw', 'PlantedRepository.viaFunction']);
     });
 });

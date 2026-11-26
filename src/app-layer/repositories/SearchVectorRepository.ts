@@ -13,10 +13,16 @@
  * text, never a parameter (`tests/guards/search-configuration-literal.test.ts`):
  * a planner matches an expression index only on a constant.
  *
- * Every read filters the workspace, the item's `deletedAt`, a comment's
- * `deletedAt` and project visibility in its own `WHERE`
- * (`tests/unit/repositories/search-repository-predicates.test.ts`), and names
- * the configuration (the GIN index is partial on it).
+ * The match (`matchItems`) is the SECURITY DEFINER function
+ * `search_item_contents` (owner decision 245, issue #78; migration
+ * `20261214120000_search_definer_functions`; docs/search.md, "The search
+ * functions"): under row-level security `@@` could not be an index condition,
+ * so the function, which reads the workspace from `app.tenant_id` itself,
+ * filters the workspace, the item's and a comment's `deletedAt`, the
+ * configuration and project visibility in its own `WHERE`, and returns ids
+ * and ranks only. This module is its only caller
+ * (`tests/guards/search-vector-write-seam.test.ts`). The rebuild's reads stay
+ * plain SQL under row-level security.
  *
  * Written fresh for Islestone.
  */
@@ -24,7 +30,7 @@ import { randomUUID } from 'node:crypto';
 
 import { Prisma } from '@prisma/client';
 
-import { projectVisibilitySql, type ProjectVisibility } from '../policies/project-visibility';
+import { projectVisibilityArgs, type ProjectVisibility } from '../policies/project-visibility';
 import type { RequestContext } from '../types';
 import type { PrismaTx } from '@/lib/db-context';
 import { SEARCH_VECTOR_REVISION, searchableText } from '@/lib/search/configuration';
@@ -133,29 +139,15 @@ export class SearchVectorRepository {
      * The live, visible items whose description or a live comment matches the
      * query (`websearch_to_tsquery`: words, "phrases", `or`, `-word`), best
      * first, each once with its best source; at most `cap` (at most
-     * {@link SEARCH_MATCH_CAP}).
+     * {@link SEARCH_MATCH_CAP}, which the function also caps). The workspace
+     * is the transaction's `app.tenant_id`, read by the function; `ctx` names
+     * nothing to it.
      */
-    static async matchItems(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, query: string, cap: number): Promise<SearchVectorMatch[]> {
+    static async matchItems(db: PrismaTx, _ctx: RequestContext, v: ProjectVisibility, query: string, cap: number): Promise<SearchVectorMatch[]> {
         const limit = Math.min(Math.max(1, Math.floor(cap)), SEARCH_MATCH_CAP);
         const rows = await db.$queryRaw<Array<{ workItemId: string; commentId: string | null; rank: number }>>(Prisma.sql`
             SELECT m."workItemId", m."commentId", m."rank"
-              FROM (
-                SELECT DISTINCT ON (s."workItemId") s."workItemId", s."commentId",
-                       ts_rank(s."lexemes", websearch_to_tsquery('islestone_bg_en', ${query}))::float8 AS "rank"
-                  FROM "SearchVector" s
-                  JOIN "WorkItem" w ON w."id" = s."workItemId" AND w."tenantId" = s."tenantId"
-                  JOIN "Project" p ON p."id" = w."projectId" AND p."tenantId" = w."tenantId"
-                  LEFT JOIN "Comment" c ON c."id" = s."commentId" AND c."tenantId" = s."tenantId"
-                 WHERE s."tenantId" = ${ctx.tenantId}
-                   AND s."configName" = 'islestone_bg_en'
-                   AND s."lexemes" @@ websearch_to_tsquery('islestone_bg_en', ${query})
-                   AND w."deletedAt" IS NULL
-                   AND (s."commentId" IS NULL OR c."deletedAt" IS NULL)
-                   AND ${projectVisibilitySql(v, { projectAlias: 'p', projectIdColumn: 'w."projectId"' })}
-                 ORDER BY s."workItemId", "rank" DESC, (s."commentId" IS NULL) DESC, s."commentId" ASC
-              ) m
-             ORDER BY m."rank" DESC, m."workItemId" ASC
-             LIMIT ${limit}`);
+              FROM search_item_contents(${query}::text, ${projectVisibilityArgs(v)}, ${limit}::integer) m`);
         return rows.map((r) => ({ workItemId: r.workItemId, commentId: r.commentId, rank: Number(r.rank) }));
     }
 

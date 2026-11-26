@@ -5,8 +5,11 @@
  * searched on its column", so each is shown to refuse.
  */
 import {
+    AUTO_EXPLAIN_SETTINGS,
     conditionMisses,
+    isNestedSearchPlan,
     judgePlans,
+    NESTED_SEARCH_MARKER,
     parseAutoExplainNotice,
     seqScansOn,
     withAutoExplain,
@@ -69,6 +72,24 @@ describe('judgePlans', () => {
             buffers: 132,
             missingIndexes: [],
         });
+    });
+
+    it("counts a search function's nested statement for its scans and indexes, not its buffers or as a statement", () => {
+        const nested: CapturedPlan = {
+            query: `SELECT /* ${NESTED_SEARCH_MARKER} */ w."id" FROM public."WorkItem" w`,
+            plan: { 'Node Type': 'Bitmap Heap Scan', Plans: [{ 'Node Type': 'Bitmap Index Scan', 'Index Name': 'WorkItem_search_title_fts' }], 'Shared Hit Blocks': 40 },
+        };
+        const caller: CapturedPlan = { query: 'SELECT t."id" FROM search_work_item_title_words($1, $2, $3, $4) t', plan: { 'Node Type': 'Function Scan', 'Shared Hit Blocks': 41 } };
+        expect(isNestedSearchPlan(nested)).toBe(true);
+        expect(isNestedSearchPlan(caller)).toBe(false);
+        expect(judgePlans([nested, caller], ['WorkItem_search_title_fts'])).toEqual({
+            statements: 1,
+            seqScans: [],
+            indexes: ['WorkItem_search_title_fts'],
+            buffers: 41,
+            missingIndexes: [],
+        });
+        expect(AUTO_EXPLAIN_SETTINGS).toContainEqual(['auto_explain.log_nested_statements', 'on']);
     });
 
     it('names an expected index no statement used, accepting either of `a|b`', () => {
