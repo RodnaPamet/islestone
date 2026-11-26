@@ -286,7 +286,10 @@ export async function runCalendarSync(input: { tenantId: string; connectionId: s
         const rows = await runInTenantReadContext(sys, (db) => CalendarSyncRepository.syncedEvents(db, sys, connection.id));
         const actions = reconcileSyncedEvents({ identity: { tenantId: input.tenantId, connectionId: connection.id }, desired: generated.events, existing: recorded(rows) });
         const counts = await applySyncActions(sys, { id: connection.id, calendarId: connection.externalCalendarId }, writerFor(connection.provider, accessToken), actions);
-        await runInTenantContext(sys, (db) => CalendarSyncRepository.touchSynced(db, sys, connection.id, now));
+        // Stamped only by a run that wrote to the calendar: every row write is
+        // audited by the Prisma audit extension, and a quiet run every quarter
+        // hour would add a row each time while changing nothing.
+        if (actions.length > 0) await runInTenantContext(sys, (db) => CalendarSyncRepository.touchSynced(db, sys, connection.id, now));
         const outcome: CalendarSyncOutcome = counts.pushFailures + counts.deleteFailures > 0 ? 'failed' : actions.length > 0 ? 'pushed' : 'nothing';
         recordCalendarSyncOutcome({ provider: connection.provider, outcome });
         return { outcome, counts, itemsInWindow: generated.itemsInWindow };

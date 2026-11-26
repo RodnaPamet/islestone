@@ -49,6 +49,7 @@ model CalendarConnection {
   syncCursor         String?
   /// A fixed code (CHECK), never a provider body.
   revokedReason      String?
+  /// The last run that wrote to the calendar (a quiet run stamps nothing).
   lastSyncedAt       DateTime?
   connectedAt        DateTime                @default(now())
   createdAt          DateTime                @default(now())

@@ -250,6 +250,7 @@ model User {
   createdSavedViews        SavedView[]        @relation("SavedViewCreator")
   /// The review steps this person was asked to respond to (2.8a).
   reviewerRows             WorkItemReviewer[] @relation("WorkItemReviewerUser")
+
   // Roadmap 3.3b: the member's calendar connections (ADR 0011).
-  calendarConnections      CalendarConnection[]
+  calendarConnections CalendarConnection[]
 }
