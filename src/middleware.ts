@@ -4,6 +4,7 @@ import { getToken } from 'next-auth/jwt';
 import { env } from '@/env';
 import { checkApiReadRateLimit, extractTenantSlug, isApiReadRateLimited } from '@/lib/rate-limit/apiReadRateLimit';
 import { checkAuthRateLimit } from '@/lib/rate-limit/authRateLimit';
+import { tenantLandingPath } from '@/lib/auth/landing';
 import { applySecurityHeaders } from '@/lib/security-headers';
 import {
     buildLoginRedirect,
@@ -302,6 +303,23 @@ async function authMiddleware(req: NextRequest): Promise<NextResponse> {
                 );
             }
             return NextResponse.redirect(new URL('/no-tenant', req.nextUrl.origin));
+        }
+
+        // ── 5a. The workspace root goes to My Work ──
+        // Answered here, after the gate, with an empty body. As a page,
+        // `redirect()` in `t/[tenantSlug]/(app)/page.tsx`, it was a 307 whose
+        // body streamed the workspace layout's shell, the signed-in person's
+        // name and email in it (ZAP rule 10044, Big Redirect: found when
+        // Hardening H2f's nightly scan reached `/t/<slug>`).
+        const root = /^\/t\/([^/]+)\/?$/.exec(pathname);
+        if (root) {
+            let slug: string;
+            try {
+                slug = decodeURIComponent(root[1]!);
+            } catch {
+                slug = root[1]!;
+            }
+            return NextResponse.redirect(new URL(tenantLandingPath(slug), req.nextUrl.origin), 307);
         }
     }
 
