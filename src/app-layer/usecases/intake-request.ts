@@ -576,7 +576,10 @@ export async function acceptIntakeRequest(ctx: RequestContext, id: string, input
         // A public requester who confirmed, and those merged into this request, are told (2.6b).
         await enqueueRequesterNotices(db, ctx, [r.id, ...merged.map((m) => m.id)], { kind: 'ACCEPTED' });
         const requesters = [r.requesterUserId, ...merged.map((m) => m.requesterUserId)].filter((x): x is string => !!x);
-        const active = requesters.length > 0 ? await MembershipRepository.listActiveUserIds(db, ctx, requesters) : new Set<string>();
+        // Read FOR KEY SHARE (the item is this transaction's own new row): a
+        // requester's removal in flight is waited for and they are skipped,
+        // never met by the watcher row's foreign key (Hardening H2, issue #109).
+        const active = requesters.length > 0 ? await MembershipRepository.lockActiveUserIds(db, ctx, requesters) : new Set<string>();
         for (const userId of active) {
             // guardrail-allow: n+1 — one watcher row per requester, bounded by the merged requests of one request.
             await WorkItemWatcherRepository.add(db, ctx, created.id, userId);

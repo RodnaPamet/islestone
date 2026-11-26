@@ -696,6 +696,11 @@ function createValues(plan: CreateWorkItemInput): FieldValues {
  */
 async function watchIfAnswerShown(db: PrismaTx, ctx: RequestContext, set: ResolvedFieldSet, workItemId: string): Promise<boolean> {
     if (requirementOf(set, 'answer') === 'HIDDEN' || isTenantSystemUserId(ctx.userId)) return false;
+    // The creator's membership FOR KEY SHARE (the item is this transaction's
+    // own new row): a removal of the creator in flight is waited for and the
+    // watch skipped, as if the create had committed first and the removal
+    // cascaded it (Hardening H2, issue #109).
+    if (!(await MembershipRepository.lockActiveUserIds(db, ctx, [ctx.userId])).has(ctx.userId)) return false;
     await WorkItemWatcherRepository.add(db, ctx, workItemId, ctx.userId);
     return true;
 }

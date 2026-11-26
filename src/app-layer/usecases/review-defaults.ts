@@ -91,7 +91,9 @@ export async function getTypeReviewSteps(ctx: RequestContext, typeId: string): P
 /** Check and clean the defaults an admin sends: names, active members, the workspace's live lists. */
 async function cleanDefaultSteps(db: PrismaTx, ctx: RequestContext, input: readonly ReviewStepInput[]): Promise<NewDefaultStep[]> {
     const memberIds = [...new Set(input.flatMap((s) => s.memberIds))];
-    const active = await MembershipRepository.listActiveUserIds(db, ctx, memberIds);
+    // FOR KEY SHARE: a removal in flight is waited for and refused as naming a
+    // non-member, never met by the reviewer rows' foreign key (H2, issue #109).
+    const active = await MembershipRepository.lockActiveUserIds(db, ctx, memberIds);
     const inactive = memberIds.filter((id) => !active.has(id));
     if (inactive.length > 0) {
         throw badRequest('A default reviewer must be an active member of the workspace.', { reason: 'REVIEWER_NOT_ELIGIBLE', userIds: inactive });

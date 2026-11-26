@@ -85,12 +85,16 @@ export async function setProjectIntake(ctx: RequestContext, projectId: string, i
         const current = (await IntakeRepository.listNotifyMembers(db, ctx, [project.id])).map((n) => n.userId);
 
         let notify = input.notifyUserIds ? [...new Set(input.notifyUserIds)] : current;
+        // The people's memberships are read FOR KEY SHARE before the rows that
+        // name them are written, so a removal in flight is waited for and seen
+        // (a 400, as naming any non-member), never met by the foreign key
+        // (Hardening H2, issue #109).
         if (input.notifyUserIds) {
-            const active = await MembershipRepository.listActiveUserIds(db, ctx, notify);
+            const active = await MembershipRepository.lockActiveUserIds(db, ctx, notify);
             const missing = notify.filter((id) => !active.has(id));
             if (missing.length > 0) throw badRequest('Only active members of the workspace can be on the notify list.');
         } else if (!before && input.enabled && current.length === 0) {
-            notify = [ctx.userId];
+            notify = (await MembershipRepository.lockActiveUserIds(db, ctx, [ctx.userId])).has(ctx.userId) ? [ctx.userId] : [];
         }
 
         if (input.recipientListId) {

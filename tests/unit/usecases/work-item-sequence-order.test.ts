@@ -103,6 +103,7 @@ jest.mock('@/app-layer/repositories/TeamRepository', () => ({
 jest.mock('@/app-layer/repositories/MembershipRepository', () => ({
     MembershipRepository: {
         listActiveUserIds: jest.fn(async (_db: unknown, _ctx: unknown, ids: string[]) => new Set(ids)),
+        lockActiveUserIds: jest.fn(async (_db: unknown, _ctx: unknown, ids: string[]) => new Set(ids)),
         activeMembershipsWithRoles: jest.fn(async (_db: unknown, _ctx: unknown, ids: string[]) => ids.map((userId) => ({ userId, role: 'MEMBER', customRole: null }))),
         contactsOf: jest.fn(async () => []),
     },
