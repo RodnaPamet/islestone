@@ -9,7 +9,7 @@
  * each waiter held a pooled connection inside its transaction while it waited
  * on the project's key-sequence row, the accept at the head needed one more
  * for its audit append, and every waiter's transaction expired. Measured
- * before the fix on 2026-11-26: most of the 25 failed.
+ * before the fix on 2026-11-26: 31 of the 35 writers below failed.
  *
  * Interleaved with the burst: plain creates in the same project (which share
  * the queue) and accepts into a second project (which do not). Invariants are
