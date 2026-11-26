@@ -1,6 +1,6 @@
 # 0002 — Work item model
 
-Status: Accepted (owner decisions, 2026-11-19; amended by owner decisions 100 to 119, 2026-11-20: field sets in §1 and §7, waiting on in §14, the marked answer in §15; and by owner decisions 148 to 165, 2026-11-20: review steps in §1, §3 and §14, ADR 0009; and by owner decisions 183, 188 and 200, 2026-11-20: blocks read as finish-to-start in §6 and the project's due date in §16, ADR 0010; and by owner decisions 205 to 224, 2026-11-21: an item's direct goal, health and the lifecycle in §2, goals, initiatives and progress in §17)
+Status: Accepted (owner decisions, 2026-11-19; amended by owner decisions 100 to 119, 2026-11-20: field sets in §1 and §7, waiting on in §14, the marked answer in §15; and by owner decisions 148 to 165, 2026-11-20: review steps in §1, §3 and §14, ADR 0009; and by owner decisions 183, 188 and 200, 2026-11-20: blocks read as finish-to-start in §6 and the project's due date in §16, ADR 0010; and by owner decisions 205 to 224, 2026-11-21: an item's direct goal, health and the lifecycle in §2, goals, initiatives and progress in §17; and by owner decisions 255 to 279, 2026-11-26: the team's estimate unit and the item's two estimate columns in §12, estimates and time in §18, ADR 0012)
 
 ## Context
 
@@ -341,7 +341,8 @@ model WorkItem {
   cycleId          String?               // FK (cycleId, teamId, tenantId) -> Cycle
   milestoneId      String?               // FK (milestoneId, projectId, tenantId) -> Milestone
   sortKey          String                // fractional index, COLLATE "C" (migration SQL)
-  estimate         Decimal?
+  estimatePoints   Int?                  // 0..100 (CHECK); counted when the team estimates in points (§18)
+  estimateMinutes  Int?                  // 0..60,000 (CHECK); counted when the team estimates in hours (§18)
   startDate        DateTime?             @db.Date
   dueDate          DateTime?             @db.Date
   startedAt        DateTime?
@@ -528,6 +529,15 @@ Roadmap 3.2; owner decisions 205 to 224, 2026-11-21 (`docs/porting/maps/3.2.md`)
 - **Archive and soft delete** (decision 218, the owner's choice of soft delete with restore over the recommended archive-only). A Completed or Cancelled goal or initiative may be archived: kept whole, hidden from lists and pickers, read-only until unarchived. Any goal or initiative may be deleted softly (`deletedAt`, `deletionId`) and restored, like a project; deleting a goal deletes its child goals and its initiatives as one group. While deleted, projects and items keep their links, and every read leaves the row out; a restore brings the group and its links back.
 - **The purge** (decision 219). A nightly job hard-deletes goals and initiatives soft-deleted more than `GOAL_PURGE_DAYS` (default 30) days ago. Every link to a purged row is cleared by its foreign key (`ON DELETE SET NULL` on the one column: `Goal.parentId`, `Initiative.goalId`, `Project.initiativeId`, `WorkItem.goalId`), and the job records counts only.
 - **The tree's rules** (§2, made concrete): one advisory lock per workspace (`goal-tree:<tenantId>`) for every write to `Goal.parentId` or `Initiative.goalId` and every goal delete and restore, taken before any project or item row; no cycle and at most three levels, counting deleted goals so a restore cannot break either.
+
+### 18. Estimates and time
+
+Roadmap 3.4; owner decisions 255 to 279, 2026-11-26 (`docs/porting/maps/3.4.md`; ADR 0012).
+
+- **A team's estimate unit.** `Team.estimateUnit` is `POINTS`, `HOURS` or NULL (the team does not estimate; the default), changed under `admin.manage`. An item carries two typed columns, `estimatePoints` (a whole number, 0 to 100) and `estimateMinutes` (0 to 60,000), each CHECKed; the item's team's current unit decides which one is shown, written and counted. The other is kept, hidden and uncounted, so a change of unit or a move to a team with another unit loses nothing, and changing the unit moves no value. A write names the current unit's column only (400 `ESTIMATE_UNIT`), and a team that does not estimate takes none (409 `ESTIMATES_OFF`).
+- **The estimate is a configurable built-in field** of the field sets (§1, §7): Required, Optional or Hidden per type. A rule on a team that does not estimate is ignored, as an archived field's is. Templates, project templates' starter items and repeats copy it; a copy into a team that does not estimate or uses the other unit skips it and names it, never silently. A person sets it under `work_items.edit` as a single-field change (§9); nothing in 3.4 writes it but a person, and an agent may propose it from roadmap 6.2 (ADR 0003 §4).
+- **The transition record gains both columns** (`WorkItemTransition.estimatePoints`, `.estimateMinutes`; the trigger watches them), so the cycle burn-up counts points or hours from recorded changes. Progress (§17) and the schedule's durations (ADR 0010) are unchanged: an hours estimate is effort, not a duration.
+- **Time entries are not work items** (roadmap 3.4b to 3.4d; ADR 0012). A `TimeEntry` names one work item and the project it was recorded in, and outlives the item's move and purge; it never appears in a work-item read, the list, the board, search or the Activity. An item's time spent is read through its own route.
 
 ### Open questions for the owner
 
