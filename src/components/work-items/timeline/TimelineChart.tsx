@@ -1,7 +1,8 @@
 'use client';
 
 /**
- * The chart region (roadmap 3.1b): the widget's adapter loaded with
+ * The chart region (roadmap 3.1b; the roadmap's too, 3.2c, with its own
+ * `region` label): the widget's adapter loaded with
  * `next/dynamic` and `ssr: false`, so its code ships only on a timeline, and
  * held behind an error boundary that points to the schedule table, which
  * shows the same rows (decision 203). The region is labelled and described
@@ -32,13 +33,14 @@ class ChartBoundary extends Component<{ fallback: ReactNode; children: ReactNode
     }
 }
 
-export function TimelineChart(props: TimelineAdapterProps & { fallback: ReactNode }) {
+export function TimelineChart(props: TimelineAdapterProps & { fallback: ReactNode; region?: { label: string; description: string; id: string } }) {
     const tChart = useTranslations('workItems.timeline');
-    const { fallback, ...adapter } = props;
+    const { fallback, region, ...adapter } = props;
+    const id = region?.id ?? 'timeline-chart';
     return (
-        <div role="region" aria-label={tChart('chartLabel')} aria-describedby="timeline-chart-description" className="h-full min-h-0" data-testid="timeline-chart">
-            <p id="timeline-chart-description" className="sr-only">
-                {tChart('chartDescription')}
+        <div role="region" aria-label={region?.label ?? tChart('chartLabel')} aria-describedby={`${id}-description`} className="h-full min-h-0" data-testid={id}>
+            <p id={`${id}-description`} className="sr-only">
+                {region?.description ?? tChart('chartDescription')}
             </p>
             <ChartBoundary fallback={fallback}>
                 <Adapter {...adapter} />

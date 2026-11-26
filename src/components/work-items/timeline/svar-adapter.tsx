@@ -38,8 +38,15 @@
  *   - **Today and non-working days** are cell classes from `highlightTime`
  *     (the widget's markers are PRO).
  *
+ * **Two row models, one widget** (3.2c, decision 216): the item timeline's
+ * (`timeline-model.ts`) and the roadmap's (`roadmap-model.ts`: goals,
+ * initiatives and projects as bars, due dates as diamonds). The roadmap
+ * never edits (`editable` stays false, so the widget is `readonly` and every
+ * changing action is still refused); it supplies its own grid columns
+ * (`gridColumns`) and opens a record's timeline from `onSelect`.
+ *
  * Loaded with `next/dynamic` (`ssr: false`) from `TimelineChart`, so the
- * widget's code ships only on a timeline.
+ * widget's code ships only on a timeline or a roadmap.
  *
  * Written fresh for Islestone; SVAR's store was read for the action names
  * and DOM attributes (pattern only, no code copied; `PROVENANCE.md`).
@@ -98,6 +105,23 @@ export interface TimelineAdapterProps {
     onLinkRefused?: () => void;
     /** A link's delete button: remove the relation behind the undo toast. */
     onLinkRemove?: (linkId: string) => void;
+    /**
+     * The grid's columns beside the widget's own title column (the roadmap's
+     * progress and health, 3.2c); omitted, the timeline's key and float.
+     */
+    gridColumns?: ReadonlyArray<GridColumn>;
+    /** Any row was chosen, whatever its id (the roadmap opens a record's timeline, decision 217). */
+    onSelect?: (id: string) => void;
+}
+
+/** One grid column the caller fills from its own rows (the widget's title column is always there). */
+export interface GridColumn {
+    id: string;
+    header: string;
+    width: number;
+    /** Before the title column (the key), or after it. */
+    before?: boolean;
+    cell: (task: ChartTask) => string;
 }
 
 const ZOOM_SCALES: Record<TimelineZoom, { cellWidth: number; scales: Array<{ unit: string; step: number; format: (d: Date) => string }> }> = {
@@ -158,8 +182,9 @@ export default function SvarTimelineAdapter(props: TimelineAdapterProps) {
             ...toWidgetTask(t, floatLabel(t), labels.contextGroup),
             islDraggable: editable && Boolean(props.draggableIds?.has(t.id)),
             islLinkable: editable && Boolean(props.linkableIds?.has(t.id)),
+            islCells: Object.fromEntries((props.gridColumns ?? []).map((c) => [c.id, c.cell(t)])),
         }));
-    }, [tasks, floatLabel, labels.contextGroup, redraw, editable, props.draggableIds, props.linkableIds]);
+    }, [tasks, floatLabel, labels.contextGroup, redraw, editable, props.draggableIds, props.linkableIds, props.gridColumns]);
     const widgetLinks = useMemo(() => links.map((l) => ({ id: l.id, source: l.source, target: l.target, type: 'e2s' as const, lag: 0 })), [links]);
     const asOfDay = useMemo(() => epochDayOfLocal(localDate(asOf)), [asOf]);
     const { cellWidth, scales } = ZOOM_SCALES[zoom];
@@ -180,14 +205,24 @@ export default function SvarTimelineAdapter(props: TimelineAdapterProps) {
         [asOfDay, nonWorking, highlightRange],
     );
 
-    const columns = useMemo(
-        () => [
+    const { gridColumns } = props;
+    const columns = useMemo(() => {
+        const title = { id: 'text', header: labels.title, width: 170, flexgrow: 1 };
+        if (gridColumns) {
+            const cell = (c: GridColumn) => ({
+                id: `isl-${c.id}`,
+                header: c.header,
+                width: c.width,
+                template: (_v: unknown, row: ITask) => String((row.islCells as Record<string, string> | undefined)?.[c.id] ?? ''),
+            });
+            return [...gridColumns.filter((c) => c.before).map(cell), title, ...gridColumns.filter((c) => !c.before).map(cell)];
+        }
+        return [
             { id: 'islKey', header: labels.key, width: 80, template: (_v: unknown, row: ITask) => String(row.islKey ?? '') },
-            { id: 'text', header: labels.title, width: 170, flexgrow: 1 },
+            title,
             { id: 'islFloat', header: labels.float, width: 110, align: 'center' as const, template: (_v: unknown, row: ITask) => String(row.islFloat ?? '') },
-        ],
-        [labels.key, labels.title, labels.float],
-    );
+        ];
+    }, [labels.key, labels.title, labels.float, gridColumns]);
 
     // The widget calls `init` once: its handlers read the latest props through a ref.
     const latest = useRef(props);
@@ -223,6 +258,7 @@ export default function SvarTimelineAdapter(props: TimelineAdapterProps) {
         });
         api.on('select-task', (ev: { id?: unknown }) => {
             const id = typeof ev?.id === 'string' ? ev.id : null;
+            if (id) latest.current.onSelect?.(id);
             if (id && !id.includes(':') && id !== 'context-group') latest.current.onOpen(id);
         });
     }, []);

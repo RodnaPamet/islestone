@@ -167,12 +167,21 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 keywords: ['burn-up', 'rollover'],
             },
             {
+                id: 'nav:roadmap',
+                group: 'Navigation',
+                label: t('goToRoadmap'),
+                matchLabel: 'Roadmap',
+                icon: Target,
+                href: href(NAV_PATHS.roadmap),
+                keywords: ['timeline', 'initiatives', 'plans'],
+            },
+            {
                 id: 'nav:goals',
                 group: 'Navigation',
                 label: t('goToGoals'),
                 matchLabel: 'Goals',
                 icon: Target,
-                href: href(NAV_PATHS.roadmap),
+                href: href(NAV_PATHS.goals),
                 keywords: ['roadmap', 'outcomes', 'health'],
             },
             {

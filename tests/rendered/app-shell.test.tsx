@@ -132,8 +132,8 @@ describe('the application shell', () => {
             ['Work items', '/t/acme/work-items'],
             ['Projects', '/t/acme/projects'],
             ['Cycles', '/t/acme/cycles'],
-            // Sub-phase 3.2b (decision 222): one Roadmap entry, opening Goals until 3.2c.
-            ['Roadmap', '/t/acme/roadmap/goals'],
+            // Decision 222: one Roadmap entry, opening the Roadmap page (3.2c).
+            ['Roadmap', '/t/acme/roadmap'],
             // Sub-phase 2.6a: Intake (an OWNER reads intake) and Forms.
             ['Intake', '/t/acme/intake'],
             ['Forms', '/t/acme/forms'],
@@ -179,6 +179,7 @@ describe('the application shell', () => {
             '/t/acme/work-items',
             '/t/acme/projects',
             '/t/acme/cycles',
+            '/t/acme/roadmap',
             '/t/acme/roadmap/goals',
             '/t/acme/roadmap/initiatives',
             '/t/acme/forms',

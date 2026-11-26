@@ -172,6 +172,7 @@
             "cycles": "Cycles",
             "intake": "Intake",
             "forms": "Forms",
+            "roadmap": "Roadmap",
             "goals": "Goals",
             "initiatives": "Initiatives"
         }
@@ -549,6 +550,7 @@
             "goToWorkItems": "Go to Work items",
             "goToCycles": "Go to Cycles",
             "goToForms": "Go to Forms",
+            "goToRoadmap": "Go to Roadmap",
             "goToGoals": "Go to Goals",
             "goToInitiatives": "Go to Initiatives"
         }
@@ -2529,6 +2531,7 @@
     "roadmap": {
         "tabsLabel": "Roadmap pages",
         "tabs": {
+            "roadmap": "Roadmap",
             "goals": "Goals",
             "initiatives": "Initiatives"
         },
@@ -2583,7 +2586,9 @@
             "lead": "Lead",
             "archived": "Archived",
             "showArchived": "Show archived",
-            "goal": "Goal"
+            "goal": "Goal",
+            "initiative": "Initiative",
+            "team": "Team"
         },
         "description": "Description",
         "noDescription": "No description.",
@@ -2617,7 +2622,87 @@
             "nameRequired": "An initiative needs a name.",
             "save": "Save"
         },
-        "actions": "Actions"
+        "actions": "Actions",
+        "page": {
+            "title": "Roadmap",
+            "description": "Initiatives and their projects over time. Each bar spans the planned dates of the work under it; choose one to open its timeline."
+        },
+        "view": {
+            "heading": "Roadmap",
+            "view": "View",
+            "chart": "Chart",
+            "table": "Table",
+            "zoomLabel": "Zoom",
+            "zoom": {
+                "month": "Months",
+                "quarter": "Quarters"
+            },
+            "groupBy": "Group by",
+            "groupByInitiative": "Initiative",
+            "groupByGoal": "Goal",
+            "plannedDates": "Planned dates: each bar runs from the earliest to the latest start or due date of the open and finished work under it. Open a bar to see its timeline, where the schedule is worked out.",
+            "chartLabel": "Roadmap chart",
+            "chartDescription": "A chart of goals, initiatives and projects over time. The table view shows the same rows, dates and flags as text.",
+            "legend": {
+                "label": "Legend",
+                "bar": "Planned dates",
+                "due": "Due date",
+                "late": "Late, or finishes after a due date",
+                "today": "Today"
+            },
+            "unlinked": "No initiative",
+            "noGoal": "No goal",
+            "noItemsShort": "No items",
+            "col": {
+                "name": "Name",
+                "goal": "Goal",
+                "initiative": "Initiative",
+                "project": "Project",
+                "start": "Start",
+                "finish": "Finish",
+                "dueDate": "Due date",
+                "progress": "Progress",
+                "health": "Health",
+                "flags": "Flags",
+                "open": "Timeline"
+            },
+            "open": "Open timeline",
+            "openLabel": "Open the timeline of {name}",
+            "flags": {
+                "overdue": "Past its due date with open items",
+                "itemDueAfter": "An open item is due after the project",
+                "lateMilestones": "{count, plural, one {# late milestone} other {# late milestones}}",
+                "finishesAfterInitiativeDue": "Finishes after the initiative's due date",
+                "finishesAfterGoalDue": "Finishes after the goal's due date",
+                "finishesAfterDue": "A project finishes after its due date",
+                "late": "Past its due date with open items"
+            },
+            "noDates": {
+                "heading": "No dates",
+                "count": "{count, plural, one {# row} other {# rows}}",
+                "description": "Nothing under these is dated yet. Add start or due dates to their work items to draw a bar.",
+                "empty": "Everything here has a bar.",
+                "kind": {
+                    "goal": "Goal",
+                    "initiative": "Initiative",
+                    "project": "Project",
+                    "unlinked": "No initiative",
+                    "no-goal": "No goal"
+                },
+                "openLabel": "Open the timeline of {name}"
+            },
+            "tooLarge": {
+                "projects": "This roadmap would show {count} projects; it shows at most {limit}. Narrow the filter.",
+                "milestones": "These projects have {count} dated milestones; the roadmap reads at most {limit}. Narrow the filter.",
+                "goals": "This workspace has {count} goals; the roadmap reads at most {limit}.",
+                "initiatives": "This workspace has {count} initiatives; the roadmap reads at most {limit}."
+            },
+            "loadFailed": "The roadmap could not be loaded.",
+            "retry": "Try again",
+            "empty": "Nothing to show yet. Link projects to an initiative, or clear the filters.",
+            "resource": "row",
+            "resourcePlural": "rows"
+        }
     },
     "goals": {
         "title": "Goals",
@@ -2716,6 +2801,7 @@
                 "project": "Project",
                 "team": "Team",
                 "dueDate": "Due date",
+                "span": "Planned dates",
                 "progress": "Progress",
                 "late": "Late",
                 "lateMilestones": "Late milestones",
@@ -2723,7 +2809,10 @@
             },
             "projectArchived": "archived",
             "lateMilestones": "{count, plural, =0 {None} one {# late} other {# late}}",
-            "goalLabel": "Serves"
+            "goalLabel": "Serves",
+            "span": "{start} – {end}",
+            "noSpan": "No dates",
+            "roadmap": "Roadmap"
         }
     }
 }

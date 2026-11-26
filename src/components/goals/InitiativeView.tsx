@@ -9,8 +9,10 @@
  * "Late", late milestones, archived projects greyed). "Add project" links an
  * existing project (`projects.edit`, through the project's own route) or
  * opens the one project create dialog with the initiative chosen; taking a
- * project off goes through the undo toast. Its slice of the roadmap is
- * 3.2c's. Every write follows the server's affordances.
+ * project off goes through the undo toast. Its slice of the roadmap (3.2c,
+ * `RoadmapView` with the initiative fixed, archived projects shown) sits
+ * under the projects table, whose "Planned dates" column reads the same
+ * answer. Every write follows the server's affordances.
  *
  * Written fresh for Islestone.
  */
@@ -29,12 +31,16 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { useToast } from '@/components/ui/hooks';
 import { DataTable, createColumns } from '@/components/ui/table';
+import { formatDay } from '@/components/work-items/timeline/TimelineScheduleTable';
+import type { RoadmapFilters } from '@/lib/goals/roadmap';
 import { memberLabel, useMembers } from '@/components/work-items/data/use-work-config';
 import type { InitiativeDetail, InitiativeProjectRow, RoadmapAffordances, ViewGoal } from '@/lib/goals/types';
 import { useTenantApiUrl, useTenantHref } from '@/lib/tenant-context-provider';
 import type { ViewProject } from '@/lib/work-items/types';
 
 import { InitiativeDialog } from './GoalDialogs';
+import { RoadmapView } from './RoadmapView';
+import { useRoadmap } from './use-roadmap';
 import { HealthControl, HealthHistory, ProgressCell, StatusAndHealth } from './goal-parts';
 import { GOAL_PATHS, goalRefusal, useGoalWrites, useInitiativeDetail } from './use-goals';
 
@@ -158,6 +164,11 @@ export function InitiativeView({
         });
     }, [detail, detailUrl, mutate, writes]);
 
+    // The slice's read (3.2c): the projects' planned dates come from the roadmap's answer, the one the chart draws.
+    const sliceFilters = useMemo<RoadmapFilters>(() => ({ initiativeId: initiative.id, archived: 'true' }), [initiative.id]);
+    const slice = useRoadmap(sliceFilters, { enabled: affordances.roadmap === true });
+    const spans = useMemo(() => new Map((slice.data?.projects ?? []).map((p) => [p.id, p.span])), [slice.data]);
+
     const columns = useMemo(
         () =>
             createColumns<InitiativeProjectRow>([
@@ -175,6 +186,14 @@ export function InitiativeView({
                 },
                 { id: 'team', header: t('detail.col.team'), cell: ({ row }) => teamName.get(row.original.teamId) ?? '' },
                 { id: 'dueDate', header: t('detail.col.dueDate'), cell: ({ row }) => <span className="tabular-nums">{row.original.dueDate ?? ''}</span> },
+                {
+                    id: 'span',
+                    header: t('detail.col.span'),
+                    cell: ({ row }) => {
+                        const span = spans.get(row.original.id);
+                        return span ? <span className="tabular-nums">{t('detail.span', { start: formatDay(span.start), end: formatDay(span.end) })}</span> : <span className="text-content-muted">{t('detail.noSpan')}</span>;
+                    },
+                },
                 { id: 'progress', header: t('detail.col.progress'), cell: ({ row }) => <ProgressCell name={row.original.name} summary={{ progress: row.original.progress, late: row.original.late, tooManyProjects: null }} /> },
                 { id: 'late', header: t('detail.col.late'), cell: ({ row }) => (row.original.late ? <span className="font-medium text-content-error">{tRoadmap('late')}</span> : '') },
                 { id: 'lateMilestones', header: t('detail.col.lateMilestones'), cell: ({ row }) => t('detail.lateMilestones', { count: row.original.lateMilestones }) },
@@ -187,7 +206,7 @@ export function InitiativeView({
                         ) : null,
                 },
             ]),
-        [affordances.linkProject, t, tRoadmap, teamName, tenantHref, unlink],
+        [affordances.linkProject, t, tRoadmap, teamName, tenantHref, unlink, spans],
     );
 
     return (
@@ -288,6 +307,17 @@ export function InitiativeView({
                     data-testid="initiative-projects-table"
                 />
             </section>
+
+            {affordances.roadmap && (
+                <section aria-labelledby="initiative-roadmap-section" className="space-y-default">
+                    <h2 id="initiative-roadmap-section" className="text-lg font-semibold text-content-emphasis">
+                        {t('detail.roadmap')}
+                    </h2>
+                    <div className="h-[30rem]">
+                        <RoadmapView filters={sliceFilters} idPrefix="initiative-roadmap" labelledBy="initiative-roadmap-section" />
+                    </div>
+                </section>
+            )}
 
             {editable && <InitiativeDialog open={editing} onOpenChange={setEditing} initiative={initiative} goals={goalOptions} />}
             {affordances.linkProject && <LinkProjectDialog open={linking} onOpenChange={setLinking} initiative={initiative} projects={linkable} />}

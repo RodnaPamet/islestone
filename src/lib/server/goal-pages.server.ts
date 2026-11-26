@@ -4,7 +4,8 @@
  * and 222): the request context (`getTenantCtx`, the gates the API asks), the
  * goals or initiatives, one goal or initiative, and the writes each page
  * offers (`goalAffordances`, the predicates the usecases assert; whether a
- * project may be linked or created, `mayEditProject` / `mayCreateProject`).
+ * project may be linked or created, `mayEditProject` / `mayCreateProject`),
+ * and the Roadmap page's filter options (3.2c).
  * A viewer without `goals.view`, or a goal or initiative that is missing or
  * deleted, is a 404.
  *
@@ -19,6 +20,7 @@ import { mayReadWorkItems } from '@/app-layer/policies/work-item.policies';
 import type { RequestContext } from '@/app-layer/types';
 import { getGoal, listGoals, listViewGoals } from '@/app-layer/usecases/goal';
 import { getInitiative, listInitiatives } from '@/app-layer/usecases/initiative';
+import { listTeams } from '@/app-layer/usecases/team';
 import { getWorkItemViewConfig } from '@/app-layer/usecases/work-item-views';
 import { isAppError } from '@/lib/errors/types';
 import type { GoalDetail, GoalSummary, InitiativeDetail, InitiativeSummary, RoadmapAffordances, ViewGoal, ViewInitiative } from '@/lib/goals/types';
@@ -48,7 +50,7 @@ async function projectsAndTeams(ctx: RequestContext): Promise<{ projects: ViewPr
 
 function affordancesOf(ctx: RequestContext): RoadmapAffordances {
     const goals = goalAffordances(ctx);
-    return { ...goals, createProject: mayCreateProject(ctx) && goals.view };
+    return { ...goals, createProject: mayCreateProject(ctx) && goals.view, roadmap: mayReadWorkConfig(ctx) && goals.view };
 }
 
 export async function goalsPageContext(tenantSlug: string): Promise<{ goals: GoalSummary[]; options: { goals: ViewGoal[] }; affordances: RoadmapAffordances }> {
@@ -87,5 +89,19 @@ export async function initiativePageContext(
         const ctx = await goalsCtx(tenantSlug);
         const [detail, view, workspace] = await Promise.all([getInitiative(ctx, initiativeId), listViewGoals(ctx), projectsAndTeams(ctx)]);
         return { detail, options: { goals: view.goals, initiatives: view.initiatives, ...workspace }, affordances: affordancesOf(ctx) };
+    });
+}
+
+/**
+ * The Roadmap page (3.2c): the filters' options (the live, unarchived goals
+ * and initiatives, the teams). The roadmap draws projects, so a viewer
+ * without `projects.view` gets a 404, as the API's read refuses them.
+ */
+export async function roadmapPageContext(tenantSlug: string): Promise<{ options: { goals: ViewGoal[]; initiatives: ViewInitiative[]; teams: Array<{ id: string; name: string }> } }> {
+    return or404(async () => {
+        const ctx = await goalsCtx(tenantSlug);
+        if (!mayReadWorkConfig(ctx)) notFound();
+        const [view, teams] = await Promise.all([listViewGoals(ctx), listTeams(ctx)]);
+        return { options: { goals: view.goals, initiatives: view.initiatives, teams: teams.map((t) => ({ id: t.id, name: t.name })) } };
     });
 }

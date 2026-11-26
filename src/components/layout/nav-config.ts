@@ -34,12 +34,11 @@ export const NAV_PATHS = {
     intake: '/intake',
     forms: '/forms',
     views: '/views',
-    // Sub-phase 3.2b (decision 222): one sidebar entry, Roadmap, over three
-    // pages. The Roadmap page itself is 3.2c's; until it exists the entry
-    // opens the Goals page (so `roadmap` IS Goals' path, and 3.2c moves it to
-    // `/roadmap` and adds `goals`), and `ROADMAP_AREA` marks the entry
-    // current on every page under it.
-    roadmap: '/roadmap/goals',
+    // Decision 222: one sidebar entry, Roadmap, over three pages: the Roadmap
+    // page (3.2c, the entry's landing page), Goals and Initiatives (3.2b).
+    // `ROADMAP_AREA` marks the entry current on every page under it.
+    roadmap: '/roadmap',
+    goals: '/roadmap/goals',
     initiatives: '/roadmap/initiatives',
     settings: '/settings',
 } as const;
@@ -116,7 +115,7 @@ export function useNavSections(): NavSectionDef[] {
                 { key: 'projects', href: tenantHref(NAV_PATHS.projects), label: t('projects'), icon: Folder, visible: perms.projects?.view === true },
                 // Sub-phase 2.5a (`cycles.view`).
                 { key: 'cycles', href: tenantHref(NAV_PATHS.cycles), label: t('cycles'), icon: CalendarRefresh, visible: perms.cycles?.view === true },
-                // Sub-phase 3.2b (decision 222, `goals.view`): Goals and Initiatives now, the Roadmap page in 3.2c.
+                // Decision 222 (`goals.view`): the Roadmap page (3.2c), Goals and Initiatives (3.2b).
                 {
                     key: 'roadmap',
                     href: tenantHref(NAV_PATHS.roadmap),

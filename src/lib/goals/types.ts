@@ -194,4 +194,6 @@ export interface GoalAffordances {
 export interface RoadmapAffordances extends GoalAffordances {
     /** Create a project already in an initiative (the initiative page; decision 57's one dialog): `projects.create` and `goals.view`. */
     createProject: boolean;
+    /** The initiative page's slice of the roadmap (3.2c): the roadmap draws projects, so `projects.view` and `goals.view`. */
+    roadmap?: boolean;
 }

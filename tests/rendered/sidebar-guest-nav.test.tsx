@@ -53,8 +53,8 @@ function navKeys(role: Role): string[] {
     return Array.from(container.querySelectorAll('[data-testid^="nav-"]')).map((el) => el.getAttribute('data-testid') ?? '');
 }
 
-// The Roadmap entry (3.2b) opens the Goals page until 3.2c, and a row's test id is its href's last segment.
-const WORKSPACE_ROWS = ['nav-work-items', 'nav-projects', 'nav-cycles', 'nav-goals', 'nav-forms', 'nav-views'];
+// The Roadmap entry opens the Roadmap page (3.2c), and a row's test id is its href's last segment.
+const WORKSPACE_ROWS = ['nav-work-items', 'nav-projects', 'nav-cycles', 'nav-roadmap', 'nav-forms', 'nav-views'];
 
 describe('the sidebar a GUEST sees before 8.4 (decision 204)', () => {
     it('lists My Work and the Inbox and nothing of the workspace', () => {
@@ -66,12 +66,12 @@ describe('the sidebar a GUEST sees before 8.4 (decision 204)', () => {
     });
 });
 
-describe('the Roadmap entry (3.2b, decision 222)', () => {
+describe('the Roadmap entry (decision 222)', () => {
     afterEach(() => {
         mockPathname = '/t/acme/my-work';
     });
 
-    it.each(['/t/acme/roadmap/goals', '/t/acme/roadmap/initiatives', '/t/acme/roadmap/initiatives/i-1'])('is the current page on %s', (path) => {
+    it.each(['/t/acme/roadmap', '/t/acme/roadmap/goals', '/t/acme/roadmap/initiatives', '/t/acme/roadmap/initiatives/i-1'])('is the current page on %s', (path) => {
         mockPathname = path;
         const { container } = render(
             <KeyboardShortcutProvider>
@@ -80,8 +80,8 @@ describe('the Roadmap entry (3.2b, decision 222)', () => {
                 </TenantProvider>
             </KeyboardShortcutProvider>,
         );
-        const entry = container.querySelector('[data-testid="nav-goals"]');
-        expect(entry).toHaveAttribute('href', '/t/acme/roadmap/goals');
+        const entry = container.querySelector('[data-testid="nav-roadmap"]');
+        expect(entry).toHaveAttribute('href', '/t/acme/roadmap');
         expect(entry).toHaveAttribute('aria-current', 'page');
     });
 });
