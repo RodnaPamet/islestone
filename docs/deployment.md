@@ -135,8 +135,9 @@ and no restore.
   (`tests/guards/postgres-image-pinning.test.ts` accepts exactly those two
   states). `17-0.8.7-bg4.3-r1` was pinned at
   `sha256:796db89d604fee3df2f06b041e8cc417b1597b69ceb0e7f695586df479833835`
-  (release run 26, 2026-11-20); `-r2` is named with the marker until its
-  publish. Watchtower never rolls the database (`enable=false`).
+  (release run 26, 2026-11-20), and `17-0.8.7-bg4.3-r2` at
+  `sha256:4e5e2306fdeb5548509f296569e99be0de32863c37e3d4d1ac620d2b728f2966`
+  (release run 41, 2026-11-26). Watchtower never rolls the database (`enable=false`).
 - **Patched beyond the base** (Hardening H1; owner decisions 247 and 248), so
   the publish's blocking Trivy scan passes. The Dockerfile upgrades the
   Debian packages that carried fixed HIGH vulnerabilities (krb5's four

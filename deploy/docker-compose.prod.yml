@@ -140,11 +140,10 @@ services:
   # `-r2` (Hardening H1, owner decisions 247 and 248): the Debian packages
   # with fixed HIGH vulnerabilities upgraded and gosu rebuilt on a current Go;
   # `-r1` was pinned at sha256:796db89d…479833835 (release run 26).
-  # POSTGRES-IMAGE-DIGEST-PENDING: the tag is named alone until its first
-  # publish exists; then this line becomes `<tag>@sha256:<index digest>` and
-  # the marker goes (tests/guards/postgres-image-pinning.test.ts).
+  # `-r2` pinned at its first publish (release run 41, 2026-11-26;
+  # tests/guards/postgres-image-pinning.test.ts).
   postgres:
-    image: ghcr.io/rodnapamet/islestone-postgres:17-0.8.7-bg4.3-r2
+    image: ghcr.io/rodnapamet/islestone-postgres:17-0.8.7-bg4.3-r2@sha256:4e5e2306fdeb5548509f296569e99be0de32863c37e3d4d1ac620d2b728f2966
     container_name: islestone-postgres
     restart: unless-stopped
     logging: *default-logging
