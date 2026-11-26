@@ -3,11 +3,11 @@
  * 3.2a; docs/porting/maps/3.2.md; ADR 0002 §2 and §17; owner decisions 205 to
  * 224):
  *
- *   - what migrations `20261215120000` to `20261215120300` add beyond Prisma,
+ *   - what migrations `20261215120000` to `20261215120200` add beyond Prisma,
  *     in the catalogue and by their bite: the CHECKs (title and name length,
  *     archive only when finished, a delete group whole, a goal never its own
  *     parent), the four column-scoped `ON DELETE SET NULL` keys, the field-set
- *     CHECK widened to `goal`, the progress indexes, the grants, and the
+ *     CHECK widened to `goal`, the goal and initiative link indexes, the grants, and the
  *     transition trigger not watching `goalId`;
  *   - the two tables are tenant tables: as `app_user` in workspace B nothing
  *     of A's is read, changed, removed or created;
@@ -175,15 +175,15 @@ describeFn('goals and initiatives', () => {
             await prisma.goal.delete({ where: { id: g.id } });
         });
 
-        it("the field set CHECK takes 'goal'; the progress indexes exist; the transition trigger does not watch goalId", async () => {
+        it("the field set CHECK takes 'goal'; the link indexes exist; the transition trigger does not watch goalId", async () => {
             const [chk] = await prisma.$queryRaw<Array<{ def: string }>>`
                 SELECT pg_get_constraintdef(oid)::text AS def FROM pg_constraint WHERE conname = 'WorkItemTypeField_built_in_known'`;
             expect(chk?.def).toContain(`'goal'`);
             const idx = await prisma.$queryRaw<Array<{ indexname: string }>>`
                 SELECT indexname::text AS indexname FROM pg_indexes
-                 WHERE indexname IN ('WorkItem_tenantId_goalId_stateCategory_idx', 'WorkItem_tenantId_projectId_stateCategory_idx', 'Project_tenantId_initiativeId_idx')
+                 WHERE indexname IN ('WorkItem_tenantId_goalId_stateCategory_idx', 'Project_tenantId_initiativeId_idx')
                  ORDER BY indexname`;
-            expect(idx.map((i) => i.indexname)).toEqual(['Project_tenantId_initiativeId_idx', 'WorkItem_tenantId_goalId_stateCategory_idx', 'WorkItem_tenantId_projectId_stateCategory_idx']);
+            expect(idx.map((i) => i.indexname)).toEqual(['Project_tenantId_initiativeId_idx', 'WorkItem_tenantId_goalId_stateCategory_idx']);
             const [trg] = await prisma.$queryRaw<Array<{ def: string }>>`
                 SELECT pg_get_triggerdef(oid)::text AS def FROM pg_trigger WHERE tgname = 'work_item_transition_update'`;
             expect(trg?.def).not.toContain('goalId');

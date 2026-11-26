@@ -244,6 +244,9 @@ describeFn('rotateTenantDek and the sweep (integration — real DB)', () => {
         );
         expect(sweep.perField.map((f) => `${f.model}.${f.field}`).sort()).toEqual([
             'Comment.body',
+            // Sub-phase 3.2a: goals' and initiatives' descriptions.
+            'Goal.description',
+            'Initiative.description',
             // Sub-phase 2.6c: a follow-up email's text.
             'IntakeFollowUp.body',
             // Sub-phase 2.6a: an intake request's text, answers and remarks.

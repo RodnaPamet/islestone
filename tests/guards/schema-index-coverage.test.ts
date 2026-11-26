@@ -129,7 +129,6 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
     { model: 'Goal', fields: ['tenantId', 'deletionId'], justification: 'A restore reads its delete group.' },
     { model: 'Initiative', fields: ['tenantId', 'deletionId'], justification: 'A restore reads its delete group.' },
     { model: 'WorkItem', fields: ['tenantId', 'goalId', 'stateCategory'], justification: "The goalId filter's direct path and a goal's direct items by category." },
-    { model: 'WorkItem', fields: ['tenantId', 'projectId', 'stateCategory'], justification: "A project's items by category: an initiative's and a goal's progress (3.2b)." },
 ];
 
 /** Tenant models whose list queries are fully served by Layers A + B, with the reason. */

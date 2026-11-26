@@ -345,8 +345,6 @@ model WorkItem {
   @@index([tenantId, answerCommentId])
   /// The direct goal's FK, the `goalId` filter and a goal's direct-item count (3.2).
   @@index([tenantId, goalId, stateCategory])
-  /// A project's items by category: an initiative's and a goal's progress (3.2).
-  @@index([tenantId, projectId, stateCategory])
   /// The purge sweep across every workspace (ADR 0002 §13's one exception).
   @@index([deletedAt])
 }

@@ -65,7 +65,7 @@ export async function setWorkItemGoal(ctx: RequestContext, id: string, input: { 
             entityType: 'WorkItem',
             entityId: id,
             details: to ? `Linked ${keyOf(item)} to goal ${to.title}` : `Took ${keyOf(item)} off its goal`,
-            detailsJson: { category: 'custom', event: 'goal_changed', fromGoalId: item.goalId, toGoalId: to?.id ?? null },
+            detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'updated', changedFields: ['goalId'] },
             metadata: { fromGoalId: item.goalId, toGoalId: to?.id ?? null },
         });
         return { changed: true as const, detail: to ? `goal ${to.title}` : 'goal cleared' };
