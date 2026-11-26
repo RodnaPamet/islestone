@@ -72,6 +72,7 @@ import { todayInTz } from '../notifications/work-item-due';
 import { lockWorkItemGraph } from './work-item-graph-lock';
 import { lockedSubset } from '../repositories/work-item-locks';
 import { inProjectSequenceQueue } from './project-sequence-queue';
+import { enqueueCalendarSync, enqueueCalendarSyncForItems } from './calendar-sync-enqueue';
 import { recordMentionsInTx } from './mention';
 import { endOpenRoundsOnClose, withdrawNewAssigneeRows, type ReviewNoticeOut } from './review-engine';
 import { assertReviewAllowsDone, copiedReviewDefaultsMetadata, copyTypeReviewDefaultsInTx } from './review-defaults';
@@ -942,6 +943,8 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
     }
     await emitWaitingOnBell(ctx, result.waitingOnUserId, { id: result.id, title: result.title, key: result.key });
     await emitMentionBells(ctx, { id: result.id, title: result.title, key: result.key }, { commentId: null }, mentions.notify);
+    // Roadmap 3.3b (decision 233): the assignee's calendar, within a minute.
+    await enqueueCalendarSync(ctx, { userIds: [result.assigneeId] });
     return result;
 }
 
@@ -1177,6 +1180,8 @@ export async function updateWorkItem(ctx: RequestContext, id: string, input: Upd
         if (result.dueChanged) {
             await emitDueBell(ctx, { ...after, dueDate: parseDateOnly(after.dueDate) });
         }
+        // Roadmap 3.3b (decision 233): a title or a due date is what a calendar shows.
+        if (result.dueChanged || result.changedFields.includes('title')) await enqueueCalendarSync(ctx, { userIds: [after.assigneeId] });
     }
     return after;
 }
@@ -1281,6 +1286,8 @@ async function afterStateCommit(
             detail: `state ${c.from.name} → ${c.to.name}`,
         })),
     );
+    // Roadmap 3.3b (decision 233): an item closed or reopened leaves or joins its assignee's calendar.
+    await enqueueCalendarSyncForItems(ctx, changes.map((c) => c.item.id));
 }
 
 export { applyStateAudit, afterStateCommit };
@@ -1333,6 +1340,8 @@ export async function assignWorkItem(ctx: RequestContext, id: string, input: { a
             },
         ]);
         await emitReviewNotices(ctx, outcome.reviewNotices);
+        // Roadmap 3.3b (decision 233): out of the old assignee's calendar, into the new one's.
+        await enqueueCalendarSync(ctx, { userIds: [outcome.item.assigneeId, input.assigneeId] });
     }
     return after;
 }
@@ -1419,7 +1428,7 @@ async function softDeleteSubtrees(db: PrismaTx, ctx: RequestContext, rootIds: re
 
 export async function deleteWorkItem(ctx: RequestContext, id: string) {
     assertCanDeleteWorkItems(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const out = await runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const item = await loadWritableItem(db, ctx, v, id);
         const { deletionId, count } = await softDeleteSubtrees(db, ctx, [id]);
@@ -1433,12 +1442,14 @@ export async function deleteWorkItem(ctx: RequestContext, id: string) {
         });
         return { deleted: true, deletionId, count };
     });
+    await enqueueCalendarSyncForItems(ctx, [id]);
+    return out;
 }
 
 export async function bulkDeleteWorkItems(ctx: RequestContext, workItemIds: readonly string[]) {
     assertCanDeleteWorkItems(ctx);
     const ids = uniqueIds(workItemIds);
-    return runInTenantContext(ctx, async (db) => {
+    const out = await runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         // The requested items AND their sub-items, locked in id order in one
         // statement, then read (decision 173): a sub-item can have a lower id
@@ -1461,6 +1472,8 @@ export async function bulkDeleteWorkItems(ctx: RequestContext, workItemIds: read
         }
         return { ...bulkResults(ids, new Set(items.map((i) => i.id))), deletionId, deletedRows: count };
     });
+    await enqueueCalendarSyncForItems(ctx, ids);
+    return out;
 }
 
 /**
@@ -1471,7 +1484,7 @@ export async function bulkDeleteWorkItems(ctx: RequestContext, workItemIds: read
  */
 export async function restoreWorkItem(ctx: RequestContext, id: string) {
     assertCanDeleteWorkItems(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const out = await runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const item = await WorkItemRepository.findDeletedForRestore(db, ctx, v, id);
         if (!item || !item.deletionId) throw notFound('Deleted work item not found');
@@ -1500,6 +1513,8 @@ export async function restoreWorkItem(ctx: RequestContext, id: string) {
         });
         return { restored: true, count };
     });
+    await enqueueCalendarSyncForItems(ctx, [id]);
+    return out;
 }
 
 // ─── Bulk verbs ───────────────────────────────────────────────────────────
@@ -1549,6 +1564,7 @@ export async function bulkAssignWorkItems(ctx: RequestContext, input: { workItem
         })),
     );
     await emitReviewNotices(ctx, outcome.reviewNotices);
+    await enqueueCalendarSync(ctx, { userIds: [input.assigneeId, ...outcome.items.map((i) => i.assigneeId)] });
     return bulkResults(ids, new Set(outcome.items.map((i) => i.id)));
 }
 
@@ -1657,6 +1673,7 @@ export async function bulkSetWorkItemDueDate(ctx: RequestContext, input: { workI
             stateCategory: i.stateCategory,
         });
     }
+    await enqueueCalendarSyncForItems(ctx, outcome.map((i) => i.id));
     return bulkResults(ids, new Set(outcome.map((i) => i.id)));
 }
 
@@ -1835,6 +1852,7 @@ export async function rescheduleWorkItems(ctx: RequestContext, input: Reschedule
             stateCategory: item.stateCategory,
         });
     }
+    await enqueueCalendarSyncForItems(ctx, outcome.map(({ change }) => change.id));
     return { rescheduleId, items: outcome.map(({ change }) => ({ id: change.id, version: change.version + 1, startDate: change.startDate, dueDate: change.dueDate })) };
 }
 

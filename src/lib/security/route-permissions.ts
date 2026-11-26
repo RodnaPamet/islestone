@@ -574,6 +574,31 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'admin.manage',
         note: "Remove a holiday from a team's own working calendar.",
     },
+    // ── Calendar sync (roadmap 3.3b; ADR 0011; owner decisions 234 and 235) ──
+    {
+        path: new RegExp(`^${T}\\/calendar-sync\\/settings$`),
+        methods: ['GET', 'PUT'],
+        permission: 'integrations.manage',
+        note: "The workspace's calendar sync switch: Owners and Admins (decision 234).",
+    },
+    {
+        path: new RegExp(`^${T}\\/calendar-sync\\/microsoft-consent$`),
+        methods: ['POST', 'DELETE'],
+        permission: 'integrations.manage',
+        note: "Microsoft 365's admin consent for the customer directory, and its withdrawal (decision 237).",
+    },
+    {
+        path: new RegExp(`^${T}\\/calendar-sync\\/connect$`),
+        methods: ['POST'],
+        permission: 'work_items.view',
+        note: 'Connect the caller\'s own calendar: anyone who sees work items, Viewers as a read-only feed (decision 235).',
+    },
+    {
+        path: new RegExp(`^${T}\\/calendar-sync\\/connections$`),
+        methods: ['GET', 'DELETE'],
+        permission: 'work_items.view',
+        note: "The caller's own calendar connections and their disconnect (decision 235).",
+    },
     // ── Default review steps per type (sub-phase 2.8c; owner decisions 149, 159, 160) ──
     {
         path: new RegExp(`^${T}\\/work-item-types\\/[^\\/]+\\/review-steps$`),

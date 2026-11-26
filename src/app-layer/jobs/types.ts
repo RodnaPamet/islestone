@@ -289,6 +289,26 @@ export interface SearchIndexRebuildPayload {
     requestedByUserId?: string;
 }
 
+/**
+ * Calendar sync (roadmap 3.3b; ADR 0011; decision 233): every 15 minutes the
+ * dispatcher enqueues one run per live connection (and a teardown per
+ * connection being disconnected); a run pushes one connection's items and
+ * milestones; a teardown deletes Islestone's events, then the token, then the
+ * rows (decision 239). No payload names a person: each run reads the
+ * connection's own member and re-resolves them.
+ */
+export interface CalendarSyncDispatchPayload {
+    tenantId?: string;
+}
+export interface CalendarSyncConnectionPayload {
+    tenantId: string;
+    connectionId: string;
+}
+export interface CalendarTeardownPayload {
+    tenantId: string;
+    connectionId: string;
+}
+
 /** Daily rebalance of projects whose sort keys passed the length bound (ADR 0002 §5). */
 export interface WorkItemSortKeyRebalancePayload {
     tenantId?: string;
@@ -335,6 +355,9 @@ export interface JobPayloadMap {
     'notification-digest': NotificationDigestPayload;
     'notification-purge': NotificationPurgePayload;
     'search-index-rebuild': SearchIndexRebuildPayload;
+    'calendar-sync-dispatch': CalendarSyncDispatchPayload;
+    'calendar-sync-connection': CalendarSyncConnectionPayload;
+    'calendar-teardown': CalendarTeardownPayload;
 }
 
 /** Union of all valid job names */
@@ -516,6 +539,30 @@ export const JOB_DEFAULTS: Record<JobName, {
         backoff: { type: 'fixed', delay: 60_000 },
         removeOnComplete: 30,
         removeOnFail: 100,
+    },
+    'calendar-sync-dispatch': {
+        // One attempt: the next quarter hour is the retry.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 60_000 },
+        removeOnComplete: 30,
+        removeOnFail: 100,
+    },
+    'calendar-sync-connection': {
+        // One attempt (the map's "the next bucket is the retry"): a run is a
+        // reconcile, so the next one repeats exactly what is still missing; a
+        // revoked token is terminal and never retried.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 60_000 },
+        removeOnComplete: 200,
+        removeOnFail: 500,
+    },
+    'calendar-teardown': {
+        // Three attempts a few minutes apart; a teardown still unfinished is
+        // enqueued again by the dispatcher every quarter hour.
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 60_000 },
+        removeOnComplete: 200,
+        removeOnFail: 500,
     },
 };
 

@@ -82,6 +82,13 @@ It runs **after** the JWT is verified and the tenant-access gate has
 passed, so an unauthorised request gets the cheaper 401 or 403 first
 (`tests/guards/api-read-rate-limit.test.ts` holds the order).
 
+The two calendar OAuth callbacks (roadmap 3.3b,
+`/api/integrations/calendar/callback` and `/admin-callback`) are signed-in
+GETs outside `/api/t/`, because each provider returns to one fixed URI; the
+middleware meters them at the read tier's budget under their own key
+(`calendarcallback`, by IP and user), after the JWT is verified. Each is also
+bound to a single-use state (`docs/calendar-sync.md`).
+
 ### Exclusions
 
 These paths are **never** read-throttled:

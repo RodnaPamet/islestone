@@ -113,6 +113,8 @@ export const SUBPAGES: readonly string[] = [
     // Roadmap 3.1a: the workspace's working calendar, and a team's.
     '/settings/working-calendars',
     '/settings/working-calendars/[teamId]',
+    // Roadmap 3.3b: the workspace's calendar sync settings.
+    '/settings/calendar-sync',
 ] as const;
 
 /**

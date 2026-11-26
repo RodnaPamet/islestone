@@ -38,8 +38,15 @@ const WRITE_ACTIONS = new Set([
 const DIFF_ACTIONS = new Set(['update', 'upsert']);
 
 // ─── Models to exclude from audit logging ───
+// Each entry is an owner decision; tests/guards/audit-excluded-models.test.ts
+// holds the set to exactly these.
 const EXCLUDED_MODELS = new Set([
     'AuditLog', // Prevent infinite recursion
+    // Calendar sync's bookkeeping of what it pushed (3.3b, owner decision
+    // 2026-11-26): a row per synced event, rewritten on every push, would grow
+    // the audit trail with sync traffic. Connections, settings and every
+    // explicit logEvent of the sync stay audited.
+    'CalendarSyncedEvent',
 ]);
 
 /**

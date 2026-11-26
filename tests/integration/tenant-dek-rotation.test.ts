@@ -243,6 +243,8 @@ describeFn('rotateTenantDek and the sweep (integration — real DB)', () => {
             ]),
         );
         expect(sweep.perField.map((f) => `${f.model}.${f.field}`).sort()).toEqual([
+            // Roadmap 3.3b (decision 238): a member's calendar token blob.
+            'CalendarConnection.tokenEncrypted',
             'Comment.body',
             // Sub-phase 3.2a: goals' and initiatives' descriptions.
             'Goal.description',

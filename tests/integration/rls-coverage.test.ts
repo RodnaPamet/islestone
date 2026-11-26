@@ -74,6 +74,9 @@ const NO_DELETE_TABLES: readonly string[] = [
     // reviewer are ended or withdrawn, never deleted (ADR 0009).
     'WorkItemReviewRound',
     'WorkItemReviewer',
+    // Roadmap 3.3b: the workspace's calendar sync settings row is changed,
+    // never deleted (a workspace's purge cascades as the owner).
+    'TenantCalendarSettings',
 ];
 
 describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
@@ -285,6 +288,8 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
         expect([...TENANT_SCOPED_MODELS].sort()).toEqual([
             'AuditLog',
             'AuditOutbox',
+            'CalendarConnection',
+            'CalendarSyncedEvent',
             'Comment',
             'CustomField',
             'CustomFieldOption',
@@ -315,6 +320,7 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             'SavedView',
             'SearchVector',
             'Team',
+            'TenantCalendarSettings',
             'TenantCustomRole',
             'TenantInvite',
             'TenantMembership',

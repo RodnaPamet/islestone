@@ -211,6 +211,18 @@ export function recordPlanLimitHit(attrs: { resource: LimitResource }): void {
     });
 }
 
+// ─── Calendar sync (roadmap 3.3b; ADR 0011) ───
+
+export type CalendarSyncOutcome = 'pushed' | 'nothing' | 'revoked' | 'throttled' | 'failed' | 'torn_down';
+
+/** One connection's run (a push or a teardown), by provider; never a workspace or a person. */
+export function recordCalendarSyncOutcome(attrs: { provider: 'GOOGLE' | 'MICROSOFT'; outcome: CalendarSyncOutcome }): void {
+    counter('calendar.sync.outcome', 'Calendar sync runs by outcome').add(1, {
+        provider: attrs.provider,
+        outcome: attrs.outcome,
+    });
+}
+
 // ════════════════════════════════════════════════════════════════════
 // OBSERVABLE GAUGES — active users (DAU / MAU), grouped by plan.
 //

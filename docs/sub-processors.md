@@ -16,3 +16,29 @@ Facts marked "(re-check)" were taken from search summaries, not a live page, and
 | **Transfer basis** | The Standard Contractual Clauses in Resend's data processing addendum (resend.com/legal/dpa) and the EU–US Data Privacy Framework (re-check Resend's certification). |
 | **What Islestone keeps** | A request's title, its sanitised text (encrypted), the sender's name and address (personal data, encrypted, matched by a lookup hash), follow-ups (encrypted) and a delivery record holding the sender's lookup hash only (purged after 30 days). Attachments and the raw message are never stored. |
 | **Open operator step** | Ask Resend whether received mail and logs can be deleted on request or kept for zero days, and record the answer here. |
+
+## Google (Google Calendar API)
+
+| | |
+|---|---|
+| **What it does** | Holds the "Islestone" calendar a member connects to their own Google account, and the events Islestone pushes into it (roadmap 3.3b, `docs/calendar-sync.md`; ADR 0011; owner decision 240). |
+| **Data** | The titles, due dates and links of a member's own open items assigned to them, and the names, due dates and links of the milestones of their projects. Each link carries the workspace's address and the item's key, or the project's key and the milestone's id (decisions 226, 227 and 229). Nothing else of the workspace: no description, comment, assignee, watcher, person, label, field value or cycle. |
+| **On whose instruction** | The member's, once an Owner or Admin has turned calendar sync on for the workspace and the operator has opened it (`CALENDAR_SYNC`; decisions 234 and 235). |
+| **Since** | Roadmap 3.3b. Nothing flows until an operator sets `CALENDAR_SYNC=1` (closed in production by default), an Owner or Admin turns it on and a member connects. |
+| **Where it is stored** | In a calendar in the member's own Google account, under that account's terms, visible to anyone the member shares that calendar with. Events are private and free. |
+| **What Islestone keeps** | The OAuth token pair (encrypted under the workspace's key, decision 238), the dedicated calendar's id, and per event its id, Islestone's own client id, the date pushed, a hash of what was pushed and the provider's version. No address of the connected account is stored. |
+| **Removal** | Disconnecting, leaving the workspace, the switch turned off: Islestone deletes its events, then the empty calendar, then the token (decision 239). Islestone never revokes the grant at Google (decision 236): a member removes Islestone from their Google account themselves, which also affects signing in with Google. |
+| **Open operator steps** | Google's OAuth verification of the `calendar.app.created` scope on the sign-in app (decision 236); register the redirect URI (`docs/deployment.md`, "Calendar sync"). The scope's verification class and whether a pending verification changes the sign-in consent screen were not verified from here (re-check). |
+
+## Microsoft (Microsoft Graph, Outlook calendar)
+
+| | |
+|---|---|
+| **What it does** | Holds the "Islestone" calendar a member connects in their Microsoft 365 or Outlook account, and the events Islestone pushes into it (roadmap 3.3b, `docs/calendar-sync.md`; ADR 0011; owner decision 240). |
+| **Data** | As for Google: titles, due dates and links of the member's open assigned items and their projects' milestones; nothing else. |
+| **On whose instruction** | The member's, once an Owner or Admin has turned calendar sync on, the customer directory's administrator has authorised Microsoft 365 (decision 237) and the operator has opened it. |
+| **Since** | Roadmap 3.3b, behind `CALENDAR_SYNC` (closed in production by default). |
+| **Where it is stored** | In a calendar in the member's own Microsoft account, under their organisation's terms, visible to anyone the member shares it with. Events are private and shown as free. |
+| **What Islestone keeps** | As for Google, plus the customer directory's id and who granted the admin consent. |
+| **Removal** | As for Google. Withdrawing the consent in Settings → Calendar sync removes every Outlook connection and its events. Microsoft offers no per-grant revoke for a delegated token; tokens are destroyed locally. |
+| **Open operator steps** | Microsoft's publisher verification for the multi-tenant sign-in app; register the two redirect URIs (`docs/deployment.md`, "Calendar sync"); the app registration must accept other directories, as sign-in at `common` does. |

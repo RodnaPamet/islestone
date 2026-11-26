@@ -409,6 +409,26 @@ async function buildFixture(name: FixtureName, w: World, prisma: PrismaClient, c
         }
         case 'freshBlocked':
             return { blockedId: (await blockSender(owner, { email: `blocked-${nextSeq()}@example.test`, projectId: null })).row.id };
+        // Roadmap 3.3b: the workspace's switch on, both sign-in apps configured and a public origin (the
+        // connect and the consent answer a provider URL built on them; nothing is fetched).
+        case 'calendarSyncOn': {
+            process.env.GOOGLE_CLIENT_ID ??= 'matrix-google-client';
+            process.env.GOOGLE_CLIENT_SECRET ??= 'matrix-google-secret'; // pragma: allowlist secret
+            process.env.MICROSOFT_CLIENT_ID ??= 'matrix-microsoft-client';
+            process.env.MICROSOFT_CLIENT_SECRET ??= 'matrix-microsoft-secret'; // pragma: allowlist secret
+            process.env.NEXT_PUBLIC_APP_URL ??= 'https://matrix.example.test';
+            await prisma.tenantCalendarSettings.upsert({ where: { tenantId: w.tenantId }, create: { tenantId: w.tenantId, syncEnabled: true }, update: { syncEnabled: true } });
+            return {};
+        }
+        // A connection the provider already refused (no token to hold), so a disconnect only tears it down.
+        case 'ownCalendarConnection': {
+            await prisma.calendarConnection.upsert({
+                where: { tenantId_userId_provider: { tenantId: w.tenantId, userId: me, provider: 'GOOGLE' } },
+                create: { tenantId: w.tenantId, userId: me, provider: 'GOOGLE', state: 'REVOKED', revokedReason: 'ACCESS_WITHDRAWN' },
+                update: {},
+            });
+            return {};
+        }
         case 'ownNotification': {
             const row = await prisma.notification.create({ data: { tenantId: w.tenantId, userId: me, title: 'Matrix', body: 'for you' } });
             return { id: row.id };

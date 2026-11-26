@@ -120,6 +120,17 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     // first 100k measurement.
     { name: 'calendar: workspace, a month grid', methods: ['WorkItemRepository.listForCalendar', 'WorkItemRepository.countForCalendar', 'WorkItemRepository.countWithoutDueDate'], indexes: ['WorkItem_tenantId_dueDate_id_idx|WorkItem_tenantId_projectId_dueDate_id_idx'], maxBuffers: 5200, maxBuffers100k: 40000 },
     { name: 'calendar: project, a month grid', methods: ['WorkItemRepository.listForCalendar', 'WorkItemRepository.countWithoutDueDate'], indexes: ['WorkItem_tenantId_projectId_dueDate_id_idx'], maxBuffers: 1000, maxBuffers100k: 10000 },
+    // ── Calendar sync (3.3b): a member's open assigned items in the push window, their count, their projects ──
+    // 10k: 3,718 buffers measured for the heavy member (the window's items on the assignee index, the
+    // count, and every open assigned item grouped by project). 100k: NOT MEASURED (no disk for the seed
+    // here): about ten times, budgeted as such; replace with about twice the nightly's first measurement.
+    {
+        name: "calendar sync: a member's items and projects",
+        methods: ['WorkItemRepository.listAssignedForCalendarSync', 'WorkItemRepository.countAssignedForCalendarSync', 'WorkItemRepository.projectsWithOpenAssigned'],
+        indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx'],
+        maxBuffers: 7500,
+        maxBuffers100k: 75000,
+    },
     {
         name: 'timeline: working calendars',
         methods: [],
@@ -148,6 +159,7 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
  * "too hard to set up".
  */
 export const PLAN_CHECK_EXEMPT: Readonly<Record<string, string>> = {
+    'CalendarSyncRepository.connectedOfAssignees': 'the named items by primary key (at most 500, after a change to them), joined to their assignees\' calendar connections (3.3b)',
     'WorkItemRepository.findVisible': 'one item by primary key (the write gate)',
     'WorkItemRepository.findDeletedForRestore': 'one item by primary key',
     'WorkItemRepository.lockForWrite': 'the given ids by primary key, locked in id order (decision 173)',

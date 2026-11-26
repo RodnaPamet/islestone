@@ -656,6 +656,40 @@ executorRegistry.register('intake-email-fetch', async (payload) => {
     return makeResult('intake-email-fetch', startedAt, startMs, 1, outcome === 'FAILED' ? 0 : 1, outcome === 'FAILED' ? 1 : 0, { outcome });
 });
 
+// ── Calendar sync (roadmap 3.3b; ADR 0011) ───────────────────────────
+//
+// The dispatcher every 15 minutes; one run per connection and one teardown
+// per connection being disconnected, on demand. A revoked token throws
+// NonRetryableJobError from the run (terminal, never retried).
+
+executorRegistry.register('calendar-sync-dispatch', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processCalendarSyncDispatch } = await import('./calendar-sync');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId };
+    const r = await processCalendarSyncDispatch(forwarded);
+    return makeResult('calendar-sync-dispatch', startedAt, startMs, r.runs + r.teardowns, r.runs + r.teardowns, 0, { runs: r.runs, teardowns: r.teardowns });
+});
+
+executorRegistry.register('calendar-sync-connection', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processCalendarSyncConnection } = await import('./calendar-sync');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId, connectionId: payload.connectionId };
+    const r = await processCalendarSyncConnection(forwarded);
+    const failed = r.outcome === 'failed' ? 1 : 0;
+    return makeResult('calendar-sync-connection', startedAt, startMs, 1, 1 - failed, failed, { outcome: r.outcome, ...(r.counts ?? {}) });
+});
+
+executorRegistry.register('calendar-teardown', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processCalendarTeardown } = await import('./calendar-sync');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId, connectionId: payload.connectionId };
+    const r = await processCalendarTeardown(forwarded);
+    return makeResult('calendar-teardown', startedAt, startMs, r.deleted, r.deleted, r.remaining, { outcome: r.outcome });
+});
+
 executorRegistry.register('notification-digest', async (payload) => {
     const startedAt = new Date().toISOString();
     const startMs = performance.now();

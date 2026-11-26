@@ -147,6 +147,8 @@ export type FixtureName =
     | 'ownVerifiedMfa'
     | 'freshForm'
     | 'annMfaEnrollment'
+    | 'calendarSyncOn'
+    | 'ownCalendarConnection'
     | 'keyRotationJob'
     | 'dekRotationJob';
 
@@ -593,6 +595,16 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         { route: 'notifications/bulk/route.ts', method: 'POST', key: null, subject: "the caller's notifications", body: () => ({ action: 'mark-all-read' }), expect: SELF },
         { route: 'notification-preferences/route.ts', method: 'GET', key: null, subject: "the caller's preferences", expect: SELF },
         { route: 'notification-preferences/route.ts', method: 'PUT', key: null, subject: "the caller's preferences", body: () => ({ rows: [{ type: 'WORK_ITEM_ASSIGNED', inApp: true, email: 'OFF' }] }), expect: SELF },
+        // Roadmap 3.3b (decisions 234 and 235): a member's own calendar connection under work_items.view (Viewers
+        // included, a read-only feed; a guest nothing, decision 204), keyed off the caller.
+        { route: 'calendar-sync/connect/route.ts', method: 'POST', key: 'work_items.view', subject: "the caller's Google calendar connection", fixture: 'calendarSyncOn', query: () => ({ provider: 'google' }), expect: READ },
+        { route: 'calendar-sync/connections/route.ts', method: 'GET', key: 'work_items.view', subject: "the caller's calendar connections", expect: READ },
+        { route: 'calendar-sync/connections/route.ts', method: 'DELETE', key: 'work_items.view', subject: "the caller's own calendar connection", fixture: 'ownCalendarConnection', query: () => ({ provider: 'google' }), expect: READ },
+        // The workspace's switch and Microsoft's admin consent under integrations.manage: Owners and Admins (decision 234).
+        { route: 'calendar-sync/settings/route.ts', method: 'GET', key: 'integrations.manage', subject: "the workspace's calendar sync settings", expect: ADMIN },
+        { route: 'calendar-sync/settings/route.ts', method: 'PUT', key: 'integrations.manage', subject: "the workspace's calendar sync switch", fixture: 'calendarSyncOn', body: () => ({ syncEnabled: true }), expect: ADMIN },
+        { route: 'calendar-sync/microsoft-consent/route.ts', method: 'POST', key: 'integrations.manage', subject: "Microsoft 365's admin consent, started", fixture: 'calendarSyncOn', expect: ADMIN },
+        { route: 'calendar-sync/microsoft-consent/route.ts', method: 'DELETE', key: 'integrations.manage', subject: "Microsoft 365's admin consent, withdrawn", expect: ADMIN },
         { route: 'notification-settings/route.ts', method: 'GET', key: 'admin.manage', subject: "the workspace's notification settings", expect: ADMIN },
         { route: 'notification-settings/route.ts', method: 'PUT', key: 'admin.manage', subject: "the workspace's notification settings", body: () => ({ enabled: true }), expect: ADMIN },
         { route: 'notification-settings/run-job/route.ts', method: 'POST', key: 'admin.manage', subject: "the workspace's outbox", body: () => ({ jobType: 'processOutbox' }), expect: ADMIN },

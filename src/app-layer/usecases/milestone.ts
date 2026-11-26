@@ -44,6 +44,7 @@ import { sanitizePlainText } from '@/lib/security/sanitize';
 import { MILESTONE_NAME_MAX } from '@/lib/schemas/milestone';
 import type { MilestoneData, MilestoneProgress, ViewMilestone } from '@/lib/work-items/types';
 import { todayClock } from '@/lib/clock';
+import { enqueueCalendarSync } from './calendar-sync-enqueue';
 
 /** The most items one milestone delete clears (far above a real milestone). */
 export const MILESTONE_CLEAR_CAP = 5_000;
@@ -177,7 +178,7 @@ export interface UpdateMilestoneInput {
 /** Rename, re-date (or clear the date) and reorder by neighbour. */
 export async function updateMilestone(ctx: RequestContext, projectId: string, milestoneId: string, input: UpdateMilestoneInput): Promise<MilestoneData> {
     assertCanManageMilestones(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const out = await runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const project = await loadProject(db, ctx, v, projectId);
         assertProjectWritable(project);
@@ -227,6 +228,9 @@ export async function updateMilestone(ctx: RequestContext, projectId: string, mi
         }
         return (await milestoneDataList(db, ctx, v, [(await MilestoneRepository.getById(db, ctx, m.id))!]))[0]!;
     });
+    // Roadmap 3.3b (decision 233): every member's calendar that may show it, within a minute.
+    await enqueueCalendarSync(ctx, 'workspace');
+    return out;
 }
 
 /**
@@ -236,7 +240,7 @@ export async function updateMilestone(ctx: RequestContext, projectId: string, mi
  */
 export async function deleteMilestone(ctx: RequestContext, projectId: string, milestoneId: string): Promise<{ deleted: true; clearedItems: number }> {
     assertCanManageMilestones(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    const out = await runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const project = await loadProject(db, ctx, v, projectId);
         assertProjectWritable(project);
@@ -272,6 +276,9 @@ export async function deleteMilestone(ctx: RequestContext, projectId: string, mi
         });
         return { deleted: true as const, clearedItems: cleared };
     });
+    // Roadmap 3.3b (decision 233): every member's calendar that may show it, within a minute.
+    await enqueueCalendarSync(ctx, 'workspace');
+    return out;
 }
 
 // ─── An item's milestone ──────────────────────────────────────────────────

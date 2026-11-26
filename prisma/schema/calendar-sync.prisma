@@ -1,0 +1,103 @@
+/// Calendar sync (roadmap 3.3b; ADR 0011; owner decisions 225 to 244;
+/// docs/calendar-sync.md). Ported from inflect-compliance's
+/// `UserCalendarConnection`, `UserCalendarEventMapping` and
+/// `TenantCalendarConsent` (auth.prisma at
+/// 5528464fc54a8681956f3b9ce23ca9c075f0420e), renamed (decision 243) and
+/// changed: the token in a manifest column under the workspace's key (decision
+/// 238), a work item or a milestone instead of a source key (decision 227),
+/// the pushed due date and the provider's version kept, and the consent folded
+/// into the workspace's settings row with its switch (decision 234). What
+/// Prisma cannot declare (the CHECKs, the two partial uniques) lives in
+/// migration `20261218130100_calendar_sync`.
+
+/// The workspace's calendar sync settings: the Owner's or Admin's switch
+/// (decision 234) and Microsoft 365's admin consent (decision 237). No row is
+/// sync off. `app_user` holds no DELETE on it.
+model TenantCalendarSettings {
+  tenantId                        String    @id
+  syncEnabled                     Boolean   @default(false)
+  /// The customer's Microsoft directory the consent was granted in (a GUID, CHECKed).
+  microsoftExternalTenantId       String?
+  microsoftConsentGrantedAt       DateTime?
+  /// Actor stamp, no FK.
+  microsoftConsentGrantedByUserId String?
+  microsoftConsentRevokedAt       DateTime?
+  version                         Int       @default(1)
+  updatedAt                       DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+/// One member's calendar connection for a workspace and a provider (ADR 0006
+/// "Calendar connection"). Keyed to the user, not the membership: a removed
+/// member's events must still be deleted with the token this row holds
+/// (decision 239), so removal moves it to DISCONNECTING and the teardown
+/// deletes it after the remote events.
+model CalendarConnection {
+  id                 String                  @id @default(cuid())
+  tenantId           String
+  userId             String
+  provider           CalendarProvider
+  state              CalendarConnectionState @default(CONNECTED)
+  /// ENCRYPTED (manifest, decision 238): { accessToken, refreshToken, expiresAt } as one JSON blob. NULL once revoked or torn down.
+  tokenEncrypted     String?
+  /// What the provider granted, which may be narrower than asked.
+  scopesGranted      String[]
+  /// The dedicated "Islestone" calendar's id at the provider (decision 228).
+  externalCalendarId String?
+  /// Google's syncToken for the read-back (3.3c); opaque, useless without the token.
+  syncCursor         String?
+  /// A fixed code (CHECK), never a provider body.
+  revokedReason      String?
+  /// The last run that wrote to the calendar (a quiet run stamps nothing).
+  lastSyncedAt       DateTime?
+  connectedAt        DateTime                @default(now())
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  syncedEvents CalendarSyncedEvent[]
+
+  @@unique([tenantId, userId, provider])
+  @@unique([id, tenantId])
+  @@index([tenantId, state])
+  @@index([userId])
+}
+
+/// Islestone's record of one event it pushed (ADR 0006 "Synced event"): one
+/// per connection and work item or milestone (partial uniques). No foreign
+/// key to the item or the milestone: the record outlives an item's purge or a
+/// milestone's delete until its remote event is gone. The connection's key is
+/// NO ACTION, so a connection is deleted only after its events.
+model CalendarSyncedEvent {
+  id            String                   @id @default(cuid())
+  tenantId      String
+  connectionId  String
+  kind          CalendarSyncedEventKind
+  workItemId    String?
+  milestoneId   String?
+  /// Empty until the provider confirmed the insert: a row with no remote id is looked up before it is inserted again.
+  remoteEventId String                   @default("")
+  /// Deterministic: 40 lowercase hex over workspace, connection, kind and id.
+  clientEventId String
+  /// What Islestone last pushed (or is pushing): the read-back's check (decision 230).
+  pushedDueDate DateTime                 @db.Date
+  /// Over exactly what is pushed (title, date, link).
+  contentHash   String
+  /// The provider's version after Islestone's last write (Google etag, Graph changeKey).
+  remoteVersion String?
+  state         CalendarSyncedEventState @default(PUSHED)
+  /// A code from a closed list (CHECK), never a provider body.
+  lastError     String?
+  lastPushedAt  DateTime?
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+
+  tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connection CalendarConnection @relation(fields: [connectionId, tenantId], references: [id, tenantId], onDelete: NoAction)
+
+  @@index([tenantId, connectionId, state])
+  @@index([tenantId, workItemId])
+  @@index([tenantId, milestoneId])
+}

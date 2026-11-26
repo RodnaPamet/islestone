@@ -13,6 +13,7 @@
  *   - intake-snooze-wake:        08:00 in NOTIFICATIONS_TZ (snoozed requests come back; 2.6a)
  *   - intake-purge:              02:50 UTC (decided requests past retention; 2.6a)
  *   - work-item-recurrence:      00:30 in NOTIFICATIONS_TZ (make due repeats; 2.5d)
+ *   - calendar-sync-dispatch:    every 15 min (calendar sync runs and teardowns; 3.3b)
  *
  * The two key rotations (`key-rotation`, `tenant-dek-rotation`) are started by
  * an operator through their admin routes and have no schedule.
@@ -154,6 +155,14 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         // Off the hour, and away from the 08:00 reminder: a purge holds
         // write locks on the rows it removes.
         description: 'Hard-delete work items and projects soft-deleted more than WORK_ITEM_PURGE_DAYS (30) ago. Counts-only audit entry per workspace.',
+        defaultPayload: {},
+    },
+    {
+        name: 'calendar-sync-dispatch',
+        pattern: '*/15 * * * *',  // every 15 minutes, UTC
+        // Decision 233: calendars are read and pushed every quarter hour; a
+        // change in Islestone is pushed within a minute by its own job.
+        description: 'Queue one calendar sync run per live calendar connection and one teardown per connection being disconnected (at most 5,000 of each). Idempotent: a run is a reconcile.',
         defaultPayload: {},
     },
     {

@@ -13,7 +13,7 @@
  */
 import type { EmailDelivery } from '@prisma/client';
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useSWRConfig } from 'swr';
 
 import { Button } from '@inflect/ui/components/ui/button';
@@ -29,7 +29,8 @@ import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 
 import { INBOX_PATHS, inboxRefusal } from './use-inbox';
 
-export function NotificationPreferencesView() {
+/** `children`: further sections of the member's own settings (3.3b's Calendar sync), rendered after the table. */
+export function NotificationPreferencesView({ children }: { children?: ReactNode } = {}) {
     const t = useTranslations('notificationPreferences');
     const tInbox = useTranslations('inbox');
     const toast = useToast();
@@ -133,6 +134,7 @@ export function NotificationPreferencesView() {
                     </tbody>
                 </table>
             )}
+            {children}
         </DashboardLayout>
     );
 }

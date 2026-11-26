@@ -104,6 +104,29 @@ export const env = createEnv({
         MICROSOFT_CLIENT_SECRET: z.string().min(1).optional(),
         MICROSOFT_TENANT_ID: z.string().default('common'),
         /**
+         * Calendar sync (roadmap 3.3b; ADR 0011; owner decisions 234 and 236):
+         * "1" opens it, "0" closes it; unset, closed in production and open
+         * otherwise (`isCalendarSyncOpen`, src/lib/calendar-sync/switch.ts).
+         * It reuses the sign-in apps above; opened in production, at least one
+         * complete pair is required: refused here and again at startup
+         * (src/lib/security/startup-calendar-sync-check.ts).
+         */
+        CALENDAR_SYNC: z
+            .enum(['0', '1'])
+            .optional()
+            .superRefine((val, ctx) => {
+                if (process.env.NODE_ENV !== 'production') return;
+                if (process.env.NEXT_TEST_MODE === '1') return;
+                if (val !== '1') return;
+                const google = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+                const microsoft = Boolean(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET);
+                if (google || microsoft) return;
+                ctx.addIssue({
+                    code: 'custom',
+                    message: 'CALENDAR_SYNC=1 needs GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET: calendar sync uses the sign-in apps.',
+                });
+            }),
+        /**
          * "1" disables the credential throttle and both rate-limit tiers, for
          * tests and the E2E server. Refused in production unless
          * NEXT_TEST_MODE is "1" (set only by the Playwright webServer).
@@ -471,6 +494,7 @@ export const env = createEnv({
         MICROSOFT_CLIENT_ID: process.env.MICROSOFT_CLIENT_ID,
         MICROSOFT_CLIENT_SECRET: process.env.MICROSOFT_CLIENT_SECRET,
         MICROSOFT_TENANT_ID: process.env.MICROSOFT_TENANT_ID,
+        CALENDAR_SYNC: process.env.CALENDAR_SYNC,
         AUTH_TEST_MODE: process.env.AUTH_TEST_MODE,
         NEXT_TEST_MODE: process.env.NEXT_TEST_MODE,
         E2E_TODAY: process.env.E2E_TODAY,

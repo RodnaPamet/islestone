@@ -679,6 +679,64 @@ export class WorkItemRepository {
         });
     }
 
+    /**
+     * A member's open items assigned to them with a due date in `[from, to]`,
+     * in live, visible, unarchived projects (calendar sync, roadmap 3.3b,
+     * decision 226): the desired set of their calendar. Earliest due first,
+     * then id; at most `take`. Title, key and due date only: nothing else of
+     * an item leaves (decision 229).
+     */
+    static async listAssignedForCalendarSync(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, userId: string, page: { from: Date; to: Date; take: number }) {
+        return db.workItem.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                assigneeId: userId,
+                deletedAt: null,
+                stateCategory: OPEN_CATEGORY_FILTER,
+                dueDate: { gte: page.from, lte: page.to },
+                AND: [projectVisibilityWhere(v)],
+            },
+            orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+            take: page.take,
+            select: { id: true, title: true, number: true, dueDate: true, project: { select: { keyPrefix: true } } },
+        });
+    }
+
+    /** How many items {@link listAssignedForCalendarSync} would hold without its bound: "1,000 of 1,240". */
+    static async countAssignedForCalendarSync(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, userId: string, page: { from: Date; to: Date }): Promise<number> {
+        return db.workItem.count({
+            where: {
+                tenantId: ctx.tenantId,
+                assigneeId: userId,
+                deletedAt: null,
+                stateCategory: OPEN_CATEGORY_FILTER,
+                dueDate: { gte: page.from, lte: page.to },
+                AND: [projectVisibilityWhere(v)],
+            },
+        });
+    }
+
+    /**
+     * The live, visible, unarchived projects in which a member has at least
+     * one open item assigned to them, dated or not (calendar sync, decision
+     * 227: whose milestones reach their calendar). At most `take`.
+     */
+    static async projectsWithOpenAssigned(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, userId: string, take: number): Promise<string[]> {
+        const rows = await db.workItem.groupBy({
+            by: ['projectId'],
+            where: {
+                tenantId: ctx.tenantId,
+                assigneeId: userId,
+                deletedAt: null,
+                stateCategory: OPEN_CATEGORY_FILTER,
+                AND: [projectVisibilityWhere(v)],
+            },
+            orderBy: { projectId: 'asc' },
+            take,
+        });
+        return rows.map((r) => r.projectId);
+    }
+
     /** How many items the calendar's window holds: the count a too-large calendar answers with. */
     static async countForCalendar(
         db: PrismaTx,

@@ -99,6 +99,22 @@ async function refuseUnsafeProductionStart(env: ServerEnv): Promise<void> {
         process.exit(1);
     }
 
+    // ── Roadmap 3.3b: calendar sync opened needs a sign-in app pair ──
+    const { checkProductionCalendarSync } = await import('@/lib/security/startup-calendar-sync-check');
+    const calendarSync = checkProductionCalendarSync({
+        NODE_ENV: env.NODE_ENV,
+        NEXT_TEST_MODE: env.NEXT_TEST_MODE,
+        CALENDAR_SYNC: env.CALENDAR_SYNC,
+        GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
+        GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
+        MICROSOFT_CLIENT_ID: env.MICROSOFT_CLIENT_ID,
+        MICROSOFT_CLIENT_SECRET: env.MICROSOFT_CLIENT_SECRET,
+    });
+    if (!calendarSync.ok) {
+        console.error('[startup] FATAL: ' + calendarSync.reason);
+        process.exit(1);
+    }
+
     // ── GAP-03: DATA_ENCRYPTION_KEY is required in production ──
     // The config check catches a missing, short or dev-fallback key; the
     // sentinel round-trips a fixed plaintext so a key that is structurally

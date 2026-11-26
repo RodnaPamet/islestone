@@ -501,6 +501,52 @@ very likely stored in the US for 30 days, and no API to delete them was found
 on request or kept for zero days, and record the answer in
 `docs/sub-processors.md`.
 
+## Calendar sync
+
+Roadmap 3.3b (ADR 0011; owner decisions 234 to 240; [`docs/calendar-sync.md`](calendar-sync.md)).
+Calendar sync puts members' open items and their projects' milestones into
+their own Google or Outlook calendar. Google and Microsoft are sub-processors
+for it ([`docs/sub-processors.md`](sub-processors.md)). It is closed in
+production until an operator opens it.
+
+**The switch.** `CALENDAR_SYNC=1` in `.env.prod` opens it (the app and the
+worker both read it through the compose file); empty keeps it closed, and
+every calendar sync route then answers 404 and no calendar job runs.
+Production refuses `CALENDAR_SYNC=1` without at least one complete sign-in app
+pair (`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, or `MICROSOFT_CLIENT_ID`
+and `MICROSOFT_CLIENT_SECRET`), at startup of both. Open it only once this
+release runs on both the app and the worker. Then an Owner or Admin turns it
+on per workspace in Settings → Calendar sync.
+
+**The apps are the sign-in apps** (decision 236): no separate calendar client
+exists. Register these redirect URIs on the existing app registrations,
+beside sign-in's `/api/auth/callback/<provider>`:
+
+| Provider | Redirect URI to add | Also |
+|---|---|---|
+| Google (the OAuth client sign-in uses) | `https://islestone.cloud/api/integrations/calendar/callback` | Add the scope `https://www.googleapis.com/auth/calendar.app.created` to the app's consent screen configuration and complete Google's verification for it on the sign-in app (its class and requirements are re-checked against Google's console first). |
+| Microsoft (the app registration sign-in uses) | `https://islestone.cloud/api/integrations/calendar/callback` and `https://islestone.cloud/api/integrations/calendar/admin-callback` | Add the delegated Graph permissions `Calendars.ReadWrite` and `offline_access`. The registration must accept accounts in other directories (multi-tenant), as sign-in at `common` already does; complete publisher verification. |
+
+The calendar flow asks only the calendar scope (never `openid`, `email` or
+`profile`), with PKCE, and Google's authorize URL does not set
+`include_granted_scopes`. Microsoft's authority for a member's connection is
+the customer directory an administrator authorised in Settings → Calendar
+sync ("Authorise Microsoft 365", the v2 `/adminconsent` endpoint with the
+calendar scope), never `MICROSOFT_TENANT_ID`, which stays sign-in's.
+
+**Consequences of sharing the apps** (recorded for decision 236): Google's
+verification of the calendar scope is the sign-in app's; a person removing
+the app at Google or from Microsoft's My Apps withdraws both sign-in consent
+and calendar access; a customer admin removing the enterprise application
+removes Microsoft sign-in for that directory as well. Islestone never calls
+Google's revoke endpoint: tokens are destroyed locally.
+
+**Egress.** The app and the worker reach four fixed hosts:
+`oauth2.googleapis.com`, `www.googleapis.com`, `login.microsoftonline.com` and
+`graph.microsoft.com`; browsers navigate to `accounts.google.com` and
+`login.microsoftonline.com`. No CSP change. No deployment egress allowlist
+exists today; if one is added, these hosts join it.
+
 ## Backups and the restore drill
 
 `deploy/backup.sh` runs `pg_dump --format=custom` inside `islestone-postgres`

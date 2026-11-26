@@ -80,6 +80,12 @@ const ALLOWED_API_DIRS = new Set([
     // machine-caller paths that gate themselves; the workspace comes from the
     // form's public id or the confirmation token, never from a session.
     'intake',
+    // Roadmap 3.3b: the calendar OAuth callbacks (`integrations/calendar/callback`,
+    // `integrations/calendar/admin-callback`). Each provider returns to one
+    // fixed URI; the workspace comes from the sealed state cookie, then the
+    // route asks `requirePermission` for it and checks the state's user is the
+    // session's.
+    'integrations',
 ]);
 
 /** Global (non-tenant-scoped) API prefixes a tenant page may fetch with a flat path. */

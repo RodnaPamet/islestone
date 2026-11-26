@@ -99,6 +99,10 @@ model Tenant {
   // Sub-phase 3.2: goals and initiatives (ADR 0002 §17).
   goals                           Goal[]
   initiatives                     Initiative[]
+  // Roadmap 3.3b: calendar sync (ADR 0011).
+  calendarSettings                TenantCalendarSettings?
+  calendarConnections             CalendarConnection[]
+  calendarSyncedEvents            CalendarSyncedEvent[]
 
   teams                  Team[]
   workflowStates         WorkflowState[]
@@ -246,4 +250,7 @@ model User {
   createdSavedViews        SavedView[]        @relation("SavedViewCreator")
   /// The review steps this person was asked to respond to (2.8a).
   reviewerRows             WorkItemReviewer[] @relation("WorkItemReviewerUser")
+
+  // Roadmap 3.3b: the member's calendar connections (ADR 0011).
+  calendarConnections CalendarConnection[]
 }

@@ -1634,6 +1634,11 @@
                 "title": "Recipient lists",
                 "body": "Named sets of people to notify: add one to a work item's watchers, or have a project's intake ring it.",
                 "open": "Open recipient lists"
+            },
+            "calendarSync": {
+                "title": "Calendar sync",
+                "body": "Whether members may sync their open items and milestones to their own Google or Outlook calendar, and Microsoft 365's authorisation.",
+                "open": "Open calendar sync"
             }
         },
         "firstProject": {
@@ -2896,6 +2901,75 @@
             "span": "{start} – {end}",
             "noSpan": "No dates",
             "roadmap": "Roadmap"
+        }
+    },
+    "calendarSync": {
+        "member": {
+            "heading": "Calendar sync",
+            "whatLeaves": "Your open items' titles, due dates and links, and your projects' milestones, in a calendar called Islestone. Nothing else of the workspace leaves: no descriptions, comments or people. The events are private and shown as free time.",
+            "google": "Google Calendar",
+            "microsoft": "Outlook Calendar",
+            "connect": "Connect {provider}",
+            "reconnect": "Reconnect {provider}",
+            "disconnect": "Disconnect {provider}",
+            "disconnectToast": "Disconnecting: your events will be removed from the Islestone calendar",
+            "disconnectFailed": "The calendar could not be disconnected. Try again.",
+            "connectFailed": "The calendar could not be connected. Try again.",
+            "undo": "Undo",
+            "loadFailed": "Calendar sync could not be loaded. Try again.",
+            "syncOff": "Calendar sync is off for this workspace. An Owner or Admin turns it on in Settings.",
+            "readOnly": "You cannot edit work items here, so changes made in your calendar are not sent back: the next sync puts Islestone's dates back.",
+            "revokedHelp": "Access was withdrawn. Reconnect to resume, or remove the Islestone calendar yourself.",
+            "googleRemoval": "Disconnecting removes Islestone's events and deletes its token here; it does not remove Islestone from your Google account. To do that, remove it in your Google account's third-party access, which also affects signing in with Google.",
+            "capped": "{limit} of {count} items are in your calendar: the nearest ones.",
+            "state": {
+                "CONNECTED": "Connected: your items are in the Islestone calendar.",
+                "REVOKED": "Access was withdrawn at the provider.",
+                "DISCONNECTING": "Removing your events…",
+                "CALENDAR_REMOVED": "The Islestone calendar was deleted from your account."
+            },
+            "unavailable": {
+                "NOT_CONFIGURED": "Not available on this deployment.",
+                "MICROSOFT_NOT_AUTHORISED": "Your organisation's Microsoft administrator has not authorised calendar access yet. Ask an Owner or Admin."
+            },
+            "outcome": {
+                "connected": "Your calendar is connected. Your items appear within a few minutes.",
+                "declined": "The calendar was not connected: access was declined at the provider.",
+                "failed": "The calendar could not be connected. Try again.",
+                "sync_off": "Calendar sync was turned off for this workspace before the connection finished.",
+                "not_authorised": "Microsoft 365 is no longer authorised for this workspace.",
+                "no_refresh_token": "The provider did not grant lasting access. Connect again and allow access.",
+                "refused": "The provider refused the connection. Try again."
+            }
+        },
+        "settings": {
+            "title": "Calendar sync",
+            "description": "Whether members may put their open items and their projects' milestones into their own Google or Outlook calendar.",
+            "closed": "Calendar sync is not available on this deployment.",
+            "noAccess": "Only Owners and Admins can see and change calendar sync.",
+            "loadFailed": "The calendar sync settings could not be loaded. Try again.",
+            "switchHeading": "Members' calendars",
+            "allow": "Allow members to sync their calendars",
+            "allowHelp": "Each member chooses to connect their own calendar. Turning this off removes every synced event from members' calendars.",
+            "connected": "Connected: {google} Google, {microsoft} Outlook.",
+            "removing": "Removing events from {count} calendar(s)…",
+            "noProvider": "No calendar provider is configured on this deployment.",
+            "microsoftHeading": "Microsoft 365",
+            "microsoftGranted": "Microsoft 365 is authorised for your organisation's directory.",
+            "microsoftNotGranted": "Microsoft 365 is not authorised yet: members cannot connect Outlook calendars.",
+            "microsoftHelp": "An administrator of your Microsoft directory authorises calendar access once for everyone. Withdrawing it removes every Outlook connection and its events.",
+            "authorise": "Authorise Microsoft 365",
+            "withdraw": "Withdraw",
+            "withdrawToast": "Withdrawing Microsoft 365: Outlook connections and their events will be removed",
+            "undo": "Undo",
+            "turnedOn": "Calendar sync turned on",
+            "turnedOff": "Calendar sync turned off: members' events are being removed",
+            "failed": "The change could not be saved. Try again.",
+            "outcome": {
+                "consent_granted": "Microsoft 365 is authorised. Members can connect their Outlook calendars.",
+                "consent_declined": "Microsoft 365 was not authorised: consent was declined or not allowed.",
+                "consent_failed": "Microsoft 365 could not be authorised. Try again."
+            }
         }
     }
 }

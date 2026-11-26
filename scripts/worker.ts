@@ -102,6 +102,15 @@ if (process.env.NODE_ENV === 'production') {
 
         log.info('encryption key check passed (presence + sentinel round-trip)');
 
+        // ── Roadmap 3.3b: calendar sync opened needs a sign-in app pair ──
+        // The worker refreshes the calendar tokens with those apps.
+        const { checkProductionCalendarSync } = await import('../src/lib/security/startup-calendar-sync-check');
+        const calendarSync = checkProductionCalendarSync(process.env);
+        if (!calendarSync.ok) {
+            log.fatal('[startup] FATAL: ' + calendarSync.reason);
+            process.exit(1);
+        }
+
         // ── Sub-phase 2.7f: the full-text configuration (ADR 0008 D2) ──
         // The worker writes search vectors (the rebuild job, repeat copies,
         // intake accepts); without Islestone's Postgres image and the
