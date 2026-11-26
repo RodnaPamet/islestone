@@ -42,7 +42,7 @@ type Delegate = {
 const event = (s: Side, n: string) => ({
     tenantId: s.tenantId,
     connectionId: s.connectionId,
-    kind: 'WORK_ITEM',
+    kind: 'WORK_ITEM' as const,
     workItemId: `item-${n}`,
     clientEventId: 'a'.repeat(40),
     pushedDueDate: new Date('2026-12-01T00:00:00.000Z'),

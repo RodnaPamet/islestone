@@ -14,7 +14,9 @@ import { goalAffordances } from '@/app-layer/policies/goal.policies';
 import type { GoalAffordances } from '@/lib/goals/types';
 import { notFound } from 'next/navigation';
 
+import { mayManageCalendarSync } from '@/app-layer/policies/calendar-sync.policies';
 import { mayManageNotificationSettings } from '@/app-layer/policies/notification-settings.policies';
+import { isCalendarSyncOpen } from '@/lib/calendar-sync/switch';
 import { recipientListAffordances } from '@/app-layer/policies/recipient-list.policies';
 import { templateAffordances } from '@/app-layer/policies/template.policies';
 import { workConfigAffordances } from '@/app-layer/policies/work-config.policies';
@@ -33,6 +35,7 @@ export async function settingsPageAccess(
     manageNotificationSettings: boolean;
     recipientLists: RecipientListAffordances;
     goals: GoalAffordances;
+    calendarSync: { manage: boolean; open: boolean };
 }> {
     const session = await getSessionOrThrow();
     let ctx;
@@ -59,5 +62,7 @@ export async function settingsPageAccess(
         recipientLists: recipientListAffordances(ctx),
         // A project's initiative (3.2a): the usecases' own predicates.
         goals: goalAffordances(ctx),
+        // Settings → Calendar sync (3.3b): the routes' key and the operator's switch.
+        calendarSync: { manage: mayManageCalendarSync(ctx), open: isCalendarSyncOpen() },
     };
 }
