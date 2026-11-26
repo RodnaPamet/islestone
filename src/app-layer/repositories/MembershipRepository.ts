@@ -22,6 +22,28 @@ export class MembershipRepository {
     }
 
     /**
+     * The user ids among `userIds` that hold an ACTIVE membership, each row
+     * read `FOR KEY SHARE` (in user-id order) for the rest of the
+     * transaction (Hardening H2, issue #70). A write that then inserts a row
+     * with a foreign key to the membership (a recipient list's person, a
+     * watcher) cannot meet a removal half-way: a removal that already deleted
+     * a row is waited for and the row is not returned, and one that comes
+     * later waits for this transaction and cascades what it wrote. The lock
+     * does not stop a status change (it is not a key update), so a person
+     * deactivated meanwhile stays, as if added just before.
+     */
+    static async lockActiveUserIds(db: PrismaTx, ctx: RequestContext, userIds: readonly string[]): Promise<Set<string>> {
+        const ids = [...new Set(userIds)];
+        if (ids.length === 0) return new Set();
+        const rows = await db.$queryRaw<Array<{ userId: string }>>`
+            SELECT "userId" FROM "TenantMembership"
+             WHERE "tenantId" = ${ctx.tenantId} AND "userId" = ANY(${ids}::text[]) AND "status" = 'ACTIVE'
+             ORDER BY "userId"
+               FOR KEY SHARE`;
+        return new Set(rows.map((r) => r.userId));
+    }
+
+    /**
      * The given users' ACTIVE memberships with their role and custom role, so
      * a caller can predict what each may do (`permissionsForMembership`):
      * the intake bells re-check `intake.view` before they ring (2.6a).

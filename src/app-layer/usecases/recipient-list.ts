@@ -34,7 +34,7 @@ import { visibleProjects, type ProjectVisibility } from '../policies/project-vis
 import { MembershipRepository } from '../repositories/MembershipRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
 import { RecipientListRepository, type RecipientListRow, type RecipientListScope } from '../repositories/RecipientListRepository';
-import { WorkItemWatcherRepository } from '../repositories/WorkItemRepository';
+import { WorkItemRepository, WorkItemWatcherRepository } from '../repositories/WorkItemRepository';
 import type { RequestContext } from '../types';
 import { assertProjectWritable, keyOf, loadVisibleItem } from './work-item-shared';
 import type { PrismaTx } from '@/lib/db-context';
@@ -101,7 +101,8 @@ function assertListOpen(list: RecipientListRow) {
 /** Of `userIds`, refuse any that is not an ACTIVE member of the workspace. */
 async function assertActiveMembers(db: PrismaTx, ctx: RequestContext, userIds: readonly string[]) {
     if (userIds.length === 0) return;
-    const active = await MembershipRepository.listActiveUserIds(db, ctx, userIds);
+    // Locked, so a removal in flight is waited for and seen (issue #70).
+    const active = await MembershipRepository.lockActiveUserIds(db, ctx, userIds);
     if (userIds.some((id) => !active.has(id))) throw badRequest('Only active members of the workspace can be on a recipient list.');
 }
 
@@ -367,6 +368,11 @@ export async function addRecipientListAsWatchers(ctx: RequestContext, workItemId
     assertCanReadRecipientLists(ctx);
     return runInTenantContext(ctx, async (db) => {
         const item = await loadVisibleItem(db, ctx, await visibleProjects(ctx, db), workItemId);
+        // The item, then the people's memberships, in a member removal's own
+        // order (it locks the items it writes, then deletes the membership),
+        // so a removal in flight is waited for and its person skipped, never
+        // met by the watcher rows' foreign key (Hardening H2, issue #70).
+        await WorkItemRepository.lockForWrite(db, ctx, [item.id]);
         const list = await RecipientListRepository.getById(db, ctx, listId);
         if (!list) throw notFound('Recipient list not found');
         if (list.projectId !== null && list.projectId !== item.projectId) {
@@ -378,8 +384,10 @@ export async function addRecipientListAsWatchers(ctx: RequestContext, workItemId
             projectId: item.projectId,
             may: (p) => p.work_items.view === true,
         });
-        const added = await WorkItemWatcherRepository.addMany(db, ctx, item.id, resolved.userIds);
-        const alreadyWatching = resolved.userIds.filter((id) => !added.includes(id));
+        const stillMembers = await MembershipRepository.lockActiveUserIds(db, ctx, resolved.userIds);
+        const userIds = resolved.userIds.filter((id) => stillMembers.has(id));
+        const added = await WorkItemWatcherRepository.addMany(db, ctx, item.id, userIds);
+        const alreadyWatching = userIds.filter((id) => !added.includes(id));
         if (added.length > 0) {
             await logEvent(db, ctx, {
                 action: 'WORK_ITEM_WATCHERS_ADDED_FROM_LIST',
@@ -395,9 +403,9 @@ export async function addRecipientListAsWatchers(ctx: RequestContext, workItemId
                     targetId: list.id,
                     relation: 'watcher',
                 },
-                metadata: { listId: list.id, watcherUserIds: added, skipped: resolved.named.length - resolved.userIds.length },
+                metadata: { listId: list.id, watcherUserIds: added, skipped: resolved.named.length - userIds.length },
             });
         }
-        return { listId: list.id, added, alreadyWatching, skipped: resolved.named.length - resolved.userIds.length };
+        return { listId: list.id, added, alreadyWatching, skipped: resolved.named.length - userIds.length };
     });
 }
