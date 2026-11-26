@@ -684,6 +684,13 @@ Triage: a finding is fixed in the app. Otherwise:
   10044 (Big Redirect) is out of scope on `/` and `/tenants` only: Next.js's
   `redirect()` from a server component sends the root-layout shell with the
   307, and both bodies were checked to carry no session data.
+  90004 (Site Isolation) is ignored for Cross-Origin-Embedder-Policy alone
+  (owner decision 246): the app sends `Cross-Origin-Opener-Policy` and
+  `Cross-Origin-Resource-Policy` `same-origin` and leaves COEP unset, because
+  `require-corp` would block cross-origin avatars that send no CORP header.
+  ZAP's rules file is keyed by plugin id, not by the rule's alert reference,
+  so the whole rule is ignored and `tests/unit/security-headers.test.ts`
+  holds COOP and CORP.
 - **Trivy**, a finding with no fix available is not reported
   (`ignore-unfixed`). One that has a fix in Trivy's database but cannot be
   taken yet may go in `.trivyignore` (none yet) as
