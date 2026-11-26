@@ -8,7 +8,7 @@
  * it waited, and the writer holding the lock needed one more for its audit
  * append: a burst of about 25 graph writes in one workspace emptied the pool
  * and the transactions expired, as 25 creates did before decision 174.
- * Measured on 2026-11-26 before the queue: most of this test's writers failed.
+ * Measured on 2026-11-26 before the queue: 20 of the 35 writers below failed.
  *
  * Now they wait in the process, per workspace, before they open a transaction
  * (`inWorkItemGraphQueue`, `WORK_ITEM_GRAPH_WRITES_PER_WORKSPACE`); a create
