@@ -1,6 +1,6 @@
 # Goals and initiatives
 
-Sub-phase 3.2 (`docs/porting/maps/3.2.md`; ADR 0002 §2 and §17; ADR 0006 "Goal and roadmap words of sub-phase 3.2"; owner decisions 205 to 224). This page describes what is built. **3.2a and 3.2b are built**: the model, an item's direct goal, archive, soft delete, restore and the purge, the routes, the ancestry and the list's filters (3.2a); progress, health, the Roadmap sidebar entry with the Goals and Initiatives pages, and a goal's and an initiative's pages (3.2b). The roadmap itself, its chart and the Roadmap page, is 3.2c's and does not exist yet.
+Sub-phase 3.2 (`docs/porting/maps/3.2.md`; ADR 0002 §2 and §17; ADR 0006 "Goal and roadmap words of sub-phase 3.2"; owner decisions 205 to 224). This page describes what is built. **All of 3.2 is built**: the model, an item's direct goal, archive, soft delete, restore and the purge, the routes, the ancestry and the list's filters (3.2a); progress, health, the Roadmap sidebar entry with the Goals and Initiatives pages, and a goal's and an initiative's pages (3.2b); the roadmap, its read, its chart and table and the Roadmap page (3.2c).
 
 ## The chain
 
@@ -99,13 +99,55 @@ Derived on every read, never stored, cached or computed by a job (decision 212),
 
 ## The pages (3.2b)
 
-- **Navigation** (decision 222). One sidebar entry, **Roadmap**, for a holder of `goals.view`, current on every page under `/roadmap`. Its pages are Goals (`/roadmap/goals`) and Initiatives (`/roadmap/initiatives`), main pages with a tab bar between them; the Roadmap page (`/roadmap`) is 3.2c's, and until it exists the entry opens Goals. A goal's page (`/roadmap/goals/<id>`) and an initiative's page (`/roadmap/initiatives/<id>`) are subpages falling back to Goals and Initiatives. The command palette lists Goals and Initiatives.
+- **Navigation** (decision 222). One sidebar entry, **Roadmap**, for a holder of `goals.view`, current on every page under `/roadmap`. Its pages are the Roadmap page (`/roadmap`, 3.2c, where the entry opens), Goals (`/roadmap/goals`) and Initiatives (`/roadmap/initiatives`), main pages with a tab bar between them (the Roadmap tab is current on `/roadmap` alone). A goal's page (`/roadmap/goals/<id>`) and an initiative's page (`/roadmap/initiatives/<id>`) are subpages falling back to Goals and Initiatives. The command palette lists Roadmap, Goals and Initiatives.
 - **Goals**: the tree as indented rows (each under its nearest shown ancestor), with status, lead, due date, health, progress and "Late"; filters by status, health, lead and archived (the shared filter system, synced to the URL); a Deleted view with Restore; "Goal" for a holder of `goals.manage`.
 - **Initiatives**: the same, with the goal each serves and a goal filter.
 - **A goal's page**: the ancestors as a breadcrumb, status and health with their names, description, due date and lead, the health control and its history, progress, the child goals and initiatives with theirs, the count of items naming it directly (with a link to the Work items page filtered by the goal), "Add child goal" (refused past three levels, with the reason) and "Add initiative", Archive (Completed or Cancelled only) and Delete through the undo toast.
-- **An initiative's page**, the roadmap's "portfolio page" (decision 221): its goal and the goal's ancestors as a breadcrumb, the health control and history, progress, and a projects table (project, team, due date, progress, "Late", late milestones, archived projects greyed). "Add project" links a visible project not already in it (`projects.edit`, through `PUT /projects/:id/initiative`; a project in another initiative moves); a holder of `projects.create` may create one through the one project dialog with the initiative chosen; removing a project goes through the undo toast. Its slice of the roadmap is 3.2c's.
+- **An initiative's page**, the roadmap's "portfolio page" (decision 221): its goal and the goal's ancestors as a breadcrumb, the health control and history, progress, and a projects table (project, team, due date, progress, "Late", late milestones, archived projects greyed). "Add project" links a visible project not already in it (`projects.edit`, through `PUT /projects/:id/initiative`; a project in another initiative moves); a holder of `projects.create` may create one through the one project dialog with the initiative chosen; removing a project goes through the undo toast. Its slice of the roadmap (3.2c, below) sits under the projects table, whose "Planned dates" column reads the same answer.
 - Every write follows `goalAffordances` (and the page's `createProject`), asked on the server (`src/lib/server/goal-pages.server.ts`); components in `src/components/goals/`, whose deletes and project removal go through the undo toast (`use-goals.ts`, in `SITE_CONTRACTS`). Copy is `roadmap.*`, `goals.*` and `initiatives.*`.
+
+## The roadmap (3.2c)
+
+The roadmap is a page, not a model (ADR 0006's Roadmap row), and read-only: nothing on it writes, audits or stores (decisions 215 to 217).
+
+### Bars, derived (decision 215)
+
+- **A project's bar** is the span of its live, non-cancelled items' **stored** start and due dates, as the scheduling engine reads an item's dates (decision 185), on its team's working calendar: both dates, from the start to the due date; a due date alone, one working day ending on it (from the working day on or before it); a start date alone, one working day from it (to the working day on or after it); a start after the due date, as a due date alone. The rule is `plannedSpanOf` in `src/app-layer/domain/schedule/span.ts`, and the span of several is `spanOf`, the one summary rule the engine's own summaries are now computed with. Done items count by their stored dates, not their actual ones: the roadmap shows plans, labelled "Planned dates", and runs no forward or backward pass, no "today" rule and no relation.
+- **An initiative's bar** is the span of its projects' bars, **archived projects included** (decision 212's reason: finished projects are usually archived); **a goal's**, grouped by goal, the span of its subtree's initiatives' projects and of the items naming it, or a goal below it, directly (decision 211). "No initiative" spans its projects; "No goal" its initiatives.
+- **Nothing dated, no bar**: the row is in the "No dates" list beside the chart (its due date's diamond is still drawn).
+- **Due dates are diamonds** (decision 210): a goal's, an initiative's, a project's and each dated milestone's. A goal's or initiative's due date is not an engine deadline (ADR 0010 §3 unchanged): a project finishing after its initiative's due date, or after the due date of that initiative's goal, is flagged (`finishesAfterInitiativeDue`, `finishesAfterGoalDue`), and the initiative or goal it passes is flagged too (`finishesAfterDue`); nothing else changes.
+- **A project is late** when its due date has passed with open items, its latest open item is due after its due date, or one of its milestones is late (2.5b's rule, today in `NOTIFICATIONS_TZ`); a goal or an initiative when its due date has passed with open items. "Today" is the workspace calendar's (3.1, decision 191).
+
+### The read
+
+`GET /api/t/:slug/roadmap?goalId=&initiativeId=&teamId=&leadUserId=&health=&status=&archived=&groupBy=` (`requirePermission('goals.view')`; `getRoadmap` in `src/app-layer/usecases/roadmap.ts` also asks `projects.view`), seven statements whatever the size:
+
+1. the tenant binding;
+2. every live goal and initiative, archived ones included, in one statement (`GoalRepository.roadmapRecords`, never a description; at most 2,000 of each);
+3. the visible, live projects in scope, archived ones included (`ProjectRepository.roadmapProjects`), at most **500**: read one past, and above it 422 `ROADMAP_TOO_LARGE` with the count (one more statement, on the refusal only), never a cut list;
+4. their **dated** milestones (`MilestoneRepository.datedForProjects`; an undated milestone has no diamond and is never late), at most 2,000, refused the same way;
+5. **one aggregate** over `WorkItem` (`WorkItemRepository.roadmapAggregate`): per project, milestone and category, the count and the four boundary dates `spanFromBounds` needs (the earliest start of an item whose start is its first day, the earliest due date of an item with no start or a start after its due date, the latest due date, the latest start of an item with no due date), so no item is loaded; grouped by goal, the same per direct goal, project and team (decision 211), in the same statement (`UNION ALL`). The project path names the literal `'CANCELLED'` of the partial `WorkItem_progress_project_path`; both paths carry `tenantId`, `deletedAt` and the visibility in their own `WHERE`;
+6. and 7. the working calendars of the teams in view and their holidays (`resolveWorkingCalendars`).
+
+No description, comment or custom-field value is read. The aggregate is plan-checked (`roadmap: the aggregate (every project, both paths)`), and the read's statements are counted (`roadmap: the whole workspace`, `roadmap: grouped by goal`, seven each); `docs/performance.md` has the numbers.
+
+### Filters and grouping
+
+- `initiativeId` (one id) shows that initiative; `goalId` (one id) the initiatives of that goal's live subtree; `leadUserId`, `health` (`none` for "No health set") and `status` select initiatives. Any of these hides "No initiative". A deleted or unknown goal or initiative is 404 (`GOAL_NOT_FOUND`, `INITIATIVE_NOT_FOUND`); an unknown status or health 400.
+- `teamId` narrows the projects (and, grouped by goal, the direct items) to one team and leaves out the initiatives with none of its projects; a row's bar and progress then cover the projects shown.
+- `archived=true` shows archived goals, initiatives and projects; without it they are left out (an archived project still counts towards its initiative), except the goal or initiative a filter names.
+- A project whose initiative is deleted shows under "No initiative", as its ancestry shows no initiative.
+- `groupBy=goal`: the goal tree, each goal holding its child goals and its initiatives, then "No goal" for initiatives serving no shown goal, then "No initiative". With no filter narrowing, every live goal in scope is shown; with one, the goals above what is shown.
+
+### The page and the chart (decisions 203, 216, 217 and 222)
+
+- **The Roadmap page** (`/t/<slug>/roadmap`, `RoadmapPageView`) is the Roadmap entry's landing page: the tab bar, the filters through the shared filter system (synced to the URL), and `RoadmapView`: "Chart / Table", the zoom (months or quarters, quarters by default) and "Group by: Initiative / Goal", each remembered per viewer in `localStorage` (a convenience; the page works without it). A viewer without `goals.view` or `projects.view` gets a 404.
+- **The chart** is SVAR React Gantt 2.8.3 through 3.1's one adapter (`svar-adapter.tsx`, decision 216), with the roadmap's own row model `roadmap-model.ts` beside `timeline-model.ts`: records as plain tasks (never the widget's summary type, which would widen a bar to its diamonds), due dates as milestone tasks under their row, the grid's name, progress and health columns (`gridColumns`). Never editable: the widget is `readonly` and every changing action is refused, as on the timeline. Today is highlighted; non-working days are not shaded at month and quarter zoom.
+- **A row opens the item timeline** (decision 217): a project its own page in the Timeline layout (`/projects/<KEY>?layout=timeline`), an initiative or a goal the Work items page in the Timeline layout filtered by `initiativeId` or `goalId` (decision 220's filters, which the timeline route already reads), where dates change through 3.1c's flow. `?layout=timeline` is a deep link `WorkItemsView` applies and remembers. "No initiative" and "No goal" open nothing.
+- **The table** (decision 203's rule, applied again) shows goal, initiative, project, start, finish, due date, progress, health, the flags in words and "Open timeline", for the same rows as the chart.
+- **An initiative's page** shows its slice: `RoadmapView` with the initiative fixed and archived projects shown, offered only with `projects.view` (`RoadmapAffordances.roadmap`, asked on the server); its projects table's "Planned dates" column reads the same answer.
+- Copy is `roadmap.page.*`, `roadmap.view.*`, `roadmap.tabs.roadmap` and `initiatives.detail.*`.
 
 ## Later
 
-The roadmap (3.2c): `getRoadmap`, the engine's span for bars, the read-only chart, its table and the Roadmap page, where the entry then opens.
+3.4's estimates may weight progress by points; 7.4's digests may explain a goal's state; 8.4's public read-only links for roadmaps.

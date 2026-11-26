@@ -2215,6 +2215,14 @@ Built by [`docs/porting/maps/3.2.md`](docs/porting/maps/3.2.md) (its 3.2b part) 
 |---|---|---|---|---|---|
 | `src/app-layer/domain/progress.ts`, `usecases/goal-progress.ts`, `usecases/goal-health.ts`, migration `20261216120000_work_item_progress_index`, `WorkItemRepository.countsByProjects` and `countsByGoals`, `ActivityRepository.healthHistory`, the health routes, `src/lib/goals/limits.ts`, `src/lib/server/goal-pages.server.ts`, `src/components/goals/*`, the pages under `src/app/t/[tenantSlug]/(app)/roadmap/`; the 3.2b changes to `goal.ts`, `initiative.ts`, `milestone.ts`, `goal.policies.ts`, the navigation files and `ProjectCreateDialog.tsx` | ADR 0002, the 3.2 map | — | — | Islestone-owned | Written fresh. |
 
+## Goals and initiatives (sub-phase 3.2c)
+
+Built by [`docs/porting/maps/3.2.md`](docs/porting/maps/3.2.md) (its 3.2c part) under owner decisions 210 and 215 to 217 and ADR 0010. **Nothing was copied.** inflect-compliance's visx chart (`src/components/ui/charts/gantt-chart.tsx`) was not taken (decision 216: the roadmap is drawn by SVAR through 3.1's adapter). The adapter's new grid columns and select callback use SVAR's public API as 3.1b's rows already recorded (the `columns` template, the `select-task` event), pattern only.
+
+| File | Source | Commit | Licence | Action | Changes |
+|---|---|---|---|---|---|
+| `src/app-layer/domain/schedule/span.ts` (and the engine's summaries on `spanOf`), `usecases/roadmap.ts`, `GoalRepository.roadmapRecords`, `ProjectRepository.roadmapProjects`, `MilestoneRepository.datedForProjects`, `WorkItemRepository.roadmapAggregate`, the roadmap route, `src/lib/goals/roadmap.ts`, `src/components/work-items/timeline/roadmap-model.ts`, `src/components/goals/RoadmapView.tsx`, `RoadmapPageView.tsx`, `use-roadmap.ts`, the page `src/app/t/[tenantSlug]/(app)/roadmap/page.tsx`; the 3.2c changes to `svar-adapter.tsx`, `TimelineChart.tsx`, `InitiativeView.tsx`, `WorkItemsView.tsx`, the navigation files and the latency harness (`scripts/perf/`) | ADR 0010, the 3.2 map | — | — | Islestone-owned | Written fresh. |
+
 ## Adopted
 
 | Component | Source (repository and path) | Commit | Licence | What was taken | Changes |
