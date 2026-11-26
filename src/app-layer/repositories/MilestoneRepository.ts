@@ -51,6 +51,21 @@ export class MilestoneRepository {
         });
     }
 
+    /**
+     * The dated milestones of the given projects (the roadmap's diamonds,
+     * 3.2c): an undated milestone has no diamond and is never late. By due
+     * date, then id; at most `take`.
+     */
+    static async datedForProjects(db: PrismaTx, ctx: Ctx, projectIds: readonly string[], take: number) {
+        if (projectIds.length === 0) return [];
+        return db.milestone.findMany({
+            where: { tenantId: ctx.tenantId, projectId: { in: [...projectIds] }, dueDate: { not: null } },
+            orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+            take,
+            select: { id: true, projectId: true, name: true, dueDate: true },
+        });
+    }
+
     static async getById(db: PrismaTx, ctx: Ctx, id: string): Promise<MilestoneRow | null> {
         return db.milestone.findFirst({ where: { id, tenantId: ctx.tenantId }, select: milestoneSelect });
     }

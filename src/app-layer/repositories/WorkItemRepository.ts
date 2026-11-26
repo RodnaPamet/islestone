@@ -400,6 +400,22 @@ export function customFieldWhere(
 }
 
 /** One row of `WorkItemRepository.ancestry`: a level of an item's ancestry. */
+/** One group of the roadmap's aggregate (`roadmapAggregate`, 3.2c). */
+export interface RoadmapAggregateRow {
+    /** `p`: the project path (per project, milestone, category); `g`: the direct path (per goal, project, team, category). */
+    path: 'p' | 'g';
+    projectId: string;
+    goalId: string | null;
+    milestoneId: string | null;
+    teamId: string | null;
+    stateCategory: WorkflowStateCategory;
+    count: number;
+    minStart: Date | null;
+    minDueOnly: Date | null;
+    maxDue: Date | null;
+    maxStartOnly: Date | null;
+}
+
 export interface AncestryRow {
     kind: 'item' | 'project' | 'initiative' | 'goal' | 'direct_goal';
     id: string;
@@ -1503,6 +1519,72 @@ export class WorkItemRepository {
                AND (${all}::boolean OR w."projectId" = ANY(${granted}::text[]))
              GROUP BY w."projectId", w."stateCategory"`);
         return rows.map((r) => ({ projectId: r.projectId, stateCategory: r.stateCategory, count: Number(r.count) }));
+    }
+
+    /**
+     * The roadmap's one aggregate (3.2c; docs/porting/maps/3.2.md, "The read",
+     * step 3; owner decision 215): live, visible, non-cancelled items, grouped
+     * so the caller can derive every bar and count without loading an item.
+     *
+     *   - **The project path** (`path = 'p'`): per project, milestone and
+     *     category, the count and the four boundary dates `spanFromBounds`
+     *     needs (the earliest start of an item whose start is its first day,
+     *     the earliest due date of an item with no start or a start after its
+     *     due date, the latest due date, the latest start of an item with no
+     *     due date; `domain/schedule/span.ts`, `boundsOf`). Projects' bars,
+     *     progress, "latest open item due after it" and their milestones'
+     *     progress all come from these rows.
+     *   - **The direct path** (`path = 'g'`, only when `goalIds` is given): the
+     *     same per direct goal, project, team and category (decision 211), for
+     *     a goal's bar and its progress counted once (`goalProgress`).
+     *
+     * Raw SQL so the project path names the literal `'CANCELLED'` the partial
+     * `WorkItem_progress_project_path` is declared with (3.2b). `tenantId`,
+     * `deletedAt` (the item's and the project's) and the caller's visibility
+     * are in each branch's own `WHERE`; archived projects count. No title,
+     * description or field value is read.
+     */
+    static async roadmapAggregate(
+        db: PrismaTx,
+        ctx: RequestContext,
+        v: ProjectVisibility,
+        scope: { projectIds: readonly string[]; goalIds: readonly string[]; teamId?: string },
+    ): Promise<RoadmapAggregateRow[]> {
+        if (scope.projectIds.length === 0 && scope.goalIds.length === 0) return [];
+        const all = v.kind === 'ALL';
+        const granted = v.kind === 'GRANTED' ? [...v.projectIds] : [];
+        const t = ctx.tenantId;
+        const team = scope.teamId ?? null;
+        const bounds = Prisma.sql`count(*)::int AS "count",
+                   min(w."startDate") FILTER (WHERE w."startDate" IS NOT NULL AND (w."dueDate" IS NULL OR w."startDate" <= w."dueDate")) AS "minStart",
+                   min(w."dueDate") FILTER (WHERE w."dueDate" IS NOT NULL AND (w."startDate" IS NULL OR w."startDate" > w."dueDate")) AS "minDueOnly",
+                   max(w."dueDate") AS "maxDue",
+                   max(w."startDate") FILTER (WHERE w."dueDate" IS NULL) AS "maxStartOnly"`;
+        const projectPath = Prisma.sql`
+            SELECT 'p'::text AS "path", w."projectId", NULL::text AS "goalId", w."milestoneId", NULL::text AS "teamId", w."stateCategory", ${bounds}
+              FROM "WorkItem" w
+              JOIN "Project" p ON p."id" = w."projectId" AND p."tenantId" = ${t} AND p."deletedAt" IS NULL
+             WHERE w."tenantId" = ${t}
+               AND w."projectId" = ANY(${[...scope.projectIds]}::text[])
+               AND w."deletedAt" IS NULL
+               AND w."stateCategory" <> 'CANCELLED'
+               AND (${all}::boolean OR w."projectId" = ANY(${granted}::text[]))
+             GROUP BY w."projectId", w."milestoneId", w."stateCategory"`;
+        const directPath = Prisma.sql`
+            SELECT 'g'::text AS "path", w."projectId", w."goalId", NULL::text AS "milestoneId", w."teamId", w."stateCategory", ${bounds}
+              FROM "WorkItem" w
+              JOIN "Project" p ON p."id" = w."projectId" AND p."tenantId" = ${t} AND p."deletedAt" IS NULL
+             WHERE w."tenantId" = ${t}
+               AND w."goalId" = ANY(${[...scope.goalIds]}::text[])
+               AND w."deletedAt" IS NULL
+               AND w."stateCategory" <> 'CANCELLED'
+               AND (${all}::boolean OR w."projectId" = ANY(${granted}::text[]))
+               AND (${team}::text IS NULL OR w."teamId" = ${team}::text)
+             GROUP BY w."goalId", w."projectId", w."teamId", w."stateCategory"`;
+        const sql =
+            scope.projectIds.length === 0 ? directPath : scope.goalIds.length === 0 ? projectPath : Prisma.sql`${projectPath} UNION ALL ${directPath}`;
+        const rows = await db.$queryRaw<Array<Omit<RoadmapAggregateRow, 'count'> & { count: number | bigint }>>(sql);
+        return rows.map((r) => ({ ...r, count: Number(r.count) }));
     }
 
     /**

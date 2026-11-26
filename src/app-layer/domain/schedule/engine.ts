@@ -55,6 +55,7 @@ import {
     type CompiledCalendar,
     type EpochDay,
 } from './calendar';
+import { spanOf } from './span';
 import {
     SCHEDULE_ITEM_LIMIT,
     type ItemSchedule,
@@ -477,8 +478,8 @@ export function computeSchedule(input: ScheduleInput): ScheduleResult {
             });
             continue;
         }
-        const es = Math.min(...leaves.map((n) => n.es));
-        const ef = Math.max(...leaves.map(endOf));
+        // The span of its leaves: the one summary rule (`spanOf`, shared with the roadmap's bars, 3.2c).
+        const { start: es, end: ef } = spanOf(leaves.map((n) => ({ start: n.es, end: endOf(n) })))!;
         const live = leaves.filter((n) => !isClosed(n));
         const totalFloat = live.length > 0 ? Math.min(...live.map((n) => n.totalFloat)) : 0;
         if (item.milestoneDue !== null && ef > item.milestoneDue && live.length > 0) conflicts.add('MISSES_MILESTONE_DUE_DATE');
