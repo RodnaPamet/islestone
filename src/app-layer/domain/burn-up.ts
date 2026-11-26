@@ -13,7 +13,12 @@
  *   scope      in the cycle, not deleted, not CANCELLED (owner decision 65);
  *   started    in scope and STARTED or DONE;
  *   completed  in scope and DONE.
- * Items are counted, not points: estimates arrive in 3.4.
+ * By default items are counted. From 3.4a (owner decision 259) the same
+ * pictures are summed in points or in minutes (`measure`): each in-scope
+ * item adds its estimate in that unit as its latest transition records it,
+ * so an estimate changed mid-cycle shows as a change of scope on the day it
+ * changed; an in-scope item with no estimate in that unit adds nothing and is
+ * counted in `unestimated`. The items measure is unchanged.
  *
  * Written fresh for Islestone (docs/porting/maps/2.5.md, "The transitions and
  * the burn-up"). circle's synthetic curve is refused (docs/porting/oss/circle.md §4.10).
@@ -30,7 +35,13 @@ export interface TransitionFact {
     at: Date;
     /** The row's sequence id: the order of two changes at one instant. */
     seq: number;
+    /** The estimate the row records (3.4a); absent or NULL in rows written before. */
+    estimatePoints?: number | null;
+    estimateMinutes?: number | null;
 }
+
+/** What the burn-up counts (3.4a, decision 259). */
+export type BurnUpMeasure = 'items' | 'points' | 'hours';
 
 export interface BurnUpPoint {
     /** `YYYY-MM-DD`. */
@@ -38,6 +49,8 @@ export interface BurnUpPoint {
     scope: number;
     started: number;
     completed: number;
+    /** In-scope items with no estimate in the measure's unit; absent for `items`, whose output is 2.5a's unchanged. */
+    unestimated?: number;
 }
 
 export interface BurnUpInput {
@@ -49,6 +62,15 @@ export interface BurnUpInput {
     now: Date;
     tz: string;
     transitions: readonly TransitionFact[];
+    /** Items (the default), points, or hours as minutes (3.4a). */
+    measure?: BurnUpMeasure;
+}
+
+/** What one in-scope item adds under `measure`: 1, its estimate, or `null` (no estimate in that unit). */
+function weightOf(state: TransitionFact, measure: BurnUpMeasure): number | null {
+    if (measure === 'items') return 1;
+    const value = measure === 'points' ? state.estimatePoints : state.estimateMinutes;
+    return value ?? null;
 }
 
 /** The offset of `tz` from UTC at the instant `at`, in milliseconds. */
@@ -104,6 +126,8 @@ export function burnUp(input: BurnUpInput): BurnUpPoint[] {
         let scope = 0;
         let started = 0;
         let completed = 0;
+        let unestimated = 0;
+        const measure = input.measure ?? 'items';
         for (const list of byItem.values()) {
             let state: TransitionFact | null = null;
             for (const t of list) {
@@ -111,11 +135,16 @@ export function burnUp(input: BurnUpInput): BurnUpPoint[] {
                 if (!state || later(t, state)) state = t;
             }
             if (!state || state.cycleId !== input.cycleId || state.deleted || state.stateCategory === 'CANCELLED') continue;
-            scope += 1;
-            if (state.stateCategory === 'STARTED' || state.stateCategory === 'DONE') started += 1;
-            if (state.stateCategory === 'DONE') completed += 1;
+            const weight = weightOf(state, measure);
+            if (weight === null) {
+                unestimated += 1;
+                continue;
+            }
+            scope += weight;
+            if (state.stateCategory === 'STARTED' || state.stateCategory === 'DONE') started += weight;
+            if (state.stateCategory === 'DONE') completed += weight;
         }
-        points.push({ date: dayKey(day), scope, started, completed });
+        points.push(measure === 'items' ? { date: dayKey(day), scope, started, completed } : { date: dayKey(day), scope, started, completed, unestimated });
     }
     return points;
 }

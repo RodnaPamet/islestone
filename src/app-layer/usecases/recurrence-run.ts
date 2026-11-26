@@ -127,6 +127,9 @@ async function makeOccurrenceInTx(db: PrismaTx, owner: RequestContext, rule: Rec
         dueInDays: null,
         milestoneId: source.milestoneId,
         goalId: source.goalId ?? null,
+        // The estimate (3.4a, decision 258): the copy keeps the one the team counts now.
+        estimatePoints: source.estimatePoints ?? null,
+        estimateMinutes: source.estimateMinutes ?? null,
         customFields: source.customFields,
         subItems: subRows.slice(0, TEMPLATE_LIMITS.subItems).map((s) => ({ title: s.title })),
     };
@@ -159,6 +162,8 @@ async function makeOccurrenceInTx(db: PrismaTx, owner: RequestContext, rule: Rec
             startDate,
             milestoneId: projected.milestoneId,
             goalId: projected.goalId,
+            estimatePoints: projected.estimatePoints,
+            estimateMinutes: projected.estimateMinutes,
             customFields: projected.customFields,
             waitingOnUserId: waitingActive ? waiting : null,
         },

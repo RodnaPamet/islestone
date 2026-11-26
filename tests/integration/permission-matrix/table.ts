@@ -351,6 +351,8 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         { route: `${W}/answer/route.ts`, method: 'DELETE', key: 'work_items.edit', subject: 'a fresh answered question', fixture: 'answered', expect: ITEM_EDIT },
         // Sub-phase 3.2a (decision 211): an item's goal is a work-item field; naming one also asks goals.view.
         { route: `${W}/goal/route.ts`, method: 'PUT', key: 'work_items.edit', subject: 'a fresh item and a goal', fixture: 'item', body: (s) => ({ goalId: s.goalId }), expect: ITEM_EDIT },
+        // Sub-phase 3.4a (decision 257): an item's estimate is a work-item field, in its team's unit (the matrix team estimates in points).
+        { route: `${W}/estimate/route.ts`, method: 'PUT', key: 'work_items.edit', subject: 'a fresh item of a team that estimates', fixture: 'item', body: () => ({ value: 3, unit: 'POINTS' }), expect: ITEM_EDIT },
         { route: `${W}/ancestry/route.ts`, method: 'GET', key: 'work_items.view', subject: "an item's ancestry", expect: READ },
     ],
 

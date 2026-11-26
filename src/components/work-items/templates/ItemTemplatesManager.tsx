@@ -26,6 +26,8 @@ import { requirementOf, type FieldKey } from '@/lib/work-items/field-sets';
 import { QUESTION_TEMPLATE_PRESET, typeShowsAnswer } from '@/lib/work-items/question-preset';
 import { useItemTemplateManager } from '../data/use-item-templates';
 import { AssigneePicker, LabelsPicker, PriorityPicker, TypePicker } from '../pickers';
+import { EstimateInput } from '../fields/EstimateInput';
+import { countedEstimate, estimateColumnOf, type EstimateUnitValue } from '@/lib/work-items/estimate';
 
 interface Draft {
     name: string;
@@ -36,10 +38,12 @@ interface Draft {
     labelIds: string[];
     assigneeId: string | null;
     dueInDays: string;
+    /** The estimate in the project's team's unit (3.4a); `null` for none. */
+    estimate: number | null;
     subItems: string;
 }
 
-function draftOf(t: WorkItemTemplateData | null, defaultTypeId: string): Draft {
+function draftOf(t: WorkItemTemplateData | null, defaultTypeId: string, estimateUnit: EstimateUnitValue | null = null): Draft {
     return {
         name: t?.name ?? '',
         title: t?.title ?? '',
@@ -49,6 +53,7 @@ function draftOf(t: WorkItemTemplateData | null, defaultTypeId: string): Draft {
         labelIds: t?.labelIds ?? [],
         assigneeId: t?.assigneeId ?? null,
         dueInDays: t?.dueInDays !== null && t?.dueInDays !== undefined ? String(t.dueInDays) : '',
+        estimate: t ? countedEstimate(estimateUnit, t) : null,
         subItems: (t?.subItems ?? []).map((s) => s.title).join('\n'),
     };
 }
@@ -77,6 +82,8 @@ export function ItemTemplatesManager({
     // Field sets (2.4b-b): a field the chosen type hides is not offered; a template's value for it would be skipped at use.
     const fieldSet = useFieldSet(draft.typeId || undefined, projectId, []);
     const offered = (key: FieldKey) => requirementOf(fieldSet, key) !== 'HIDDEN';
+    // The estimate (3.4a, decision 258): in the project's team's unit, when it estimates.
+    const estimateUnit = config.estimateUnitOfTeam(teamId) ?? null;
 
     // "Add a Question template" (2.4b-c, decision 116): the preset fills the
     // form for the first type whose field set shows the answer; the person
@@ -96,7 +103,7 @@ export function ItemTemplatesManager({
 
     const startEdit = (t: WorkItemTemplateData | null) => {
         setEditing(t);
-        setDraft(draftOf(t, defaultTypeId));
+        setDraft(draftOf(t, defaultTypeId, estimateUnit));
         setError(null);
     };
 
@@ -120,6 +127,8 @@ export function ItemTemplatesManager({
             labelIds: draft.labelIds,
             assigneeId: draft.assigneeId,
             dueInDays: days ? Number(days) : null,
+            // One estimate per template, in the team's unit; clearing sends null.
+            ...(estimateUnit ? { [estimateColumnOf(estimateUnit)]: draft.estimate } : {}),
             subItems: draft.subItems
                 .split('\n')
                 .map((l) => l.trim())
@@ -220,6 +229,11 @@ export function ItemTemplatesManager({
                             {offered('labels') && (
                                 <FormField label={tManager('labels')}>
                                     <LabelsPicker id="tpl-labels" teamId={teamId} value={draft.labelIds} onChange={(v) => set('labelIds', v)} />
+                                </FormField>
+                            )}
+                            {estimateUnit && offered('estimate') && (
+                                <FormField label={tManager('estimate')}>
+                                    <EstimateInput id="tpl-estimate" unit={estimateUnit} value={draft.estimate} live onChange={(v) => set('estimate', v)} />
                                 </FormField>
                             )}
                             {offered('dueDate') && (

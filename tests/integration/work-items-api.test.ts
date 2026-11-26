@@ -39,7 +39,7 @@ import { createGoal } from '@/app-layer/usecases/goal';
 import { createInitiative } from '@/app-layer/usecases/initiative';
 import { saveProjectAsTemplate } from '@/app-layer/usecases/project-template';
 import { createWorkItemTemplate } from '@/app-layer/usecases/work-item-template';
-import { createTeam } from '@/app-layer/usecases/team';
+import { createTeam, updateTeam } from '@/app-layer/usecases/team';
 import { listWorkItemTypes } from '@/app-layer/usecases/work-item-type';
 import { createWorkItem } from '@/app-layer/usecases/work-item';
 import { addComment } from '@/app-layer/usecases/work-item-collab';
@@ -252,6 +252,8 @@ const CALLS: Call[] = [
     { file: `${W}/[workItemId]/milestone/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/milestone`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ milestoneId: i.milestone }), write: true, key: 'work_items.edit' },
     // Sub-phase 3.2a: an item's goal, its ancestry and a project's initiative.
     { file: `${W}/[workItemId]/goal/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/goal`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ goalId: i.goal }), write: true, key: 'work_items.edit' },
+    // Sub-phase 3.4a: the estimate, in the team's unit (the API team estimates in points).
+    { file: `${W}/[workItemId]/estimate/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/estimate`, params: (i) => P(i, { workItemId: i.other }), body: () => ({ value: 3, unit: 'POINTS' }), write: true, key: 'work_items.edit' },
     { file: `${W}/[workItemId]/ancestry/route.ts`, method: 'GET', path: (i) => `/work-items/${i.item}/ancestry`, params: (i) => P(i, { workItemId: i.item }), write: false, key: 'work_items.view' },
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/initiative/route.ts', method: 'PUT', path: (i) => `/projects/${i.project}/initiative`, params: (i) => P(i, { projectId: i.project }), body: (i) => ({ initiativeId: i.initiative }), write: true, key: 'projects.edit' },
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/milestones/route.ts', method: 'GET', path: (i) => `/projects/${i.project}/milestones`, params: (i) => P(i, { projectId: i.project }), write: false, key: 'projects.view' },
@@ -326,6 +328,7 @@ describeFn('the work-item API', () => {
         }
         const owner = ctxFor('OWNER');
         const team = await createTeam(owner, { name: 'API' });
+        await updateTeam(owner, team.id, { estimateUnit: 'POINTS' });
         const project = await createProject(owner, { teamId: team.id, name: 'API', keyPrefix: 'API' });
         const type = (await listWorkItemTypes(owner))[0]!;
         const item = await createWorkItem(owner, { projectId: project.id, typeId: type.id, title: 'the item' });

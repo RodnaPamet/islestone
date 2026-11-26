@@ -36,6 +36,7 @@ import { ApiClientError, apiSend } from '@/lib/data/api-client';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 import type { CustomFieldValueData } from '@/lib/work-items/custom-fields';
 import type { WorkItemDetailData, WorkItemRow, WorkflowStateCategory } from '@/lib/work-items/types';
+import { estimateColumnOf, type EstimateUnitValue } from '@/lib/work-items/estimate';
 
 import { useWorkConfig, type WorkConfigIndex } from './use-work-config';
 import { useWorkItemCache, type WorkItemCache } from './work-item-cache';
@@ -62,6 +63,9 @@ export function toRow(item: WorkItemRow): WorkItemRow {
         cycleId: item.cycleId ?? null,
         milestoneId: item.milestoneId ?? null,
         goalId: item.goalId ?? null,
+        // The estimate's two columns (3.4a): the list and the card read the counted one.
+        estimatePoints: item.estimatePoints ?? null,
+        estimateMinutes: item.estimateMinutes ?? null,
         recurrenceId: item.recurrenceId ?? null,
         occurrenceOn: item.occurrenceOn ?? null,
         repeats: item.repeats ?? false,
@@ -313,6 +317,17 @@ export function useWorkItemMutations() {
                     if (saved) void cache.revalidatePath(`/work-items/${item.id}/ancestry`);
                     return saved;
                 });
+            },
+            /**
+             * Set the estimate in the item's team's unit, or clear it (3.4a,
+             * `If-Match`): `unit` is the unit the value was typed in, so a
+             * team that changed its unit meanwhile refuses it.
+             */
+            setEstimate(item: WorkItemRow, unit: EstimateUnitValue, value: number | null) {
+                const column = estimateColumnOf(unit);
+                return write(item, { [column]: value } as Partial<WorkItemRow>, (version) =>
+                    apiSend<WorkItemDetailData>('PUT', url(`/work-items/${item.id}/estimate`), { value, unit }, { ifMatch: version }),
+                );
             },
             /** Put the item in a cycle of its team, or take it out (2.5a; `If-Match`). */
             setCycle(item: WorkItemRow, cycleId: string | null) {

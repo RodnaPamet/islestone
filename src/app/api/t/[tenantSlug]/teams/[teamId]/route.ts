@@ -1,5 +1,6 @@
 /**
- * One team (with its workflow states): read, rename, delete (refused while it has projects).
+ * One team (with its workflow states): read, rename or set its estimate unit
+ * (3.4a, decision 257), delete (refused while it has projects).
  *
  * Keys: reads take `projects.view`; changes take `admin.manage` (teams,
  * workflows, types and labels are workspace settings; owner decision
@@ -10,8 +11,8 @@ import type { NextRequest } from 'next/server';
 import { jsonResponse } from '@/lib/api-response';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { requirePermission } from '@/lib/security/permission-middleware';
-import { deleteTeam, getTeam, renameTeam } from '@/app-layer/usecases/team';
-import { RenameTeamSchema } from '@/lib/schemas/work-config';
+import { deleteTeam, getTeam, updateTeam } from '@/app-layer/usecases/team';
+import { UpdateTeamSchema } from '@/lib/schemas/work-config';
 import { parseJsonBody } from '@/lib/validation/route';
 
 export const GET = withApiErrorHandling(
@@ -22,8 +23,8 @@ export const GET = withApiErrorHandling(
 
 export const PATCH = withApiErrorHandling(
     requirePermission<{ tenantSlug: string; teamId: string }>('admin.manage', async (req: NextRequest, { params }, ctx) => {
-        const input = await parseJsonBody(req, RenameTeamSchema);
-        return jsonResponse(await renameTeam(ctx, params.teamId, input));
+        const input = await parseJsonBody(req, UpdateTeamSchema);
+        return jsonResponse(await updateTeam(ctx, params.teamId, input));
     }),
 );
 

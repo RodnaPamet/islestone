@@ -6,6 +6,8 @@
  *
  * Written fresh for Islestone.
  */
+import type { EstimateUnit } from '@prisma/client';
+
 import { logEvent } from '../events/audit';
 import { TeamRepository } from '../repositories/TeamRepository';
 import { assertCanManageWorkConfig, assertCanReadWorkConfig } from '../policies/work-config.policies';
@@ -14,7 +16,7 @@ import { keysBetween } from '../domain/fractional-index';
 import { ensureDefaultWorkItemTypes } from './work-item-type';
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
-import { ConflictError, notFound } from '@/lib/errors/types';
+import { ConflictError, badRequest, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 
 export async function listTeams(ctx: RequestContext) {
@@ -58,17 +60,37 @@ export async function createTeam(ctx: RequestContext, input: { name: string }) {
 }
 
 export async function renameTeam(ctx: RequestContext, teamId: string, input: { name: string }) {
+    return updateTeam(ctx, teamId, input);
+}
+
+/**
+ * Rename a team and/or set its estimate unit (3.4a, decision 257; ADR 0002
+ * §18): `POINTS`, `HOURS`, or `null` (the team stops estimating). Changing the
+ * unit moves no value: its items keep both columns, and only the current
+ * unit's is shown, written and counted. Audited `TEAM_UPDATED` naming the
+ * fields that changed (the unit's old and new values, which are not text).
+ */
+export async function updateTeam(ctx: RequestContext, teamId: string, input: { name?: string; estimateUnit?: EstimateUnit | null }) {
     assertCanManageWorkConfig(ctx);
-    const name = sanitizePlainText(input.name).trim();
+    const name = input.name !== undefined ? sanitizePlainText(input.name).trim() : undefined;
+    if (name === '') throw badRequest('A team needs a name.');
     return runInTenantContext(ctx, async (db) => {
-        const result = await TeamRepository.rename(db, ctx, teamId, name);
+        const before = await TeamRepository.getById(db, ctx, teamId);
+        if (!before) throw notFound('Team not found');
+        const data: { name?: string; estimateUnit?: EstimateUnit | null } = {};
+        if (name !== undefined && name !== before.name) data.name = name;
+        if (input.estimateUnit !== undefined && input.estimateUnit !== before.estimateUnit) data.estimateUnit = input.estimateUnit;
+        const changedFields = Object.keys(data);
+        if (changedFields.length === 0) return before;
+        const result = await TeamRepository.update(db, ctx, teamId, data);
         if (result.count === 0) throw notFound('Team not found');
         await logEvent(db, ctx, {
             action: 'TEAM_UPDATED',
             entityType: 'Team',
             entityId: teamId,
-            details: `Renamed team to ${name}`,
-            detailsJson: { category: 'entity_lifecycle', entityName: 'Team', operation: 'updated', changedFields: ['name'] },
+            details: data.name !== undefined ? `Renamed team to ${data.name}` : `Changed how team ${before.name} estimates`,
+            detailsJson: { category: 'entity_lifecycle', entityName: 'Team', operation: 'updated', changedFields },
+            ...(data.estimateUnit !== undefined ? { metadata: { fromEstimateUnit: before.estimateUnit, toEstimateUnit: data.estimateUnit } } : {}),
         });
         return TeamRepository.getById(db, ctx, teamId);
     });

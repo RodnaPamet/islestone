@@ -16,7 +16,7 @@
 import { z } from 'zod';
 
 import { CustomFieldValuesInputSchema } from '@/lib/schemas/custom-field';
-import { WORK_ITEM_PRIORITIES } from '@/lib/schemas/work-item';
+import { EstimateMinutesSchema, EstimatePointsSchema, WORK_ITEM_PRIORITIES } from '@/lib/schemas/work-item';
 import { CUSTOM_FIELD_TYPES } from '@/lib/work-items/custom-fields';
 
 const Id = z.string().min(1).max(64);
@@ -57,6 +57,9 @@ export const CreateWorkItemTemplateSchema = z
         labelIds: z.array(Id).max(50).optional(),
         assigneeId: Id.nullish(),
         dueInDays: DueInDays.nullish(),
+        /** The new item's estimate (3.4a), in the column of the project's team's unit. */
+        estimatePoints: EstimatePointsSchema.nullish(),
+        estimateMinutes: EstimateMinutesSchema.nullish(),
         customFields: CustomFieldValuesInputSchema.optional(),
         subItems: SubItems.optional(),
     })
@@ -72,6 +75,8 @@ export const UpdateWorkItemTemplateSchema = z
         labelIds: z.array(Id).max(50).optional(),
         assigneeId: Id.nullable().optional(),
         dueInDays: DueInDays.nullable().optional(),
+        estimatePoints: EstimatePointsSchema.nullable().optional(),
+        estimateMinutes: EstimateMinutesSchema.nullable().optional(),
         customFields: CustomFieldValuesInputSchema.optional(),
         subItems: SubItems.optional(),
         archived: z.boolean().optional(),
@@ -90,6 +95,13 @@ const ContentItemBase = {
     labelNames: z.array(Name).max(50),
     dueInDays: DueInDays.nullable(),
     subItems: SubItems,
+    /**
+     * The item's estimate (3.4a, decision 258). Optional: content saved
+     * before has none, and `version` stays 1. A use under a team that does
+     * not estimate, or in the other unit, skips it as `estimate:unit`.
+     */
+    estimatePoints: EstimatePointsSchema.nullable().optional(),
+    estimateMinutes: EstimateMinutesSchema.nullable().optional(),
 };
 
 export const ProjectTemplateContentSchema = z

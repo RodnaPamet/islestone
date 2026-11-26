@@ -31,6 +31,9 @@ export interface TemplateItemSource {
     milestoneId?: string | null;
     /** The goal a repeat's source names directly (3.2a, decision 211); item and project templates carry none. */
     goalId?: string | null;
+    /** The estimate (3.4a, decision 258): an item template's, a starter item's, or a repeat source's two columns. */
+    estimatePoints?: number | null;
+    estimateMinutes?: number | null;
     customFields: Readonly<Record<string, unknown>>;
     subItems: ReadonlyArray<{ title: string }>;
 }
@@ -46,6 +49,8 @@ export interface TemplateOverrides {
     dueDate?: string | null;
     milestoneId?: string | null;
     goalId?: string | null;
+    estimatePoints?: number | null;
+    estimateMinutes?: number | null;
     customFields?: Readonly<Record<string, unknown>>;
 }
 
@@ -65,6 +70,13 @@ export interface TemplateUseContext {
      * not in the map is deleted or gone. Only a repeat's source names a goal.
      */
     goalStates?: ReadonlyMap<string, 'live' | 'archived' | 'unreadable'>;
+    /**
+     * The project's team's estimate unit now (3.4a): the copy keeps the
+     * source's estimate in that unit's column only; `null` (the team does not
+     * estimate) or a value only in the other column is skipped as
+     * `estimate:unit`. Absent: treated as `null`.
+     */
+    estimateUnit?: 'POINTS' | 'HOURS' | null;
 }
 
 export interface TemplateProjection {
@@ -77,9 +89,12 @@ export interface TemplateProjection {
     dueDate: string | null;
     milestoneId: string | null;
     goalId: string | null;
+    /** At most one of the two is set: the column of the team's unit (3.4a). */
+    estimatePoints: number | null;
+    estimateMinutes: number | null;
     customFields: Record<string, unknown>;
     subItems: Array<{ title: string }>;
-    /** What the template held that the project no longer takes (`label:<id>`, `assignee:<id>`, `field:<id>`). */
+    /** What the template held that the project no longer takes (`label:<id>`, `assignee:<id>`, `field:<id>`, `estimate:unit`). */
     skipped: string[];
 }
 
@@ -141,6 +156,25 @@ export function templateToCreateInput(source: TemplateItemSource, body: Template
         }
     } else goalId = null;
 
+    // The estimate (3.4a, decision 258): the request's wins; else the
+    // source's value in the column of the team's CURRENT unit. A source whose
+    // only value is in the other column (or a team that does not estimate) is
+    // skipped and named; a hidden value beside a counted one was not the
+    // source's estimate and is not copied.
+    let estimatePoints: number | null = null;
+    let estimateMinutes: number | null = null;
+    if (body.estimatePoints !== undefined || body.estimateMinutes !== undefined) {
+        estimatePoints = body.estimatePoints ?? null;
+        estimateMinutes = body.estimateMinutes ?? null;
+    } else {
+        const unit = use.estimateUnit ?? null;
+        const points = source.estimatePoints ?? null;
+        const minutes = source.estimateMinutes ?? null;
+        if (unit === 'POINTS' && points !== null) estimatePoints = points;
+        else if (unit === 'HOURS' && minutes !== null) estimateMinutes = minutes;
+        else if (points !== null || minutes !== null) skipped.push('estimate:unit');
+    }
+
     const dueDate =
         body.dueDate !== undefined ? body.dueDate : source.dueInDays !== null ? dayKey(addDays(use.today, source.dueInDays)) : null;
 
@@ -154,6 +188,8 @@ export function templateToCreateInput(source: TemplateItemSource, body: Template
         dueDate,
         milestoneId: body.milestoneId !== undefined ? body.milestoneId : (source.milestoneId ?? null),
         goalId,
+        estimatePoints,
+        estimateMinutes,
         customFields,
         subItems: source.subItems.map((s) => ({ title: s.title })),
         skipped,

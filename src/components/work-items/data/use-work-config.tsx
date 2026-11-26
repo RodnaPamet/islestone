@@ -13,6 +13,7 @@ import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { useTenantSWR } from '@/lib/data/use-tenant-swr';
 import type { Member, ViewCycle, ViewMilestone, ViewState, WorkItemViewConfig, WorkflowStateCategory } from '@/lib/work-items/types';
 import { WORKFLOW_STATE_CATEGORIES } from '@/app-layer/domain/workflow-state';
+import type { EstimateUnitValue } from '@/lib/work-items/estimate';
 
 export interface WorkConfigIndex extends WorkItemViewConfig {
     projectById: Map<string, WorkItemViewConfig['projects'][number]>;
@@ -28,6 +29,10 @@ export interface WorkConfigIndex extends WorkItemViewConfig {
     statesOfTeam: (teamId: string) => ViewState[];
     /** A team's default state of a category (the first of it when none is marked). */
     defaultStateOf: (teamId: string, category: WorkflowStateCategory) => ViewState | undefined;
+    /** A team's estimate unit (3.4a): `null` when it does not estimate, `undefined` when the team is unknown. */
+    estimateUnitOfTeam: (teamId: string | null | undefined) => EstimateUnitValue | null | undefined;
+    /** The estimate unit of a project's team (3.4a), as `estimateUnitOfTeam`. */
+    estimateUnitOfProject: (projectId: string | null | undefined) => EstimateUnitValue | null | undefined;
 }
 
 const EMPTY: WorkItemViewConfig = { projects: [], teams: [], states: [], types: [], labels: [], customFields: [], cycles: [], milestones: [], fieldSetEntries: [] };
@@ -51,8 +56,13 @@ export function indexConfig(config: WorkItemViewConfig): WorkConfigIndex {
                 .map((x) => x.s),
         );
     }
+    const teamUnit = new Map(config.teams.map((t) => [t.id, t.estimateUnit ?? null]));
+    const projectTeam = new Map(config.projects.map((p) => [p.id, p.teamId]));
+    const estimateUnitOfTeam = (teamId: string | null | undefined) => (teamId && teamUnit.has(teamId) ? teamUnit.get(teamId)! : undefined);
     return {
         ...config,
+        estimateUnitOfTeam,
+        estimateUnitOfProject: (projectId) => estimateUnitOfTeam(projectId ? projectTeam.get(projectId) : undefined),
         projectById: new Map(config.projects.map((p) => [p.id, p])),
         stateById: new Map(config.states.map((s) => [s.id, s])),
         typeById: new Map(config.types.map((t) => [t.id, t])),

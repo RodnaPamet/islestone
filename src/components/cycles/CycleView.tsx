@@ -17,7 +17,7 @@ import { useState } from 'react';
 import { Button } from '@inflect/ui/components/ui/button';
 import { WorkItemsView } from '@/components/work-items/WorkItemsView';
 import { useTenantHref } from '@/lib/tenant-context-provider';
-import type { CycleAffordances, CycleData, SavedViewAffordances } from '@/lib/work-items/types';
+import type { BurnUpMeasure, CycleAffordances, CycleData, SavedViewAffordances } from '@/lib/work-items/types';
 
 import { BurnUpChart } from './BurnUpChart';
 import { CycleFormDialog } from './CycleDialogs';
@@ -37,7 +37,11 @@ function CycleSummary({ cycle, affordances }: { cycle: CycleData; affordances: C
     const tSummary = useTranslations('cycles');
     const router = useRouter();
     const tenantHref = useTenantHref();
-    const burnUp = useBurnUp(cycle.id);
+    // What the burn-up counts (3.4a, decision 259): items, or the team's estimate unit; the server says which it offers.
+    const [measure, setMeasure] = useState<BurnUpMeasure>('items');
+    const burnUp = useBurnUp(cycle.id, measure);
+    // The previous measure's answer stays while another loads (`keepPreviousData`), labelled by its own `measure`.
+    const measures = burnUp.data?.measures ?? ['items'];
     const writes = useCycleWrites();
     const [editing, setEditing] = useState(false);
     const done = cycle.counts.scope === 0 ? 0 : Math.round((cycle.counts.completed / cycle.counts.scope) * 100);
@@ -69,7 +73,16 @@ function CycleSummary({ cycle, affordances }: { cycle: CycleData; affordances: C
                     </div>
                 )}
             </div>
-            <BurnUpChart points={burnUp.data?.points ?? []} truncated={burnUp.data?.truncated} loading={burnUp.isLoading} />
+            <BurnUpChart
+                points={burnUp.data?.points ?? []}
+                truncated={burnUp.data?.truncated}
+                loading={burnUp.isLoading}
+                measure={burnUp.data?.measure ?? measure}
+                selected={measure}
+                measures={measures}
+                onMeasure={setMeasure}
+                unavailable={burnUp.error !== undefined && measure !== 'items'}
+            />
             {canEdit && <CycleFormDialog open={editing} onOpenChange={setEditing} teamId={cycle.teamId} cycle={cycle} />}
         </div>
     );

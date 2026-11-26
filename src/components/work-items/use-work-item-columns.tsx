@@ -21,6 +21,8 @@ import type { WorkItemRow } from '@/lib/work-items/types';
 import { PriorityBadge, ReviewBadge, StateBadge } from './badges';
 import { memberLabel, useMembers, useWorkConfig } from './data/use-work-config';
 import { customFieldText } from './fields/custom-field-format';
+import { EstimateText } from './fields/EstimateInput';
+import { countedEstimate } from '@/lib/work-items/estimate';
 
 /**
  * `extended` (the list with its column gear, 2.4) adds created, updated, type
@@ -100,6 +102,15 @@ export function useWorkItemColumns(extended = false, options: { review?: boolean
             },
             // Sub-phase 2.4b: who the item waits on (hidden until the gear shows it).
             { id: 'waitingOn', header: tCols('col.waitingOn'), cell: ({ row }) => memberName(row.original.waitingOnUserId ?? null) ?? '' },
+            // Sub-phase 3.4a: the estimate in the item's team's unit; blank for none or for a team that does not estimate.
+            {
+                id: 'estimate',
+                header: tCols('col.estimate'),
+                cell: ({ row }) => {
+                    const unit = config.estimateUnitOfTeam(row.original.teamId);
+                    return <EstimateText unit={unit} value={countedEstimate(unit, row.original)} />;
+                },
+            },
             ...(config.customFields ?? [])
                 .filter((f) => !f.archived)
                 .map((field): ColumnDef<WorkItemRow> => ({
@@ -140,6 +151,7 @@ export function useWorkItemColumnChoices() {
             { id: 'type', label: tChoice('col.type'), defaultVisible: false },
             { id: 'cycle', label: tChoice('col.cycle'), defaultVisible: false },
             { id: 'milestone', label: tChoice('col.milestone'), defaultVisible: false },
+            { id: 'estimate', label: tChoice('col.estimate'), defaultVisible: false },
             { id: 'review', label: tChoice('col.review'), defaultVisible: false },
             ...(config.customFields ?? []).filter((f) => !f.archived).map((f) => ({ id: `cf:${f.id}`, label: f.name, defaultVisible: false })),
         ],

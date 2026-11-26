@@ -825,6 +825,13 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'work_items.edit',
         note: "Name an item's goal directly, or clear it (decision 211; naming one also asks goals.view).",
     },
+    // ── Estimates (sub-phase 3.4a; owner decision 257) ───────────────
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/estimate$`),
+        methods: ['PUT'],
+        permission: 'work_items.edit',
+        note: "Set an item's estimate in its team's unit, or clear it (the version increases).",
+    },
     {
         path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/ancestry$`),
         methods: ['GET'],

@@ -98,6 +98,9 @@ jest.mock('@/app-layer/repositories/TeamRepository', () => ({
         defaultState: jest.fn(async () => STATES['s-todo']),
         liveStatesOfTeams: jest.fn(async () => Object.values(STATES)),
         listStates: jest.fn(async () => Object.values(STATES)),
+        // Sub-phase 3.4a: the team does not estimate.
+        estimateUnitOf: jest.fn(async () => null),
+        estimateUnitOfProject: jest.fn(async () => null),
     },
 }));
 jest.mock('@/app-layer/repositories/MembershipRepository', () => ({

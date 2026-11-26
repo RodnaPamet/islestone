@@ -27,7 +27,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import type { CustomFieldType, WorkflowStateCategory, WorkItemPriority } from '@prisma/client';
+import type { CustomFieldType, EstimateUnit, WorkflowStateCategory, WorkItemPriority } from '@prisma/client';
 
 import { emitAutomationEvent } from '../automation';
 import { logEvent } from '../events/audit';
@@ -128,6 +128,7 @@ import { resolveListCustomFields, writeInitialCustomFieldValues } from './custom
 import { assertCycleTakesItems, currentCycleIdsInTx } from './cycle';
 import { assertMilestoneOfProject } from './milestone';
 import { assertGoalLinkable } from './work-item-goal';
+import { estimateWriteFor } from './work-item-estimate';
 import { GoalRepository } from '../repositories/GoalRepository';
 import { InitiativeRepository } from '../repositories/InitiativeRepository';
 import { assertCanReadGoals } from '../policies/goal.policies';
@@ -136,6 +137,7 @@ import { templateToCreateInput, type TemplateOverrides, type TemplateProjection 
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { normaliseSearchQuery } from '@/lib/search/query';
 import { isClosedCategory, requirementOf, type FieldKey, type FieldValues, type ResolvedFieldSet } from '@/lib/work-items/field-sets';
+import { countedEstimate, estimateColumnOf } from '@/lib/work-items/estimate';
 import { isTenantSystemUserId } from '@/lib/tenant-system-user';
 import { assertFieldWrite, checkCreate, checkTypeChange, checkWrite, loadFieldSet, loadFieldSets, type LoadedFieldSet } from './field-set';
 import { todayClock } from '@/lib/clock';
@@ -554,6 +556,13 @@ export interface CreateWorkItemInput {
     milestoneId?: string | null;
     /** A live, unarchived goal of the workspace, named directly (3.2a, decision 211); asks `goals.view`. */
     goalId?: string | null;
+    /**
+     * The estimate (3.4a, decision 257) in the column of the project's team's
+     * unit: the other column is 400 `ESTIMATE_UNIT`, any value on a team that
+     * does not estimate 409 `ESTIMATES_OFF`.
+     */
+    estimatePoints?: number | null;
+    estimateMinutes?: number | null;
     /** The active member the item waits on (2.4b); refused into a closed state. */
     waitingOnUserId?: string | null;
     /**
@@ -574,8 +583,27 @@ function overridesOf(input: CreateWorkItemInput): TemplateOverrides {
     if (input.assigneeId !== undefined) out.assigneeId = input.assigneeId;
     if (input.dueDate !== undefined) out.dueDate = input.dueDate;
     if (input.milestoneId !== undefined) out.milestoneId = input.milestoneId;
+    if (input.estimatePoints !== undefined) out.estimatePoints = input.estimatePoints;
+    if (input.estimateMinutes !== undefined) out.estimateMinutes = input.estimateMinutes;
     if (input.customFields !== undefined) out.customFields = input.customFields;
     return out;
+}
+
+/**
+ * The estimate a create names, checked against the team's unit (3.4a): the
+ * value in the unit's column, `null` when it names none, `undefined` when it
+ * does not name the estimate. A value in the other column is 400
+ * `ESTIMATE_UNIT`; any value on a team that does not estimate is 409
+ * `ESTIMATES_OFF`. A `null` in either column names no value.
+ */
+function requestedEstimate(input: Pick<CreateWorkItemInput, 'estimatePoints' | 'estimateMinutes'>, unit: EstimateUnit | null): number | null | undefined {
+    if (input.estimatePoints === undefined && input.estimateMinutes === undefined) return undefined;
+    const points = input.estimatePoints ?? null;
+    const minutes = input.estimateMinutes ?? null;
+    if (points !== null && minutes !== null) throw badRequest('Give the estimate in one unit.', { reason: 'ESTIMATE_UNIT' });
+    if (points === null && minutes === null) return null;
+    const patch = estimateWriteFor(unit, points ?? minutes, points !== null ? 'POINTS' : 'HOURS');
+    return (unit === 'POINTS' ? patch.estimatePoints : patch.estimateMinutes) ?? null;
 }
 
 /**
@@ -634,6 +662,8 @@ function requestNames(input: CreateWorkItemInput, key: FieldKey): boolean {
             return input.milestoneId !== undefined;
         case 'goal':
             return input.goalId !== undefined;
+        case 'estimate':
+            return input.estimatePoints !== undefined || input.estimateMinutes !== undefined;
         default:
             return true;
     }
@@ -659,8 +689,8 @@ async function assertBulkFieldWrite(
     }
 }
 
-/** An existing item's values as the field set reads them (a type change checks them all). */
-function itemFieldValues(row: NonNullable<Awaited<ReturnType<typeof WorkItemRepository.getById>>>): FieldValues {
+/** An existing item's values as the field set reads them (a type change checks them all); the estimate under the team's unit (3.4a). */
+function itemFieldValues(row: NonNullable<Awaited<ReturnType<typeof WorkItemRepository.getById>>>, estimateUnit: EstimateUnit | null = null): FieldValues {
     const dto = toWorkItemDto(row);
     return {
         description: row.description,
@@ -674,12 +704,13 @@ function itemFieldValues(row: NonNullable<Awaited<ReturnType<typeof WorkItemRepo
         milestoneId: dto.milestoneId,
         goalId: dto.goalId,
         answerCommentId: dto.answerCommentId,
+        estimate: countedEstimate(estimateUnit, row),
         customFields: dto.customFields,
     };
 }
 
-/** A create's values as the field set reads them. */
-function createValues(plan: CreateWorkItemInput): FieldValues {
+/** A create's values as the field set reads them; `estimate` is already the unit's value (3.4a). */
+function createValues(plan: CreateWorkItemInput & { estimate?: number | null }): FieldValues {
     return {
         description: plan.description ?? null,
         assigneeId: plan.assigneeId ?? null,
@@ -691,6 +722,7 @@ function createValues(plan: CreateWorkItemInput): FieldValues {
         cycleId: plan.cycleId ?? null,
         milestoneId: plan.milestoneId ?? null,
         goalId: plan.goalId ?? null,
+        estimate: plan.estimate ?? null,
         customFields: plan.customFields ?? {},
     };
 }
@@ -741,6 +773,10 @@ export async function createWorkItemInTx(
     const project = await ProjectRepository.getVisible(db, ctx, v, input.projectId);
     if (!project) throw notFound('Project not found');
     assertProjectWritable(project);
+    // The team's estimate unit (3.4a, decision 257): it decides the column,
+    // refuses a value in the other one, and the field set's estimate rule.
+    const estimateUnit = (await TeamRepository.estimateUnitOf(db, ctx, project.teamId)) ?? null;
+    const asked = requestedEstimate(input, estimateUnit);
 
     // A template is projected into the create (the ONE projection,
     // `templateToCreateInput`), then the create runs as any other.
@@ -760,9 +796,13 @@ export async function createWorkItemInTx(
             assigneeId: fromTemplate.assigneeId,
             dueDate: fromTemplate.dueDate,
             milestoneId: fromTemplate.milestoneId,
+            estimatePoints: fromTemplate.estimatePoints,
+            estimateMinutes: fromTemplate.estimateMinutes,
             customFields: fromTemplate.customFields,
         };
     }
+    // The projection keeps only the unit's column; a request's value was checked above.
+    let estimate: number | null = asked !== undefined ? asked : countedEstimate(estimateUnit, plan);
     const title = sanitizePlainText(plan.title ?? '').trim();
     if (!title) throw badRequest('A work item needs a title.');
     if (!plan.typeId) throw badRequest('A work item needs a type.');
@@ -784,10 +824,10 @@ export async function createWorkItemInTx(
     // The type's field set (2.4b-b, decisions 109 to 111): a hidden value a
     // template or a source brought is skipped and named; one the request
     // named is refused; an open item fills every required field.
-    const fieldSet = await loadFieldSet(db, ctx, type.id, project.id);
+    const fieldSet = await loadFieldSet(db, ctx, type.id, project.id, estimateUnit);
     const projected = (key: FieldKey): boolean =>
         opts.projected === 'all' || (opts.projected === 'customFields' && key.startsWith('cf:')) || (fromTemplate !== null && !requestNames(input, key));
-    const checked = checkCreate(fieldSet, createValues(plan), { open: !isClosedCategory(state.category), projected });
+    const checked = checkCreate(fieldSet, createValues({ ...plan, estimate }), { open: !isClosedCategory(state.category), projected });
     if (checked.skipped.length > 0) {
         const v2 = checked.values;
         plan = {
@@ -804,6 +844,7 @@ export async function createWorkItemInTx(
             goalId: v2.goalId ?? null,
             customFields: v2.customFields ?? {},
         };
+        estimate = v2.estimate ?? null;
     }
     const fieldSkipped = checked.skipped;
     // Start after due is refused (3.1a, ADR 0010 §3), whichever path brought the dates.
@@ -849,6 +890,7 @@ export async function createWorkItemInTx(
         cycleId: plan.cycleId ?? null,
         milestoneId: plan.milestoneId ?? null,
         goalId: plan.goalId ?? null,
+        ...(estimate !== null && estimateUnit ? { [estimateColumnOf(estimateUnit)]: estimate } : {}),
         recurrenceId: opts.recurrenceId ?? null,
         occurrenceOn: parseDateOnly(opts.occurrenceOn ?? null),
         sortKey,
@@ -881,6 +923,7 @@ export async function createWorkItemInTx(
             ...(row.cycleId ? { cycleId: row.cycleId } : {}),
             ...(row.milestoneId ? { milestoneId: row.milestoneId } : {}),
             ...(row.goalId ? { goalId: row.goalId } : {}),
+            ...(estimate !== null && estimateUnit ? { estimateUnit, estimate } : {}),
             ...(row.waitingOnUserId ? { waitingOnUserId: row.waitingOnUserId } : {}),
             ...(customFieldIds.length ? { customFieldIds } : {}),
             ...(fromTemplate ? { templateId: input.templateId, ...(fromTemplate.skipped.length ? { templateSkipped: fromTemplate.skipped } : {}) } : {}),
@@ -992,6 +1035,9 @@ export async function insertTemplateItemInTx(
         milestoneId: string | null;
         templateId: string | null;
         projectTemplateId?: string;
+        /** A starter item's estimate (3.4a), already projected to the team's unit's column. */
+        estimatePoints?: number | null;
+        estimateMinutes?: number | null;
     },
     /** The type's field set in the project, when the caller has read it (it reads it otherwise). */
     fieldSet?: LoadedFieldSet,
@@ -1013,6 +1059,7 @@ export async function insertTemplateItemInTx(
             waitingOnUserId: null,
             startDate: null,
             cycleId: null,
+            estimate: sub.estimatePoints ?? sub.estimateMinutes ?? null,
             customFields: {},
         },
         { open: !isClosedCategory(state.category), projected: () => true, subject: `The item "${sanitizePlainText(sub.title).trim()}" a template makes` },
@@ -1024,6 +1071,8 @@ export async function insertTemplateItemInTx(
         labelIds: checked.values.labelIds ?? [],
         dueDate: (checked.values.dueDate as string | null | undefined) ?? null,
         milestoneId: checked.values.milestoneId ?? null,
+        // A hidden estimate is skipped (`hidden:estimate`): both columns go.
+        ...(checked.values.estimate === null || checked.values.estimate === undefined ? { estimatePoints: null, estimateMinutes: null } : {}),
     };
     const number = await ProjectRepository.claimNumber(db, ctx, project.id);
     const sortKey = await sortKeyForPosition(db, ctx, project.id, undefined);
@@ -1044,6 +1093,8 @@ export async function insertTemplateItemInTx(
         parentId: sub.parentId,
         cycleId: null,
         milestoneId: sub.milestoneId,
+        estimatePoints: sub.estimatePoints ?? null,
+        estimateMinutes: sub.estimateMinutes ?? null,
         sortKey,
         startDate: null,
         dueDate: parseDateOnly(sub.dueDate ?? null),
@@ -1167,7 +1218,8 @@ export async function updateWorkItem(ctx: RequestContext, id: string, input: Upd
         if (patch.priority !== undefined) named.priority = patch.priority;
         if (patch.startDate !== undefined) named.startDate = patch.startDate;
         if (patch.dueDate !== undefined) named.dueDate = patch.dueDate;
-        const fieldSet = await loadFieldSet(db, ctx, patch.typeId ?? before.typeId, before.projectId);
+        const estimateUnit = (await TeamRepository.estimateUnitOf(db, ctx, before.teamId)) ?? null;
+        const fieldSet = await loadFieldSet(db, ctx, patch.typeId ?? before.typeId, before.projectId, estimateUnit);
         checkWrite(fieldSet, named, { open });
         // A date change must not put the start after the due date (3.1a, ADR 0010 §3).
         if (patch.startDate !== undefined || patch.dueDate !== undefined) {
@@ -1175,7 +1227,7 @@ export async function updateWorkItem(ctx: RequestContext, id: string, input: Upd
         }
         if (patch.typeId) {
             const current = await WorkItemRepository.getById(db, ctx, v, id);
-            if (current) checkTypeChange(fieldSet, { ...itemFieldValues(current), ...named }, { open });
+            if (current) checkTypeChange(fieldSet, { ...itemFieldValues(current, estimateUnit), ...named }, { open });
         }
         const count = await WorkItemRepository.updateVersioned(db, ctx, v, id, expectedVersion, patch);
         if (count === 0) await throwWriteConflict(db, ctx, v, id);

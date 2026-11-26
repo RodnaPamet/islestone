@@ -170,6 +170,7 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
             'EmailDelivery',
             'EmailNotificationType',
             'EmailOutboxStatus',
+            'EstimateUnit',
             'FieldRequirement',
             'GoalStatus',
             'Health',
@@ -225,7 +226,7 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
         // (3.2a), CalendarProvider 2, CalendarConnectionState 4,
         // CalendarSyncedEventState 4 and CalendarSyncedEventKind 2 (3.3b),
         // NotificationType +1 (3.3c).
-        expect(values).toBe(162);
+        expect(values).toBe(164);
 
         // No `@@map`ed enum: ADR 0006 rule 3. The mapping half is proved with
         // planted inputs below instead.

@@ -17,7 +17,7 @@
  * Every write is audited (`logEvent`, with the transaction client). Written
  * fresh for Islestone.
  */
-import type { CycleRollover, WorkflowStateCategory } from '@prisma/client';
+import type { CycleRollover, EstimateUnit, WorkflowStateCategory } from '@prisma/client';
 
 import { logEvent } from '../events/audit';
 import { assertFieldWrite } from './field-set';
@@ -28,7 +28,7 @@ import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import { assertCanManageCycles, assertCanReadCycles, mayReadCycles } from '../policies/cycle.policies';
 import { assertCanEditWorkItems } from '../policies/work-item.policies';
 import { visibleProjects, type ProjectVisibility } from '../policies/project-visibility';
-import { burnUp } from '../domain/burn-up';
+import { burnUp, type BurnUpMeasure } from '../domain/burn-up';
 import {
     CYCLE_LENGTH_WEEKS,
     CYCLE_MAX_DAYS,
@@ -145,14 +145,30 @@ export async function getCycle(ctx: RequestContext, id: string): Promise<CycleDa
 }
 
 /** The burn-up (owner decisions 65 and 66), over the items the caller can see. */
-export async function getCycleBurnUp(ctx: RequestContext, id: string, now: Date = new Date()): Promise<BurnUpData> {
+/**
+ * The measures a cycle's burn-up offers (3.4a, decision 259): items always;
+ * points or hours while the cycle's team estimates in them.
+ */
+export function burnUpMeasuresFor(unit: EstimateUnit | null | undefined): BurnUpMeasure[] {
+    if (unit === 'POINTS') return ['items', 'points'];
+    if (unit === 'HOURS') return ['items', 'hours'];
+    return ['items'];
+}
+
+export async function getCycleBurnUp(ctx: RequestContext, id: string, now: Date = new Date(), measure: BurnUpMeasure = 'items'): Promise<BurnUpData> {
     assertCanReadCycles(ctx);
     const tz = notificationsTz();
     return runInTenantContext(ctx, async (db) => {
         const cycle = await CycleRepository.getById(db, ctx, id);
         if (!cycle) throw notFound('Cycle not found');
+        // The team's CURRENT unit decides what may be counted (3.4a): the
+        // other column is kept on the items, hidden and uncounted.
+        const measures = burnUpMeasuresFor(await TeamRepository.estimateUnitOf(db, ctx, cycle.teamId));
+        if (!measures.includes(measure)) {
+            throw badRequest(`This cycle's team does not estimate in ${measure}; its burn-up counts ${measures.join(' or ')}.`, { reason: 'MEASURE_UNAVAILABLE', measures });
+        }
         const on = todayInTz(todayClock(tz, now), tz);
-        if (on.getTime() < cycle.startsOn.getTime()) return { points: [], truncated: false };
+        if (on.getTime() < cycle.startsOn.getTime()) return { points: [], truncated: false, measure, measures };
         const ids = await CycleRepository.itemIdsEverInCycle(db, ctx, cycle.id);
         const truncated = ids.length > BURN_UP_ITEM_CAP;
         const rows = await CycleRepository.transitionsOf(db, ctx, ids.slice(0, BURN_UP_ITEM_CAP), now);
@@ -167,6 +183,7 @@ export async function getCycleBurnUp(ctx: RequestContext, id: string, now: Date 
             today: on,
             now,
             tz,
+            measure,
             transitions: rows
                 .filter((r) => visible.has(r.projectId))
                 .map((r) => ({
@@ -176,9 +193,11 @@ export async function getCycleBurnUp(ctx: RequestContext, id: string, now: Date 
                     deleted: r.deleted,
                     at: r.at,
                     seq: Number(r.id),
+                    estimatePoints: r.estimatePoints,
+                    estimateMinutes: r.estimateMinutes,
                 })),
         });
-        return { points, truncated };
+        return { points, truncated, measure, measures };
     });
 }
 

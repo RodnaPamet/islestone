@@ -32,6 +32,7 @@ import { loadFieldSets } from './field-set';
 import { LabelRepository } from '../repositories/LabelRepository';
 import { MilestoneRepository } from '../repositories/MilestoneRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
+import { TeamRepository } from '../repositories/TeamRepository';
 import { ProjectTemplateRepository, WorkItemTemplateRepository } from '../repositories/TemplateRepository';
 import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import { WorkItemTypeRepository } from '../repositories/WorkItemTypeRepository';
@@ -153,14 +154,22 @@ async function captureProject(
 ): Promise<ProjectTemplateContent> {
     const v = await visibleProjects(ctx, db);
     const on = today();
-    const [fields, milestones, itemTemplates, types, labels, rules] = await Promise.all([
+    const [fields, milestones, itemTemplates, types, labels, rules, estimateUnit] = await Promise.all([
         CustomFieldRepository.listFields(db, ctx, projectId),
         MilestoneRepository.listForProject(db, ctx, projectId),
         WorkItemTemplateRepository.list(db, ctx, projectId),
         WorkItemTypeRepository.list(db, ctx, { includeArchived: true }),
         LabelRepository.list(db, ctx),
         FieldSetRepository.listForProject(db, ctx, projectId),
+        TeamRepository.estimateUnitOfProject(db, ctx, projectId),
     ]);
+    // An item's estimate as the project's team counts it now (3.4a): a hidden
+    // value in the other column is not the item's estimate and is not carried.
+    const counted = (row: { estimatePoints: number | null; estimateMinutes: number | null }) => {
+        if (estimateUnit === 'POINTS' && row.estimatePoints !== null) return { estimatePoints: row.estimatePoints };
+        if (estimateUnit === 'HOURS' && row.estimateMinutes !== null) return { estimateMinutes: row.estimateMinutes };
+        return {};
+    };
     const typeName = new Map(types.map((t) => [t.id, t.name]));
     const labelName = new Map(labels.map((l) => [l.id, l.name]));
     const offset = (d: Date | null) => (d ? Math.max(0, Math.min(TEMPLATE_LIMITS.dueInDaysMax, daysBetween(on, d))) : null);
@@ -182,6 +191,7 @@ async function captureProject(
             dueInDays: offset(t.dueDate),
             milestoneIndex: t.milestoneId !== null ? (milestoneIndex.get(t.milestoneId) ?? null) : null,
             subItems: subs.filter((s) => s.parentId === t.id).slice(0, TEMPLATE_LIMITS.subItems).map((s) => ({ title: s.title })),
+            ...counted(t),
         }));
     }
 
@@ -204,6 +214,7 @@ async function captureProject(
                 labelNames: names(t.labelIds),
                 dueInDays: t.dueInDays,
                 subItems: t.subItems.slice(0, TEMPLATE_LIMITS.subItems),
+                ...counted({ estimatePoints: t.estimatePoints ?? null, estimateMinutes: t.estimateMinutes ?? null }),
             };
         }),
         items,
@@ -339,7 +350,14 @@ export async function applyProjectTemplateInTx(
             metadata: { projectId: project.id, projectTemplateId: template.id },
         });
 
-    const [types, labels] = await Promise.all([WorkItemTypeRepository.list(db, ctx), LabelRepository.list(db, ctx, { teamId: project.teamId })]);
+    const [types, labels, teamUnit] = await Promise.all([
+        WorkItemTypeRepository.list(db, ctx),
+        LabelRepository.list(db, ctx, { teamId: project.teamId }),
+        TeamRepository.estimateUnitOf(db, ctx, project.teamId),
+    ]);
+    // The new project's team's estimate unit (3.4a, decision 258): an estimate
+    // in another unit, or for a team that does not estimate, is skipped and named.
+    const estimateUnit = teamUnit ?? null;
     const typeByName = new Map(types.map((t) => [t.name, t.id]));
     // A team's own label wins over a workspace label of the same name.
     const labelByName = new Map<string, string>();
@@ -437,7 +455,15 @@ export async function applyProjectTemplateInTx(
         counts.milestones++;
     }
 
-    // Item templates.
+    // Item templates. An item template keeps its estimate only in the team's unit.
+    const templateEstimateFor = (t: { estimatePoints?: number | null; estimateMinutes?: number | null }) => {
+        const points = t.estimatePoints ?? null;
+        const minutes = t.estimateMinutes ?? null;
+        if (estimateUnit === 'POINTS' && points !== null) return { estimatePoints: points, estimateMinutes: null };
+        if (estimateUnit === 'HOURS' && minutes !== null) return { estimatePoints: null, estimateMinutes: minutes };
+        if (points !== null || minutes !== null) skipped.push('estimate:unit');
+        return { estimatePoints: null, estimateMinutes: null };
+    };
     let templateKey: string | null = null;
     const templateNames = new Set<string>();
     for (const t of content.itemTemplates) {
@@ -457,6 +483,7 @@ export async function applyProjectTemplateInTx(
             priority: t.priority as WorkItemPriority,
             assigneeId: null,
             dueInDays: t.dueInDays,
+            ...templateEstimateFor(t),
             customFieldValuesJson: Prisma.DbNull,
             subItemsJson: t.subItems.length ? t.subItems : Prisma.DbNull,
             sortKey: templateKey,
@@ -468,8 +495,8 @@ export async function applyProjectTemplateInTx(
 
     // Starter items and their sub-items, through the one projection, each
     // checked against its type's field set like any create (decision 111).
-    const starterSets = await loadFieldSets(db, ctx, content.items.map((i) => typeOf(i.typeName)), project.id);
-    const use = { today: on, usableLabelIds: new Set(labelByName.values()), activeMemberIds: new Set<string>(), liveFields: new Map() };
+    const starterSets = await loadFieldSets(db, ctx, content.items.map((i) => typeOf(i.typeName)), project.id, estimateUnit);
+    const use = { today: on, usableLabelIds: new Set(labelByName.values()), activeMemberIds: new Set<string>(), liveFields: new Map(), estimateUnit };
     for (const item of content.items) {
         const typeId = typeOf(item.typeName);
         const projected = templateToCreateInput(
@@ -483,6 +510,8 @@ export async function applyProjectTemplateInTx(
                 assigneeId: null,
                 dueInDays: item.dueInDays,
                 milestoneId: item.milestoneIndex !== null ? (milestoneIds[item.milestoneIndex] ?? null) : null,
+                estimatePoints: item.estimatePoints ?? null,
+                estimateMinutes: item.estimateMinutes ?? null,
                 customFields: {},
                 subItems: item.subItems,
             },
@@ -499,10 +528,12 @@ export async function applyProjectTemplateInTx(
             labelIds: projected.labelIds,
             dueDate: projected.dueDate,
             milestoneId: projected.milestoneId,
+            estimatePoints: projected.estimatePoints,
+            estimateMinutes: projected.estimateMinutes,
             templateId: null,
             projectTemplateId: template.id,
         }, starterSets.get(typeId));
-        skipped.push(...starterSkipped);
+        skipped.push(...projected.skipped.filter((k) => k === 'estimate:unit'), ...starterSkipped);
         counts.items++;
         for (const sub of projected.subItems) {
             // guardrail-allow: n+1 — a starter item's sub-items, at most TEMPLATE_LIMITS.subItems (50).

@@ -37,6 +37,8 @@ import { useWorkConfig } from './data/use-work-config';
 import { useWorkItemMutations } from './data/use-work-item-mutations';
 import { useItemTemplates } from './data/use-item-templates';
 import { AssigneePicker, CyclePicker, GoalPicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker, WaitingOnPicker } from './pickers';
+import { EstimateInput } from './fields/EstimateInput';
+import { countedEstimate, estimateColumnOf } from '@/lib/work-items/estimate';
 import { useProjectCustomFields } from './data/use-custom-fields';
 import { useFieldSet } from './data/use-field-sets';
 import { CustomFieldInput } from './fields/CustomFieldInput';
@@ -75,6 +77,8 @@ interface FormState {
     milestoneId: string | null;
     /** A goal the new item names directly (3.2a, decision 211). */
     goalId: string | null;
+    /** The estimate in the project's team's unit (3.4a): points, or minutes for hours. */
+    estimate: number | null;
     /** The item template the form started from (2.5c), or none. */
     templateId: string | null;
 }
@@ -123,6 +127,7 @@ export function NewWorkItemModal({
             cycleId: initial?.cycleId && config.cycleById.get(initial.cycleId)?.teamId === teamId ? initial.cycleId : null,
             milestoneId: initial?.milestoneId && config.milestoneById.get(initial.milestoneId)?.projectId === projectId ? initial.milestoneId : null,
             goalId: null,
+            estimate: null,
             templateId: null,
         };
     }, [config, initial, liveProjects]);
@@ -161,6 +166,8 @@ export function NewWorkItemModal({
     const offered = (key: FieldKey) => requirementOf(fieldSet, key) !== 'HIDDEN';
     const isRequired = (key: FieldKey) => requirementOf(fieldSet, key) === 'REQUIRED';
     const requiredFields = liveFields.filter((f) => isRequired(`cf:${f.id}`));
+    // The estimate (3.4a): offered in the project's team's unit, when it estimates.
+    const estimateUnit = config.estimateUnitOfProject(form.projectId) ?? null;
 
     const requestClose = () => {
         if (dirty && !submitting) setConfirmDiscard(true);
@@ -192,6 +199,7 @@ export function NewWorkItemModal({
             assigneeId: tpl.assigneeId,
             labelIds: tpl.labelIds,
             dueDate: due ? toYMD(due) : null,
+            estimate: countedEstimate(config.estimateUnitOfProject(f.projectId) ?? null, tpl),
         }));
     };
 
@@ -208,6 +216,8 @@ export function NewWorkItemModal({
             milestoneId: f.milestoneId && config.milestoneById.get(f.milestoneId)?.projectId === projectId ? f.milestoneId : null,
             // A template belongs to a project.
             templateId: null,
+            // An estimate is in the team's unit: another team's unit clears it.
+            estimate: config.estimateUnitOfTeam(team) === config.estimateUnitOfProject(f.projectId) ? f.estimate : null,
             labelIds: f.labelIds.filter((id) => {
                 const label = config.labelById.get(id);
                 return !!label && (label.teamId === null || label.teamId === team);
@@ -233,6 +243,7 @@ export function NewWorkItemModal({
                 cycleId: form.cycleId,
                 milestoneId: form.milestoneId,
                 goalId: form.goalId,
+                estimate: form.estimate,
                 customFields: form.customFields,
             });
             if (gaps.length > 0) {
@@ -259,6 +270,7 @@ export function NewWorkItemModal({
             ...(form.cycleId ? { cycleId: form.cycleId } : {}),
             ...(form.milestoneId ? { milestoneId: form.milestoneId } : {}),
             ...(form.goalId ? { goalId: form.goalId } : {}),
+            ...(form.estimate !== null && estimateUnit && offered('estimate') ? { [estimateColumnOf(estimateUnit)]: form.estimate } : {}),
             ...(initial?.parentId ? { parentId: initial.parentId } : {}),
         };
         // From a template, send it and only what the person changed: the
@@ -274,6 +286,11 @@ export function NewWorkItemModal({
             if (touched.has('assigneeId') && !form.assigneeId) body.assigneeId = null;
             if (touched.has('labelIds') && form.labelIds.length === 0) body.labelIds = [];
             if (touched.has('description') && !form.description.trim()) body.description = null;
+            // The template's estimate stands unless the person changed it (3.4a).
+            if (!touched.has('estimate')) {
+                delete body.estimatePoints;
+                delete body.estimateMinutes;
+            } else if (form.estimate === null && estimateUnit) body[estimateColumnOf(estimateUnit)] = null;
         }
         const result = await mutations.create(body);
         setSubmitting(false);
@@ -425,6 +442,17 @@ export function NewWorkItemModal({
                                             projectId={form.projectId}
                                             value={form.milestoneId}
                                             onChange={(v) => set('milestoneId', v)}
+                                        />
+                                    </FormField>
+                                )}
+                                {estimateUnit && offered('estimate') && (
+                                    <FormField label={t('fields.estimate')} required={isRequired('estimate')}>
+                                        <EstimateInput
+                                            id="work-item-estimate-input"
+                                            unit={estimateUnit}
+                                            value={form.estimate}
+                                            live
+                                            onChange={(v) => set('estimate', v)}
                                         />
                                     </FormField>
                                 )}

@@ -20,12 +20,13 @@
  * The evaluation is `src/lib/work-items/field-sets.ts`, which the forms use
  * too. Written fresh for Islestone.
  */
-import type { FieldRequirement } from '@prisma/client';
+import type { EstimateUnit, FieldRequirement } from '@prisma/client';
 
 import { logEvent } from '../events/audit';
 import { CustomFieldRepository } from '../repositories/CustomFieldRepository';
 import { FieldSetRepository, type FieldSetRecord } from '../repositories/FieldSetRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
+import { TeamRepository } from '../repositories/TeamRepository';
 import { WorkItemTypeRepository } from '../repositories/WorkItemTypeRepository';
 import {
     assertCanManageCustomFields,
@@ -76,20 +77,29 @@ export interface LoadedFieldSet {
  * Field sets for several types in one project, read once (a create and its
  * template's sub-items, a project template's starter items).
  */
-export async function loadFieldSets(db: PrismaTx, ctx: RequestContext, typeIds: readonly string[], projectId: string): Promise<Map<string, LoadedFieldSet>> {
+export async function loadFieldSets(
+    db: PrismaTx,
+    ctx: RequestContext,
+    typeIds: readonly string[],
+    projectId: string,
+    /** The project's team's estimate unit (3.4a), when the caller has read it; read here otherwise. */
+    estimateUnit?: EstimateUnit | null,
+): Promise<Map<string, LoadedFieldSet>> {
     const unique = [...new Set(typeIds)];
-    const [rules, fields] = await Promise.all([
+    const [rules, fields, unit] = await Promise.all([
         FieldSetRepository.listForTypesInProject(db, ctx, unique, projectId),
         CustomFieldRepository.listFields(db, ctx, projectId),
+        estimateUnit !== undefined ? Promise.resolve(estimateUnit) : TeamRepository.estimateUnitOfProject(db, ctx, projectId),
     ]);
     const rows = rules.map(toEntry);
     const live = fields.map((f) => f.id);
     const names = new Map(fields.map((f) => [f.id, f.name]));
-    return new Map(unique.map((typeId) => [typeId, { set: resolveFieldSet(rows, typeId, { projectId, liveCustomFieldIds: live }), names }]));
+    const opts = { projectId, liveCustomFieldIds: live, estimateUnit: unit ?? null };
+    return new Map(unique.map((typeId) => [typeId, { set: resolveFieldSet(rows, typeId, opts), names }]));
 }
 
-export async function loadFieldSet(db: PrismaTx, ctx: RequestContext, typeId: string, projectId: string): Promise<LoadedFieldSet> {
-    return (await loadFieldSets(db, ctx, [typeId], projectId)).get(typeId)!;
+export async function loadFieldSet(db: PrismaTx, ctx: RequestContext, typeId: string, projectId: string, estimateUnit?: EstimateUnit | null): Promise<LoadedFieldSet> {
+    return (await loadFieldSets(db, ctx, [typeId], projectId, estimateUnit)).get(typeId)!;
 }
 
 function listNames(keys: readonly FieldKey[], names: ReadonlyMap<string, string>): string {
@@ -154,6 +164,9 @@ function withoutField(values: FieldValues, key: FieldKey): FieldValues {
             break;
         case 'goal':
             out.goalId = null;
+            break;
+        case 'estimate':
+            out.estimate = null;
             break;
     }
     return out;

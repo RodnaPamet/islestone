@@ -46,7 +46,7 @@ import { archiveRecipientList, createRecipientList } from '@/app-layer/usecases/
 import { setWorkItemRecurrence } from '@/app-layer/usecases/recurrence';
 import { getWorkItemReview, sendWorkItemReview, setWorkItemReviewSteps } from '@/app-layer/usecases/review';
 import { createSavedView } from '@/app-layer/usecases/saved-view';
-import { createTeam } from '@/app-layer/usecases/team';
+import { createTeam, updateTeam } from '@/app-layer/usecases/team';
 import { createInviteToken } from '@/app-layer/usecases/tenant-invites';
 import { assignWorkItem, createWorkItem, deleteWorkItem } from '@/app-layer/usecases/work-item';
 import { markWorkItemAnswer } from '@/app-layer/usecases/work-item-answer';
@@ -148,6 +148,8 @@ export function setUpMatrixWorld(tag: string): { world: () => World; prisma: () 
         }
 
         const team = await createTeam(owner, { name: 'Matrix' });
+        // The matrix team estimates in points (3.4a), so the estimate route answers a write.
+        await updateTeam(owner, team.id, { estimateUnit: 'POINTS' });
         const project = await createProject(owner, { teamId: team.id, name: 'Matrix', keyPrefix: 'MTX' });
         const other = await createProject(owner, { teamId: team.id, name: 'Matrix other', keyPrefix: 'MTO' });
         const archived = await createProject(owner, { teamId: team.id, name: 'Matrix archived', keyPrefix: 'MTA' });

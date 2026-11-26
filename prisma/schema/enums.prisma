@@ -415,3 +415,12 @@ enum CalendarSyncedEventKind {
   WORK_ITEM
   MILESTONE
 }
+
+/// The unit a team estimates its items in (sub-phase 3.4a; ADR 0012 §1, ADR
+/// 0006 "Estimate unit"; owner decision 257). NULL on `Team.estimateUnit` is a
+/// team that does not estimate. Points are `WorkItem.estimatePoints`, hours
+/// are stored as minutes in `WorkItem.estimateMinutes`.
+enum EstimateUnit {
+  POINTS
+  HOURS
+}

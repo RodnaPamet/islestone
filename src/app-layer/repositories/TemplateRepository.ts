@@ -28,6 +28,8 @@ export const workItemTemplateSelect = {
     priority: true,
     assigneeId: true,
     dueInDays: true,
+    estimatePoints: true,
+    estimateMinutes: true,
     customFieldValuesJson: true,
     subItemsJson: true,
     sortKey: true,
@@ -45,6 +47,9 @@ export interface WorkItemTemplateData {
     priority: WorkItemPriority;
     assigneeId: string | null;
     dueInDays: number | null;
+    /** The new item's estimate (3.4a): at most one set, the column of the project's team's unit at save. */
+    estimatePoints?: number | null;
+    estimateMinutes?: number | null;
     customFieldValuesJson: Prisma.InputJsonValue | typeof Prisma.DbNull;
     subItemsJson: Prisma.InputJsonValue | typeof Prisma.DbNull;
 }

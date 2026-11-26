@@ -51,7 +51,7 @@ import { createMilestone } from '@/app-layer/usecases/milestone';
 import { createGoal } from '@/app-layer/usecases/goal';
 import { createProject } from '@/app-layer/usecases/project';
 import { setTypeReviewSteps } from '@/app-layer/usecases/review-defaults';
-import { createTeam } from '@/app-layer/usecases/team';
+import { createTeam, updateTeam } from '@/app-layer/usecases/team';
 import { createWorkItem } from '@/app-layer/usecases/work-item';
 import { addComment } from '@/app-layer/usecases/work-item-collab';
 import { createWorkItemTemplate } from '@/app-layer/usecases/work-item-template';
@@ -83,7 +83,7 @@ interface Row {
     readonly expect: { status: 400; reason: 'FIELD_SET_UNMET' | 'FIELD_HIDDEN'; fields: readonly string[] } | { status: 409; reason: 'REVIEW_INCOMPLETE' };
 }
 
-const STRICT_FIELDS: readonly BuiltInField[] = ['description', 'assignee', 'waitingOn', 'priority', 'labels', 'startDate', 'dueDate', 'cycle', 'milestone', 'goal'];
+const STRICT_FIELDS: readonly BuiltInField[] = ['description', 'assignee', 'waitingOn', 'priority', 'labels', 'startDate', 'dueDate', 'cycle', 'milestone', 'goal', 'estimate'];
 const unmet = (...fields: string[]) => ({ status: 400 as const, reason: 'FIELD_SET_UNMET' as const, fields });
 const hidden = (...fields: string[]) => ({ status: 400 as const, reason: 'FIELD_HIDDEN' as const, fields });
 const held = { status: 409 as const, reason: 'REVIEW_INCOMPLETE' as const };
@@ -105,6 +105,8 @@ function strictCreate(i: Ids, without: readonly string[]): Record<string, unknow
         cycleId: i.cycle,
         milestoneId: i.milestone,
         goalId: i.goal,
+        // The team estimates in points (3.4a).
+        estimatePoints: 3,
         customFields: { [i.field!]: 7 },
     };
     const key: Record<string, string> = {
@@ -118,6 +120,7 @@ function strictCreate(i: Ids, without: readonly string[]): Record<string, unknow
         cycle: 'cycleId',
         milestone: 'milestoneId',
         goal: 'goalId',
+        estimate: 'estimatePoints',
     };
     for (const f of without) {
         if (f === 'custom') delete all.customFields;
@@ -158,6 +161,7 @@ const ROWS: readonly Row[] = [
     { name: 'PUT /work-items/:id/cycle to none', route: `${W}/cycle/route.ts`, method: 'PUT', fixture: 'strict', params: item, body: () => ({ cycleId: null }), expect: unmet('cycle') },
     { name: 'PUT /work-items/:id/milestone to none', route: `${W}/milestone/route.ts`, method: 'PUT', fixture: 'strict', params: item, body: () => ({ milestoneId: null }), expect: unmet('milestone') },
     { name: 'PUT /work-items/:id/goal to none (3.2a)', route: `${W}/goal/route.ts`, method: 'PUT', fixture: 'strict', params: item, body: () => ({ goalId: null }), expect: unmet('goal') },
+    { name: 'PUT /work-items/:id/estimate to none (3.4a)', route: `${W}/estimate/route.ts`, method: 'PUT', fixture: 'strict', params: item, body: () => ({ value: null, unit: 'POINTS' }), expect: unmet('estimate') },
     { name: 'DELETE /work-items/:id/labels/:labelId, the last label', route: `${W}/labels/[labelId]/route.ts`, method: 'DELETE', fixture: 'strict', params: (i) => ({ workItemId: i.item!, labelId: i.label! }), expect: unmet('labels') },
     { name: 'PUT /work-items/:id/custom-fields/:fieldId to empty', route: `${W}/custom-fields/[fieldId]/route.ts`, method: 'PUT', fixture: 'strict', params: (i) => ({ workItemId: i.item!, fieldId: i.field! }), body: () => ({ value: null }), expect: unmet('cf') },
     {
@@ -178,6 +182,7 @@ const ROWS: readonly Row[] = [
         ['cycle', { cycleId: 'CYCLE' }],
         ['milestone', { milestoneId: 'MILESTONE' }],
         ['goal', { goalId: 'GOAL' }],
+        ['estimate', { estimatePoints: 3 }],
         ['cf', { customFields: { FIELD: 7 } }],
     ] as const).map(
         ([f, extra]): Row => ({
@@ -200,6 +205,7 @@ const ROWS: readonly Row[] = [
     { name: 'PUT /work-items/:id/cycle on the hiding type', route: `${W}/cycle/route.ts`, method: 'PUT', fixture: 'hiding', params: item, body: (i) => ({ cycleId: i.cycle }), expect: hidden('cycle') },
     { name: 'PUT /work-items/:id/milestone on the hiding type', route: `${W}/milestone/route.ts`, method: 'PUT', fixture: 'hiding', params: item, body: (i) => ({ milestoneId: i.milestone }), expect: hidden('milestone') },
     { name: 'PUT /work-items/:id/goal on the hiding type (3.2a)', route: `${W}/goal/route.ts`, method: 'PUT', fixture: 'hiding', params: item, body: (i) => ({ goalId: i.goal }), expect: hidden('goal') },
+    { name: 'PUT /work-items/:id/estimate on the hiding type (3.4a)', route: `${W}/estimate/route.ts`, method: 'PUT', fixture: 'hiding', params: item, body: () => ({ value: 5, unit: 'POINTS' }), expect: hidden('estimate') },
     { name: 'POST /work-items/:id/labels on the hiding type', route: `${W}/labels/route.ts`, method: 'POST', fixture: 'hiding', params: item, body: (i) => ({ labelIds: [i.label] }), expect: hidden('labels') },
     { name: 'PUT /work-items/:id/custom-fields/:fieldId on the hiding type', route: `${W}/custom-fields/[fieldId]/route.ts`, method: 'PUT', fixture: 'hiding', params: (i) => ({ workItemId: i.item!, fieldId: i.field! }), body: () => ({ value: 7 }), expect: hidden('cf') },
     { name: 'PUT /work-items/:id/answer on a type that hides the answer', route: `${W}/answer/route.ts`, method: 'PUT', fixture: 'hiding', params: item, body: (i) => ({ commentId: i.comment }), expect: hidden('answer') },
@@ -238,6 +244,8 @@ describeFn('required and hidden fields, and the Done check, at the route (H2 par
         owner = makeRequestContext('OWNER', { tenantId, tenantSlug: TAG, userId: ownerId, requestId: `${TAG}-setup` });
 
         const team = await createTeam(owner, { name: 'Fields' });
+        // The team estimates in points, so the estimate is a field its types may require or hide (3.4a).
+        await updateTeam(owner, team.id, { estimateUnit: 'POINTS' });
         const project = await createProject(owner, { teamId: team.id, name: 'Fields', keyPrefix: 'FLD' });
         w.project = project.id;
         w.doneState = team.workflowStates.find((s) => s.category === 'DONE')!.id;

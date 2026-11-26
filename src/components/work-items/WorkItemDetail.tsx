@@ -48,6 +48,8 @@ import { SubItemsPanel } from './detail/SubItemsPanel';
 import { MentionText } from './mentions/MentionText';
 import { MentionTextarea } from './mentions/MentionTextarea';
 import { CustomFieldInput } from './fields/CustomFieldInput';
+import { EstimateInput } from './fields/EstimateInput';
+import { countedEstimate } from '@/lib/work-items/estimate';
 import { RepeatControl } from './detail/RepeatControl';
 import { PinnedAnswer, useMarkAnswer } from './detail/AnswerControls';
 import { ReviewSteps, useReviewWaitingOn } from './detail/ReviewSteps';
@@ -117,6 +119,8 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
         [projectFields, item?.projectId],
     );
     const fieldSet = useFieldSet(item?.typeId, item?.projectId, liveFieldIds);
+    // The estimate (3.4a): shown and written in the item's team's current unit only.
+    const estimateUnit = config.estimateUnitOfTeam(item?.teamId) ?? null;
     const fieldValues = useMemo<FieldValues>(
         () =>
             item
@@ -132,10 +136,11 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                       milestoneId: item.milestoneId ?? null,
                       goalId: item.goalId ?? null,
                       answerCommentId: item.answerCommentId ?? null,
+                      estimate: countedEstimate(estimateUnit, item),
                       customFields: item.customFields ?? {},
                   }
                 : {},
-        [item],
+        [item, estimateUnit],
     );
     const offers = (key: FieldKey) => requirementOf(fieldSet, key) !== 'HIDDEN' || !isFieldEmpty(key, fieldValues);
     const requiredMark = (key: FieldKey) => (requirementOf(fieldSet, key) === 'REQUIRED' ? t('fieldSet.required') : undefined);
@@ -328,6 +333,17 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
             )}
             {overdue && <p className="text-xs text-content-error">{t('detail.overdue')}</p>}
             {/* Sub-phase 2.4b-b: a start date the type requires, or one the item holds. */}
+            {estimateUnit && offers('estimate') && (
+                <PropertyRow label={t('fields.estimate')} required={requiredMark('estimate')} htmlFor={`estimate-${item.id}`}>
+                    <EstimateInput
+                        id={`estimate-${item.id}`}
+                        unit={estimateUnit}
+                        value={countedEstimate(estimateUnit, item)}
+                        disabled={!perms.edit}
+                        onChange={(value) => void mutations.setEstimate(row, estimateUnit, value)}
+                    />
+                </PropertyRow>
+            )}
             {(requiredMark('startDate') || item.startDate) && offers('startDate') && (
                 <PropertyRow label={t('fields.startDate')} htmlFor={`start-${item.id}`} required={requiredMark('startDate')}>
                     <DatePicker

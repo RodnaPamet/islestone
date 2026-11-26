@@ -241,6 +241,9 @@ export const workItemListSelect = {
     cycleId: true,
     milestoneId: true,
     goalId: true,
+    /** The two estimate columns (3.4a); the client shows the one its team's unit counts. */
+    estimatePoints: true,
+    estimateMinutes: true,
     recurrenceId: true,
     occurrenceOn: true,
     recurrenceRule: { select: { id: true } },
@@ -346,6 +349,8 @@ export const workItemGateSelect = {
     cycleId: true,
     milestoneId: true,
     goalId: true,
+    estimatePoints: true,
+    estimateMinutes: true,
     sortKey: true,
     startedAt: true,
     startDate: true,
@@ -378,6 +383,8 @@ export type WorkItemPatch = Partial<{
     cycleId: string | null;
     milestoneId: string | null;
     goalId: string | null;
+    estimatePoints: number | null;
+    estimateMinutes: number | null;
 }>;
 
 /**
@@ -1106,6 +1113,8 @@ export class WorkItemRepository {
             cycleId?: string | null;
             milestoneId?: string | null;
             goalId?: string | null;
+            estimatePoints?: number | null;
+            estimateMinutes?: number | null;
             recurrenceId?: string | null;
             occurrenceOn?: Date | null;
             sortKey: string;
@@ -1631,6 +1640,8 @@ export class WorkItemRepository {
                 priority: true,
                 dueDate: true,
                 milestoneId: true,
+                estimatePoints: true,
+                estimateMinutes: true,
                 labels: { select: { labelId: true } },
             },
         });

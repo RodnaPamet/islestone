@@ -58,6 +58,19 @@ describe('resolveFieldSet', () => {
         expect(set.customFields).toEqual({ 'f-live': 'REQUIRED' });
         expect(requirementOf(set, 'cf:f-other')).toBe('OPTIONAL');
     });
+
+    it("hides the estimate whatever its rule on a team that does not estimate, and keeps the rule on one that does (3.4a)", () => {
+        const entries = [builtIn('bug', 'estimate', 'REQUIRED')];
+        expect(resolveFieldSet(entries, 'bug', { estimateUnit: 'POINTS' }).builtIn.estimate).toBe('REQUIRED');
+        expect(resolveFieldSet(entries, 'bug', { estimateUnit: 'HOURS' }).builtIn.estimate).toBe('REQUIRED');
+        expect(resolveFieldSet(entries, 'bug', { estimateUnit: null }).builtIn.estimate).toBe('HIDDEN');
+        // Not asked (the timeline's date rules): the rule stands.
+        expect(resolveFieldSet(entries, 'bug').builtIn.estimate).toBe('REQUIRED');
+        // An estimate of 0 is a value, not a gap.
+        const set = resolveFieldSet(entries, 'bug', { estimateUnit: 'POINTS' });
+        expect(fieldSetGaps(set, { estimate: 0 }, ['estimate'])).toEqual([]);
+        expect(fieldSetGaps(set, { estimate: null }, ['estimate'])).toEqual(['estimate']);
+    });
 });
 
 describe('emptiness', () => {

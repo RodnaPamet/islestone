@@ -191,15 +191,35 @@ describe('Teams', () => {
         expect(within(dialog).getByLabelText(/^Name/)).toHaveValue('Platform');
     });
 
-    it('renames a team', async () => {
+    it('renames a team, leaving how it estimates alone', async () => {
         const { calls } = installFetch({ 'GET /teams': { body: TEAMS }, 'GET /work-item-types': { body: [] }, 'PATCH /teams/team-1': { body: { id: 'team-1', name: 'Kernel' } } });
         renderWorkspace(<TeamsSettings affordances={ALL} />);
-        fireEvent.click(await screen.findByRole('button', { name: 'Rename Core' }));
-        const dialog = await screen.findByRole('dialog', { name: 'Rename team' });
+        fireEvent.click(await screen.findByRole('button', { name: 'Edit Core' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Edit team' });
         expect(within(dialog).getByLabelText(/^Name/)).toHaveValue('Core');
         fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: 'Kernel' } });
         fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
         await waitFor(() => expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ name: 'Kernel' }));
+    });
+
+    it("shows how each team estimates, and changes it in the team's dialog (3.4a)", async () => {
+        const { calls } = installFetch({
+            'GET /teams': { body: [{ ...TEAMS[0]!, estimateUnit: 'POINTS' }, ...TEAMS.slice(1)] },
+            'GET /work-item-types': { body: [] },
+            'PATCH /teams/team-1': { body: { id: 'team-1', name: 'Core', estimateUnit: 'HOURS' } },
+        });
+        const { container } = renderWorkspace(<TeamsSettings affordances={ALL} />);
+        const table = await screen.findByTestId('settings-teams-table');
+        expect(await within(table).findByText('Points')).toBeInTheDocument();
+        expect(within(table).getAllByText('Off').length).toBeGreaterThan(0);
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Core' }));
+        const dialog = await screen.findByRole('dialog', { name: 'Edit team' });
+        expect(within(dialog).getByRole('radio', { name: 'Points' })).toBeChecked();
+        expect(within(dialog).getByText(/keep their value in the other unit/)).toBeInTheDocument();
+        fireEvent.click(within(dialog).getByRole('radio', { name: 'Hours' }));
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+        await waitFor(() => expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ name: 'Core', estimateUnit: 'HOURS' }));
+        expect(await axe(container)).toHaveNoViolations();
     });
 
     it('hides a deleted team at once, and Undo brings it back without sending anything', async () => {
