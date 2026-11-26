@@ -13,7 +13,7 @@ The workspace is the `Tenant` model in code and the database ("Workspace" in eve
 |---|---|---|
 | The login role (`islestone` locally; a superuser in development and CI) | Migrations, seeds, admin scripts, auth lookups, webhook ingest, cross-tenant sweeps, the organization paths | Admitted by the `superuser_bypass` policy (`current_setting('role') != 'app_user'`). Sees everything. |
 | `app_user` (NOLOGIN, granted to the login role) | All normal request handlers and per-tenant jobs, via `runInTenantContext` | `superuser_bypass` does not match. `tenant_isolation` enforces `"tenantId" = current_setting('app.tenant_id')`. Sees only own-tenant rows. |
-| `app_search_definer` (NOLOGIN, NOINHERIT, BYPASSRLS, no members) | Nothing logs in as it. It owns the five search functions and nothing else (owner decision 245, below) | Bypasses RLS by its attribute; holds `SELECT` on a few named columns of four tables only. Reachable only through the functions, which apply the workspace themselves. |
+| `app_search_definer` (NOLOGIN, NOINHERIT, BYPASSRLS, no members) | Nothing logs in as it. It owns the five search functions and nothing else (owner decisions 245 and 249, below) | Bypasses RLS by its attribute; holds `SELECT` on a few named columns of four tables only. Reachable only through the functions, which apply the workspace themselves. |
 
 `FORCE ROW LEVEL SECURITY` is enabled on every tenant-scoped table, so policies apply to the table owner too, which is why `superuser_bypass` exists to re-admit trusted non-app paths.
 
