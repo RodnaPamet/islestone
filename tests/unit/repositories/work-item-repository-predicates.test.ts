@@ -88,6 +88,7 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
         ['list (a cycle filter, 2.5a)', (db) => WorkItemRepository.list(db, ctx, GUEST, { cycleId: 'c1,c2' }, { limit: 10, sort: listSortSpec('manual') })],
         ['openItemsForTemplate (2.5c, top level and sub-items)', (db) => Promise.all([WorkItemRepository.openItemsForTemplate(db, ctx, GUEST, 'p1', null, 10), WorkItemRepository.openItemsForTemplate(db, ctx, GUEST, 'p1', ['w1'], 10)])],
         ['countsByMilestone (2.5b)', (db) => WorkItemRepository.countsByMilestone(db, ctx, GUEST, ['m1'])],
+        ['countsByGoals (3.2b, the direct goal path)', (db) => WorkItemRepository.countsByGoals(db, ctx, GUEST, ['g1'])],
         ['list (a milestone filter, 2.5b)', (db) => WorkItemRepository.list(db, ctx, GUEST, { milestoneId: 'm1,none' }, { limit: 10, sort: listSortSpec('manual') })],
         ['list (q with description and comment matches, 2.7f)', (db) => WorkItemRepository.list(db, ctx, GUEST, { q: 'login', fullTextMatchIds: ['w1'] }, { limit: 10, sort: listSortSpec('manual') })],
         ['findSearchRows (2.7f)', (db) => WorkItemRepository.findSearchRows(db, ctx, GUEST, ['w1'])],
@@ -107,6 +108,29 @@ describe('WorkItemRepository — every person-facing method carries deletedAt AN
             expect({ op: call.op, deleted: deletedPredicate(where) }).toEqual({ op: call.op, deleted: true });
             expect({ op: call.op, visible: carriesVisibility(where) }).toEqual({ op: call.op, visible: true });
         }
+    });
+
+    it("the project path's count (3.2b) is raw SQL carrying tenantId, both deletedAt, the cancelled literal and visibility", async () => {
+        const seen: Array<{ sql: string; values: unknown[] }> = [];
+        const db = {
+            $queryRaw: jest.fn(async (q: { sql: string; values: unknown[] }) => {
+                seen.push({ sql: q.sql, values: q.values });
+                return [{ projectId: 'p1', stateCategory: 'DONE', count: 2 }];
+            }),
+        } as unknown as PrismaTx;
+        expect(await WorkItemRepository.countsByProjects(db, ctx, GUEST, ['p1'])).toEqual([{ projectId: 'p1', stateCategory: 'DONE', count: 2 }]);
+        expect(seen).toHaveLength(1);
+        const { sql, values } = seen[0]!;
+        expect(sql).toContain(`w."tenantId" = ?`);
+        expect(sql).toContain('w."deletedAt" IS NULL');
+        expect(sql).toContain('p."deletedAt" IS NULL');
+        // The literal the partial index is declared with, never a bound enum.
+        expect(sql).toContain(`w."stateCategory" <> 'CANCELLED'`);
+        expect(sql).toContain(`?::boolean OR w."projectId" = ANY(?::text[])`);
+        expect(values).toEqual(expect.arrayContaining(['tenant-1', ['p1'], false, ['granted-1']]));
+        // Nothing to count, nothing read.
+        expect(await WorkItemRepository.countsByProjects(db, ctx, GUEST, [])).toEqual([]);
+        expect(seen).toHaveLength(1);
     });
 
     it('the versioned write is ONE updateMany whose where carries the version, the live row and visibility', async () => {

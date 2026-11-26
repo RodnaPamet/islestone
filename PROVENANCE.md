@@ -2195,6 +2195,14 @@ Built by [`docs/porting/maps/3.2.md`](docs/porting/maps/3.2.md) (its 3.2a part) 
 | `GoalRepository.lockForKeyShare`, `InitiativeRepository.lockForKeyShare` (a parent read `FOR KEY SHARE` in the caller's workspace before a link) | Paperclip `server/src/services/goals.ts` (`assertParentCompany`) | `8285a81280db17898f38827a9f3c90221a82f23c` | MIT | PATTERN | Pattern only, no code copied. |
 | `prisma/schema/goals.prisma`, the 3.2a enums, migrations `20261215120000_goals_and_initiatives` to `20261215120200_field_set_goal`; `GoalRepository.ts`, `InitiativeRepository.ts`, `domain/goal-tree.ts`, `usecases/goal.ts`, `initiative.ts`, `goal-shared.ts`, `goal-tree-lock.ts`, `goal-purge.ts`, `work-item-goal.ts`, `work-item-ancestry.ts`, `jobs/goal-purge.ts`, `policies/goal.policies.ts`, `src/lib/goals/types.ts`, `src/lib/schemas/goal.ts`, the goal, initiative, project-initiative, item-goal and ancestry routes; the 3.2a changes to `permissions.ts`, `work-item.ts`, `project.ts`, `tenant-admin.ts`, `recurrence-run.ts`, `work-item-template.ts`, `field-sets.ts`, `WorkItemRepository.ts`, `ProjectRepository.ts`; `src/components/work-items/detail/AncestryBreadcrumb.tsx`, `GoalPicker` and the 3.2a changes to the detail, the create and accept dialogs, the filters, `ProjectCreateDialog.tsx` and `ProjectsSettings.tsx` | ADR 0002, the 3.2 map | — | — | Islestone-owned | Written fresh. |
 
+## Goals and initiatives (sub-phase 3.2b)
+
+Built by [`docs/porting/maps/3.2.md`](docs/porting/maps/3.2.md) (its 3.2b part) under owner decisions 205 to 224 and ADR 0002 §17. **Nothing was copied, and no pattern was taken**: inflect-compliance has no goal, initiative or roadmap page, and Paperclip has no progress roll-up or health (its study, §5.8). `domain/progress.ts` generalises Islestone's own 2.5b milestone progress.
+
+| File | Source | Commit | Licence | Action | Changes |
+|---|---|---|---|---|---|
+| `src/app-layer/domain/progress.ts`, `usecases/goal-progress.ts`, `usecases/goal-health.ts`, migration `20261216120000_work_item_progress_index`, `WorkItemRepository.countsByProjects` and `countsByGoals`, `ActivityRepository.healthHistory`, the health routes, `src/lib/goals/limits.ts`, `src/lib/server/goal-pages.server.ts`, `src/components/goals/*`, the pages under `src/app/t/[tenantSlug]/(app)/roadmap/`; the 3.2b changes to `goal.ts`, `initiative.ts`, `milestone.ts`, `goal.policies.ts`, the navigation files and `ProjectCreateDialog.tsx` | ADR 0002, the 3.2 map | — | — | Islestone-owned | Written fresh. |
+
 ## Adopted
 
 | Component | Source (repository and path) | Commit | Licence | What was taken | Changes |

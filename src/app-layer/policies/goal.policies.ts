@@ -21,8 +21,9 @@ import { forbidden } from '@/lib/errors/types';
 import type { GoalAffordances } from '@/lib/goals/types';
 import { mayEditProject, type WorkConfigViewer } from './work-config.policies';
 import { mayPlanItems } from './cycle.policies';
+import { isTenantSystemUserId } from '@/lib/tenant-system-user';
 
-export type GoalViewer = WorkConfigViewer & Partial<Pick<RequestContext, 'apiKeyId'>>;
+export type GoalViewer = WorkConfigViewer & Partial<Pick<RequestContext, 'apiKeyId' | 'actorType' | 'userId'>>;
 
 function granted(ctx: GoalViewer, read: (p: NonNullable<RequestContext['appPermissions']>) => boolean | undefined): boolean {
     if (!ctx.appPermissions) return true;
@@ -37,6 +38,19 @@ export function mayManageGoals(ctx: GoalViewer): boolean {
     return ctx.permissions.canWrite && granted(ctx, (p) => p.goals?.manage);
 }
 
+/**
+ * Health is a person's act (decision 214): never an API key or an agent
+ * (`apiKeyId`), a job (`actorType`) or the workspace's system user.
+ */
+export function setsHealthAsPerson(ctx: GoalViewer): boolean {
+    return !ctx.apiKeyId && (ctx.actorType === undefined || ctx.actorType === 'USER') && !(ctx.userId && isTenantSystemUserId(ctx.userId));
+}
+
+/** Set a goal's or an initiative's health: a person holding `goals.manage`. */
+export function maySetHealth(ctx: GoalViewer): boolean {
+    return mayManageGoals(ctx) && setsHealthAsPerson(ctx);
+}
+
 /** Naming a goal or an initiative on a project or an item asks to read them. */
 export function mayNameGoals(ctx: GoalViewer): boolean {
     return mayReadGoals(ctx);
@@ -48,8 +62,8 @@ export function goalAffordances(ctx: GoalViewer): GoalAffordances {
     return {
         view,
         manage,
-        // Health is a person's act (decision 214): never an API key or an agent.
-        setHealth: manage && !ctx.apiKeyId,
+        // Health is a person's act (decision 214): never an API key, an agent or a job.
+        setHealth: maySetHealth(ctx),
         linkProject: mayEditProject(ctx) && view,
         setItemGoal: mayPlanItems(ctx) && view,
     };

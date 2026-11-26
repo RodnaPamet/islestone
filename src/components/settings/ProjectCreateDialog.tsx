@@ -47,6 +47,7 @@ export function ProjectCreateDialog({
     onOpenChange,
     onCreated,
     offerInitiative = false,
+    presetInitiativeId,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -54,6 +55,8 @@ export function ProjectCreateDialog({
     onCreated: (project: SettingsProject) => void | Promise<void>;
     /** Offer the Initiative picker: the page's server-side `goalAffordances().view` (3.2a). */
     offerInitiative?: boolean;
+    /** The initiative chosen when the dialog opens (an initiative's page, 3.2b). */
+    presetInitiativeId?: string;
 }) {
     const t = useTranslations('settings');
     const toast = useToast();
@@ -81,7 +84,7 @@ export function ProjectCreateDialog({
             setKeyPrefix('');
             setTemplateId('');
             setDueDate(null);
-            setInitiativeId('');
+            setInitiativeId(presetInitiativeId ?? '');
         }
     }
 

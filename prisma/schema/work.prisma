@@ -345,6 +345,10 @@ model WorkItem {
   @@index([tenantId, answerCommentId])
   /// The direct goal's FK, the `goalId` filter and a goal's direct-item count (3.2).
   @@index([tenantId, goalId, stateCategory])
+  /// A project's live, non-cancelled items by category (an initiative's and a
+  /// goal's progress, 3.2b) is the partial `WorkItem_progress_project_path`,
+  /// in migration `20261216120000_work_item_progress_index` only: Prisma
+  /// cannot declare its predicate.
   /// The purge sweep across every workspace (ADR 0002 §13's one exception).
   @@index([deletedAt])
 }

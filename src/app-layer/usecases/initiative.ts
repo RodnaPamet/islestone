@@ -30,6 +30,11 @@ import { assertCanManageGoals, assertCanNameGoals, assertCanReadGoals } from '..
 import { assertCanEditProject } from '../policies/work-config.policies';
 import { visibleProjects } from '../policies/project-visibility';
 import { groupRoots } from '../domain/goal-tree';
+import { isLate, NO_PROGRESS } from '../domain/progress';
+import { toEpochDay } from '../domain/schedule/calendar';
+import { initiativeSummariesInTx, NO_SUMMARY, projectProgressInTx, workspaceToday } from './goal-progress';
+import { healthHistoryInTx } from './goal-health';
+import { lateMilestoneCountsInTx } from './milestone';
 import { lockGoalTree } from './goal-tree-lock';
 import {
     assertLeadMember,
@@ -53,7 +58,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { ConflictError, notFound } from '@/lib/errors/types';
 import { INITIATIVE_NAME_MAX } from '@/lib/schemas/goal';
-import type { InitiativeData } from '@/lib/goals/types';
+import type { InitiativeData, InitiativeDetail, InitiativeSummary } from '@/lib/goals/types';
 
 export interface ListInitiativesQuery {
     status?: string;
@@ -64,20 +69,27 @@ export interface ListInitiativesQuery {
     goalId?: string;
 }
 
-export async function listInitiatives(ctx: RequestContext, query: ListInitiativesQuery = {}): Promise<{ initiatives: InitiativeData[] }> {
+/** The initiatives in status, due date and title order, each with its progress and "late" (3.2b); `deleted=true` is the Deleted view. */
+export async function listInitiatives(ctx: RequestContext, query: ListInitiativesQuery = {}): Promise<{ initiatives: InitiativeSummary[] }> {
     assertCanReadGoals(ctx);
     const statuses = parseStatuses(query.status);
     const health = parseHealth(query.health);
     return runInTenantContext(ctx, async (db) => {
-        const rows = await InitiativeRepository.list(db, ctx, {
-            deleted: query.deleted === 'true',
-            includeArchived: query.archived === 'true',
-            statuses,
-            leadUserId: query.leadUserId,
-            health,
-            goalId: query.goalId,
-        });
-        return { initiatives: [...rows].sort(byStatusDueTitle<InitiativeRow>((r) => r.name)).map(toInitiativeDto) };
+        const deleted = query.deleted === 'true';
+        const rows = [
+            ...(await InitiativeRepository.list(db, ctx, {
+                deleted,
+                includeArchived: query.archived === 'true',
+                statuses,
+                leadUserId: query.leadUserId,
+                health,
+                goalId: query.goalId,
+            })),
+        ].sort(byStatusDueTitle<InitiativeRow>((r) => r.name));
+        if (deleted) return { initiatives: rows.map((r) => ({ ...toInitiativeDto(r), ...NO_SUMMARY })) };
+        const v = await visibleProjects(ctx, db);
+        const summaries = await initiativeSummariesInTx(db, ctx, v, rows, await workspaceToday(db, ctx));
+        return { initiatives: rows.map((r) => ({ ...toInitiativeDto(r), ...(summaries.get(r.id) ?? NO_SUMMARY) })) };
     });
 }
 
@@ -87,18 +99,54 @@ async function loadLiveInitiative(db: PrismaTx, ctx: RequestContext, id: string)
     return row;
 }
 
-/** An initiative with its goal (live, or `null`) and its visible projects. */
-export async function getInitiative(ctx: RequestContext, id: string) {
+/**
+ * An initiative's page, the roadmap's "portfolio page" (decision 221): the
+ * initiative with its progress, its goal and the goal's live ancestors (the
+ * breadcrumb), its visible projects (archived ones included) each with its
+ * progress, "late" and late milestones, and its health history.
+ */
+export async function getInitiative(ctx: RequestContext, id: string): Promise<InitiativeDetail> {
     assertCanReadGoals(ctx);
     return runInTenantContext(ctx, async (db) => {
         const row = await loadLiveInitiative(db, ctx, id);
         const goal = row.goalId ? await GoalRepository.getAny(db, ctx, row.goalId) : null;
+        const liveGoal = goal && !goal.deletedAt ? goal : null;
+        const goals: Array<{ id: string; title: string }> = [];
+        if (liveGoal) {
+            const chain = await GoalRepository.ancestorsIncludingDeleted(db, ctx, liveGoal.id);
+            const byId = new Map((await GoalRepository.getManyLite(db, ctx, chain.map((c) => c.id))).map((g) => [g.id, g]));
+            for (const step of chain) {
+                const g = byId.get(step.id);
+                if (!g || g.deletedAt) break;
+                goals.push({ id: g.id, title: g.title });
+            }
+            goals.reverse();
+        }
         const v = await visibleProjects(ctx, db);
+        const today = await workspaceToday(db, ctx);
         const projects = await ProjectRepository.listOfInitiative(db, ctx, v, row.id);
+        const summaries = await initiativeSummariesInTx(db, ctx, v, [row], today);
+        const byProject = await projectProgressInTx(db, ctx, v, projects.map((p) => p.id));
+        const lateMilestones = await lateMilestoneCountsInTx(db, ctx, v, projects.map((p) => p.id));
         return {
-            initiative: toInitiativeDto(row),
-            goal: goal && !goal.deletedAt ? { id: goal.id, title: goal.title, status: goal.status, archived: goal.archivedAt !== null } : null,
-            projects: projects.map((p) => ({ id: p.id, name: p.name, keyPrefix: p.keyPrefix, teamId: p.teamId, archived: p.archivedAt !== null, dueDate: dayOf(p.dueDate) })),
+            initiative: { ...toInitiativeDto(row), ...(summaries.get(row.id) ?? NO_SUMMARY) },
+            goal: liveGoal ? { id: liveGoal.id, title: liveGoal.title, status: liveGoal.status, archived: liveGoal.archivedAt !== null } : null,
+            goals,
+            projects: projects.map((p) => {
+                const progress = byProject.get(p.id) ?? { ...NO_PROGRESS };
+                return {
+                    id: p.id,
+                    name: p.name,
+                    keyPrefix: p.keyPrefix,
+                    teamId: p.teamId,
+                    archived: p.archivedAt !== null,
+                    dueDate: dayOf(p.dueDate),
+                    progress,
+                    late: p.dueDate !== null && isLate(toEpochDay(p.dueDate), progress, today),
+                    lateMilestones: lateMilestones.get(p.id) ?? 0,
+                };
+            }),
+            healthHistory: await healthHistoryInTx(db, ctx, 'Initiative', row.id),
         };
     });
 }

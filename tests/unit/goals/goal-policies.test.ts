@@ -7,7 +7,7 @@
  */
 import type { Role } from '@prisma/client';
 
-import { goalAffordances, mayManageGoals, mayNameGoals, mayReadGoals } from '@/app-layer/policies/goal.policies';
+import { goalAffordances, mayManageGoals, mayNameGoals, mayReadGoals, maySetHealth, setsHealthAsPerson } from '@/app-layer/policies/goal.policies';
 import { getPermissionsForRole } from '@/lib/permissions';
 
 import { makeRequestContext } from '../../helpers/make-context';
@@ -34,5 +34,16 @@ describe('goal policies', () => {
         expect(goalAffordances(blind)).toMatchObject({ linkProject: false, setItemGoal: false });
         expect(mayManageGoals({ ...ctxOf('MEMBER'), apiKeyId: 'k' })).toBe(true);
         expect(goalAffordances({ ...ctxOf('MEMBER'), apiKeyId: 'k' }).setHealth).toBe(false);
+    });
+
+    it('health is a person holding goals.manage: never a job or the workspace system user either (3.2b, decision 214)', () => {
+        const member = ctxOf('MEMBER');
+        expect(setsHealthAsPerson(member)).toBe(true);
+        expect(maySetHealth(member)).toBe(true);
+        expect(setsHealthAsPerson({ ...member, actorType: 'JOB' })).toBe(false);
+        expect(setsHealthAsPerson({ ...member, actorType: 'SYSTEM' })).toBe(false);
+        expect(setsHealthAsPerson({ ...member, userId: 'sys_t' })).toBe(false);
+        expect(maySetHealth({ ...member, actorType: 'JOB' })).toBe(false);
+        expect(maySetHealth(ctxOf('VIEWER'))).toBe(false);
     });
 });

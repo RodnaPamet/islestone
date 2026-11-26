@@ -31,6 +31,7 @@ import { assertCanManageMilestones, assertCanReadMilestones, mayReadMilestones }
 import { assertCanEditWorkItems } from '../policies/work-item.policies';
 import { visibleProjects, type ProjectVisibility } from '../policies/project-visibility';
 import { keyBetween } from '../domain/fractional-index';
+import { isLate, progressByKey } from '../domain/progress';
 import { dayKey, fromDayKey } from '../domain/cycle';
 import { todayInTz } from '../notifications/work-item-due';
 import { getWorkItem } from './work-item';
@@ -54,31 +55,33 @@ export function toViewMilestone(m: MilestoneRow): ViewMilestone {
     return { id: m.id, projectId: m.projectId, name: m.name, dueDate: m.dueDate ? dayKey(m.dueDate) : null };
 }
 
-/** Group-by rows (milestone × category) into scope and done per milestone. */
-export function progressOf(rows: ReadonlyArray<{ milestoneId: string | null; stateCategory: WorkflowStateCategory; _count: { _all: number } }>) {
-    const out = new Map<string, MilestoneProgress>();
-    for (const r of rows) {
-        if (!r.milestoneId || r.stateCategory === 'CANCELLED') continue;
-        const p = out.get(r.milestoneId) ?? { scope: 0, done: 0 };
-        p.scope += r._count._all;
-        if (r.stateCategory === 'DONE') p.done += r._count._all;
-        out.set(r.milestoneId, p);
-    }
-    return out;
-}
-
-/** A due date before `on` with open (scoped, not done) items left. */
-export function isLate(dueDate: Date | null, progress: MilestoneProgress, on: Date): boolean {
-    return dueDate !== null && dueDate.getTime() < on.getTime() && progress.scope > progress.done;
+/** Group-by rows (milestone × category) into scope and done per milestone (`domain/progress.ts`). */
+function milestoneProgressOf(rows: ReadonlyArray<{ milestoneId: string | null; stateCategory: WorkflowStateCategory; _count: { _all: number } }>): Map<string, MilestoneProgress> {
+    const tallied = progressByKey(rows.map((r) => ({ key: r.milestoneId, stateCategory: r.stateCategory, count: r._count._all })));
+    return new Map([...tallied].map(([id, p]) => [id, { scope: p.scope, done: p.done }]));
 }
 
 async function milestoneDataList(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, rows: readonly MilestoneRow[]): Promise<MilestoneData[]> {
     const on = today();
-    const progress = progressOf(await WorkItemRepository.countsByMilestone(db, ctx, v, rows.map((m) => m.id)));
+    const progress = milestoneProgressOf(await WorkItemRepository.countsByMilestone(db, ctx, v, rows.map((m) => m.id)));
     return rows.map((m) => {
         const p = progress.get(m.id) ?? { scope: 0, done: 0 };
         return { ...toViewMilestone(m), progress: p, late: isLate(m.dueDate, p, on) };
     });
+}
+
+/**
+ * How many milestones of each project are late (2.5b's rule: a passed due
+ * date with open items), for an initiative's projects table (3.2b). Projects
+ * with none are absent.
+ */
+export async function lateMilestoneCountsInTx(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, projectIds: readonly string[]): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (projectIds.length === 0 || !mayReadMilestones(ctx)) return out;
+    for (const m of await milestoneDataList(db, ctx, v, await MilestoneRepository.listForProjects(db, ctx, projectIds))) {
+        if (m.late) out.set(m.projectId, (out.get(m.projectId) ?? 0) + 1);
+    }
+    return out;
 }
 
 /** The visible projects' milestones the views name (pickers, filters, lanes); `[]` without `projects.view`. */

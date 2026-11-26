@@ -101,6 +101,81 @@ export interface WorkItemAncestry {
     hiddenLevels: number;
 }
 
+/**
+ * Progress (3.2b, decision 212): live, visible items not cancelled (`scope`),
+ * the Done ones (`done`) and the Started ones (`started`). Derived on every
+ * read, never stored. A scope of 0 is "No items", never complete.
+ */
+export interface ProgressData {
+    scope: number;
+    done: number;
+    started: number;
+}
+
+/** What a goal's or an initiative's progress reads say beside its own row (3.2b). */
+export interface ProgressSummary {
+    /** `null` while the record is deleted, or when its scope is refused (`tooManyProjects`). */
+    progress: ProgressData | null;
+    /** A passed due date (today in the workspace calendar's zone) with open items. */
+    late: boolean;
+    /** More projects than progress counts (`GOAL_PROGRESS_PROJECT_CAP`): their number, never a cut count. */
+    tooManyProjects: number | null;
+}
+
+export type GoalSummary = GoalData & ProgressSummary;
+export type InitiativeSummary = InitiativeData & ProgressSummary;
+
+/** One health change, read from the audit trail (decision 207): values only, no written update. */
+export interface HealthHistoryEntry {
+    id: string;
+    health: HealthValue | null;
+    previous: HealthValue | null;
+    setByUserId: string | null;
+    setAt: string | Date;
+}
+
+/** `GET /goals/:id` (3.2b): the goal with its progress, ancestors, children, initiatives and health history. */
+export interface GoalDetail {
+    goal: GoalSummary;
+    /** Live ancestors, root first (the walk stops at a deleted one). */
+    ancestors: GoalData[];
+    children: GoalSummary[];
+    initiatives: InitiativeSummary[];
+    /** The goal's level, 1 for a root (deleted ancestors counted, as the tree rules count them). */
+    depth: number;
+    /** Whether a child goal fits under it (three levels at most, decision 24). */
+    childFits: boolean;
+    /** Live, visible, non-cancelled items naming exactly this goal (decision 211). */
+    directItems: number;
+    healthHistory: HealthHistoryEntry[];
+}
+
+/** One row of an initiative's projects table (3.2b, decision 221). */
+export interface InitiativeProjectRow {
+    id: string;
+    name: string;
+    keyPrefix: string;
+    teamId: string;
+    archived: boolean;
+    dueDate: string | null;
+    progress: ProgressData;
+    /** The project's due date has passed (the workspace calendar's today) with open items. */
+    late: boolean;
+    /** Its milestones that are late (2.5b's rule). */
+    lateMilestones: number;
+}
+
+/** `GET /initiatives/:id` (3.2b): the initiative's page, the roadmap's "portfolio page" (decision 221). */
+export interface InitiativeDetail {
+    initiative: InitiativeSummary;
+    /** Its goal, live, or `null`. */
+    goal: { id: string; title: string; status: GoalStatusValue; archived: boolean } | null;
+    /** The goal's live ancestors and the goal, root first (the breadcrumb). */
+    goals: Array<{ id: string; title: string }>;
+    projects: InitiativeProjectRow[];
+    healthHistory: HealthHistoryEntry[];
+}
+
 /** What a page offers its viewer (`goalAffordances`), asked on the server. */
 export interface GoalAffordances {
     /** Read goals and initiatives. */
@@ -113,4 +188,10 @@ export interface GoalAffordances {
     linkProject: boolean;
     /** Name an item's goal: `work_items.edit` and `goals.view`. */
     setItemGoal: boolean;
+}
+
+/** What the Roadmap entry's pages offer (3.2b), asked on the server. */
+export interface RoadmapAffordances extends GoalAffordances {
+    /** Create a project already in an initiative (the initiative page; decision 57's one dialog): `projects.create` and `goals.view`. */
+    createProject: boolean;
 }

@@ -171,7 +171,9 @@
             "workItems": "Work items",
             "cycles": "Cycles",
             "intake": "Intake",
-            "forms": "Forms"
+            "forms": "Forms",
+            "goals": "Goals",
+            "initiatives": "Initiatives"
         }
     },
     "ui": {
@@ -512,7 +514,8 @@
         "cycles": "Cycles",
         "intake": "Intake",
         "forms": "Forms",
-        "intakeBadge": "{count, plural, one {# new request} other {# new requests}}"
+        "intakeBadge": "{count, plural, one {# new request} other {# new requests}}",
+        "roadmap": "Roadmap"
     },
     "commandPalette": {
         "title": "Command palette",
@@ -545,7 +548,9 @@
             "signOut": "Sign out",
             "goToWorkItems": "Go to Work items",
             "goToCycles": "Go to Cycles",
-            "goToForms": "Go to Forms"
+            "goToForms": "Go to Forms",
+            "goToGoals": "Go to Goals",
+            "goToInitiatives": "Go to Initiatives"
         }
     },
     "shortcuts": {
@@ -2520,5 +2525,205 @@
         "archived": "Archived {name}. It notifies nobody until it is restored.",
         "restored": "Restored {name}.",
         "archivedLists": "{count, plural, one {# archived list} other {# archived lists}}"
+    },
+    "roadmap": {
+        "tabsLabel": "Roadmap pages",
+        "tabs": {
+            "goals": "Goals",
+            "initiatives": "Initiatives"
+        },
+        "status": {
+            "label": "Status",
+            "PLANNED": "Planned",
+            "STARTED": "Started",
+            "COMPLETED": "Completed",
+            "CANCELLED": "Cancelled"
+        },
+        "health": {
+            "label": "Health",
+            "ON_TRACK": "On track",
+            "AT_RISK": "At risk",
+            "OFF_TRACK": "Off track",
+            "COMPLETED": "Completed",
+            "none": "No health set"
+        },
+        "statusIs": "Status: {status}",
+        "healthIs": "Health: {health}",
+        "lead": "Lead",
+        "noLead": "No lead",
+        "dueDate": "Due date",
+        "noDueDate": "No due date",
+        "dueOn": "Due {date}",
+        "late": "Late",
+        "archived": "Archived",
+        "progress": {
+            "label": "Progress",
+            "done": "{done} of {scope} done",
+            "started": "{started} started",
+            "noItems": "No items",
+            "tooMany": "Too many projects to count ({count})",
+            "aria": "{name}: {percent}% done"
+        },
+        "healthControl": {
+            "label": "Health of {name}",
+            "setBy": "Set by {name}, {when}",
+            "setByUnknown": "Set {when}",
+            "notSet": "Nobody has set a health yet.",
+            "readOnly": "Health is read-only while this is archived.",
+            "saved": "Health set to {health}.",
+            "history": "Health history",
+            "historyEmpty": "No health has been set yet.",
+            "historyRow": "{when}: {from} → {to}",
+            "historyBy": "by {name}",
+            "someone": "someone"
+        },
+        "filters": {
+            "status": "Status",
+            "health": "Health",
+            "lead": "Lead",
+            "archived": "Archived",
+            "showArchived": "Show archived",
+            "goal": "Goal"
+        },
+        "description": "Description",
+        "noDescription": "No description.",
+        "editDescription": "Edit description",
+        "failed": "This could not be saved. Try again.",
+        "undo": "Undo",
+        "restore": "Restore",
+        "restored": "{name} restored.",
+        "deletedView": "Deleted",
+        "back": "Back to the list",
+        "edit": "Edit",
+        "archive": "Archive",
+        "unarchive": "Unarchive",
+        "archiveFinishedOnly": "Only a Completed or Cancelled one can be archived.",
+        "delete": "Delete",
+        "form": {
+            "title": "Title",
+            "name": "Name",
+            "description": "Description",
+            "status": "Status",
+            "dueDate": "Due date",
+            "dueDateHint": "Optional. Shown on its page; it does not move any work item's dates.",
+            "lead": "Lead",
+            "leadHint": "Optional. The member this answers to; it makes nobody accountable for work items.",
+            "noLead": "No lead",
+            "parent": "Parent goal",
+            "noParent": "No parent goal",
+            "goal": "Goal",
+            "noGoal": "No goal",
+            "titleRequired": "A goal needs a title.",
+            "nameRequired": "An initiative needs a name.",
+            "save": "Save"
+        },
+        "actions": "Actions"
+    },
+    "goals": {
+        "title": "Goals",
+        "description": "Outcomes the workspace wants, with their progress and a health set by a person.",
+        "new": "Goal",
+        "empty": "No goals match. Create one to say what the work is for.",
+        "loadFailed": "The goals could not be loaded.",
+        "col": {
+            "title": "Goal",
+            "status": "Status",
+            "lead": "Lead",
+            "dueDate": "Due date",
+            "health": "Health",
+            "progress": "Progress"
+        },
+        "deleted": {
+            "title": "Deleted goals",
+            "description": "Deleted goals stay here for 30 days, then they are purged. Restoring one brings back the goals and initiatives deleted with it.",
+            "empty": "No deleted goals.",
+            "deletedAt": "Deleted",
+            "back": "Back to goals"
+        },
+        "deletedToast": "Goal deleted with the goals and initiatives below it.",
+        "form": {
+            "createTitle": "New goal",
+            "editTitle": "Edit goal",
+            "create": "Create goal",
+            "created": "Goal created.",
+            "saved": "Goal saved."
+        },
+        "detail": {
+            "overview": "Overview",
+            "progressHeading": "Progress",
+            "progressHint": "Items of its initiatives' projects and of the goals below it, and items naming it or a goal below it directly, each counted once.",
+            "children": "Child goals",
+            "childrenEmpty": "No child goals.",
+            "addChild": "Add child goal",
+            "childTooDeep": "Goals nest at most three levels; this goal is on the third.",
+            "initiatives": "Initiatives",
+            "initiativesEmpty": "No initiatives serve this goal yet.",
+            "addInitiative": "Add initiative",
+            "direct": "Items naming this goal directly",
+            "directCount": "{count, plural, =0 {No work item names this goal directly.} one {# work item names this goal directly.} other {# work items name this goal directly.}}",
+            "directLink": "Show the goal's work items",
+            "breadcrumb": "Goals above this one"
+        }
+    },
+    "initiatives": {
+        "title": "Initiatives",
+        "description": "Sets of projects that together serve a goal, with their progress and a health set by a person.",
+        "new": "Initiative",
+        "empty": "No initiatives match. Create one to group the projects that serve a goal.",
+        "loadFailed": "The initiatives could not be loaded.",
+        "col": {
+            "name": "Initiative",
+            "goal": "Goal",
+            "status": "Status",
+            "lead": "Lead",
+            "dueDate": "Due date",
+            "health": "Health",
+            "progress": "Progress"
+        },
+        "noGoal": "No goal",
+        "deleted": {
+            "title": "Deleted initiatives",
+            "description": "Deleted initiatives stay here for 30 days, then they are purged. Their projects keep the link until then.",
+            "empty": "No deleted initiatives.",
+            "deletedAt": "Deleted",
+            "back": "Back to initiatives"
+        },
+        "deletedToast": "Initiative deleted. Its projects keep the link until it is purged.",
+        "form": {
+            "createTitle": "New initiative",
+            "editTitle": "Edit initiative",
+            "create": "Create initiative",
+            "created": "Initiative created.",
+            "saved": "Initiative saved."
+        },
+        "detail": {
+            "progressHeading": "Progress",
+            "progressHint": "Items of its projects, archived projects included, cancelled items left out.",
+            "projects": "Projects",
+            "projectsEmpty": "No projects are linked to this initiative yet.",
+            "addProject": "Add project",
+            "createProject": "Project",
+            "linkTitle": "Add a project to {name}",
+            "linkSubmit": "Add project",
+            "linkProject": "Project",
+            "linkHint": "A project serves at most one initiative; adding it here moves it from any other.",
+            "linkNone": "Every project you can see is already linked to this initiative.",
+            "linked": "{project} added to the initiative.",
+            "unlink": "Remove",
+            "unlinkNamed": "Remove {project} from the initiative",
+            "unlinked": "{project} removed from the initiative.",
+            "col": {
+                "project": "Project",
+                "team": "Team",
+                "dueDate": "Due date",
+                "progress": "Progress",
+                "late": "Late",
+                "lateMilestones": "Late milestones",
+                "actions": "Actions"
+            },
+            "projectArchived": "archived",
+            "lateMilestones": "{count, plural, =0 {None} one {# late} other {# late}}",
+            "goalLabel": "Serves"
+        }
     }
 }

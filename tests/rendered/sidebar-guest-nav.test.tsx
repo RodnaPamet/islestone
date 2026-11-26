@@ -10,12 +10,13 @@
 import * as React from 'react';
 import { render } from '@testing-library/react';
 
+let mockPathname = '/t/acme/my-work';
 jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
     useSearchParams: () => new URLSearchParams(),
     useSelectedLayoutSegment: () => null,
     useSelectedLayoutSegments: () => [],
-    usePathname: () => '/t/acme/my-work',
+    usePathname: () => mockPathname,
     useRouter: () => ({ push: jest.fn(), replace: jest.fn(), back: jest.fn(), refresh: jest.fn(), prefetch: jest.fn() }),
 }));
 
@@ -52,7 +53,8 @@ function navKeys(role: Role): string[] {
     return Array.from(container.querySelectorAll('[data-testid^="nav-"]')).map((el) => el.getAttribute('data-testid') ?? '');
 }
 
-const WORKSPACE_ROWS = ['nav-work-items', 'nav-projects', 'nav-cycles', 'nav-forms', 'nav-views'];
+// The Roadmap entry (3.2b) opens the Goals page until 3.2c, and a row's test id is its href's last segment.
+const WORKSPACE_ROWS = ['nav-work-items', 'nav-projects', 'nav-cycles', 'nav-goals', 'nav-forms', 'nav-views'];
 
 describe('the sidebar a GUEST sees before 8.4 (decision 204)', () => {
     it('lists My Work and the Inbox and nothing of the workspace', () => {
@@ -61,5 +63,25 @@ describe('the sidebar a GUEST sees before 8.4 (decision 204)', () => {
 
     it.each(['OWNER', 'ADMIN', 'MEMBER', 'VIEWER'] as Role[])('a %s keeps the workspace rows', (role) => {
         expect(navKeys(role)).toEqual(expect.arrayContaining(['nav-my-work', 'nav-inbox', ...WORKSPACE_ROWS]));
+    });
+});
+
+describe('the Roadmap entry (3.2b, decision 222)', () => {
+    afterEach(() => {
+        mockPathname = '/t/acme/my-work';
+    });
+
+    it.each(['/t/acme/roadmap/goals', '/t/acme/roadmap/initiatives', '/t/acme/roadmap/initiatives/i-1'])('is the current page on %s', (path) => {
+        mockPathname = path;
+        const { container } = render(
+            <KeyboardShortcutProvider>
+                <TenantProvider value={tenant('MEMBER')}>
+                    <SidebarContent user={{ name: 'Ada' }} onLogout={() => {}} />
+                </TenantProvider>
+            </KeyboardShortcutProvider>,
+        );
+        const entry = container.querySelector('[data-testid="nav-goals"]');
+        expect(entry).toHaveAttribute('href', '/t/acme/roadmap/goals');
+        expect(entry).toHaveAttribute('aria-current', 'page');
     });
 });

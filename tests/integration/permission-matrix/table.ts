@@ -451,6 +451,8 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         { route: 'goals/[goalId]/route.ts', method: 'DELETE', key: 'goals.manage', subject: 'a fresh goal', fixture: 'freshGoal', expect: MEMBER_WRITE },
         { route: 'goals/[goalId]/archive/route.ts', method: 'POST', key: 'goals.manage', subject: 'a fresh completed goal', fixture: 'finishedGoal', body: () => ({ archived: true }), expect: MEMBER_WRITE },
         { route: 'goals/[goalId]/restore/route.ts', method: 'POST', key: 'goals.manage', subject: 'a fresh deleted goal', fixture: 'deletedGoal', expect: MEMBER_WRITE },
+        // Sub-phase 3.2b (decisions 205 and 214): health is set by a person holding goals.manage.
+        { route: 'goals/[goalId]/health/route.ts', method: 'PUT', key: 'goals.manage', subject: "a goal's health", body: () => ({ health: 'AT_RISK' }), expect: MEMBER_WRITE },
         { route: 'initiatives/route.ts', method: 'GET', key: 'goals.view', subject: 'the initiatives', reveals: (s) => s.initiativeId, expect: WS_READ },
         { route: 'initiatives/route.ts', method: 'POST', key: 'goals.manage', subject: 'a new initiative', body: (s) => ({ name: `Initiative ${s.seq}`, goalId: s.goalId }), expect: MEMBER_WRITE },
         { route: 'initiatives/[initiativeId]/route.ts', method: 'GET', key: 'goals.view', subject: 'an initiative', expect: WS_READ },
@@ -458,6 +460,7 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         { route: 'initiatives/[initiativeId]/route.ts', method: 'DELETE', key: 'goals.manage', subject: 'a fresh initiative', fixture: 'freshInitiative', expect: MEMBER_WRITE },
         { route: 'initiatives/[initiativeId]/archive/route.ts', method: 'POST', key: 'goals.manage', subject: 'a fresh cancelled initiative', fixture: 'finishedInitiative', body: () => ({ archived: true }), expect: MEMBER_WRITE },
         { route: 'initiatives/[initiativeId]/restore/route.ts', method: 'POST', key: 'goals.manage', subject: 'a fresh deleted initiative', fixture: 'deletedInitiative', expect: MEMBER_WRITE },
+        { route: 'initiatives/[initiativeId]/health/route.ts', method: 'PUT', key: 'goals.manage', subject: "an initiative's health", body: () => ({ health: 'ON_TRACK' }), expect: MEMBER_WRITE },
         { route: 'teams/route.ts', method: 'GET', key: 'projects.view', subject: 'the teams', expect: WS_READ },
         { route: 'teams/route.ts', method: 'POST', key: 'admin.manage', subject: 'a new team', body: (s) => ({ name: `Team ${s.seq}` }), expect: ADMIN },
         { route: 'teams/[teamId]/route.ts', method: 'GET', key: 'projects.view', subject: 'a team', expect: WS_READ },

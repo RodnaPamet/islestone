@@ -86,10 +86,12 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${T}/goals/[goalId]/route.ts`]: { GET: 'goals.view', PATCH: 'goals.manage', DELETE: 'goals.manage' },
     [`${T}/goals/[goalId]/archive/route.ts`]: { POST: 'goals.manage' },
     [`${T}/goals/[goalId]/restore/route.ts`]: { POST: 'goals.manage' },
+    [`${T}/goals/[goalId]/health/route.ts`]: { PUT: 'goals.manage' },
     [`${T}/initiatives/route.ts`]: { GET: 'goals.view', POST: 'goals.manage' },
     [`${T}/initiatives/[initiativeId]/route.ts`]: { GET: 'goals.view', PATCH: 'goals.manage', DELETE: 'goals.manage' },
     [`${T}/initiatives/[initiativeId]/archive/route.ts`]: { POST: 'goals.manage' },
     [`${T}/initiatives/[initiativeId]/restore/route.ts`]: { POST: 'goals.manage' },
+    [`${T}/initiatives/[initiativeId]/health/route.ts`]: { PUT: 'goals.manage' },
     // Sub-phase 2.4b (owner decision 104: waiting on under `work_items.edit`).
     [`${W}/[workItemId]/waiting-on/route.ts`]: { PUT: 'work_items.edit' },
     // Sub-phase 2.4b-c (owner decisions 113 to 116: the answer under `work_items.edit`, the Question type under `admin.manage`).

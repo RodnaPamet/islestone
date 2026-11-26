@@ -769,6 +769,12 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note: 'Archive or unarchive a finished goal or initiative; restore a deleted group.',
     },
     {
+        path: new RegExp(`^${T}\\/(goals|initiatives)\\/[^\\/]+\\/health$`),
+        methods: ['PUT'],
+        permission: 'goals.manage',
+        note: "Set or clear a goal's or an initiative's health: a person only (3.2b, decisions 205 and 214).",
+    },
+    {
         path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/initiative$`),
         methods: ['PUT'],
         permission: 'projects.edit',

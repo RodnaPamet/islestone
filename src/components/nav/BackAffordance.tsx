@@ -46,6 +46,8 @@ const SECTION_LABELS: Record<string, string> = {
     '/views': 'views',
     '/projects': 'projects',
     '/cycles': 'cycles',
+    '/roadmap/goals': 'goals',
+    '/roadmap/initiatives': 'initiatives',
     '/intake': 'intake',
     '/forms': 'forms',
     '/settings': 'settings',

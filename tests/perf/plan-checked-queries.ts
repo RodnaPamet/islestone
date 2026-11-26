@@ -90,6 +90,9 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'list: initiative filter', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx|WorkItem_tenantId_sortKey_id_idx'], maxBuffers: 700 },
     { name: 'detail: the ancestry (one statement)', methods: ['WorkItemRepository.ancestry'], indexes: ['WorkItem_pkey|WorkItem_id_tenantId_key|WorkItem_id_projectId_tenantId_key'], maxBuffers: 50 },
     { name: "job: the goal purge's unlinked items", methods: ['WorkItemRepository.lockItemsNamingGoals'], indexes: ['WorkItem_tenantId_goalId_stateCategory_idx'], maxBuffers: 10 },
+    // ── Progress (3.2b, decisions 211 and 212) ────────────────────────────
+    { name: 'counts: progress, the project path', methods: ['WorkItemRepository.countsByProjects'], indexes: ['WorkItem_progress_project_path'], maxBuffers: 10 },
+    { name: 'counts: progress, the direct goal path', methods: ['WorkItemRepository.countsByGoals'], indexes: ['WorkItem_tenantId_goalId_stateCategory_idx'], maxBuffers: 10 },
     { name: 'counts: items in a state', methods: ['TeamRepository.countItemsInState', 'ReviewRepository.itemsInStateRequiringReview', 'WorkItemRepository.lockInState'], indexes: ['WorkItem_tenantId_stateId_idx'], maxBuffers: 6500 },
     // ── Search: the palette's raw reads ────────────────────────────────────
     { name: 'search: titles (trigram and full text)', methods: ['WorkItemRepository.searchTitleIds'], indexes: ['WorkItem_search_title_fts', 'WorkItem_search_title_trgm'], maxBuffers: 1800, conditions: [{ index: 'WorkItem_search_title_trgm', operator: '~~*' }, { index: 'WorkItem_search_title_fts', operator: '@@' }] },

@@ -68,6 +68,9 @@ export type InitiativePatch = Partial<{
     leadUserId: string | null;
     archivedAt: Date | null;
     archivedByUserId: string | null;
+    health: Health | null;
+    healthSetAt: Date | null;
+    healthSetByUserId: string | null;
 }>;
 
 export class InitiativeRepository {
@@ -134,6 +137,18 @@ export class InitiativeRepository {
             select: { id: true },
         });
         return rows.map((r) => r.id);
+    }
+
+    /** The live initiatives (archived ones included) of the given goals, each with its goal (3.2b progress). */
+    static async liveOfGoals(db: PrismaTx, ctx: Ctx, goalIds: readonly string[]): Promise<Array<{ id: string; goalId: string }>> {
+        if (goalIds.length === 0) return [];
+        const rows = await db.initiative.findMany({
+            where: { tenantId: ctx.tenantId, goalId: { in: [...goalIds] }, deletedAt: null },
+            orderBy: { id: 'asc' },
+            take: INITIATIVES_LIST_TAKE,
+            select: { id: true, goalId: true },
+        });
+        return rows.flatMap((r) => (r.goalId ? [{ id: r.id, goalId: r.goalId }] : []));
     }
 
     static async create(
