@@ -5,10 +5,12 @@
  * and see the item it became in the project's list with its key. Sub-phase
  * 2.6b: someone with no session sends a request through a public form (the
  * page's signed token and its proof-of-work, solved in the real browser under
- * the real Content-Security-Policy), and the owner accepts it. The jobs and
+ * the real Content-Security-Policy), and the owner accepts it. Hardening
+ * H2f: a hostile requester's name and title render as text on the Intake
+ * page, and no Content-Security-Policy violation is reported. The jobs and
  * the abuse cases are proved in the integration suite, not here.
  */
-import type { APIRequestContext } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 
 import { expect, test } from './fixtures';
 
@@ -123,5 +125,68 @@ test.describe('intake', () => {
         expect((await accepted).status()).toBe(200);
         await page.goto(`/t/${slug}/projects/HLP`);
         await expect(page.getByRole('main').getByText('The door is stuck')).toBeVisible();
+    });
+    test('a hostile name and title from a public form render as text on the Intake page, with no CSP violation (H2f)', async ({ authedPage: page, isolatedTenant, browser }) => {
+        const slug = isolatedTenant.tenantSlug;
+        const { projectId } = await seed(page.request, slug);
+        const base = `/api/t/${slug}`;
+        expect((await page.request.put(`${base}/projects/${projectId}/intake`, { data: { enabled: true } })).status()).toBe(200);
+        const form = await page.request.post(`${base}/intake/forms`, {
+            data: { projectId, name: 'Open door', access: 'PUBLIC', definition: { intro: '', confirmation: 'Sent.', fields: [], requester: { name: 'OPTIONAL', email: 'OFF' } } },
+        });
+        expect(form.status()).toBe(201);
+        const publicId = ((await form.json()) as { publicId: string }).publicId;
+
+        // What is typed, and what the server stores once it has sanitised it: the
+        // markup goes, the text a person could mean stays, and is shown as text.
+        const typedName = '<img src=x onerror=alert(1)>Eve "\u2019q\u2019" {{7*7}} javascript:alert(2) 1 < 2';
+        const storedName = 'Eve "\u2019q\u2019" {{7*7}} javascript:alert(2) 1 < 2';
+        const typedTitle = '<svg onload=alert(3)>Door & "lock" <b>jammed</b> ${alert(4)}';
+        const storedTitle = 'Door & "lock" jammed ${alert(4)}';
+
+        // Every CSP report the browser sends, on either page, is a failure; so is any dialog.
+        const reports: string[] = [];
+        const dialogs: string[] = [];
+        const watch = (p: Page) => {
+            p.on('request', (r) => {
+                if (/csp-report/.test(r.url())) reports.push(r.postData() ?? r.url());
+            });
+            p.on('console', (m) => {
+                if (/Content Security Policy|Content-Security-Policy/i.test(m.text())) reports.push(m.text());
+            });
+            p.on('dialog', (d) => {
+                dialogs.push(d.message());
+                void d.dismiss();
+            });
+        };
+        watch(page);
+
+        const outsider = await browser.newContext();
+        try {
+            const pub = await outsider.newPage();
+            watch(pub);
+            await pub.goto(`/f/${publicId}`);
+            await pub.getByLabel('Title').fill(typedTitle);
+            await pub.getByLabel('Your name').fill(typedName);
+            await pub.waitForTimeout(3_500);
+            const sent = pub.waitForResponse((r) => r.url().includes(`/api/intake/forms/${publicId}`));
+            await pub.getByRole('button', { name: 'Send request' }).click();
+            expect((await sent).status()).toBe(201);
+            await expect(pub.getByRole('heading', { name: 'Your request was sent.' })).toBeVisible();
+        } finally {
+            await outsider.close();
+        }
+
+        await page.goto(`/t/${slug}/intake`);
+        const detail = page.getByTestId('intake-request-detail');
+        await expect(detail.getByRole('heading', { name: storedTitle, exact: true })).toBeVisible();
+        await expect(detail.getByText(storedName, { exact: true })).toBeVisible();
+        // Rendered as text: no element the payload named exists, nothing ran.
+        await expect(page.locator('img[src="x"], [onerror], [onload], script:not([nonce]):not([src])')).toHaveCount(0);
+        expect(await page.evaluate(() => document.title)).not.toContain('alert');
+        // Give a late report time to arrive before saying there was none.
+        await page.waitForTimeout(500);
+        expect(dialogs).toEqual([]);
+        expect(reports).toEqual([]);
     });
 });
