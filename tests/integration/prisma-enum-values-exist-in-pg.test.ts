@@ -161,6 +161,10 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
         const enums = schemaEnums();
         expect(enums.map((e) => e.name).sort()).toEqual([
             'AuditOutboxStatus',
+            'CalendarConnectionState',
+            'CalendarProvider',
+            'CalendarSyncedEventKind',
+            'CalendarSyncedEventState',
             'CustomFieldType',
             'CycleRollover',
             'EmailDelivery',
@@ -218,8 +222,9 @@ describeFn('every Prisma enum value exists in its physical Postgres type', () =>
         // (2.7d), NotificationType +4, EmailNotificationType +2,
         // ReviewRoundStatus 5, ReviewStepMode 2, ReviewStepStatus 6 and
         // ReviewOutcome 2 (2.8a), Health 4, GoalStatus 4 and InitiativeStatus 4
-        // (3.2a).
-        expect(values).toBe(149);
+        // (3.2a), CalendarProvider 2, CalendarConnectionState 4,
+        // CalendarSyncedEventState 4 and CalendarSyncedEventKind 2 (3.3b).
+        expect(values).toBe(161);
 
         // No `@@map`ed enum: ADR 0006 rule 3. The mapping half is proved with
         // planted inputs below instead.
