@@ -79,7 +79,7 @@ when they are distributed (ADR 0007):
   unmodified and never imported by Islestone. The worker image only.
 
 Islestone's Postgres image (ghcr.io/rodnapamet/islestone-postgres, sub-phase
-2.7f, deploy/postgres/Dockerfile) carries one more:
+2.7f, deploy/postgres/Dockerfile) carries two more:
 
 - The bgOffice Bulgarian spelling dictionary, OOo-spell-bg 4.3
   (http://bgoffice.sourceforge.net/, OOo-full-pack-bg-4.3.zip, SHA512
@@ -95,6 +95,16 @@ Islestone's Postgres image (ghcr.io/rodnapamet/islestone-postgres, sub-phase
   in no other way; the files, their licence text, the upstream copyright
   statement and the statement of change are in deploy/postgres/tsearch_data/
   and, in the image, /usr/share/doc/islestone-postgres/bgoffice-bulgarian/.
+
+- gosu 1.20 (https://github.com/tianon/gosu, commit
+  29b939aa5bd4dc588af765b8248f6e39150d2565), by its authors; the repository
+  states no copyright line of its own. Licensed under the Apache License,
+  Version 2.0, https://www.apache.org/licenses/LICENSE-2.0. Built unmodified
+  from that source by deploy/postgres/Dockerfile (Hardening H1, owner
+  decision 248) as /usr/local/bin/gosu. The static binary contains the Go
+  standard library and golang.org/x/sys (BSD-3-Clause, Copyright 2009 The Go
+  Authors) and github.com/moby/sys/user (Apache-2.0). Their licence texts are
+  in the image at /usr/share/doc/islestone-postgres/gosu/.
 
 Planned
 -------

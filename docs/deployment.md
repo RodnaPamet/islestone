@@ -123,7 +123,7 @@ database onto it is a container recreation on the same volume, with no dump
 and no restore.
 
 - **Published** by `release.yml` under the Dockerfile's version tag
-  (`org.opencontainers.image.version`, today `17-0.8.7-bg4.3-r1`) when that tag
+  (`org.opencontainers.image.version`, today `17-0.8.7-bg4.3-r2`) when that tag
   is not yet in GHCR; a published tag is never rebuilt or moved. Change
   anything in `deploy/postgres/` and bump the tag (the Dockerfile's comment and
   label, and the compose file's line), or the release keeps the old image.
@@ -133,10 +133,27 @@ and no restore.
   published it, the run's summary prints `<tag>@sha256:<digest>`, and a
   follow-up pull request puts that on the line and removes the marker
   (`tests/guards/postgres-image-pinning.test.ts` accepts exactly those two
-  states). `17-0.8.7-bg4.3-r1` is pinned at
+  states). `17-0.8.7-bg4.3-r1` was pinned at
   `sha256:796db89d604fee3df2f06b041e8cc417b1597b69ceb0e7f695586df479833835`
-  (release run 26, 2026-11-20). Watchtower never rolls the database
-  (`enable=false`).
+  (release run 26, 2026-11-20); `-r2` is named with the marker until its
+  publish. Watchtower never rolls the database (`enable=false`).
+- **Patched beyond the base** (Hardening H1; owner decisions 247 and 248), so
+  the publish's blocking Trivy scan passes. The Dockerfile upgrades the
+  Debian packages that carried fixed HIGH vulnerabilities (krb5's four
+  libraries, `zlib1g`, `libzstd1`, `zstd`; `apt-get install --only-upgrade`,
+  no recommends, the lists removed) and refuses a build whose installed
+  versions are older than the fixed ones, because `apt-get update` only warns
+  when a mirror cannot be reached. It replaces the base's `gosu` (1.19, Go
+  1.24.6, whose standard library carried fixed CRITICAL and HIGH
+  vulnerabilities) with gosu 1.20 built in its own stage from
+  `github.com/tianon/gosu` at the tag's commit, on
+  `golang:1.27.4-trixie` by index digest, `CGO_ENABLED=0` and upstream's
+  flags; its licence and those of what it links are in
+  `/usr/share/doc/islestone-postgres/gosu/` (`NOTICE`, `PROVENANCE.md`). The
+  build therefore needs the network (Debian's mirrors, GitHub and the Go
+  module proxy). When Trivy reports another package or a newer Go standard
+  library, add or bump it there and bump the tag; a published image is never
+  patched in place.
 - **Fail closed.** Migration `20261207120000_search_configuration` refuses to
   run on a server without the dictionary ("the Bulgarian dictionary could not
   be loaded … This server is not running Islestone's Postgres image"), and the
@@ -186,6 +203,24 @@ $C up -d migrate
 ```
 
 A new cluster (a lost volume) starts on the image directly; nothing extra.
+
+**Moving to `-r2` (owner decision 247).** The same PostgreSQL 17, pgvector,
+dictionary, entrypoint, user and data directory as `-r1`, with patched
+libraries and a rebuilt `gosu`, so the move is a container recreation on the
+same volume, with no migration and no dump:
+
+1. Merge; the release run publishes
+   `ghcr.io/rodnapamet/islestone-postgres:17-0.8.7-bg4.3-r2` after its scan
+   passes, and its summary prints the digest.
+2. A follow-up pull request pins that digest on the compose line and removes
+   the `POSTGRES-IMAGE-DIGEST-PENDING` marker.
+3. After that merge, apply (`deploy/apply.sh`, then `CONFIRM=1`): it pulls
+   the new image and recreates `islestone-postgres` (a restart of a few
+   seconds; the app and the worker reconnect). Until then production keeps
+   running `-r1`: a line naming an unpublished tag cannot be pulled, so do
+   not apply between steps 1 and 2.
+4. Check: `docker exec islestone-postgres gosu --version` (`1.20 (go1.27.4 …)`)
+   and `/api/readyz` (`search: ok`).
 
 ## Health
 
@@ -609,7 +644,8 @@ blocking since 2026-11-26:
   `release.yml`, where a finding stops the run before anything reaches GHCR,
   so `:latest` stays on the last image that passed. The Postgres image's scan
   in `release.yml`, which runs only when its tag is bumped, blocks the same
-  way.
+  way; `-r2` upgrades the Debian packages and rebuilds `gosu` for it ("The
+  Postgres image" above).
 - **OWASP ZAP baseline**, nightly (`.github/workflows/dast.yml`, 03:17 UTC):
   the standalone server against Postgres and Redis, signed in as a workspace
   owner the run registers, with SARIF (`zap-baseline`), the HTML report as an

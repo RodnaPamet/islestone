@@ -4,7 +4,9 @@
  *
  *   - `deploy/postgres/Dockerfile` builds FROM the pgvector image by tag AND
  *     index digest, and names its own version once (the tag comment and the
- *     `org.opencontainers.image.version` label agree).
+ *     `org.opencontainers.image.version` label agree). Its one other stage
+ *     builds `gosu` (owner decision 248) FROM a Go image, also by tag and
+ *     index digest; nothing else comes from an unpinned image.
  *   - Production (`deploy/docker-compose.prod.yml`) runs
  *     `ghcr.io/rodnapamet/islestone-postgres` at exactly that version. Until
  *     the release has published the tag, the line may name the tag alone, and
@@ -71,9 +73,18 @@ function judgeProdImage(image: string, version: string, compose: string): string
 }
 
 describe("Islestone's Postgres image", () => {
-    it('the Dockerfile builds FROM pgvector by tag and index digest', () => {
-        expect(DOCKERFILE).toMatch(/^FROM pgvector\/pgvector:0\.8\.7-pg17-trixie@sha256:[0-9a-f]{64}$/m);
-        expect(DOCKERFILE.match(/^FROM /gm)).toHaveLength(1);
+    it('the Dockerfile builds FROM pgvector by tag and index digest, its gosu stage FROM Go the same way', () => {
+        const froms = DOCKERFILE.match(/^FROM .*$/gm) ?? [];
+        expect(froms).toHaveLength(2);
+        // The image itself is the last stage, on the pinned pgvector base.
+        expect(froms[1]).toMatch(/^FROM pgvector\/pgvector:0\.8\.7-pg17-trixie@sha256:[0-9a-f]{64}$/);
+        // The one build stage: gosu, compiled on a Go image by tag and digest.
+        expect(froms[0]).toMatch(/^FROM golang:\d+\.\d+\.\d+-trixie@sha256:[0-9a-f]{64} AS gosu$/);
+        expect(DOCKERFILE).toMatch(/^COPY --from=gosu \/out\/gosu \/usr\/local\/bin\/gosu$/m);
+        // gosu's release is pinned by its tag and verified by its commit.
+        expect(DOCKERFILE).toMatch(/^ARG GOSU_VERSION=\d+\.\d+$/m);
+        expect(DOCKERFILE).toMatch(/^ARG GOSU_COMMIT=[0-9a-f]{40}$/m);
+        expect(DOCKERFILE).toContain('test "$(git rev-parse HEAD)" = "$GOSU_COMMIT"');
     });
 
     it('production runs it at the Dockerfile\'s version, digest-pinned or marked pending', () => {

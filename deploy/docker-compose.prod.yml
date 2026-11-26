@@ -137,12 +137,14 @@ services:
   # configuration (deploy/postgres/Dockerfile), published by release.yml under
   # an immutable version tag. Moving an existing database onto it is the
   # one-time step in docs/deployment.md, "The Postgres image" (decision 147).
-  # Pinned by the digest release run 26 published (2026-11-20). A new version
-  # label in deploy/postgres/Dockerfile names its tag here alone, with the
-  # digest-pending marker, until its own publish exists
-  # (tests/guards/postgres-image-pinning.test.ts).
+  # `-r2` (Hardening H1, owner decisions 247 and 248): the Debian packages
+  # with fixed HIGH vulnerabilities upgraded and gosu rebuilt on a current Go;
+  # `-r1` was pinned at sha256:796db89d…479833835 (release run 26).
+  # POSTGRES-IMAGE-DIGEST-PENDING: the tag is named alone until its first
+  # publish exists; then this line becomes `<tag>@sha256:<index digest>` and
+  # the marker goes (tests/guards/postgres-image-pinning.test.ts).
   postgres:
-    image: ghcr.io/rodnapamet/islestone-postgres:17-0.8.7-bg4.3-r1@sha256:796db89d604fee3df2f06b041e8cc417b1597b69ceb0e7f695586df479833835
+    image: ghcr.io/rodnapamet/islestone-postgres:17-0.8.7-bg4.3-r2
     container_name: islestone-postgres
     restart: unless-stopped
     logging: *default-logging
