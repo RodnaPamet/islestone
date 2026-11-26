@@ -1,0 +1,105 @@
+{
+  "$comment": "H2's latency budgets (owner decision 167: the per-surface table of docs/porting/maps/H2.md part 1.4), in milliseconds, one owner. scripts/perf/run.mjs reads it; docs/performance.md ('Latency') gives the reasoning and what was measured. A budget only goes down. Decision 168: enforced only on the nightly 100k run, with `tolerance` and `reruns`; a run that measured nothing fails everywhere.",
+  "tolerance": 0.25,
+  "reruns": 1,
+  "samples": 200,
+  "warmup": 20,
+  "scenarios": {
+    "list-project": {
+      "label": "List, first page of 50, one project, manual order",
+      "budgets": { "10k": { "p50": 80, "p95": 200 }, "100k": { "p50": 100, "p95": 250 } }
+    },
+    "list-workspace-due": {
+      "label": "List, workspace-wide, two filters, by due date",
+      "budgets": { "10k": { "p50": 120, "p95": 300 }, "100k": { "p50": 180, "p95": 450 } }
+    },
+    "list-custom-field-sort": {
+      "label": "List sorted by a custom field",
+      "budgets": { "10k": { "p50": 150, "p95": 350 }, "100k": { "p50": 250, "p95": 600 } }
+    },
+    "list-q": {
+      "label": "List with q (titles, stemmed titles, contents)",
+      "budgets": { "10k": { "p50": 150, "p95": 350 }, "100k": { "p50": 250, "p95": 600 } },
+      "knownFinding": {
+        "id": "F3",
+        "shapes": ["100k"],
+        "why": "a content match ranks every matching vector before it takes its limit, so it grows with the matches (33,356 vectors for the measured query at 100k); docs/performance.md, Findings"
+      }
+    },
+    "board-column": {
+      "label": "Board, one column of the largest project",
+      "budgets": { "10k": { "p50": 80, "p95": 200 }, "100k": { "p50": 100, "p95": 250 } }
+    },
+    "board-load": {
+      "label": "Board, first load (the page, then every column at once), wall clock",
+      "budgets": { "10k": { "p50": 250, "p95": 500 }, "100k": { "p50": 300, "p95": 700 } }
+    },
+    "search": {
+      "label": "Search, the command palette (titles, keys, projects, contents; limit 20)",
+      "budgets": { "10k": { "p50": 100, "p95": 250 }, "100k": { "p50": 200, "p95": 500 } },
+      "knownFinding": {
+        "id": "F3",
+        "shapes": ["100k"],
+        "why": "a content match ranks every matching vector before it takes its limit, so it grows with the matches (33,356 vectors for the measured query at 100k); docs/performance.md, Findings"
+      }
+    },
+    "detail": {
+      "label": "Detail, the item",
+      "budgets": { "10k": { "p50": 50, "p95": 120 }, "100k": { "p50": 50, "p95": 120 } }
+    },
+    "detail-sheet": {
+      "label": "Detail, what the sheet loads at once (item, comments, activity, sub-items, fields), wall clock",
+      "budgets": { "10k": { "p50": 150, "p95": 350 }, "100k": { "p50": 150, "p95": 350 } }
+    },
+    "my-work": {
+      "label": "My Work, six sections at once, wall clock",
+      "budgets": { "10k": { "p50": 300, "p95": 600 }, "100k": { "p50": 400, "p95": 800 } }
+    },
+    "timeline": {
+      "label": "Timeline read, the largest scope under 5,000 items",
+      "budgets": { "10k": { "p50": 400, "p95": 900 }, "100k": { "p50": 400, "p95": 900 } },
+      "enforced": false,
+      "reportedBecause": "H3's budget (docs/porting/maps/3.1.md, 'Performance'; issue #73): the 5,000-item project it names is not in the seed yet"
+    },
+    "create": {
+      "write": true,
+      "label": "Write: create with a description",
+      "budgets": { "10k": { "p95": 400 }, "100k": { "p95": 400 } }
+    },
+    "edit": {
+      "write": true,
+      "label": "Write: edit the title (If-Match)",
+      "budgets": { "10k": { "p95": 400 }, "100k": { "p95": 400 } }
+    },
+    "move": {
+      "write": true,
+      "label": "Write: move on the board (another state)",
+      "budgets": { "10k": { "p95": 400 }, "100k": { "p95": 400 } }
+    },
+    "reorder": {
+      "write": true,
+      "label": "Write: reorder",
+      "budgets": { "10k": { "p95": 400 }, "100k": { "p95": 400 } }
+    },
+    "bulk-state": {
+      "write": true,
+      "label": "Write: bulk state change of 100 items",
+      "budgets": { "10k": { "p95": 2000 }, "100k": { "p95": 2000 } },
+      "samples": 50,
+      "warmup": 5
+    }
+  },
+  "ratios": [
+    { "scenario": "detail", "metric": "p95", "max": 1.2, "why": "the detail must not depend on the workspace's size" },
+    { "scenario": "list-project", "metric": "p95", "max": 1.5, "why": "keyset pagination keeps a first page nearly flat" }
+  ],
+  "browser": {
+    "runs": 20,
+    "scenarios": {
+      "list": { "label": "Navigation to the list's first row", "p95": 1300 },
+      "board": { "label": "Navigation to every column's first card (largest project)", "p95": 2000 },
+      "detail": { "label": "Click to the sheet's title", "p95": 600 },
+      "timeline": { "label": "Navigation to the timeline's first bars", "p95": 2000 }
+    }
+  }
+}
