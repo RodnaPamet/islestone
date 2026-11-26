@@ -16,9 +16,9 @@
  * plus read) all its statements may touch on the 10k seed, so a plan that
  * uses the index but walks most of it is caught. Each budget is about twice
  * what H2a measured, closer where the count is fixed by the data (the locks
- * take every row they name) or held by a known finding; the search
- * budgets are about twice what the fix of finding F1 measured (decision
- * 245, issue #78); a budget only goes down
+ * take every row they name) or held by a known finding; the search and
+ * rebuild budgets are about twice what the fixes of findings F1 and F2
+ * measured (decision 245, issues #78 and #79); a budget only goes down
  * (docs/performance.md, "Plan checks"). A search function's own statement is
  * captured too (`auto_explain.log_nested_statements`), so its index and the
  * operator in its condition are checked, and its buffers are counted once,
@@ -110,7 +110,7 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'job: the purge sweep', methods: ['WorkItemRepository.purgeableIds'], indexes: ['WorkItem_deletedAt_idx'], maxBuffers: 150 },
     { name: 'job: a purged project', methods: ['WorkItemRepository.countLiveInProject', 'WorkItemRepository.projectItemIds'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx|WorkItem_tenantId_projectId_number_key|WorkItem_tenantId_projectId_createdAt_id_idx'], maxBuffers: 400 },
     { name: 'job: the sort-key rebalance', methods: ['WorkItemRepository.projectsNeedingRebalance', 'WorkItemRepository.orderedPage'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 500 },
-    { name: 'job: the search-index rebuild', methods: ['SearchVectorRepository.staleDescriptionPage', 'SearchVectorRepository.staleCommentPage'], indexes: [], noIndexBecause: 'finding F2: the stale-page reads hash-join every source of the workspace (docs/performance.md)', maxBuffers: 15000, knownFinding: { id: 'F2', fails: 'seqScans' } },
+    { name: 'job: the search-index rebuild', methods: ['SearchVectorRepository.staleDescriptionPage', 'SearchVectorRepository.staleCommentPage'], indexes: ['SearchVector_one_per_description', 'SearchVector_one_per_comment', 'Comment_search_live_ids'], maxBuffers: 10000 },
 ];
 
 /**

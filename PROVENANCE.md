@@ -2175,6 +2175,15 @@ Built by [`docs/porting/maps/H2.md`](docs/porting/maps/H2.md) (parts 1.1 to 1.3 
 | `scripts/seed-scale/` (the rest), `scripts/ci-postgres.sh` (`--pg-stat-statements`, `CI_PG_PREFIX`), `SearchVectorRepository.insertBulkForSeed`, `WorkItemRepository.lockItemsOfPerson` (the `UNION`), migration `20261213120000_list_scale_indexes`, the `perf` Jest project and its setup files, the `Performance (10k)` job in `.github/workflows/ci.yml` | — | — | — | Islestone-owned | Written fresh. |
 | `tests/perf/` (the rest), `tests/guards/plan-checked-queries-coverage.test.ts`, the H2a additions to `tests/guards/search-vector-write-seam.test.ts` and `schema-index-coverage.test.ts`, `tests/unit/perf/plan-capture.test.ts`, `tests/unit/seed-scale/seed-scale.test.ts`, `tests/integration/seed-scale.test.ts` | — | — | — | Islestone-owned | Written fresh. |
 
+## Findings F1 and F2: the search functions and the rebuild's pages (owner decision 245)
+
+Built under owner decision 245 (`docs/porting/maps/H2.md`, "Finding F1, decided"; issues #78 and #79); see [`docs/search.md`](docs/search.md), "The search functions", and [`docs/performance.md`](docs/performance.md), "Findings". **Nothing was copied.**
+
+| File | Source | Commit | Licence | Action | Changes |
+|---|---|---|---|---|---|
+| Migration `20261214120000_search_definer_functions` (the `app_search_definer` role, the five search functions, the two live-id indexes), `projectVisibilityArgs` in `project-visibility.ts`, the search methods of `WorkItemRepository`, `ProjectRepository` and `SearchVectorRepository` (`searchTitleIds`, `titleFullTextIds`, `titleSubstringIds`, `searchNameIds`, `findSearchRows`, `matchItems`, `staleDescriptionPage`, `staleCommentPage`), the changes to `search.ts`, `search-index.ts` and `work-item.ts`, `scripts/seed-scale/cache.sh` (the role before a restore) | — | — | — | Islestone-owned | Written fresh. |
+| `tests/helpers/search-definer.ts`, `tests/helpers/search-plans.ts`, `tests/guards/search-definer-functions.test.ts`, `tests/integration/search-definer.test.ts`, `tests/unit/usecases/search-index-rebuild-walk.test.ts`, and the changes to `tests/perf/`, `tests/unit/perf/plan-capture.test.ts`, `tests/unit/repositories/search-repository-predicates.test.ts`, `tests/guards/search-vector-write-seam.test.ts`, `tests/guards/plan-checked-queries-coverage.test.ts`, `tests/integration/search.test.ts` and `tests/integration/search-vectors.test.ts` | — | — | — | Islestone-owned | Written fresh. |
+
 ## Adopted
 
 | Component | Source (repository and path) | Commit | Licence | What was taken | Changes |

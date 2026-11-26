@@ -162,8 +162,10 @@ const RUNNERS: Record<string, Runner> = {
         return WorkItemRepository.orderedPage(db, ctx, w.projectId, undefined, 500);
     },
     'job: the search-index rebuild': async (w, db, ctx) => {
-        await SearchVectorRepository.staleDescriptionPage(db, ctx, null, { force: false });
-        return SearchVectorRepository.staleCommentPage(db, ctx, null, { force: false });
+        // One page of each kind, through the keyset (after 'c', which sorts before every cuid): a page
+        // reads its own rows only, so its cost does not grow with the workspace (issue #79).
+        await SearchVectorRepository.staleDescriptionPage(db, ctx, 'c', { force: false });
+        return SearchVectorRepository.staleCommentPage(db, ctx, 'c', { force: true });
     },
 };
 

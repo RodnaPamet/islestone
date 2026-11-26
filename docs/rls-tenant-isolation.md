@@ -13,6 +13,7 @@ The workspace is the `Tenant` model in code and the database ("Workspace" in eve
 |---|---|---|
 | The login role (`islestone` locally; a superuser in development and CI) | Migrations, seeds, admin scripts, auth lookups, webhook ingest, cross-tenant sweeps, the organization paths | Admitted by the `superuser_bypass` policy (`current_setting('role') != 'app_user'`). Sees everything. |
 | `app_user` (NOLOGIN, granted to the login role) | All normal request handlers and per-tenant jobs, via `runInTenantContext` | `superuser_bypass` does not match. `tenant_isolation` enforces `"tenantId" = current_setting('app.tenant_id')`. Sees only own-tenant rows. |
+| `app_search_definer` (NOLOGIN, NOINHERIT, BYPASSRLS, no members) | Nothing logs in as it. It owns the five search functions and nothing else (owner decision 245, below) | Bypasses RLS by its attribute; holds `SELECT` on a few named columns of four tables only. Reachable only through the functions, which apply the workspace themselves. |
 
 `FORCE ROW LEVEL SECURITY` is enabled on every tenant-scoped table, so policies apply to the table owner too, which is why `superuser_bypass` exists to re-admit trusted non-app paths.
 
@@ -116,6 +117,18 @@ Postgres runs foreign-key checks as the table owner, which bypasses RLS, so a ch
 
 The key bookkeeping (`ProjectKeyPrefix`, `ProjectKeySequence`, `WorkItemKeyAlias`) is granted SELECT, INSERT and UPDATE only: prefixes and numbers are never reused, so nothing deletes those rows (`NO_DELETE_TABLES` in `tests/integration/rls-coverage.test.ts`). Project visibility (which projects a GUEST may see) is applied on top of RLS by the repositories (`docs/work-items.md`).
 
+## The search functions: a named exception
+
+Owner decision 245 (issue #78; migration `20261214120000_search_definer_functions`; `docs/search.md`, "The search functions"). A full-text (`@@`), `ILIKE` or trigram condition is not `LEAKPROOF`, so under the policies PostgreSQL could not use it as an index condition, and every search read the workspace's whole GIN entry (H2a's finding F1). The fix is the one place where a read of tenant rows does not rely on the policies: five `SECURITY DEFINER` functions (`search_work_item_titles`, `search_work_item_title_words`, `search_work_item_title_substring`, `search_project_names`, `search_item_contents`), owned by `app_search_definer`, which bypasses RLS. They replace the policy's job with their own, and the rules that make that safe are guarded:
+
+- **The workspace is the transaction's.** Each function reads `NULLIF(current_setting('app.tenant_id', true), '')`, the setting the policies read and `runInTenantContext` binds, returns nothing when it is unset, and never takes a workspace as an argument. A caller cannot ask for another workspace's rows.
+- **Each filters in its own `WHERE`** the workspace on every table it reads (joins tie each table's `tenantId` to it), the item's and a comment's `deletedAt`, the project's `deletedAt` and `archivedAt`, and project visibility (every live project, or the granted ids, as the repositories pass it).
+- **Each is bounded** (a hard cap in the body) and **returns ids and ranks only**, never text; the rows a search shows are read by id afterwards, under the policies.
+- **The owner is narrow.** It cannot log in, is not a superuser, inherits nothing, has no members, owns no table, and holds `SELECT` on exactly the columns the functions read (never an encrypted column). Each function has a fixed `search_path` (`pg_catalog, public, pg_temp`) and schema-qualified tables, and only `app_user` may execute it.
+- **Nothing else changes.** Every table keeps RLS enabled and forced; no operator or function is marked `LEAKPROOF`.
+
+`tests/guards/search-definer-functions.test.ts` pins each function's body by hash and checks its predicates, owner, grants and the role, and holds each function to its one calling repository; `tests/integration/search-definer.test.ts` checks the catalogue (`pg_proc` definer flag, `proconfig`, owner, ACL; the role's attributes, memberships and column grants; forced RLS on the four tables) and drives every function in two workspaces through `runInTenantContext` (the other workspace, an invisible project, deleted and archived rows and an unset setting return nothing). A new definer function that reads tenant rows is an owner decision, not a pattern to copy.
+
 ## The organization axis
 
 `Organization` and `OrgMembership` carry no `tenantId`. They sit on a second axis keyed on the session variable `app.user_id`: `org_isolation` on `Organization` (an EXISTS over the requester's own membership) and `org_membership_self_isolation` on `OrgMembership` (`"userId" = current_setting('app.user_id', true)`), each with `superuser_bypass` and FORCE. The policies are USING-only, so `app_user` can never INSERT or UPDATE them.
@@ -148,6 +161,7 @@ Rare. Ask first: is this really a bypass, or missing `ctx` plumbing? If it is ge
 | `tests/integration/rls-middleware.test.ts` | `runInTenantContext` runs as `app_user` and isolates, `SET LOCAL` is transaction-scoped under concurrency, `runWithoutRls` bypasses, the org axis returns nothing under `app_user`. |
 | `tests/integration/tenant-membership-isolation.test.ts` | The two-tenant test for `TenantMembership`: read, list, count, update, delete, upsert and create from tenant B never reach tenant A. |
 | `tests/integration/last-owner-guard.test.ts`, `org-last-owner-guard.test.ts`, `tenant-owner-race.test.ts`, `org-owner-race.test.ts` | Both last-owner triggers, the purge exemption, and the advisory lock under concurrent cross-demotions. |
+| `tests/guards/search-definer-functions.test.ts`, `tests/integration/search-definer.test.ts` | The search functions (decision 245): each body pinned and isolating (the workspace from `app.tenant_id`, `deletedAt`, visibility, the bound), the owner narrow and BYPASSRLS only through them, forced RLS unchanged, and two workspaces isolated through `runInTenantContext`. |
 | `tests/unit/rls-middleware.test.ts` | `runWithoutRls` rejects unknown reasons, logs a caller fingerprint and never leaks query payloads; the tripwire logs writes-without-context at `warn`, reads at `debug`, and never throws. |
 
 ```bash
@@ -164,3 +178,4 @@ npm run test:integration                               # needs DATABASE_URL_TEST
 - **Don't** rename `app.tenant_id`. Every policy reads it; a rename needs coordinated policy and `runInTenantContext` changes for no security benefit.
 - **Don't** widen a Class-C (nullable-tenant) policy into the split form.
 - **Don't** set `app.user_id` before fixing the org last-owner trigger (above).
+- **Don't** add a `SECURITY DEFINER` function that reads tenant rows, give `app_search_definer` another grant, take a workspace as a function argument, or mark an operator `LEAKPROOF` to speed a read up: the search functions are the one named exception (above), by owner decision.

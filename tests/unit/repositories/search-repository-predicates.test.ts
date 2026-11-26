@@ -9,12 +9,14 @@
  * `Prisma.Sql` each repository method sends and holds the call to its half:
  * it names its function, binds the query and the visibility input and never
  * puts the query in the SQL text, never hands the function a workspace (the
- * function reads `app.tenant_id` itself), and is bounded.
+ * function reads `app.tenant_id` itself), and is bounded. It also holds the
+ * rebuild's page reads (issue #79), plain SQL under row-level security, to
+ * the workspace in their own `WHERE` and a keyset bounded to the page.
  */
 import type { Prisma } from '@prisma/client';
 
 import { ProjectRepository } from '@/app-layer/repositories/ProjectRepository';
-import { SEARCH_MATCH_CAP, SearchVectorRepository } from '@/app-layer/repositories/SearchVectorRepository';
+import { REBUILD_PAGE_SIZE, SEARCH_MATCH_CAP, SearchVectorRepository } from '@/app-layer/repositories/SearchVectorRepository';
 import { WorkItemRepository } from '@/app-layer/repositories/WorkItemRepository';
 import { projectVisibilityArgs, type ProjectVisibility } from '@/app-layer/policies/project-visibility';
 import type { PrismaTx } from '@/lib/db-context';
@@ -144,6 +146,39 @@ describe('projectVisibilityArgs', () => {
         expect(projectVisibilityArgs(ALL).values).toEqual([true, []]);
         expect(projectVisibilityArgs({ kind: 'GRANTED', projectIds: [] }).values).toEqual([false, []]);
         expect(projectVisibilityArgs(GUEST).text).toBe('$1::boolean, $2::text[]');
+    });
+});
+
+describe('the rebuild\'s pages (issue #79)', () => {
+    it.each([
+        ['staleDescriptionPage', 'WorkItem', 'w', 'workItemId'],
+        ['staleCommentPage', 'Comment', 'c', 'commentId'],
+    ] as const)('%s: the workspace in both reads, a keyset page of the sources, each probed by its own key', async (method, table, alias, column) => {
+        const { db, sent } = recorder();
+        await SearchVectorRepository[method](db, ctx, 'cursor-1', { force: false });
+        const sql = text(sent[0]!);
+        expect(sql).toContain(`FROM "${table}" ${alias} WHERE ${alias}."tenantId" = $`);
+        expect(sql).toContain(`AND ${alias}."id" > $`);
+        expect(sql).toMatch(new RegExp(`ORDER BY ${alias}\\."id" ASC LIMIT \\$\\d+ \\) page`));
+        expect(sql).toContain(`LEFT JOIN LATERAL ( SELECT v."revision", v."configName" FROM "SearchVector" v WHERE v."tenantId" = $`);
+        expect(sql).toContain(`AND v."${column}" = page."id"`);
+        expect(sent[0]!.values).toEqual(expect.arrayContaining(['tenant-1', 'cursor-1', REBUILD_PAGE_SIZE]));
+    });
+
+    it('the first page has no cursor predicate (the index range starts at the workspace)', async () => {
+        const { db, sent } = recorder();
+        await SearchVectorRepository.staleDescriptionPage(db, ctx, null, { force: true });
+        expect(text(sent[0]!)).not.toContain('"id" >');
+    });
+
+    it('returns the stale ids of the page and the cursor of the next, null when the page was short', async () => {
+        const full = Array.from({ length: REBUILD_PAGE_SIZE }, (_, i) => ({ id: `w${String(i).padStart(4, '0')}`, stale: i % 2 === 0 }));
+        const db = { $queryRaw: jest.fn(async () => full) } as unknown as PrismaTx;
+        const page = await SearchVectorRepository.staleDescriptionPage(db, ctx, null, { force: false });
+        expect(page.ids).toHaveLength(REBUILD_PAGE_SIZE / 2);
+        expect(page.next).toBe(full.at(-1)!.id);
+        const shortDb = { $queryRaw: jest.fn(async () => full.slice(0, 3)) } as unknown as PrismaTx;
+        expect(await SearchVectorRepository.staleCommentPage(shortDb, ctx, 'x', { force: false })).toEqual({ ids: ['w0000', 'w0002'], next: null });
     });
 });
 
