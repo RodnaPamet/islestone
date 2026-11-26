@@ -47,6 +47,7 @@ import { IntakeRepository } from '../repositories/IntakeRepository';
 import { enqueueEmail } from '../notifications/enqueue';
 import type { RequestContext } from '../types';
 import { cleanText, cleanTitle, notifyIntakeReceived } from './intake-request';
+import { inIntakeWriteQueue } from './intake-write-queue';
 import { env } from '@/env';
 import { runInTenantContext } from '@/lib/db-context';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
@@ -159,7 +160,12 @@ export async function receiveInboundEmailEvent(input: { svixId: string; payload:
 
     let result: { outcome: InboundOutcome; enqueueId: string | null };
     try {
-        result = await runInTenantContext(ctx, async (db) => {
+        // One address's deliveries take their turn in this process, then under
+        // its project intake row's lock: the repeat check and the throttles
+        // count one delivery after another, and a waiter holds no connection
+        // (`intake-write-queue.ts`; H2f).
+        result = await inIntakeWriteQueue(`inbound:${address.tenantId}:${address.projectId}`, () => runInTenantContext(ctx, async (db) => {
+            await IntakeEmailRepository.lockProjectIntake(db, ctx, address.projectId);
             const seen = await IntakeEmailRepository.findInbound(db, ctx, input.svixId, data.email_id);
             if (seen) return { outcome: seen.status === 'PENDING' ? 'REQUEUED' : 'DUPLICATE', enqueueId: seen.status === 'PENDING' ? seen.id : null };
 
@@ -184,7 +190,7 @@ export async function receiveInboundEmailEvent(input: { svixId: string; payload:
                 outcome: dropped,
             });
             return { outcome: dropped ?? 'QUEUED', enqueueId: dropped ? null : row.id };
-        });
+        }));
     } catch (err) {
         // Two deliveries of one email racing: the other recorded it.
         if (isUniqueViolation(err)) return 'DUPLICATE';

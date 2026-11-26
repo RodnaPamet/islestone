@@ -56,6 +56,7 @@ import { appLink } from '../notifications/app-link';
 import { enqueueEmail } from '../notifications/enqueue';
 import type { RequestContext } from '../types';
 import { cleanText, cleanTitle, enqueueRequesterNotices, notifyIntakeReceived, storedAnswersOf } from './intake-request';
+import { inIntakeWriteQueue } from './intake-write-queue';
 import { runInTenantContext } from '@/lib/db-context';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { AppError, ConflictError, badRequest, notFound } from '@/lib/errors/types';
@@ -252,7 +253,10 @@ export async function submitPublicIntakeRequest(publicId: string, raw: unknown, 
     const updatesRequested = input.wantsUpdates === true && email !== null;
 
     const ctx = await buildTenantSystemJobContext({ tenantId: form.tenantId, tenantSlug: form.tenantSlug, job: 'intake-public-submit' });
-    const created = await runInTenantContext(ctx, async (db) => {
+    // The workspace's public submits take their turn in this process first
+    // (`intake-write-queue.ts`): both daily caps are counted in the
+    // transaction, and a waiter must not hold a connection (H2f).
+    const created = await inIntakeWriteQueue(`public-submit:${form.tenantId}`, () => runInTenantContext(ctx, async (db) => {
         // The daily caps, counted under the form's row lock so two submits
         // count one after the other.
         if (!(await IntakeRepository.lockForm(db, ctx, form.id))) throw publicFormNotFound();
@@ -326,7 +330,7 @@ export async function submitPublicIntakeRequest(publicId: string, raw: unknown, 
         }
         const updates: PublicIntakeUpdates = !updatesRequested ? 'NONE' : confirmedBefore ? 'CONFIRMED' : 'CONFIRM_PENDING';
         return { row, updates };
-    });
+    }));
     if (created === null) {
         return { reference: randomBytes(6).toString('hex').slice(0, 8).toUpperCase(), confirmation: form.definition.confirmation, updates: updatesRequested ? 'CONFIRM_PENDING' : 'NONE' };
     }
