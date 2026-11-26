@@ -17,6 +17,16 @@
 10027	IGNORE	Information Disclosure - Suspicious Comments: matches comments in framework-generated Next.js chunks, which carry no secrets.
 10109	IGNORE	Modern Web Application: informational (the app is JavaScript-driven), not a finding.
 10055	IGNORE	CSP: style-src keeps unsafe-inline by design (a style nonce would make browsers ignore it for style attributes the UI emits) and img-src/connect-src allow the https: scheme for OAuth avatars and Sentry; script-src stays nonce + strict-dynamic with no unsafe-inline (src/lib/security/csp.ts).
+# 90004 Insufficient Site Isolation Against Spectre (owner decision 246).
+# Islestone sends Cross-Origin-Opener-Policy and Cross-Origin-Resource-Policy
+# `same-origin` on every response (src/lib/security-headers.ts, asserted by
+# tests/unit/security-headers.test.ts and the middleware's own responses by
+# tests/unit/auth-flow/middleware-csp.test.ts) and leaves
+# Cross-Origin-Embedder-Policy unset on purpose. ZAP keys this file by plugin
+# id only (zap_common.py load_config), not by the rule's alert reference, so
+# it cannot excuse the COEP alert (90004-2) alone: the whole rule is ignored,
+# and the unit tests are what hold COOP and CORP.
+90004	IGNORE	Site Isolation, for Cross-Origin-Embedder-Policy alone: COEP require-corp would block cross-origin images that send no CORP header, such as Google and Microsoft avatars, so it is not sent. COOP and CORP are sent as same-origin and asserted by tests/unit/security-headers.test.ts.
 # 10044 Big Redirect, out of scope on exactly the two redirects a Next.js
 # server component makes for a signed-in person: `/` (src/app/page.tsx) and
 # the workspace picker's single-destination case (src/app/tenants/page.tsx).

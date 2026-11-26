@@ -14,6 +14,19 @@ describe('baseline security headers', () => {
         }
     });
 
+    // Owner decision 246 (ZAP 90004). `.zap/rules.tsv` excuses 90004 because
+    // COEP alone is left out on purpose (require-corp would refuse cross-origin
+    // avatars without CORP); ZAP's rules file cannot excuse one of the rule's
+    // three headers only, so these assertions are what holds the other two.
+    it('isolates the site: COOP and CORP same-origin on every build, and no COEP', () => {
+        for (const production of [false, true]) {
+            const headers = asMap(production);
+            expect(headers['cross-origin-opener-policy']).toBe('same-origin');
+            expect(headers['cross-origin-resource-policy']).toBe('same-origin');
+            expect(headers).not.toHaveProperty('cross-origin-embedder-policy');
+        }
+    });
+
     it('carries no Content-Security-Policy: the middleware writes the one CSP, with a per-request nonce', () => {
         for (const production of [false, true]) {
             expect(asMap(production)).not.toHaveProperty('content-security-policy');

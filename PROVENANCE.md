@@ -1345,7 +1345,7 @@ Files from earlier sub-phases edited in 1.5 (their rows are in the sections abov
 | `src/lib/errors/api.ts` | The tracing span and request metrics restored (source); Sentry stays 1.6. |
 | `src/lib/observability/metrics.ts` | The 1.4 stub replaced by the source's encryption, audit-stream, rate-limit and request metrics (COPY+EDIT: compliance, agent and job metrics cut). |
 | `src/lib/prisma.ts` | The audit extension (source L26–406) restored, then field encryption and PII, then the RLS tripwire; `import * as auditWriterModule`. |
-| `src/lib/security-headers.ts` | The static `Content-Security-Policy` removed (the middleware sends the nonce policy); `applySecurityHeaders` for responses the middleware answers itself. |
+| `src/lib/security-headers.ts` | The static `Content-Security-Policy` removed (the middleware sends the nonce policy); `applySecurityHeaders` for responses the middleware answers itself. `Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy` `same-origin` added in H1 (owner decision 246), as the source's `next.config.js` and `src/lib/security/headers.ts` send them; COEP left unset as there. |
 | `src/lib/security/rate-limit-middleware.ts` | The MCP and agent-question presets cut from the re-exports (6.x); a comment. |
 | `src/lib/security/rate-limit.ts` | `MCP_PER_KEY_LIMIT`, `MCP_IP_CEILING_LIMIT` and `AGENT_QUESTION_LIMIT` cut (6.x). |
 | `src/lib/security/sanitize.ts` | The rest of the source module: `sanitizeRichTextHtml` and `sanitizeUrlText` (COPY+EDIT: `sanitizePolicyContent` cut, no policy content). |
@@ -1374,7 +1374,7 @@ Files from earlier sub-phases edited in 1.5 (their rows are in the sections abov
 | `tests/unit/db/pool-and-tenant-tx-limits.test.ts` | The audit-cleanup case from `audit-concurrency-limits.test.ts`; identity mocks for the encryption and PII extensions. |
 | `tests/unit/jwt-update-trigger-refresh.test.ts` | `emailHash` in the lookup. |
 | `tests/unit/register-refusal-codes.test.ts` | A production encryption key for the production cases; the `emailHash` unique violation; a case for the DEK written with the workspace. |
-| `tests/unit/security-headers.test.ts` | No static CSP; `applySecurityHeaders`. |
+| `tests/unit/security-headers.test.ts` | No static CSP; `applySecurityHeaders`; COOP and CORP `same-origin` and no COEP (H1, decision 246). |
 | `tests/unit/totp-crypto.test.ts` | `issuer=Islestone`. |
 
 </details>
@@ -1856,7 +1856,7 @@ The container build, the production Compose stack, the deploy scripts, the relea
 | `.github/workflows/ci.yml` (`Image` job) | `.github/workflows/ci.yml` (Docker Build, Trivy) | ADAPT | Builds both targets without pushing, reads the images (user, files, `BUILD_SHA`, no npm), Trivy SARIF report-only. |
 | `.zap/assert-no-high-risk.mjs` | same | COPY+EDIT | Provenance note and the doc pointer. |
 | `.zap/zap-json-to-sarif.mjs` | same | COPY+EDIT | Provenance note. |
-| `.zap/rules.tsv` | same | ADAPT | Four of inflect's entries, with Islestone's reasons; Islestone's own `OUTOFSCOPE` lines for 10044 (H1). |
+| `.zap/rules.tsv` | same | ADAPT | Five of inflect's entries (90004 added in H1, decision 246), with Islestone's reasons; Islestone's own `OUTOFSCOPE` lines for 10044 (H1). |
 | `.zap/dast-findings.md` | `.zap/dast-findings.md` | PATTERN | Pattern only, no code copied: the SARIF anchor file. |
 | `src/lib/health/readiness.ts`, `src/app/api/readyz/route.ts` | `src/app/api/readyz/route.ts` | ADAPT | The checks (parallel, per-check timeout, closed error set, production refuses an unset Redis) moved into a module the handler calls; the app's own Prisma client; no storage check; `version` from `BUILD_SHA`. |
 | `docs/change-management-policy.md` | `docs/change-management-policy.md` | ADAPT | Islestone's pipeline (PR checks, release.yml, Watchtower), the three classes, the approval matrix for a sole owner, the emergency procedure, forward-fix migrations; no merge queue, sub-processor or SOC 2 sections. |

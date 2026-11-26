@@ -56,6 +56,11 @@ describe('middleware CSP', () => {
         expect(nonceOf(res.headers.get('content-security-policy'))).not.toBeNull();
         expect(res.headers.get('x-frame-options')).toBe('DENY');
         expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+        // Owner decision 246 (ZAP 90004): site isolation reaches the
+        // middleware's own responses too, and COEP is deliberately absent.
+        expect(res.headers.get('cross-origin-opener-policy')).toBe('same-origin');
+        expect(res.headers.get('cross-origin-resource-policy')).toBe('same-origin');
+        expect(res.headers.get('cross-origin-embedder-policy')).toBeNull();
     });
 
     // Hardening H1 (the ZAP baseline's 10038): these three are not files the
