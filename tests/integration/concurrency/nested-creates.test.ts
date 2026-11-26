@@ -26,13 +26,14 @@ import { createWorkItem } from '@/app-layer/usecases/work-item';
 import { WORK_ITEM_CREATE_BURST_PER_PROJECT } from '@/lib/db/concurrency-limits';
 
 import { prismaTestClient, resetDatabase } from '../../helpers/db';
+import { roundNumbers } from '../../helpers/stress-scale';
 import { createWorkItemWorkspace, isDeadlock, type WorkItemWorkspace } from '../../helpers/work-item-workspace';
 
 import { DB_AVAILABLE } from '../db-helper';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const TAG = `nstc${Date.now().toString(36)}`;
-const ROUNDS = 2;
+const BASE_ROUNDS = 2;
 
 describeFn('concurrency: creates nested in another usecase, under a burst', () => {
     let prisma: PrismaClient;
@@ -68,7 +69,7 @@ describeFn('concurrency: creates nested in another usecase, under a burst', () =
         return rows;
     }
 
-    it.each(Array.from({ length: ROUNDS }, (_, i) => i + 1))(
+    it.each(roundNumbers(BASE_ROUNDS))(
         `round %i: ${WORK_ITEM_CREATE_BURST_PER_PROJECT} simultaneous intake accepts into one project all succeed, numbered without gaps`,
         async (round) => {
             const burst = WORK_ITEM_CREATE_BURST_PER_PROJECT;

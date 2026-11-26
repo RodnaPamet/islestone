@@ -13,6 +13,7 @@ import { moveWorkItemOnBoard, reorderWorkItem } from '@/app-layer/usecases/work-
 import { createProject } from '@/app-layer/usecases/project';
 
 import { prismaTestClient, resetDatabase } from '../../helpers/db';
+import { rounds, scaledTimeout } from '../../helpers/stress-scale';
 import { createWorkItemWorkspace, isDeadlock, type WorkItemWorkspace } from '../../helpers/work-item-workspace';
 
 import { DB_AVAILABLE } from '../db-helper';
@@ -72,7 +73,7 @@ describeFn('concurrency: reordering', () => {
     });
 
     it('reorders, board drops that change the state, and appends interleaved: no deadlock, unique keys, every drop placed', async () => {
-        for (let round = 0; round < 3; round++) {
+        for (let round = 0; round < rounds(3); round++) {
             const { projectId, items } = await freshProject(`MIX${round}`, 9);
             const anchor = items[0]!;
             const targets = items.slice(1);
@@ -100,5 +101,5 @@ describeFn('concurrency: reordering', () => {
                 expect(byId.get(t.id)!.sortKey > byId.get(anchor.id)!.sortKey).toBe(true);
             }
         }
-    });
+    }, scaledTimeout());
 });

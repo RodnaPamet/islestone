@@ -29,6 +29,7 @@ import { removeTenantMember } from '@/app-layer/usecases/tenant-admin';
 import { createWorkItem } from '@/app-layer/usecases/work-item';
 
 import { prismaTestClient, resetDatabase } from '../../helpers/db';
+import { rounds, scaledTimeout } from '../../helpers/stress-scale';
 import { createWorkItemWorkspace, isDeadlock, type WorkItemWorkspace } from '../../helpers/work-item-workspace';
 
 import { DB_AVAILABLE } from '../db-helper';
@@ -125,7 +126,7 @@ describeFn('concurrency: recipient lists against a member\'s removal', () => {
     });
 
     it('list changes and watchers from a list racing the real removal: never a deadlock, never a non-member on a list or watching', async () => {
-        for (let round = 0; round < 4; round++) {
+        for (let round = 0; round < rounds(4); round++) {
             const lee = await leaver();
             const list = await createRecipientList(ws.owner, null, { name: `Race ${round}`, userIds: [lee.userId] });
             const other = await createRecipientList(ws.owner, null, { name: `Race other ${round}`, userIds: [ws.owner.userId] });
@@ -153,5 +154,5 @@ describeFn('concurrency: recipient lists against a member\'s removal', () => {
             expect(await prisma.workItemWatcher.count({ where: { tenantId: ws.tenantId, userId: lee.userId } })).toBe(0);
             expect(await prisma.workItem.count({ where: { tenantId: ws.tenantId, assigneeId: lee.userId } })).toBe(0);
         }
-    });
+    }, scaledTimeout());
 });

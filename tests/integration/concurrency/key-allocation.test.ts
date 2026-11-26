@@ -26,13 +26,14 @@ import { moveWorkItemToProject } from '@/app-layer/usecases/work-item-moves';
 import { WORK_ITEM_CREATE_BURST_PER_PROJECT } from '@/lib/db/concurrency-limits';
 
 import { prismaTestClient, resetDatabase } from '../../helpers/db';
+import { roundNumbers } from '../../helpers/stress-scale';
 import { createWorkItemWorkspace, isDeadlock, type WorkItemWorkspace } from '../../helpers/work-item-workspace';
 
 import { DB_AVAILABLE } from '../db-helper';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const TAG = `keyc${Date.now().toString(36)}`;
-const ROUNDS = 2;
+const BASE_ROUNDS = 2;
 
 describeFn('concurrency: key allocation under a burst', () => {
     let prisma: PrismaClient;
@@ -56,7 +57,7 @@ describeFn('concurrency: key allocation under a burst', () => {
         expect(WORK_ITEM_CREATE_BURST_PER_PROJECT).toBe(25);
     });
 
-    it.each(Array.from({ length: ROUNDS }, (_, i) => i + 1))(
+    it.each(roundNumbers(BASE_ROUNDS))(
         `round %i: ${WORK_ITEM_CREATE_BURST_PER_PROJECT} simultaneous creates in one project all succeed, numbered without gaps`,
         async () => {
             const burst = WORK_ITEM_CREATE_BURST_PER_PROJECT;
@@ -90,7 +91,7 @@ describeFn('concurrency: key allocation under a burst', () => {
         },
     );
 
-    it.each(Array.from({ length: ROUNDS }, (_, i) => i + 1))(
+    it.each(roundNumbers(BASE_ROUNDS))(
         'round %i: creates in a project racing moves into it: one gapless series, every moved item aliased under its old key',
         async (round) => {
             const from = await createProject(ws.owner, { teamId: ws.teamId, name: `From ${round}`, keyPrefix: `FRM${round}` });

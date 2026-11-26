@@ -22,13 +22,14 @@ import { moveWorkItemOnBoard, reorderWorkItem } from '@/app-layer/usecases/work-
 import { keysBetween, SORT_KEY_REBALANCE_LENGTH } from '@/app-layer/domain/fractional-index';
 
 import { prismaTestClient, resetDatabase } from '../../helpers/db';
+import { roundNumbers } from '../../helpers/stress-scale';
 import { createWorkItemWorkspace, isDeadlock, type WorkItemWorkspace } from '../../helpers/work-item-workspace';
 
 import { DB_AVAILABLE } from '../db-helper';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const TAG = `rbal${Date.now().toString(36)}`;
-const ROUNDS = 3;
+const BASE_ROUNDS = 3;
 
 describeFn('concurrency: reorders racing the sort-key rebalance', () => {
     let prisma: PrismaClient;
@@ -66,7 +67,7 @@ describeFn('concurrency: reorders racing the sort-key rebalance', () => {
         (await prisma.$queryRaw<Array<{ id: string; sortKey: string; version: number }>>`
             SELECT "id", "sortKey", "version" FROM "WorkItem" WHERE "projectId" = ${projectId} AND "deletedAt" IS NULL ORDER BY "sortKey", "id"`);
 
-    it.each(Array.from({ length: ROUNDS }, (_, i) => i + 1))(
+    it.each(roundNumbers(BASE_ROUNDS))(
         'round %i: reorders and drops while the rebalance runs: the order is the old order with the moved rows in their places',
         async (round) => {
             const { projectId, ids } = await grownProject(`RB${round}`, 40);

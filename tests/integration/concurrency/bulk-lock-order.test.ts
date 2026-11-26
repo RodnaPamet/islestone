@@ -35,6 +35,7 @@ import {
 import { moveWorkItemToProject } from '@/app-layer/usecases/work-item-moves';
 
 import { prismaTestClient, resetDatabase } from '../../helpers/db';
+import { rounds, scaledTimeout } from '../../helpers/stress-scale';
 import { createWorkItemWorkspace, isDeadlock, type WorkItemWorkspace } from '../../helpers/work-item-workspace';
 
 import { DB_AVAILABLE } from '../db-helper';
@@ -62,7 +63,7 @@ describeFn('concurrency: multi-item writes lock in id order', () => {
         createWorkItem(ws.owner, { projectId: ws.projectId, typeId: ws.typeId, title, ...extra });
 
     it('a bulk change over sub-items and a move of their parent, overlapping: neither deadlocks, both apply', async () => {
-        for (let round = 0; round < 3; round++) {
+        for (let round = 0; round < rounds(3); round++) {
             const dest = await createProject(ws.owner, { teamId: ws.teamId, name: `Dest ${round}`, keyPrefix: `DST${round}` });
             const root = await item(`root ${round}`);
             // Each sub-item placed BEFORE the previous one: sort order is the
@@ -82,7 +83,7 @@ describeFn('concurrency: multi-item writes lock in id order', () => {
             expect(rows.every((r) => r.projectId === dest.id)).toBe(true);
             expect(rows.filter((r) => r.parentId === root.id).every((r) => r.stateId === ws.states['In progress']!.id)).toBe(true);
         }
-    });
+    }, scaledTimeout());
 
     it('a bulk state change audits the state each item really leaves, when another writer changed it meanwhile', async () => {
         const a = await item('stale-a');
@@ -138,7 +139,7 @@ describeFn('concurrency: multi-item writes lock in id order', () => {
     });
 
     it('a bulk change against a versioned single edit: never a lost update', async () => {
-        for (let round = 0; round < 3; round++) {
+        for (let round = 0; round < rounds(3); round++) {
             const items: Array<{ id: string; version: number }> = [];
             for (let i = 0; i < 20; i++) items.push(await item(`versioned ${round}-${i}`));
             const target = items[10]!;
@@ -160,7 +161,7 @@ describeFn('concurrency: multi-item writes lock in id order', () => {
                 expect(row.version).toBe(target.version + 1);
             }
         }
-    });
+    }, scaledTimeout());
 
     it('a bulk assign against the member\'s removal: no item is left assigned to someone who is not a member', async () => {
         const user = await prisma.user.create({ data: { email: `leaver-${TAG}@example.test`, name: 'Lee Leaver' } });
