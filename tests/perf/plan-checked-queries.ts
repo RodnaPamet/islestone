@@ -22,8 +22,11 @@
  * (docs/performance.md, "Plan checks"). A search function's own statement is
  * captured too (`auto_explain.log_nested_statements`), so its index and the
  * operator in its condition are checked, and its buffers are counted once,
- * in the function scan that ran it. At another shape the buffers
- * are reported, not judged: the 100k budgets arrive with the nightly (H2b).
+ * in the function scan that ran it. `maxBuffers100k` is the same budget on
+ * the 100k seed, judged by the nightly run (H2b, .github/workflows/perf.yml):
+ * about twice what H2b measured there and never below the 10k budget
+ * (docs/performance.md, "The 100k budgets"). At another shape the buffers
+ * are reported, not judged.
  */
 
 export interface PlanCheckedQuery {
@@ -32,6 +35,8 @@ export interface PlanCheckedQuery {
     methods: readonly string[];
     indexes: readonly string[];
     maxBuffers: number;
+    /** The same at 100k (H2b), judged by the nightly run: about twice what H2b measured on the 100k seed, never below `maxBuffers`. */
+    maxBuffers100k: number;
     /** Why no index is required, when `indexes` is empty (a reason, never "too hard"). */
     noIndexBecause?: string;
     /** Indexes that must be searched on their searched column (`IndexCondition` in plan-capture.ts). */
@@ -46,79 +51,79 @@ export interface PlanCheckedQuery {
 
 export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     // ── The list, in each sort the API offers (one project) ───────────────
-    { name: 'list: project, manual order', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 700 },
-    { name: 'list: project, by updated', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_updatedAt_id_idx'], maxBuffers: 500 },
-    { name: 'list: project, by created', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_createdAt_id_idx'], maxBuffers: 500 },
-    { name: 'list: project, by due date', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_dueDate_id_idx'], maxBuffers: 850 },
-    { name: 'list: project, by priority', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_priorityRank_id_idx'], maxBuffers: 750 },
-    { name: 'list: project, by key', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_number_key'], maxBuffers: 1000 },
-    { name: 'list: project, second page (keyset)', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 1500 },
+    { name: 'list: project, manual order', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 700, maxBuffers100k: 800 },
+    { name: 'list: project, by updated', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_updatedAt_id_idx'], maxBuffers: 500, maxBuffers100k: 500 },
+    { name: 'list: project, by created', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_createdAt_id_idx'], maxBuffers: 500, maxBuffers100k: 500 },
+    { name: 'list: project, by due date', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_dueDate_id_idx'], maxBuffers: 850, maxBuffers100k: 950 },
+    { name: 'list: project, by priority', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_priorityRank_id_idx'], maxBuffers: 750, maxBuffers100k: 900 },
+    { name: 'list: project, by key', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_number_key'], maxBuffers: 1000, maxBuffers100k: 2100 },
+    { name: 'list: project, second page (keyset)', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 1500, maxBuffers100k: 1500 },
     // ── The Work items page: workspace-wide, two filters, by due date ─────
-    { name: 'list: workspace, manual order', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_sortKey_id_idx'], maxBuffers: 850 },
-    { name: 'list: workspace, two filters, by due date', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_dueDate_id_idx'], maxBuffers: 2600 },
-    { name: 'list: project, label filter', methods: ['WorkItemRepository.list'], indexes: ['WorkItemLabel_tenantId_labelId_workItemId_idx'], maxBuffers: 1100 },
-    { name: 'list: project, custom-field filter', methods: ['WorkItemRepository.list'], indexes: ['CustomFieldValue_tenantId_fieldId_optionId_idx'], maxBuffers: 2100 },
-    { name: 'list: project, sorted by a custom field', methods: ['WorkItemRepository.listByCustomField'], indexes: ['CustomFieldValue_tenantId_fieldId_optionId_idx'], maxBuffers: 5500 },
-    { name: 'list: q (titles, stemmed titles, contents)', methods: ['WorkItemRepository.titleFullTextIds', 'SearchVectorRepository.matchItems', 'WorkItemRepository.titleSubstringIds', 'WorkItemRepository.list'], indexes: ['WorkItem_search_title_fts', 'WorkItem_search_title_trgm', 'SearchVector_search_lexemes'], maxBuffers: 7000, conditions: [{ index: 'WorkItem_search_title_fts', operator: '@@' }, { index: 'SearchVector_search_lexemes', operator: '@@' }, { index: 'WorkItem_search_title_trgm', operator: '~~*' }] },
-    { name: 'list: the Deleted view', methods: ['WorkItemRepository.listDeleted'], indexes: ['WorkItem_tenantId_deletionId_idx|WorkItem_deletedAt_idx'], maxBuffers: 1800 },
+    { name: 'list: workspace, manual order', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_sortKey_id_idx'], maxBuffers: 850, maxBuffers100k: 950 },
+    { name: 'list: workspace, two filters, by due date', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_dueDate_id_idx'], maxBuffers: 2600, maxBuffers100k: 2600 },
+    { name: 'list: project, label filter', methods: ['WorkItemRepository.list'], indexes: ['WorkItemLabel_tenantId_labelId_workItemId_idx'], maxBuffers: 1100, maxBuffers100k: 2800 },
+    { name: 'list: project, custom-field filter', methods: ['WorkItemRepository.list'], indexes: ['CustomFieldValue_tenantId_fieldId_optionId_idx'], maxBuffers: 2100, maxBuffers100k: 7400 },
+    { name: 'list: project, sorted by a custom field', methods: ['WorkItemRepository.listByCustomField'], indexes: ['CustomFieldValue_tenantId_fieldId_optionId_idx'], maxBuffers: 5500, maxBuffers100k: 25000 },
+    { name: 'list: q (titles, stemmed titles, contents)', methods: ['WorkItemRepository.titleFullTextIds', 'SearchVectorRepository.matchItems', 'WorkItemRepository.titleSubstringIds', 'WorkItemRepository.list'], indexes: ['WorkItem_search_title_fts', 'WorkItem_search_title_trgm', 'SearchVector_search_lexemes'], maxBuffers: 7000, maxBuffers100k: 181000, conditions: [{ index: 'WorkItem_search_title_fts', operator: '@@' }, { index: 'SearchVector_search_lexemes', operator: '@@' }, { index: 'WorkItem_search_title_trgm', operator: '~~*' }] },
+    { name: 'list: the Deleted view', methods: ['WorkItemRepository.listDeleted'], indexes: ['WorkItem_tenantId_deletionId_idx|WorkItem_deletedAt_idx'], maxBuffers: 1800, maxBuffers100k: 4100 },
     // ── The board: one column of the large project ────────────────────────
-    { name: 'board: one column (by state)', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_stateId_sortKey_idx'], maxBuffers: 800 },
+    { name: 'board: one column (by state)', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_stateId_sortKey_idx'], maxBuffers: 800, maxBuffers100k: 850 },
     // ── My Work's six sections ─────────────────────────────────────────────
     {
         name: 'my work: to review',
         methods: ['WorkItemRepository.list'],
         indexes: [],
         noIndexBecause: 'the seed holds review rounds only in the 1 % sample (about twenty steps per workspace), so the planner rightly reads the reviewer tables whole; the shape gains bulk reviews with 2.8\'s volume (docs/performance.md, "What the seed leaves out")',
-        maxBuffers: 200,
+        maxBuffers: 200, maxBuffers100k: 16000,
     },
-    { name: 'my work: assigned', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_assigneeId_sortKey_id_idx'], maxBuffers: 1000 },
-    { name: 'my work: waiting on me', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_waitingOnUserId_stateCategory_dueDate_idx'], maxBuffers: 200 },
-    { name: 'my work: created', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_createdByUserId_createdAt_idx'], maxBuffers: 1400 },
-    { name: 'my work: watching', methods: ['WorkItemRepository.list'], indexes: ['WorkItemWatcher_tenantId_userId_idx'], maxBuffers: 1600 },
-    { name: 'my work: due soon', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx|WorkItem_tenantId_assigneeId_sortKey_id_idx'], maxBuffers: 1600 },
+    { name: 'my work: assigned', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_assigneeId_sortKey_id_idx'], maxBuffers: 1000, maxBuffers100k: 1200 },
+    { name: 'my work: waiting on me', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_waitingOnUserId_stateCategory_dueDate_idx'], maxBuffers: 200, maxBuffers100k: 550 },
+    { name: 'my work: created', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_createdByUserId_createdAt_idx'], maxBuffers: 1400, maxBuffers100k: 2000 },
+    { name: 'my work: watching', methods: ['WorkItemRepository.list'], indexes: ['WorkItemWatcher_tenantId_userId_idx'], maxBuffers: 1600, maxBuffers100k: 3500 },
+    { name: 'my work: due soon', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx|WorkItem_tenantId_assigneeId_sortKey_id_idx'], maxBuffers: 1600, maxBuffers100k: 1800 },
     // ── The detail and what the sheet loads beside it ──────────────────────
-    { name: 'detail: the item', methods: ['WorkItemRepository.getById'], indexes: ['WorkItem_pkey|WorkItem_id_tenantId_key|WorkItem_id_projectId_tenantId_key'], maxBuffers: 100 },
-    { name: 'detail: comments', methods: ['CommentRepository.list'], indexes: ['Comment_tenantId_workItemId_createdAt_idx'], maxBuffers: 100 },
-    { name: 'detail: sub-items and their progress', methods: ['WorkItemRepository.listSubItems', 'WorkItemRepository.subItemProgress'], indexes: ['WorkItem_tenantId_parentId_sortKey_idx'], maxBuffers: 100 },
-    { name: 'detail: the subtree and ancestors', methods: ['WorkItemRepository.liveSubtree', 'WorkItemRepository.subtreeHeight', 'WorkItemRepository.ancestors'], indexes: ['WorkItem_tenantId_parentId_sortKey_idx'], maxBuffers: 150 },
+    { name: 'detail: the item', methods: ['WorkItemRepository.getById'], indexes: ['WorkItem_pkey|WorkItem_id_tenantId_key|WorkItem_id_projectId_tenantId_key'], maxBuffers: 100, maxBuffers100k: 100 },
+    { name: 'detail: comments', methods: ['CommentRepository.list'], indexes: ['Comment_tenantId_workItemId_createdAt_idx'], maxBuffers: 100, maxBuffers100k: 100 },
+    { name: 'detail: sub-items and their progress', methods: ['WorkItemRepository.listSubItems', 'WorkItemRepository.subItemProgress'], indexes: ['WorkItem_tenantId_parentId_sortKey_idx'], maxBuffers: 100, maxBuffers100k: 100 },
+    { name: 'detail: the subtree and ancestors', methods: ['WorkItemRepository.liveSubtree', 'WorkItemRepository.subtreeHeight', 'WorkItemRepository.ancestors'], indexes: ['WorkItem_tenantId_parentId_sortKey_idx'], maxBuffers: 150, maxBuffers100k: 150 },
     // ── Counts: metrics, cycles, milestones ────────────────────────────────
-    { name: 'counts: list metrics (one project)', methods: ['WorkItemRepository.metrics'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx|WorkItem_tenantId_projectId_stateId_sortKey_idx|WorkItem_tenantId_projectId_dueDate_id_idx'], maxBuffers: 1400 },
-    { name: 'counts: cycles', methods: ['WorkItemRepository.countsByCycle', 'WorkItemRepository.cycleIdsInUse'], indexes: ['WorkItem_tenantId_cycleId_stateCategory_idx'], maxBuffers: 1100 },
-    { name: 'counts: milestones', methods: ['WorkItemRepository.countsByMilestone'], indexes: ['WorkItem_tenantId_milestoneId_stateCategory_idx'], maxBuffers: 250 },
+    { name: 'counts: list metrics (one project)', methods: ['WorkItemRepository.metrics'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx|WorkItem_tenantId_projectId_stateId_sortKey_idx|WorkItem_tenantId_projectId_dueDate_id_idx'], maxBuffers: 1400, maxBuffers100k: 5300 },
+    { name: 'counts: cycles', methods: ['WorkItemRepository.countsByCycle', 'WorkItemRepository.cycleIdsInUse'], indexes: ['WorkItem_tenantId_cycleId_stateCategory_idx'], maxBuffers: 1100, maxBuffers100k: 1800 },
+    { name: 'counts: milestones', methods: ['WorkItemRepository.countsByMilestone'], indexes: ['WorkItem_tenantId_milestoneId_stateCategory_idx'], maxBuffers: 250, maxBuffers100k: 950 },
     // ── Goals and initiatives (3.2a, decisions 211 and 220) ───────────────
-    { name: 'list: goal filter (project path or own goal)', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_sortKey_id_idx|WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 1700 },
-    { name: 'list: initiative filter', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx|WorkItem_tenantId_sortKey_id_idx'], maxBuffers: 700 },
-    { name: 'detail: the ancestry (one statement)', methods: ['WorkItemRepository.ancestry'], indexes: ['WorkItem_pkey|WorkItem_id_tenantId_key|WorkItem_id_projectId_tenantId_key'], maxBuffers: 50 },
-    { name: "job: the goal purge's unlinked items", methods: ['WorkItemRepository.lockItemsNamingGoals'], indexes: ['WorkItem_tenantId_goalId_stateCategory_idx'], maxBuffers: 10 },
+    { name: 'list: goal filter (project path or own goal)', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_sortKey_id_idx|WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 1700, maxBuffers100k: 3000 },
+    { name: 'list: initiative filter', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx|WorkItem_tenantId_sortKey_id_idx'], maxBuffers: 700, maxBuffers100k: 750 },
+    { name: 'detail: the ancestry (one statement)', methods: ['WorkItemRepository.ancestry'], indexes: ['WorkItem_pkey|WorkItem_id_tenantId_key|WorkItem_id_projectId_tenantId_key'], maxBuffers: 50, maxBuffers100k: 50 },
+    { name: "job: the goal purge's unlinked items", methods: ['WorkItemRepository.lockItemsNamingGoals'], indexes: ['WorkItem_tenantId_goalId_stateCategory_idx'], maxBuffers: 10, maxBuffers100k: 50 },
     // ── Progress (3.2b, decisions 211 and 212) ────────────────────────────
-    { name: 'counts: progress, the project path', methods: ['WorkItemRepository.countsByProjects'], indexes: ['WorkItem_progress_project_path'], maxBuffers: 10 },
-    { name: 'counts: progress, the direct goal path', methods: ['WorkItemRepository.countsByGoals'], indexes: ['WorkItem_tenantId_goalId_stateCategory_idx'], maxBuffers: 10 },
-    { name: 'counts: items in a state', methods: ['TeamRepository.countItemsInState', 'ReviewRepository.itemsInStateRequiringReview', 'WorkItemRepository.lockInState'], indexes: ['WorkItem_tenantId_stateId_idx'], maxBuffers: 6500 },
+    { name: 'counts: progress, the project path', methods: ['WorkItemRepository.countsByProjects'], indexes: ['WorkItem_progress_project_path'], maxBuffers: 10, maxBuffers100k: 100 },
+    { name: 'counts: progress, the direct goal path', methods: ['WorkItemRepository.countsByGoals'], indexes: ['WorkItem_tenantId_goalId_stateCategory_idx'], maxBuffers: 10, maxBuffers100k: 50 },
+    { name: 'counts: items in a state', methods: ['TeamRepository.countItemsInState', 'ReviewRepository.itemsInStateRequiringReview', 'WorkItemRepository.lockInState'], indexes: ['WorkItem_tenantId_stateId_idx'], maxBuffers: 6500, maxBuffers100k: 21000 },
     // ── Search: the palette's raw reads ────────────────────────────────────
-    { name: 'search: titles (trigram and full text)', methods: ['WorkItemRepository.searchTitleIds'], indexes: ['WorkItem_search_title_fts', 'WorkItem_search_title_trgm'], maxBuffers: 1800, conditions: [{ index: 'WorkItem_search_title_trgm', operator: '~~*' }, { index: 'WorkItem_search_title_fts', operator: '@@' }] },
-    { name: 'search: contents and snippets', methods: ['SearchVectorRepository.matchItems', 'WorkItemRepository.findSearchRows', 'WorkItemRepository.searchSnippetSources'], indexes: ['SearchVector_search_lexemes', 'WorkItem_search_live_ids', 'Comment_search_live_ids'], maxBuffers: 5000, conditions: [{ index: 'SearchVector_search_lexemes', operator: '@@' }] },
+    { name: 'search: titles (trigram and full text)', methods: ['WorkItemRepository.searchTitleIds'], indexes: ['WorkItem_search_title_fts', 'WorkItem_search_title_trgm'], maxBuffers: 1800, maxBuffers100k: 14000, conditions: [{ index: 'WorkItem_search_title_trgm', operator: '~~*' }, { index: 'WorkItem_search_title_fts', operator: '@@' }] },
+    { name: 'search: contents and snippets', methods: ['SearchVectorRepository.matchItems', 'WorkItemRepository.findSearchRows', 'WorkItemRepository.searchSnippetSources'], indexes: ['SearchVector_search_lexemes', 'WorkItem_search_live_ids', 'Comment_search_live_ids'], maxBuffers: 5000, maxBuffers100k: 174000, conditions: [{ index: 'SearchVector_search_lexemes', operator: '@@' }] },
     // ── The timeline (3.1b) and the calendars it reads (3.1a) ──────────────
-    { name: 'timeline: scope, count and relations', methods: ['WorkItemRepository.listForTimeline', 'WorkItemRepository.countForTimeline', 'WorkItemRepository.timelineContextRows'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 2000 },
+    { name: 'timeline: scope, count and relations', methods: ['WorkItemRepository.listForTimeline', 'WorkItemRepository.countForTimeline', 'WorkItemRepository.timelineContextRows'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 2000, maxBuffers100k: 6300 },
     {
         name: 'timeline: working calendars',
         methods: [],
         indexes: [],
         noIndexBecause: 'a workspace holds one calendar per team and its holidays (at most 500 each): a sequential scan of a few pages is the cheapest plan at every workspace size; the budget holds it small',
-        maxBuffers: 100,
+        maxBuffers: 100, maxBuffers100k: 100,
     },
     // ── Writes' reads: placement, moves, a member's removal ────────────────
-    { name: 'placement: sort keys around a position', methods: ['WorkItemRepository.lastSortKey', 'WorkItemRepository.nextSortKeyAfter', 'WorkItemRepository.prevSortKeyBefore'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 100 },
-    { name: 'removal: a member\'s items', methods: ['WorkItemRepository.lockItemsOfPerson'], indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx|WorkItem_tenantId_assigneeId_sortKey_id_idx', 'WorkItem_tenantId_waitingOnUserId_stateCategory_dueDate_idx', 'CustomFieldValue_tenantId_userId_idx|CustomFieldValue_tenantId_fieldId_userId_idx'], maxBuffers: 7500 },
-    { name: 'deletion: a deletion group', methods: ['WorkItemRepository.idsOfDeletion'], indexes: ['WorkItem_tenantId_deletionId_idx'], maxBuffers: 100 },
-    { name: 'cycle and milestone deletes: their items', methods: ['WorkItemRepository.idsInCycleIncludingDeleted', 'WorkItemRepository.idsInMilestoneIncludingDeleted', 'WorkItemRepository.rolloverCandidates'], indexes: ['WorkItem_tenantId_cycleId_stateCategory_idx', 'WorkItem_tenantId_milestoneId_stateCategory_idx'], maxBuffers: 2400 },
-    { name: 'templates: open items of a project', methods: ['WorkItemRepository.openItemsForTemplate'], indexes: ['WorkItem_tenantId_parentId_sortKey_idx|WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 1700 },
+    { name: 'placement: sort keys around a position', methods: ['WorkItemRepository.lastSortKey', 'WorkItemRepository.nextSortKeyAfter', 'WorkItemRepository.prevSortKeyBefore'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 100, maxBuffers100k: 100 },
+    { name: 'removal: a member\'s items', methods: ['WorkItemRepository.lockItemsOfPerson'], indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx|WorkItem_tenantId_assigneeId_sortKey_id_idx', 'WorkItem_tenantId_waitingOnUserId_stateCategory_dueDate_idx', 'CustomFieldValue_tenantId_userId_idx|CustomFieldValue_tenantId_fieldId_userId_idx'], maxBuffers: 7500, maxBuffers100k: 88000 },
+    { name: 'deletion: a deletion group', methods: ['WorkItemRepository.idsOfDeletion'], indexes: ['WorkItem_tenantId_deletionId_idx'], maxBuffers: 100, maxBuffers100k: 100 },
+    { name: 'cycle and milestone deletes: their items', methods: ['WorkItemRepository.idsInCycleIncludingDeleted', 'WorkItemRepository.idsInMilestoneIncludingDeleted', 'WorkItemRepository.rolloverCandidates'], indexes: ['WorkItem_tenantId_cycleId_stateCategory_idx', 'WorkItem_tenantId_milestoneId_stateCategory_idx'], maxBuffers: 2400, maxBuffers100k: 4400 },
+    { name: 'templates: open items of a project', methods: ['WorkItemRepository.openItemsForTemplate'], indexes: ['WorkItem_tenantId_parentId_sortKey_idx|WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 1700, maxBuffers100k: 3400 },
     // ── Jobs: reminders, the digest, the purge, the rebalance, the rebuild ─
-    { name: 'job: due reminders', methods: ['WorkItemRepository.dueCandidates'], indexes: ['WorkItem_tenantId_stateCategory_dueDate_idx|WorkItem_tenantId_projectId_dueDate_id_idx|WorkItem_tenantId_dueDate_id_idx'], maxBuffers: 150 },
-    { name: 'job: the daily digest', methods: ['WorkItemRepository.digestDueItems'], indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx|WorkItem_tenantId_dueDate_id_idx'], maxBuffers: 1100 },
-    { name: 'job: the purge sweep', methods: ['WorkItemRepository.purgeableIds'], indexes: ['WorkItem_deletedAt_idx'], maxBuffers: 150 },
-    { name: 'job: a purged project', methods: ['WorkItemRepository.countLiveInProject', 'WorkItemRepository.projectItemIds'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx|WorkItem_tenantId_projectId_number_key|WorkItem_tenantId_projectId_createdAt_id_idx'], maxBuffers: 400 },
-    { name: 'job: the sort-key rebalance', methods: ['WorkItemRepository.projectsNeedingRebalance', 'WorkItemRepository.orderedPage'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 500 },
-    { name: 'job: the search-index rebuild', methods: ['SearchVectorRepository.staleDescriptionPage', 'SearchVectorRepository.staleCommentPage'], indexes: ['SearchVector_one_per_description', 'SearchVector_one_per_comment', 'Comment_search_live_ids'], maxBuffers: 10000 },
+    { name: 'job: due reminders', methods: ['WorkItemRepository.dueCandidates'], indexes: ['WorkItem_tenantId_stateCategory_dueDate_idx|WorkItem_tenantId_projectId_dueDate_id_idx|WorkItem_tenantId_dueDate_id_idx'], maxBuffers: 150, maxBuffers100k: 1300 },
+    { name: 'job: the daily digest', methods: ['WorkItemRepository.digestDueItems'], indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx|WorkItem_tenantId_dueDate_id_idx'], maxBuffers: 1100, maxBuffers100k: 5400 },
+    { name: 'job: the purge sweep', methods: ['WorkItemRepository.purgeableIds'], indexes: ['WorkItem_deletedAt_idx'], maxBuffers: 150, maxBuffers100k: 1500 },
+    { name: 'job: a purged project', methods: ['WorkItemRepository.countLiveInProject', 'WorkItemRepository.projectItemIds'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx|WorkItem_tenantId_projectId_number_key|WorkItem_tenantId_projectId_createdAt_id_idx'], maxBuffers: 400, maxBuffers100k: 1600 },
+    { name: 'job: the sort-key rebalance', methods: ['WorkItemRepository.projectsNeedingRebalance', 'WorkItemRepository.orderedPage'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 500, maxBuffers100k: 3100 },
+    { name: 'job: the search-index rebuild', methods: ['SearchVectorRepository.staleDescriptionPage', 'SearchVectorRepository.staleCommentPage'], indexes: ['SearchVector_one_per_description', 'SearchVector_one_per_comment', 'Comment_search_live_ids'], maxBuffers: 10000, maxBuffers100k: 10000 },
 ];
 
 /**
@@ -148,3 +153,10 @@ export const PLAN_CHECK_EXEMPT: Readonly<Record<string, string>> = {
     'SearchVectorRepository.descriptionTexts': 'one rebuild page of ids by primary key',
     'SearchVectorRepository.commentTexts': 'one rebuild page of ids by primary key',
 };
+
+/** A query's buffer budget at a shape: 10k and 100k are judged, any other shape is reported only (`null`). */
+export function bufferBudgetAt(q: PlanCheckedQuery, shape: string): number | null {
+    if (shape === '10k') return q.maxBuffers;
+    if (shape === '100k') return q.maxBuffers100k;
+    return null;
+}

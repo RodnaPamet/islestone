@@ -90,6 +90,8 @@ describe('PLAN_CHECKED_QUERIES covers every repository read of WorkItem, Comment
         const names = PLAN_CHECKED_QUERIES.map((q) => q.name);
         expect(new Set(names).size).toBe(names.length);
         expect(PLAN_CHECKED_QUERIES.filter((q) => !(q.maxBuffers > 0))).toEqual([]);
+        // And one for the nightly 100k run (H2b).
+        expect(PLAN_CHECKED_QUERIES.filter((q) => !(Number.isInteger(q.maxBuffers100k) && q.maxBuffers100k > 0)).map((q) => q.name)).toEqual([]);
         // An empty index list says why, and only then.
         expect(PLAN_CHECKED_QUERIES.filter((q) => (q.indexes.length === 0) !== (q.noIndexBecause !== undefined && q.noIndexBecause.length >= 20)).map((q) => q.name)).toEqual([]);
     });

@@ -127,7 +127,8 @@ describe(`statements per request on the seeded database (PERF_SHAPE=${process.en
         }
         world = await loadPerfWorld(direct);
         getTenantCtxMock.mockImplementation(async () => ({ ...world.ctx, requestId: `perf-${Math.random()}` }));
-    });
+        // At 100k (the nightly run) the fixture reads on a cold cache take longer than a test's 120 s.
+    }, 600_000);
 
     afterAll(async () => {
         await direct?.$disconnect();
