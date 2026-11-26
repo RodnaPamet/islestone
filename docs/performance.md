@@ -1,13 +1,13 @@
 # Performance
 
-Hardening H2's performance half (`docs/porting/maps/H2.md` part 1; owner decisions 166 to 172). H2a, built here, is the seed and the deterministic checks that block every pull request; H2b adds the latency budgets, the harness and the nightly 100k run.
+Hardening H2's performance half (`docs/porting/maps/H2.md` part 1; owner decisions 166 to 172). H2a is the seed and the deterministic checks that block every pull request; H2b is the latency budgets, the harness, the 100k buffer budgets and the nightly 100k run.
 
 | Part | What | Blocks | Where |
 |---|---|---|---|
 | The seed (1.1) | Two workspaces of 10,000 or 100,000 items, verified, cached as a dump | (it is the input) | `scripts/seed-scale/` |
-| Plan checks (1.2) | Every named query's plan on the seeded database: no sequential scan on a guarded table, its indexes used, a buffer budget | every pull request, at 10k | `tests/perf/plans.test.ts`, `tests/perf/plan-checked-queries.ts` |
-| Statements per request (1.3) | How many statements each scenario's request runs, and that a list's count does not grow with its page size | every pull request, at 10k | `tests/perf/statements.test.ts` |
-| Latency (1.4 to 1.6) | Response budgets on the reference machine | the nightly 100k run (H2b) | not built yet |
+| Plan checks (1.2) | Every named query's plan on the seeded database: no sequential scan on a guarded table, its indexes used, a buffer budget | every pull request at 10k; the nightly run at 100k (the 100k budgets, H2b) | `tests/perf/plans.test.ts`, `tests/perf/plan-checked-queries.ts` |
+| Statements per request (1.3) | How many statements each scenario's request runs, and that a list's count does not grow with its page size | every pull request at 10k; the nightly run at 100k | `tests/perf/statements.test.ts` |
+| Latency (1.4 to 1.6) | Response times of the built app on the reference machine against the budgets of decision 167; a concurrent pass; browser timings | a run that measured nothing: every pull request; the budgets: the nightly 100k run | `scripts/perf/run.mjs`, `scripts/perf/budgets.json`, `.github/workflows/perf.yml` |
 
 ## The seed
 
@@ -85,9 +85,71 @@ Measured on the development machine (4 CPUs, 16 GB, Docker), with PgBouncer in f
 
 A budget only goes down. A count that grows with the page size or the workspace is a query in a loop the lexical guard (`query-shape-guardrails.test.ts`, D1) missed.
 
+## Latency (H2b)
+
+Decisions 166 to 169: the budgets of the map's part 1.4, measured on a stated reference machine (GitHub's `ubuntu-24.04` runner: 4 CPUs, 16 GB, Islestone's Postgres image behind PgBouncer in transaction mode, Redis, the standalone build), by a small in-house script, blocking only the nightly 100k run.
+
+### The harness
+
+`node scripts/perf/run.mjs` (plain Node: `undici` and `perf_hooks`, already installed; the browser timings through `@playwright/test`'s Chromium). It needs the built app on the seeded database: `scripts/perf/serve.sh start` runs the standalone server (`npm run build` first) with rate limits off (`RATE_LIMIT_ENABLED=0`: 200 samples a minute would trip the read tier) and nothing else changed from production, and it must have the seed's `DATA_ENCRYPTION_KEY`, because a workspace's data key is wrapped by it and the seed's email hashes are derived from it.
+
+1. **Signs in** through NextAuth's credentials flow (the CSRF token, then the callback, as the sign-in page posts it) as the seed's heavy member (`member003@perf-<shape>.seed.invalid`, `SEED_PASSWORD`), and checks the session names that member and the workspace. The map asked for "a member with a typical load"; only the owner and the heavy member have passwords, and the heavy member (about a fifth of the assigned items, so My Work's worst case) is the stricter choice.
+2. **Finds its targets through the API**: the first project (`AA`), the largest (`AT`, 20,000 items at 100k), its team's states, the project's select field, the item of the first page with the most sub-items and comments (as `tests/perf/perf-world.ts` picks), open items for the writes, and the largest timeline scope the read accepts (at most 5,000 items: the workspace's open items at 10k, a project of about 4,200 at 100k; the 5,000-item project H3 names is not in the seed).
+3. **Measures each scenario** of `budgets.json`: 20 warm-up requests, then 200 sequential samples (50 for the bulk change, which takes a second each), each timed from the request to the last byte of its body with `accept-encoding: gzip`, as a browser waits for it; p50 and p95 through `perf_hooks.createHistogram`. Reads first, then the concurrent pass, then the browser, then the writes, so the rows the writes add and the vacuum they cause never sit under a read's figures.
+4. **The concurrent pass** (reported, never budgeted): 10 clients, 25 rounds each over a project's list, a board column, the palette search and the detail.
+5. **The browser timings** (`--browser`, reported only; 2 warm-up runs, then 20, each in a fresh page of one signed-in context): navigation to the list's first row, navigation to every board column's first card in the largest project, a card's click to the sheet's title (a list row's title links to the full page, and clicking the row selects it, so the sheet is opened from a card, as `tests/e2e/work-items.spec.ts` opens it), and navigation to the timeline's first bars. The layout is set in local storage before the page loads, as a returning member's choice is.
+
+It writes `perf-summary.json` and `perf-summary.md` to `--out` (`PERF_REPORT_DIR`, else `perf-report`) and the Markdown to the job summary. Exit 0 measured (and within budget when enforced), 1 refused or missed, 2 a usage error or no sign-in. `--only a,b`, `--samples`, `--warmup`, `--browser-runs` and `--concurrency-clients 0` shorten a local run; an enforced run uses none of them.
+
+### What it refuses
+
+**A run that measured nothing fails, everywhere** (decision 168; inflect-compliance's k6 gate measured a month of signed-out requests as green): a scenario with fewer successful samples than it asked for (a failed or signed-out request is not a sample), an empty histogram, a response its own check refused (a list with no rows, a detail of another item, a timeline without rows), or a browser scenario that did not reach its mark on every run. `lib.mjs`'s `refusalsOf`; `tests/unit/perf/harness.test.ts`.
+
+**A budget** fails only an enforced run (`--enforce`, the nightly 100k): a figure above its budget plus the 25 % tolerance is a miss, the scenario is re-run once, and the run is red only if both attempts missed. **The ratio rules** (`--compare` the 10k summary of the same night) are judged with the same tolerance: the detail's p95 at 100k within 1.2× of 10k's (it must not depend on the workspace's size), a project's first page within 1.5× (keyset pagination is nearly flat); a rule with no baseline is never passed.
+
+**A known finding** is a scenario's `knownFinding` in `budgets.json` (its id, the shapes it holds at, why): its miss is reported and never red, and the night it measures within its budget the run is red until the marker is removed with the fix: the twin of the plan checks' `knownFinding`.
+
+### The budgets (decision 167)
+
+`scripts/perf/budgets.json` is their one owner; `tests/unit/perf/harness.test.ts` holds every one at or below the decided table, so a budget only goes down. In milliseconds, p50 / p95, measured on the development machine (4 CPUs, 16 GB, Docker; not the reference runner), 10k on a freshly restored seed and 100k on a fresh seed after one earlier run:
+
+| Scenario (what is sent) | 10k budget | 10k measured | 100k budget | 100k measured |
+|---|---:|---:|---:|---:|
+| List, a project's first page of 50, manual order | 80 / 200 | 29 / 37 | 100 / 250 | 24 / 33 |
+| List, the workspace, two filters (open, high and urgent), by due date | 120 / 300 | 34 / 39 | 180 / 450 | 27 / 35 |
+| List, sorted by a select field | 150 / 350 | 38 / 48 | 250 / 600 | 47 / 60 |
+| List with `q` (titles, stemmed titles, contents) | 150 / 350 | 108 / 135 | 250 / 600 | **762 / 846** (F3) |
+| Board, a column of the largest project | 80 / 200 | 28 / 33 | 100 / 250 | 27 / 35 |
+| Board, first load: the page, then every column at once (wall clock) | 250 / 500 | 120 / 146 | 300 / 700 | 131 / 165 |
+| Search, the palette (`limit=20`) | 100 / 250 | 93 / 130 | 200 / 500 | **793 / 907** (F3) |
+| Detail, the item | 50 / 120 | 22 / 28 | 50 / 120 | 20 / 30 |
+| Detail, what the sheet loads at once: item, comments, activity, sub-items, fields | 150 / 350 | 41 / 55 | 150 / 350 | 48 / 75 |
+| My Work, six sections at once | 300 / 600 | 62 / 81 | 400 / 800 | 74 / 106 |
+| Timeline read, the largest scope under 5,000 items (H3's budget, reported) | 400 / 900 | 395 / 480 | 400 / 900 | 228 / 318 |
+| Create with a description | — / 400 | 45 / 65 | — / 400 | 41 / 51 |
+| Edit the title (`If-Match`) | — / 400 | 39 / 57 | — / 400 | 35 / 43 |
+| Move on the board (another state) | — / 400 | 49 / 67 | — / 400 | 40 / 49 |
+| Reorder | — / 400 | 50 / 73 | — / 400 | 38 / 48 |
+| Bulk state change of 100 items | — / 2,000 | 1,110 / 1,313 | — / 2,000 | 1,279 / 1,426 |
+
+The writes have a p95 budget only, as the table decided. An earlier 10k run measured the palette search's p50 at 101 ms against 100 (within the tolerance, and 10k is never enforced). The ratio rules held: the detail's p95 1.10× (1.20× in an earlier run), a project's first page 0.92×. The timeline's answer is 3.4 to 3.9 MB, 475 to 545 KB gzipped (3.1's budget: 1.5 MB and 250 KB; reported in the summary, issue #73).
+
+The concurrent pass (10 clients, 1,000 requests): 54 requests a second at 10k, 17 at 100k, where the palette search's p95 under load is 3.1 s (F3); the other three stay near 100 ms.
+
+| Browser (reported only) | Target p95 | 10k p50 / p95 | 100k p50 / p95 |
+|---|---:|---:|---:|
+| Navigation to the list's first row | 1,300 | 635 / 801 | 581 / 684 |
+| Navigation to every column's first card | 2,000 | 843 / 1,211 | 675 / 1,038 |
+| A card's click to the sheet's title | 600 | 230 / 376 | 228 / 319 |
+| Navigation to the timeline's first bars | 2,000 | **2,437 / 2,605** | **2,052 / 2,144** |
+
+The timeline's first bars miss 3.1's 2.0 s (issue #73, H3's; measured here, not redesigned). A first 100k run measured the list and board navigations at 2.7 and 3.8 s p95 because they ran right after 200 creates and 50 bulk changes of 100 items, under the vacuum those caused; that is why the writes now run last.
+
 ## In CI
 
-`ci.yml`'s `Performance (10k)` job, on every pull request: Postgres with `pg_stat_statements` and PgBouncer (`scripts/ci-postgres.sh islestone_perf --pgbouncer --pg-stat-statements`); the cached dump restored, or the shape seeded, dumped and cached; the restored seed verified; then `npm run test:perf`, blocking. Locally the steps after `npm ci` took about 25 s with a warm cache (restore and verify 11 s, the perf project 11 s) and about 2.5 minutes cold.
+`ci.yml`'s `Performance (10k)` job, on every pull request: Postgres with `pg_stat_statements` and PgBouncer (`scripts/ci-postgres.sh islestone_perf --pgbouncer --pg-stat-statements`); the cached dump restored, or the shape seeded, dumped and cached; the restored seed verified; then `npm run test:perf`, blocking; then (H2b) the build job's app started (`scripts/perf/serve.sh start`, a Redis service beside it) and the harness at 10k: a scenario that measured nothing fails the job, latency is reported in the job summary and `perf-report-10k`. Locally the steps after `npm ci` took about 25 s with a warm cache (restore and verify 11 s, the perf project 11 s) and about 2.5 minutes cold, and the harness about 6 minutes without the browser timings.
+
+The seed and the app share one throwaway `DATA_ENCRYPTION_KEY` (set on the job, the same in `perf.yml`); the dumps' cache keys carry `k1` for it, so a change of key changes the suffix too.
 
 Locally, beside another run, under other container names and ports:
 
@@ -96,12 +158,23 @@ CI_PG_PREFIX=islestone-perf PG_PORT=55432 PGBOUNCER_PORT=56432 scripts/ci-postgr
 export DATABASE_URL=postgresql://islestone:islestone_ci@127.0.0.1:56432/islestone_perf
 export DIRECT_DATABASE_URL=postgresql://islestone:islestone_ci@127.0.0.1:55432/islestone_perf
 export AUTH_SECRET=local-throwaway NEXT_PUBLIC_APP_URL=http://127.0.0.1:3100 LOG_LEVEL=warn   # pragma: allowlist secret
+export DATA_ENCRYPTION_KEY=local-perf-data-encryption-key-not-a-secret   # pragma: allowlist secret
 npm run migrate:deploy && npm run seed:scale -- --shape 10k
 docker exec islestone-perf-postgres psql -U islestone -d islestone_perf -c 'CREATE EXTENSION pg_stat_statements'
 npm run test:perf
+# The latency harness: the built app on the seed, with a Redis (here the local compose one).
+export REDIS_URL=redis://:islestone_dev@127.0.0.1:6379   # pragma: allowlist secret
+npm run build && scripts/perf/serve.sh start
+node scripts/perf/run.mjs --shape 10k            # add --browser (PW_CHROMIUM_PATH for a preinstalled Chromium), --enforce
+scripts/perf/serve.sh stop
 ```
 
-The create scenario adds five items to the seeded workspace, so re-verify only a fresh seed or a restored dump.
+Export `DATA_ENCRYPTION_KEY` before seeding: the seed wraps each workspace's data key and hashes its emails with it, and the app must read them with the same key. The create scenario adds five items to the seeded workspace, and the harness's writes add and change more, so re-verify only a fresh seed or a restored dump, and restore the dump before a run whose figures you will compare.
+
+
+## The nightly run (H2b)
+
+`.github/workflows/perf.yml`, nightly at 02:41 UTC (off the hour, away from DAST's 03:17): the app built, Postgres and PgBouncer as above, a Redis service and Playwright's Chromium; then the 10k shape (cached dump, verified) and the harness at 10k, reported, as the ratio rules' baseline; the database emptied (`scripts/perf/nightly-seed.sh reset`); the 100k shape (`perf-seed-100k-k1-<hash>`; a cold seed takes about 17 minutes); the plan checks and statements per request at 100k, blocking, with the 100k buffer budgets; and the harness at 100k with `--enforce`, `--compare` and `--browser`. `perf-summary-100k` (both shapes' summaries, the plans and the server's log) is kept 90 days, so a trend can be read. A red night (any step) runs the `report` job, which runs no repository code and alone holds `issues: write`: it opens the issue "Nightly performance run is red", or comments on it when it is open, with the night's summary. `workflow_dispatch` runs either shape (budgets enforced at 100k only); a push to `main` runs 10k for the job summary, reported. Every action is pinned by commit.
 
 ## The 100k run (once, in H2a)
 
@@ -120,6 +193,25 @@ The perf project ran once against the 100k shape (`PERF_SHAPE=100k`, both URLs d
 
 The F1 and F2 rows are the numbers before their fixes (decision 245, issues #78 and #79); the fixes were measured at 10k only (below). The content and title reads now grow with the matches rather than the workspace, and a rebuild page with its own 500 rows; H2b's 100k run measures them again.
 
+## The 100k budgets (H2b)
+
+The plan checks' `maxBuffers100k` (`tests/perf/plan-checked-queries.ts`), judged by the nightly run: about twice what H2b measured on the 100k seed (two runs, the larger), and never below the query's 10k budget. Every plan rule held at 100k (no sequential scan on a guarded table, every expected index used, each search index searched with its operator), and every statements-per-request count equalled 10k's. The first pages stayed flat (a project's list 386 buffers, the workspace's 453, a board column 408, My Work's assigned 555, the detail 33). What grows with the workspace, and why:
+
+| Query | 100k measured | 100k budget | Why |
+|---|---:|---:|---|
+| The list's `q` | 90,394 | 181,000 | F3: every matching vector is ranked |
+| Search: contents and snippets | 86,569 | 174,000 | F3 |
+| A member's removal | 43,855 | 88,000 | the lock takes every row of the heaviest member |
+| A list sorted by a custom field | 12,157 | 25,000 | the field's value rows in value order, then the items |
+| Items in a state | 10,340 | 21,000 | a state's delete locks every item in it |
+| My Work: to review | 7,687 | 16,000 | the sample's few reviewer rows read whole (`noIndexBecause`) |
+| Search: titles | 6,552 | 14,000 | grows with the title matches |
+| The search-index rebuild | 4,930 | 10,000 | one page of each kind, whatever the size (#79's fix holds) |
+
+The goal and initiative reads of 3.2a and 3.2b, measured once at 100k on the rebased tree (the seed holds no goals, so the goal paths name none): the goal filter 1,470 buffers (budget 3,000), the initiative filter 363 (750), the ancestry 15 (50), the goal purge's unlinked items 3 (50), progress by the project path 41 on `WorkItem_progress_project_path` (100), progress by the direct goal path 4 (50).
+
+The statement counts needed nothing new, but the statements suite's fixture reads take more than a test's 120 s on a cold 100k cache, so its `beforeAll` has 600 s, as the plan checks' has.
+
 ## Findings
 
 What H2a's checks found on the 10k seed (decision 172: fixed before the gate closes, or reported when the fix is large).
@@ -130,4 +222,6 @@ What H2a's checks found on the 10k seed (decision 172: fixed before the gate clo
 | — | A member's removal locked its rows with one `OR` across `assigneeId`, `waitingOnUserId`, a person value and the reviewer rows, which no index serves. | **Fixed:** `WorkItemRepository.lockItemsOfPerson` takes a `UNION` of one indexed read per reason; the lock itself still takes every row it names. |
 | F1 | **Full-text and trigram conditions are filters under row-level security.** `@@` (`ts_match_vq`), `ILIKE` (`texticlike`) and `%` are not `LEAKPROOF`, so PostgreSQL may not use a user condition built on them as an index condition ahead of the RLS policy's qual: `WorkItem_search_title_fts`, `WorkItem_search_title_trgm` and `SearchVector_search_lexemes` were read on `tenantId` alone, every row of the workspace fetched and filtered (36,481 vectors for a search matching 3,264). Every search and the list's `q` cost grew with the workspace: at 100k one palette search touched 511,194 buffers. `tests/integration/search.test.ts` checked the plans as the superuser, so it never saw it. | **Fixed** by owner decision 245 (issue #78): every search read is a scoped `SECURITY DEFINER` function (migration `20261214120000_search_definer_functions`; `docs/search.md`, "The search functions"), owned by a NOLOGIN `BYPASSRLS` role with column `SELECT` only, which reads the workspace from `app.tenant_id` and applies `deletedAt` and visibility itself; nothing is `LEAKPROOF` and row-level security is unchanged. Each GIN index is now searched with its operator in the index condition, and a broad content match checks liveness index-only (`WorkItem_search_live_ids`, `Comment_search_live_ids`). At 10k: the list's `q` 16,378 → 3,535 buffers, the content search with its snippets 14,298 → 2,433, the title search 1,193 → 907 (budgets 7,000, 5,000 and 1,800). `search.test.ts` and `search-vectors.test.ts` now check the functions' own plans as `app_user`. |
 | F2 | **The search-index rebuild's stale-page reads hash-joined the workspace's whole vector table** (`staleDescriptionPage`, `staleCommentPage`: sequential scans of `SearchVector` and `Comment`, 11,650 buffers at 10k for the two first pages). Nightly with nothing stale that was one pass; a forced rebuild (the admin route) repeated it for every page of 500, quadratic in the workspace. | **Fixed** (issue #79): a page is a keyset read of the next 500 sources after its cursor (`Comment_search_live_ids` for comments, `WorkItem_pkey` for items) with each one's vector probed by its own key (`SearchVector_one_per_description`, `SearchVector_one_per_comment`); the page returns its stale ids and the next cursor, and the job walks every page, so a run is linear. One page of each kind: 4,944 buffers (budget 10,000), whatever the workspace's size. |
-| — | The workspace-wide list sorted by updated, created, priority or key reads every matching item before sorting (as the three fixed reads did). Not in the map's scenario list; each would need one more `WorkItem` index. | **Reported** for H2b's 100k measurements to decide. |
+| — | The workspace-wide list sorted by updated, created, priority or key reads every matching item before sorting (as the three fixed reads did). Not in the map's scenario list; each would need one more `WorkItem` index. | **Decided by H2b's measurement: no index.** At 100k each answers its first page in 94 to 134 ms (manual order 28 ms), within the workspace-wide list's budget (180 / 450 ms). |
+| F3 | **Search at 100k grows with its matches.** The content match (`search_item_contents`) ranks every matching vector before it takes its limit, and the list's `q` reads up to 1,000 ranked matches: the measured query (`задачата проекта`) matches 33,356 of the 100k workspace's 370,476 vectors (28,756 items), so the palette search and the list's `q` take about 0.8 s p50 and 0.85 to 1.0 s p95 against 500 and 600 ms, and 3.1 s p95 under ten clients; at 10k (about a tenth of the matches) both are within budget. The seed's small word list makes every word common, so a real workspace's query matches fewer items; a common word still behaves like this. The plans hold their indexes (decision 245's fix); the cost is the ranking. Fixing it changes what search returns (rank a bounded set of candidates, or rank only titles first): a search design decision. | **Decided, not yet fixed:** owner decision 250 (2026-11-26): content search ranks only a bounded candidate set, at most about 2,000 matches walked most recently updated first, then ranked; titles and keys are still searched fully, and the interface says it is showing recent matches. The fix is its own pull request. Until it lands F3 stays a known finding at 100k in `budgets.json` (`list-q`, `search`), so the nightly reports it and turns red the night it is fixed, until the marker is removed. |
+| #73 | **The timeline at 5,000 items**, H3's (3.1's "Performance"). The read is within its latency budget at both sizes (p95 480 ms at 10k on 4,515 items, 318 ms at 100k on 4,399), but its answer is 3.4 to 3.9 MB, 475 to 545 KB gzipped (budget 1.5 MB and 250 KB), and its first bars take 2.1 to 2.6 s p95 in the browser (budget 2.0 s). | **Reported** (issue #73; the timeline read is `enforced: false` with H3's numbers until H3). |

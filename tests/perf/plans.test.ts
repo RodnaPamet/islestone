@@ -35,7 +35,7 @@ import { sortValuesOf, type SortCursor } from '@/lib/pagination';
 import type { ListSort } from '@/lib/work-items/list-sorts';
 
 import { conditionMisses, GUARDED_TABLES, judgePlans, type CapturedPlan, type PlanVerdict } from './plan-capture';
-import { PLAN_CHECKED_QUERIES, type PlanCheckedQuery } from './plan-checked-queries';
+import { bufferBudgetAt, PLAN_CHECKED_QUERIES, type PlanCheckedQuery } from './plan-checked-queries';
 import { directClient, loadPerfWorld, type PerfWorld } from './perf-world';
 
 type Runner = (w: PerfWorld, db: PrismaTx, ctx: RequestContext, v: ProjectVisibility) => Promise<unknown>;
@@ -180,7 +180,7 @@ const RUNNERS: Record<string, Runner> = {
 describe(`plan checks on the seeded database (PERF_SHAPE=${process.env.PERF_SHAPE || '10k'})`, () => {
     let direct: PrismaClient;
     let world: PerfWorld;
-    const verdicts: Array<{ name: string; verdict: PlanVerdict; budget: number }> = [];
+    const verdicts: Array<{ name: string; verdict: PlanVerdict; budget: number | null }> = [];
     const trees: Record<string, CapturedPlan[]> = {};
 
     beforeAll(async () => {
@@ -250,7 +250,7 @@ describe(`plan checks on the seeded database (PERF_SHAPE=${process.env.PERF_SHAP
                 }),
             ).then((plans) => {
                 trees[q.name] = plans;
-                verdicts.push({ name: q.name, verdict: judgePlans(plans, q.indexes), budget: q.maxBuffers });
+                verdicts.push({ name: q.name, verdict: judgePlans(plans, q.indexes), budget: bufferBudgetAt(q, world.shape) });
                 return plans;
             });
             captured.set(q.name, hit);
@@ -259,12 +259,13 @@ describe(`plan checks on the seeded database (PERF_SHAPE=${process.env.PERF_SHAP
     };
 
     for (const q of PLAN_CHECKED_QUERIES) {
-        it(`${q.name}: statements captured, its indexes used, within ${q.maxBuffers} buffers at 10k`, async () => {
+        it(`${q.name}: statements captured, its indexes used, within its buffer budget (${q.maxBuffers} at 10k, ${q.maxBuffers100k} at 100k)`, async () => {
             const verdict = judgePlans(await plansOf(q), q.indexes);
             expect({ name: q.name, statements: verdict.statements > 0 }).toEqual({ name: q.name, statements: true });
             expect({ name: q.name, missingIndexes: verdict.missingIndexes, used: verdict.indexes }).toEqual({ name: q.name, missingIndexes: [], used: verdict.indexes });
-            // The budgets are the 10k shape's; elsewhere the buffers are reported only (H2b brings 100k's).
-            if (world.shape === '10k') expect({ name: q.name, buffers: verdict.buffers <= q.maxBuffers, measured: verdict.buffers }).toEqual({ name: q.name, buffers: true, measured: verdict.buffers });
+            // The 10k budgets block every pull request, the 100k ones the nightly (H2b); another shape is reported only.
+            const budget = bufferBudgetAt(q, world.shape);
+            if (budget !== null) expect({ name: q.name, buffers: verdict.buffers <= budget, measured: verdict.buffers, budget }).toEqual({ name: q.name, buffers: true, measured: verdict.buffers, budget });
         });
 
         const seqScans = async () => {
