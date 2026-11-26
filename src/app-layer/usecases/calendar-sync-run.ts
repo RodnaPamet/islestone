@@ -13,6 +13,12 @@
  * title, a due date and one absolute `appLink` (decision 229). The pure diff
  * (`reconcileSyncedEvents`) is applied through the provider's writer.
  *
+ * THE READ-BACK (3.3c) runs first in the same run (`readBackCalendar`): a day
+ * the member moved is applied as their edit or refused and put back by this
+ * run's push, a deleted event stops being pushed, a deleted calendar moves the
+ * connection to CALENDAR_REMOVED. A connection "Recreate" put back has no
+ * calendar: the run creates one before anything else.
+ *
  * THE ORDER OF WRITES. An insert is recorded BEFORE it is sent (no remote id),
  * then confirmed; so a crash after the provider created the event leaves a row
  * that the next run looks up and adopts, never a second event. A remote delete
@@ -41,7 +47,7 @@ import { buildTenantSystemJobContext, resolveMemberContext } from '../context-sy
 import { reconcileSyncedEvents, teardownActions, type DesiredSyncedEvent, type RecordedSyncedEvent, type SyncAction } from '../domain/calendar-sync';
 import { formatKey } from '../domain/work-item-key';
 import { logEvent } from '../events/audit';
-import { IntegrationAuthError, IntegrationRateLimitedError } from '../integrations/http-errors';
+import { CalendarGoneError, IntegrationAuthError, IntegrationRateLimitedError } from '../integrations/http-errors';
 import { parseCalendarToken, resolveCalendarAccessToken, type CalendarToken } from '../integrations/providers/calendar/token';
 import { googleWriter, graphWriter, type CalendarWriter } from '../integrations/providers/calendar/writer';
 import { appLink } from '../notifications/app-link';
@@ -51,6 +57,7 @@ import { CalendarSyncRepository, type SyncedEventRow } from '../repositories/Cal
 import { MilestoneRepository } from '../repositories/MilestoneRepository';
 import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import type { RequestContext } from '../types';
+import { markCalendarRemoved, readBackCalendar, type ReadBackResult } from './calendar-read-back';
 import { enqueueConnectionSync, enqueueTeardowns } from './calendar-sync-enqueue';
 import { microsoftConsentGranted } from './calendar-sync-settings';
 import { isCalendarSyncOpen, isProviderConfigured } from '@/lib/calendar-sync/switch';
@@ -128,7 +135,7 @@ export function writerFor(provider: CalendarProvider, accessToken: string): Cale
 }
 
 function isConnectionLevel(err: unknown): boolean {
-    return err instanceof IntegrationAuthError || err instanceof IntegrationRateLimitedError;
+    return err instanceof IntegrationAuthError || err instanceof IntegrationRateLimitedError || err instanceof CalendarGoneError;
 }
 
 export interface ApplyCounts {
@@ -232,6 +239,8 @@ export interface CalendarSyncResult {
     outcome: CalendarSyncOutcome;
     counts?: ApplyCounts;
     itemsInWindow?: number;
+    /** The read-back's result (3.3c), when it ran. */
+    readBack?: ReadBackResult;
 }
 
 /** Move a connection to DISCONNECTING and queue its teardown (a member gone, the switch off, the consent withdrawn). */
@@ -270,7 +279,7 @@ export async function runCalendarSync(input: { tenantId: string; connectionId: s
     }
 
     const token = parseCalendarToken(await runInTenantReadContext(sys, (db) => CalendarSyncRepository.tokenOf(db, sys, connection.id)));
-    if (!token || !connection.externalCalendarId) {
+    if (!token) {
         recordCalendarSyncOutcome({ provider: connection.provider, outcome: 'failed' });
         return { outcome: 'failed' };
     }
@@ -282,18 +291,48 @@ export async function runCalendarSync(input: { tenantId: string; connectionId: s
             now: now.getTime(),
             persist: (rotated: CalendarToken) => runInTenantContext(sys, (db) => CalendarSyncRepository.setToken(db, sys, connection.id, JSON.stringify(rotated))).then(() => undefined),
         });
+        const writer = writerFor(connection.provider, accessToken);
+        // A connection "Recreate" put back (3.3c) has no calendar yet: the run creates it.
+        let calendarId = connection.externalCalendarId;
+        if (!calendarId) {
+            const created = (await writer.createCalendar()).calendarId;
+            await runInTenantContext(sys, (db) => CalendarSyncRepository.setCalendarId(db, sys, connection.id, created));
+            calendarId = created;
+        }
+        // The read-back first (3.3c): a moved day is applied or refused before
+        // the push, so the push never overwrites a change it has not read, and
+        // a refused one is put back by this very run.
+        const window = syncWindow(now);
+        const readBack = await readBackCalendar({
+            sys,
+            member,
+            slug: state.tenant.slug,
+            connection: { id: connection.id, provider: connection.provider, calendarId, syncCursor: connection.syncCursor },
+            accessToken,
+            window: { from: dayOf(window.from), to: dayOf(window.to) },
+        });
+        if (readBack.outcome === 'calendar_removed') {
+            recordCalendarSyncOutcome({ provider: connection.provider, outcome: 'calendar_removed' });
+            return { outcome: 'calendar_removed', readBack };
+        }
         const generated = await generateDesiredEvents({ ...member, actorType: 'JOB' }, state.tenant.slug, now);
         const rows = await runInTenantReadContext(sys, (db) => CalendarSyncRepository.syncedEvents(db, sys, connection.id));
         const actions = reconcileSyncedEvents({ identity: { tenantId: input.tenantId, connectionId: connection.id }, desired: generated.events, existing: recorded(rows) });
-        const counts = await applySyncActions(sys, { id: connection.id, calendarId: connection.externalCalendarId }, writerFor(connection.provider, accessToken), actions);
+        const counts = await applySyncActions(sys, { id: connection.id, calendarId }, writer, actions);
         // Stamped only by a run that wrote to the calendar: every row write is
         // audited by the Prisma audit extension, and a quiet run every quarter
         // hour would add a row each time while changing nothing.
         if (actions.length > 0) await runInTenantContext(sys, (db) => CalendarSyncRepository.touchSynced(db, sys, connection.id, now));
         const outcome: CalendarSyncOutcome = counts.pushFailures + counts.deleteFailures > 0 ? 'failed' : actions.length > 0 ? 'pushed' : 'nothing';
         recordCalendarSyncOutcome({ provider: connection.provider, outcome });
-        return { outcome, counts, itemsInWindow: generated.itemsInWindow };
+        return { outcome, counts, itemsInWindow: generated.itemsInWindow, readBack };
     } catch (err) {
+        if (err instanceof CalendarGoneError) {
+            // The calendar went between the read and a write (or a read-only feed, never read): decision 232.
+            await markCalendarRemoved(sys, connection);
+            recordCalendarSyncOutcome({ provider: connection.provider, outcome: 'calendar_removed' });
+            return { outcome: 'calendar_removed' };
+        }
         if (err instanceof IntegrationAuthError) {
             await markRevoked(sys, connection, err);
             recordCalendarSyncOutcome({ provider: connection.provider, outcome: 'revoked' });
@@ -350,8 +389,9 @@ export async function runCalendarTeardown(input: { tenantId: string; connectionI
                 recordCalendarSyncOutcome({ provider: connection.provider, outcome: 'throttled' });
                 return { outcome: 'pending', deleted, remaining: rows.length - deleted };
             }
-            if (!(err instanceof IntegrationAuthError)) throw err;
-            // The provider refused the token: nothing more can be removed remotely.
+            if (!(err instanceof IntegrationAuthError) && !(err instanceof CalendarGoneError)) throw err;
+            // The provider refused the token, or the calendar is gone with its
+            // events (3.3c): nothing more can, or need, be removed remotely.
             reachable = false;
         }
     }

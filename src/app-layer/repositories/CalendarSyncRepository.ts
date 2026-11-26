@@ -31,6 +31,7 @@ export const connectionSelect = {
     state: true,
     scopesGranted: true,
     externalCalendarId: true,
+    syncCursor: true,
     revokedReason: true,
     lastSyncedAt: true,
     connectedAt: true,
@@ -46,6 +47,7 @@ export const syncedEventSelect = {
     clientEventId: true,
     pushedDueDate: true,
     contentHash: true,
+    remoteVersion: true,
     state: true,
 } satisfies Prisma.CalendarSyncedEventSelect;
 export type SyncedEventRow = Prisma.CalendarSyncedEventGetPayload<{ select: typeof syncedEventSelect }>;
@@ -193,6 +195,46 @@ export class CalendarSyncRepository {
         await db.calendarConnection.updateMany({ where: { id, tenantId: ctx.tenantId }, data: { externalCalendarId } });
     }
 
+    /**
+     * The read-back's cursor (Google's `syncToken`, 3.3c): on a CONNECTED row
+     * only, and only when it differs (every connection write is audited by the
+     * Prisma audit extension; an unchanged cursor writes nothing).
+     */
+    static async setCursor(db: PrismaTx, ctx: Ctx, id: string, syncCursor: string | null): Promise<number> {
+        const r = await db.calendarConnection.updateMany({
+            where: {
+                id,
+                tenantId: ctx.tenantId,
+                state: 'CONNECTED',
+                ...(syncCursor === null ? { syncCursor: { not: null } } : { OR: [{ syncCursor: null }, { syncCursor: { not: syncCursor } }] }),
+            },
+            data: { syncCursor },
+        });
+        return r.count;
+    }
+
+    /**
+     * The Islestone calendar was deleted at the provider (3.3c, decision 232):
+     * CALENDAR_REMOVED, its id and cursor cleared; the token kept, so the
+     * member can recreate it or disconnect.
+     */
+    static async markCalendarRemoved(db: PrismaTx, ctx: Ctx, id: string): Promise<number> {
+        const r = await db.calendarConnection.updateMany({
+            where: { id, tenantId: ctx.tenantId, state: 'CONNECTED' },
+            data: { state: 'CALENDAR_REMOVED', externalCalendarId: null, syncCursor: null },
+        });
+        return r.count;
+    }
+
+    /** "Recreate" (3.3c): back to CONNECTED with no calendar; the next run creates one. */
+    static async markRecreating(db: PrismaTx, ctx: Ctx, id: string): Promise<number> {
+        const r = await db.calendarConnection.updateMany({
+            where: { id, tenantId: ctx.tenantId, state: 'CALENDAR_REMOVED', tokenEncrypted: { not: null } },
+            data: { state: 'CONNECTED', externalCalendarId: null, syncCursor: null },
+        });
+        return r.count;
+    }
+
     static async touchSynced(db: PrismaTx, ctx: Ctx, id: string, at: Date): Promise<void> {
         await db.calendarConnection.updateMany({ where: { id, tenantId: ctx.tenantId, state: 'CONNECTED' }, data: { lastSyncedAt: at } });
     }
@@ -212,6 +254,18 @@ export class CalendarSyncRepository {
             take: SYNCED_EVENTS_TAKE,
             select: syncedEventSelect,
         });
+    }
+
+    /** How many events each named connection's member deleted in their calendar (the section's "Resync", 3.3c). */
+    static async removedInCalendarCounts(db: PrismaTx, ctx: Ctx, connectionIds: readonly string[]): Promise<Map<string, number>> {
+        if (connectionIds.length === 0) return new Map();
+        const rows = await db.calendarSyncedEvent.groupBy({
+            by: ['connectionId'],
+            where: { tenantId: ctx.tenantId, connectionId: { in: [...connectionIds] }, state: 'REMOVED_IN_CALENDAR' },
+            _count: { _all: true },
+            orderBy: { connectionId: 'asc' },
+        });
+        return new Map(rows.map((r) => [r.connectionId, r._count._all]));
     }
 
     static async countSyncedEvents(db: PrismaTx, ctx: Ctx, connectionId: string): Promise<number> {
@@ -282,6 +336,29 @@ export class CalendarSyncRepository {
         await db.calendarSyncedEvent.updateMany({ where: { tenantId: ctx.tenantId, connectionId: where.connectionId, ...sourceOf(where) }, data: { state, lastError } });
     }
 
+    /**
+     * A day the member moved, applied (3.3c, decision 225): the row records the
+     * new day and the event's version; its content hash stays, so the next
+     * push rewrites the event in Islestone's shape (all-day, its title and link).
+     */
+    static async recordReadBackApplied(
+        db: PrismaTx,
+        ctx: Ctx,
+        where: { connectionId: string; kind: CalendarSyncedEventKind; sourceId: string },
+        data: { pushedDueDate: Date; remoteVersion: string | null },
+    ): Promise<void> {
+        await db.calendarSyncedEvent.updateMany({
+            where: { tenantId: ctx.tenantId, connectionId: where.connectionId, ...sourceOf(where) },
+            data: { pushedDueDate: data.pushedDueDate, remoteVersion: data.remoteVersion, state: 'PUSHED', lastError: null },
+        });
+    }
+
+    /** "Resync my calendar" (3.3c, decision 232): the rows of events deleted in the calendar go, so the next push puts them back. */
+    static async dropRemovedInCalendar(db: PrismaTx, ctx: Ctx, connectionId: string): Promise<number> {
+        const r = await db.calendarSyncedEvent.deleteMany({ where: { tenantId: ctx.tenantId, connectionId, state: 'REMOVED_IN_CALENDAR' } });
+        return r.count;
+    }
+
     /** The row goes only after its remote event did. */
     static async drop(db: PrismaTx, ctx: Ctx, where: { connectionId: string; kind: CalendarSyncedEventKind; sourceId: string }): Promise<void> {
         await db.calendarSyncedEvent.deleteMany({ where: { tenantId: ctx.tenantId, connectionId: where.connectionId, ...sourceOf(where) } });
@@ -300,6 +377,15 @@ export class CalendarSyncRepository {
     }
 
     // ─── What a member's calendar names ──────────────────────────────
+
+    /** A milestone's name and its project's key (the read-back's notification), live projects only. */
+    static async milestoneLabel(db: PrismaTx, ctx: Ctx, milestoneId: string): Promise<{ name: string; keyPrefix: string } | null> {
+        const m = await db.milestone.findFirst({
+            where: { id: milestoneId, tenantId: ctx.tenantId, project: { deletedAt: null } },
+            select: { name: true, project: { select: { keyPrefix: true } } },
+        });
+        return m ? { name: m.name, keyPrefix: m.project.keyPrefix } : null;
+    }
 
     /** The key prefixes of the named projects (an event's link). */
     static async projectKeys(db: PrismaTx, ctx: Ctx, projectIds: readonly string[]): Promise<Map<string, string>> {

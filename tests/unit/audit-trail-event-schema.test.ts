@@ -45,6 +45,14 @@ describe('Audit Event Schema', () => {
             }
         });
 
+        test("accepts a calendar read-back's via and provider (3.3c, decision 225), and nothing else in their place", () => {
+            const base = { category: 'entity_lifecycle' as const, entityName: 'WorkItem', operation: 'updated' as const, changedFields: ['dueDate'] };
+            expect(EntityLifecycleSchema.safeParse({ ...base, via: 'calendar', provider: 'GOOGLE' }).success).toBe(true);
+            expect(EntityLifecycleSchema.safeParse({ ...base, via: 'calendar', provider: 'MICROSOFT' }).success).toBe(true);
+            expect(EntityLifecycleSchema.safeParse({ ...base, via: 'email' }).success).toBe(false);
+            expect(EntityLifecycleSchema.safeParse({ ...base, via: 'calendar', provider: 'YAHOO' }).success).toBe(false);
+        });
+
         test('rejects payload with missing entityName', () => {
             const payload = {
                 category: 'entity_lifecycle',

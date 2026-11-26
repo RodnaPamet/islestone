@@ -213,11 +213,26 @@ export function recordPlanLimitHit(attrs: { resource: LimitResource }): void {
 
 // ─── Calendar sync (roadmap 3.3b; ADR 0011) ───
 
-export type CalendarSyncOutcome = 'pushed' | 'nothing' | 'revoked' | 'throttled' | 'failed' | 'torn_down';
+export type CalendarSyncOutcome = 'pushed' | 'nothing' | 'revoked' | 'throttled' | 'failed' | 'torn_down' | 'calendar_removed';
 
 /** One connection's run (a push or a teardown), by provider; never a workspace or a person. */
 export function recordCalendarSyncOutcome(attrs: { provider: 'GOOGLE' | 'MICROSOFT'; outcome: CalendarSyncOutcome }): void {
     counter('calendar.sync.outcome', 'Calendar sync runs by outcome').add(1, {
+        provider: attrs.provider,
+        outcome: attrs.outcome,
+    });
+}
+
+/**
+ * The read-back (roadmap 3.3c): one day a member moved in their calendar,
+ * applied, refused (no edit right, a hidden field, a closed item, start after
+ * due, an archived project), stale (Islestone's date changed first) or a moved
+ * milestone event reverted; by provider, never a workspace or a person.
+ */
+export type CalendarSyncInbound = 'applied' | 'refused' | 'stale' | 'milestone_reverted';
+
+export function recordCalendarSyncInbound(attrs: { provider: 'GOOGLE' | 'MICROSOFT'; outcome: CalendarSyncInbound }): void {
+    counter('calendar.sync.inbound', 'Calendar changes read back by outcome').add(1, {
         provider: attrs.provider,
         outcome: attrs.outcome,
     });

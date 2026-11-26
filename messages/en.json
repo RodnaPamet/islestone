@@ -2922,7 +2922,7 @@
             "undo": "Undo",
             "loadFailed": "Calendar sync could not be loaded. Try again.",
             "syncOff": "Calendar sync is off for this workspace. An Owner or Admin turns it on in Settings.",
-            "readOnly": "You cannot edit work items here, so changes made in your calendar are not sent back: the next sync puts Islestone's dates back.",
+            "readOnly": "You cannot edit work items here, so nothing is read back from your calendar: an event you move returns to Islestone's date at the next sync.",
             "revokedHelp": "Access was withdrawn. Reconnect to resume, or remove the Islestone calendar yourself.",
             "googleRemoval": "Disconnecting removes Islestone's events and deletes its token here; it does not remove Islestone from your Google account. To do that, remove it in your Google account's third-party access, which also affects signing in with Google.",
             "capped": "{limit} of {count} items are in your calendar: the nearest ones.",
@@ -2944,7 +2944,15 @@
                 "not_authorised": "Microsoft 365 is no longer authorised for this workspace.",
                 "no_refresh_token": "The provider did not grant lasting access. Connect again and allow access.",
                 "refused": "The provider refused the connection. Try again."
-            }
+            },
+            "readBack": "Moving one of your items to another day in the calendar changes its due date here, as your own edit, while its due date has not changed in Islestone since the last sync. Milestones and anything else you change in the calendar are put back.",
+            "resync": "Resync {provider}",
+            "recreate": "Recreate the Islestone calendar",
+            "resyncQueued": "Resyncing: the events you deleted come back within a few minutes.",
+            "recreateQueued": "A new Islestone calendar is being created: your items appear within a few minutes.",
+            "actFailed": "That did not work. Try again.",
+            "calendarRemovedHelp": "The Islestone calendar was deleted from your account, so nothing is synced. Recreate it, or disconnect.",
+            "removedInCalendar": "{count, plural, one {# event you deleted in your calendar is} other {# events you deleted in your calendar are}} not put back until its due date changes. Resync to put them back."
         },
         "settings": {
             "title": "Calendar sync",

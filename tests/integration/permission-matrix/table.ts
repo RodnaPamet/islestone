@@ -149,6 +149,7 @@ export type FixtureName =
     | 'annMfaEnrollment'
     | 'calendarSyncOn'
     | 'ownCalendarConnection'
+    | 'ownRemovedCalendar'
     | 'keyRotationJob'
     | 'dekRotationJob';
 
@@ -599,6 +600,7 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         // included, a read-only feed; a guest nothing, decision 204), keyed off the caller.
         { route: 'calendar-sync/connect/route.ts', method: 'POST', key: 'work_items.view', subject: "the caller's Google calendar connection", fixture: 'calendarSyncOn', query: () => ({ provider: 'google' }), expect: READ },
         { route: 'calendar-sync/connections/route.ts', method: 'GET', key: 'work_items.view', subject: "the caller's calendar connections", expect: READ },
+        { route: 'calendar-sync/connections/route.ts', method: 'POST', key: 'work_items.view', subject: "the caller's own deleted Islestone calendar, recreated (3.3c)", fixture: 'ownRemovedCalendar', query: () => ({ provider: 'google' }), body: () => ({ action: 'recreate' }), expect: READ },
         { route: 'calendar-sync/connections/route.ts', method: 'DELETE', key: 'work_items.view', subject: "the caller's own calendar connection", fixture: 'ownCalendarConnection', query: () => ({ provider: 'google' }), expect: READ },
         // The workspace's switch and Microsoft's admin consent under integrations.manage: Owners and Admins (decision 234).
         { route: 'calendar-sync/settings/route.ts', method: 'GET', key: 'integrations.manage', subject: "the workspace's calendar sync settings", expect: ADMIN },

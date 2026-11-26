@@ -37,7 +37,7 @@ import { syncWindow } from './calendar-sync-run';
 import { CONNECT_CALLBACK_PATH, absoluteCallback, microsoftConsentGranted } from './calendar-sync-settings';
 import { CONNECT_STATE_COOKIE, newConnectNonces, sealCalendarState } from '@/lib/calendar-sync/oauth-state';
 import { isProviderConfigured } from '@/lib/calendar-sync/switch';
-import { CALENDAR_PROVIDERS, CALENDAR_SYNC_ITEM_LIMIT, type MyCalendarSyncView, type ProviderUnavailableReason } from '@/lib/calendar-sync/types';
+import { CALENDAR_PROVIDERS, CALENDAR_SYNC_ITEM_LIMIT, type CalendarConnectionAction, type MyCalendarSyncView, type ProviderUnavailableReason } from '@/lib/calendar-sync/types';
 import { runInTenantContext, runInTenantReadContext } from '@/lib/db-context';
 import { ConflictError, NotFoundError } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
@@ -72,6 +72,7 @@ export async function getMyCalendarSync(ctx: RequestContext): Promise<MyCalendar
         const syncEnabled = settings?.syncEnabled ?? false;
         const granted = microsoftConsentGranted(settings);
         const inWindow = connections.length > 0 ? await WorkItemRepository.countAssignedForCalendarSync(db, ctx, v, ctx.userId, syncWindow()) : 0;
+        const removed = await CalendarSyncRepository.removedInCalendarCounts(db, ctx, connections.map((c) => c.id));
         return {
             syncEnabled,
             readOnly: calendarFeedIsReadOnly(ctx),
@@ -85,6 +86,7 @@ export async function getMyCalendarSync(ctx: RequestContext): Promise<MyCalendar
                 connectedAt: c.connectedAt.toISOString(),
                 lastSyncedAt: c.lastSyncedAt?.toISOString() ?? null,
                 revokedReason: c.revokedReason,
+                removedInCalendar: removed.get(c.id) ?? 0,
             })),
             items: { inWindow, limit: CALENDAR_SYNC_ITEM_LIMIT },
         };
@@ -219,4 +221,57 @@ export async function disconnectCalendar(ctx: RequestContext, provider: Calendar
     });
     await enqueueTeardowns(ctx.tenantId, [connection.id]);
     return { state: 'DISCONNECTING' };
+}
+
+/**
+ * "Resync my calendar" and "Recreate" (3.3c; decision 232), the member's own
+ * connection only.
+ *
+ *   - `resync` (a CONNECTED connection): the events the member deleted in the
+ *     calendar are pushed again, and the read starts over (Google's cursor
+ *     cleared); everything else is as the next run finds it.
+ *   - `recreate` (a CALENDAR_REMOVED connection): back to CONNECTED with no
+ *     calendar; the run creates a new "Islestone" calendar and pushes into it.
+ *
+ * Both are audited and queue a run; neither calls a provider here. A
+ * connection in another state is a 409 naming it; the workspace's switch and
+ * the provider are asked as at connect.
+ */
+export async function actOnCalendarConnection(ctx: RequestContext, provider: CalendarProvider, action: CalendarConnectionAction): Promise<{ state: 'CONNECTED'; resynced: number }> {
+    assertMayConnectCalendar(ctx);
+    assertActingAsPerson(ctx, action === 'resync' ? 'Resyncing a calendar' : 'Recreating a calendar');
+    const result = await runInTenantContext(ctx, async (db) => {
+        const [settings, row] = await Promise.all([CalendarSyncRepository.settings(db, ctx), CalendarSyncRepository.connectionOfUser(db, ctx, ctx.userId, provider)]);
+        if (!row) throw new NotFoundError('No calendar is connected for this provider.');
+        const reason = unavailable(provider, settings?.syncEnabled ?? false, microsoftConsentGranted(settings));
+        if (reason) throw new ConflictError(REFUSAL[reason], { reason: REFUSAL_REASON[reason] });
+        const wanted = action === 'resync' ? 'CONNECTED' : 'CALENDAR_REMOVED';
+        if (row.state !== wanted) {
+            throw new ConflictError(
+                action === 'resync' ? 'Only a connected calendar can be resynced.' : 'The Islestone calendar was not deleted; there is nothing to recreate.',
+                { reason: 'CALENDAR_CONNECTION_STATE', state: row.state },
+            );
+        }
+        let resynced = 0;
+        if (action === 'resync') {
+            resynced = await CalendarSyncRepository.dropRemovedInCalendar(db, ctx, row.id);
+            await CalendarSyncRepository.setCursor(db, ctx, row.id, null);
+        } else if ((await CalendarSyncRepository.markRecreating(db, ctx, row.id)) === 0) {
+            throw new ConflictError('The calendar could not be recreated: connect it again.', { reason: 'CALENDAR_CONNECTION_STATE', state: row.state });
+        }
+        await logEvent(db, ctx, {
+            action: action === 'resync' ? 'CALENDAR_RESYNCED' : 'CALENDAR_RECREATED',
+            entityType: 'CalendarConnection',
+            entityId: row.id,
+            details: action === 'resync' ? 'Asked to resync a calendar' : 'Asked to recreate the Islestone calendar',
+            detailsJson:
+                action === 'resync'
+                    ? { category: 'entity_lifecycle', entityName: 'CalendarConnection', operation: 'updated', summary: 'resync' }
+                    : { category: 'status_change', entityName: 'CalendarConnection', fromStatus: 'CALENDAR_REMOVED', toStatus: 'CONNECTED' },
+            metadata: { provider, ...(action === 'resync' ? { eventsPutBack: resynced } : {}) },
+        });
+        return { id: row.id, resynced };
+    });
+    await enqueueConnectionSync(ctx.tenantId, [result.id]);
+    return { state: 'CONNECTED', resynced: result.resynced };
 }

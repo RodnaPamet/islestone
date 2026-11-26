@@ -10,6 +10,10 @@
  *     Viewer's feed is read-only, shows the callback's outcome and a
  *     revoked connection's remedy, and sends Disconnect only when the undo
  *     window closes (Undo sends nothing);
+ *   - since 3.3c (decision 232): an editor is told what is read back; a
+ *     connection with events deleted in the calendar says how many and offers
+ *     "Resync", which sends `{ action: 'resync' }` at once; a deleted Islestone
+ *     calendar offers "Recreate" beside Disconnect;
  *   - Settings → Calendar sync turns the switch on, shows counts never
  *     people, starts "Authorise Microsoft 365" and holds "Withdraw" behind the
  *     undo toast; without the key or the operator's switch it reads nothing;
@@ -78,13 +82,14 @@ describe("the member's Calendar sync section", () => {
             'GET /calendar-sync/connections': {
                 body: mine({
                     readOnly: true,
-                    connections: [{ provider: 'GOOGLE', state: 'REVOKED', connectedAt: '2026-11-20T08:00:00.000Z', lastSyncedAt: null, revokedReason: 'ACCESS_WITHDRAWN' }],
+                    connections: [{ provider: 'GOOGLE', state: 'REVOKED', connectedAt: '2026-11-20T08:00:00.000Z', lastSyncedAt: null, revokedReason: 'ACCESS_WITHDRAWN', removedInCalendar: 0 }],
                     items: { inWindow: 1240, limit: 1000 },
                 }),
             },
         });
         renderWorkspace(<CalendarSyncSection outcome="declined" />);
-        expect(await screen.findByText(/changes made in your calendar are not sent back/)).toBeInTheDocument();
+        expect(await screen.findByText(/nothing is read back from your calendar/)).toBeInTheDocument();
+        expect(screen.queryByText(/changes its due date here, as your own edit/)).toBeNull();
         expect(screen.getByRole('status')).toHaveTextContent('access was declined at the provider');
         expect(screen.getByText(/Access was withdrawn. Reconnect to resume, or remove the Islestone calendar yourself/)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Reconnect Google Calendar' })).toBeInTheDocument();
@@ -92,8 +97,38 @@ describe("the member's Calendar sync section", () => {
         expect(screen.queryByText(/1000 of 1240/)).toBeNull();
     });
 
+    it('3.3c: tells an editor what is read back, offers Resync with the deleted count, and sends it at once', async () => {
+        const connected = mine({ connections: [{ provider: 'GOOGLE', state: 'CONNECTED', connectedAt: '2026-11-20T08:00:00.000Z', lastSyncedAt: null, revokedReason: null, removedInCalendar: 2 }] });
+        const { calls } = installFetch({
+            'GET /calendar-sync/connections': { body: connected },
+            'POST /calendar-sync/connections': { body: { state: 'CONNECTED', resynced: 2 } },
+        });
+        const { container } = renderWorkspace(<CalendarSyncSection />);
+        expect(await screen.findByText(/changes its due date here, as your own edit/)).toBeInTheDocument();
+        expect(screen.getByText(/2 events you deleted in your calendar are not put back/)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Recreate the Islestone calendar' })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Resync Google Calendar' }));
+        await waitFor(() => expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ action: 'resync' }));
+        expect(calls.find((c) => c.method === 'POST')?.search.get('provider')).toBe('google');
+        expect(await axe(container)).toHaveNoViolations();
+    });
+
+    it('3.3c: a deleted Islestone calendar offers Recreate and Disconnect, not Resync', async () => {
+        const removed = mine({ connections: [{ provider: 'GOOGLE', state: 'CALENDAR_REMOVED', connectedAt: '2026-11-20T08:00:00.000Z', lastSyncedAt: null, revokedReason: null, removedInCalendar: 0 }] });
+        const { calls } = installFetch({
+            'GET /calendar-sync/connections': { body: removed },
+            'POST /calendar-sync/connections': { body: { state: 'CONNECTED', resynced: 0 } },
+        });
+        renderWorkspace(<CalendarSyncSection />);
+        expect(await screen.findByText(/The Islestone calendar was deleted from your account, so nothing is synced/)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Resync Google Calendar' })).toBeNull();
+        expect(screen.getByRole('button', { name: 'Disconnect Google Calendar' })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Recreate the Islestone calendar' }));
+        await waitFor(() => expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ action: 'recreate' }));
+    });
+
     it('sends Disconnect only when the undo window closes; Undo sends nothing', async () => {
-        const connected = mine({ connections: [{ provider: 'GOOGLE', state: 'CONNECTED', connectedAt: '2026-11-20T08:00:00.000Z', lastSyncedAt: null, revokedReason: null }], items: { inWindow: 1240, limit: 1000 } });
+        const connected = mine({ connections: [{ provider: 'GOOGLE', state: 'CONNECTED', connectedAt: '2026-11-20T08:00:00.000Z', lastSyncedAt: null, revokedReason: null, removedInCalendar: 0 }], items: { inWindow: 1240, limit: 1000 } });
         const first = installFetch({ 'GET /calendar-sync/connections': { body: connected } });
         renderWorkspace(<CalendarSyncSection />);
         expect(await screen.findByText('1000 of 1240 items are in your calendar: the nearest ones.')).toBeInTheDocument();
