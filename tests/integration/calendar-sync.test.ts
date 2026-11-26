@@ -263,10 +263,13 @@ describeFn('calendar sync, end to end against a fake provider', () => {
             expect(entities.has('CalendarSyncedEvent')).toBe(false);
             expect(entities.has('CalendarConnection')).toBe(true);
 
-            // An unchanged calendar: the next run makes no provider call.
+            // An unchanged calendar: the next run writes nothing; since 3.3c it only reads the
+            // calendar back (Google's events.list).
             const settled = fake.requests.length;
             expect((await runCalendarSync({ tenantId: a.tenantId, connectionId: ids.megConnection! })).outcome).toBe('nothing');
-            expect(fake.requests.length).toBe(settled);
+            const quiet = fake.requests.slice(settled);
+            expect(quiet.length).toBeGreaterThan(0);
+            expect(quiet.every((x) => x.method === 'GET' && x.url.includes('/events?'))).toBe(true);
         });
 
         it("a workspace's connection never pushes another workspace's items", async () => {
