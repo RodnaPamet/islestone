@@ -50,6 +50,7 @@ import {
     type TimelineRow,
     type TimelineTooLargeDetails,
 } from '@/lib/work-items/timeline';
+import { todayClock } from '@/lib/clock';
 
 /** The timeline's query: the list's filters (its order, cursor and page size do not apply). */
 export type TimelineQuery = Omit<ListWorkItemsQuery, 'order' | 'dir' | 'cursor' | 'limit'>;
@@ -143,7 +144,7 @@ export async function getWorkItemTimeline(ctx: RequestContext, query: TimelineQu
         const milestones: TimelineMilestone[] = milestoneRows.map((m) => ({ id: m.id, projectId: m.projectId, name: m.name, dueDate: dateOnly(m.dueDate) }));
 
         const data: TimelineData = {
-            asOf: fromEpochDay(todayIn(calendars.workspace.timeZone, new Date())),
+            asOf: fromEpochDay(todayIn(calendars.workspace.timeZone, todayClock(calendars.workspace.timeZone))),
             rows: [...scope.map((r) => rowOf(r, calendars, false)), ...context.map((r) => rowOf(r, calendars, true))],
             edges,
             calendars: calendars.all().map((c) => ({

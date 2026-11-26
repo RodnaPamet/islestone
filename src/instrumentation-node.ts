@@ -57,6 +57,20 @@ async function refuseUnsafeProductionStart(env: ServerEnv): Promise<void> {
         process.exit(1);
     }
 
+    // ── H2g: the E2E clock seam must not reach production ──
+    // E2E_TODAY fixes "today" for every date read (src/lib/clock.ts). Only the
+    // Playwright webServer sets it, beside NEXT_TEST_MODE=1.
+    const { checkProductionTestClock } = await import('@/lib/security/startup-test-clock-check');
+    const testClock = checkProductionTestClock({
+        NODE_ENV: env.NODE_ENV,
+        NEXT_TEST_MODE: env.NEXT_TEST_MODE,
+        E2E_TODAY: env.E2E_TODAY,
+    });
+    if (!testClock.ok) {
+        console.error('[startup] FATAL: ' + testClock.reason);
+        process.exit(1);
+    }
+
     // ── Issue #17: the rate-limit store must exist in production ──
     const { checkProductionRateLimitStore } = await import('@/lib/security/startup-rate-limit-check');
     const store = checkProductionRateLimitStore({

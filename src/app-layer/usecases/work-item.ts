@@ -130,6 +130,7 @@ import { normaliseSearchQuery } from '@/lib/search/query';
 import { isClosedCategory, requirementOf, type FieldKey, type FieldValues, type ResolvedFieldSet } from '@/lib/work-items/field-sets';
 import { isTenantSystemUserId } from '@/lib/tenant-system-user';
 import { assertFieldWrite, checkCreate, checkTypeChange, checkWrite, loadFieldSet, loadFieldSets, type LoadedFieldSet } from './field-set';
+import { todayClock } from '@/lib/clock';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────
 
@@ -369,7 +370,7 @@ export async function resolveListFiltersInTx(
     void _cursor;
     void _limit;
     const keyHit = await keyHitFor(db, ctx, query.q);
-    const today = todayInTz(new Date(), notificationsTz());
+    const today = todayInTz(todayClock(notificationsTz()), notificationsTz());
     const { conditions, sortField } = await resolveListCustomFields(db, ctx, rawConditions ?? {}, sortFieldId);
     const listFilters: WorkItemFilters = { ...filters, customFields: conditions };
     // `q` also matches stemmed titles, descriptions and comments (2.7f,
@@ -1867,7 +1868,7 @@ function movesLaterOnly(item: { startDate: Date | null; dueDate: Date | null }, 
 export async function getWorkItemMetrics(ctx: RequestContext, filters: WorkItemFilters = {}) {
     assertCanReadWorkItems(ctx);
     return runInTenantContext(ctx, async (db) =>
-        WorkItemRepository.metrics(db, ctx, await visibleProjects(ctx, db), filters, todayInTz(new Date(), notificationsTz())),
+        WorkItemRepository.metrics(db, ctx, await visibleProjects(ctx, db), filters, todayInTz(todayClock(notificationsTz()), notificationsTz())),
     );
 }
 

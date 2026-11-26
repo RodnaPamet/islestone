@@ -90,6 +90,7 @@ import { logger } from '@/lib/observability/logger';
 import { permissionsForMembership } from '@/lib/permissions';
 import { clampLimit, computeKeysetPage, decodeCursor, InvalidCursorError, type CursorPayload } from '@/lib/pagination';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { todayClock } from '@/lib/clock';
 
 // ─── Shapes ───────────────────────────────────────────────────────────────
 
@@ -133,7 +134,7 @@ export function readStoredAnswers(raw: string | null): StoredAnswer[] {
 }
 
 function today(): string {
-    return dayKeyInTz(new Date(), notificationsTz());
+    return dayKeyInTz(todayClock(notificationsTz()), notificationsTz());
 }
 
 function triagePreconditionRequired(): AppError {

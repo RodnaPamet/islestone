@@ -40,6 +40,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { AppError, ConflictError, badRequest, notFound } from '@/lib/errors/types';
 import { logger } from '@/lib/observability/logger';
 import { tenantMyWorkPath, tenantWorkItemPath } from '@/lib/work-item-paths';
+import { todayClock } from '@/lib/clock';
 
 /** `YYYY-MM-DD` of a date-only column, or null. */
 export function dateOnly(d: Date | null | undefined): string | null {
@@ -393,7 +394,7 @@ export async function emitDueBell(
                     assigneeUserId: item.assigneeId,
                     waitingOnUserId: item.waitingOnUserId ?? null,
                 },
-                new Date(),
+                todayClock(notificationsTz()),
                 notificationsTz(),
             ),
         );

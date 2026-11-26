@@ -51,9 +51,10 @@ import { ConflictError, badRequest, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { ProjectTemplateContentSchema, TEMPLATE_LIMITS, type ProjectTemplateContent } from '@/lib/schemas/template';
 import type { ProjectTemplateSummary } from '@/lib/work-items/types';
+import { todayClock } from '@/lib/clock';
 
 function today(): Date {
-    return todayInTz(new Date(), notificationsTz());
+    return todayInTz(todayClock(notificationsTz()), notificationsTz());
 }
 
 function clean(raw: string): string {

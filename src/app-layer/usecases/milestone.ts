@@ -43,12 +43,13 @@ import { ConflictError, badRequest, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { MILESTONE_NAME_MAX } from '@/lib/schemas/milestone';
 import type { MilestoneData, MilestoneProgress, ViewMilestone } from '@/lib/work-items/types';
+import { todayClock } from '@/lib/clock';
 
 /** The most items one milestone delete clears (far above a real milestone). */
 export const MILESTONE_CLEAR_CAP = 5_000;
 
 function today(): Date {
-    return todayInTz(new Date(), notificationsTz());
+    return todayInTz(todayClock(notificationsTz()), notificationsTz());
 }
 
 export function toViewMilestone(m: MilestoneRow): ViewMilestone {

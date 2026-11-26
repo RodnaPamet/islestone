@@ -33,6 +33,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { ConflictError, badRequest, notFound } from '@/lib/errors/types';
 import type { SetRecurrenceInput } from '@/lib/schemas/recurrence';
 import type { RecurrenceData, WorkItemSeriesData } from '@/lib/work-items/types';
+import { todayClock } from '@/lib/clock';
 
 export function toRecurrenceData(row: RecurrenceRow): RecurrenceData {
     return {
@@ -87,7 +88,7 @@ export async function getWorkItemSeries(ctx: RequestContext, itemId: string): Pr
 export async function setWorkItemRecurrence(ctx: RequestContext, itemId: string, input: SetRecurrenceInput): Promise<RecurrenceData> {
     assertCanSetRepeats(ctx);
     if (input.endsOn && input.maxOccurrences) throw badRequest('Give an end date or a number of times, not both.');
-    const today = todayInTz(new Date(), notificationsTz());
+    const today = todayInTz(todayClock(notificationsTz()), notificationsTz());
     return runInTenantContext(ctx, async (db) => {
         const item = await loadWritableItem(db, ctx, await visibleProjects(ctx, db), itemId);
         if (!item.dueDate) {

@@ -51,12 +51,13 @@ import { runInTenantContext } from '@/lib/db-context';
 import { ConflictError, badRequest, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import type { BurnUpData, CycleCounts, CycleData, CycleScheduleData, ViewCycle } from '@/lib/work-items/types';
+import { todayClock } from '@/lib/clock';
 
 /** The most items one cycle delete clears (an upcoming cycle; far above a real one). */
 export const CYCLE_CLEAR_CAP = 5_000;
 
 function today(): Date {
-    return todayInTz(new Date(), notificationsTz());
+    return todayInTz(todayClock(notificationsTz()), notificationsTz());
 }
 
 export function toViewCycle(c: CycleRow, on: Date): ViewCycle {
@@ -150,7 +151,7 @@ export async function getCycleBurnUp(ctx: RequestContext, id: string, now: Date 
     return runInTenantContext(ctx, async (db) => {
         const cycle = await CycleRepository.getById(db, ctx, id);
         if (!cycle) throw notFound('Cycle not found');
-        const on = todayInTz(now, tz);
+        const on = todayInTz(todayClock(tz, now), tz);
         if (on.getTime() < cycle.startsOn.getTime()) return { points: [], truncated: false };
         const ids = await CycleRepository.itemIdsEverInCycle(db, ctx, cycle.id);
         const truncated = ids.length > BURN_UP_ITEM_CAP;

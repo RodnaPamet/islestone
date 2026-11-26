@@ -33,6 +33,7 @@ import type { RequestContext } from '../types';
 import type { PrismaTx } from '@/lib/db-context';
 import { AppError } from '@/lib/errors/types';
 import type { ProgressSummary } from '@/lib/goals/types';
+import { todayClock } from '@/lib/clock';
 
 /** The projects one goal's or initiative's progress counts at most (the `goalId` filter's cap, 3.2a). */
 export const GOAL_PROGRESS_PROJECT_CAP = 1_000;
@@ -53,7 +54,7 @@ export const NO_SUMMARY: ProgressSummary = Object.freeze({ progress: null, late:
 /** Today, as an epoch day, in the workspace calendar's zone (3.1, decision 191). */
 export async function workspaceToday(db: PrismaTx, ctx: Pick<RequestContext, 'tenantId'>): Promise<number> {
     const calendars = await resolveWorkingCalendars(db, ctx, []);
-    return todayIn(calendars.workspace.timeZone, new Date());
+    return todayIn(calendars.workspace.timeZone, todayClock(calendars.workspace.timeZone));
 }
 
 function summaryOf(progress: Progress | null, projectCount: number, dueDate: Date | null, today: number): ProgressSummary {
