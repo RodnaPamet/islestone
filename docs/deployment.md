@@ -710,6 +710,20 @@ registers its owner with a random address, not a timestamp, because ZAP
 reports a Unix timestamp in a signed-in page (10096) and the address is on
 every one.
 
+Since Hardening H2f the scan reads the public intake surface too (owner
+decision 178): the run opens public forms (`INTAKE_PUBLIC_FORMS=1`), publishes
+one in its workspace, and `.zap/public-intake-setup.mjs` writes the requests a
+browser would make (the page `/f/<publicId>`, a submission with the page's
+signed token and its proof-of-work solved, a refused one, a confirmation with
+a made-up token) to `zap-public-intake.json`; `.zap/public-intake-hook.py`
+(`--hook`) passes them through ZAP once it has started. A hook makes
+zap-baseline leave its Automation Framework plan for its classic mode, whose
+spider also follows the workspace picker's redirect to `/t/<slug>`; that
+redirect is now the middleware's, with an empty body, because as a page it
+streamed the layout's shell with the person's name and email (10044). Run
+locally against the built app on 2026-11-26 (ZAP 2.16.1, the action's
+arguments): no alert but the excused ones.
+
 `tests/guards/security-scan-deferral.test.ts` keeps them blocking: a workflow
 that holds a non-blocking scan (Trivy `exit-code` other than `"1"`, ZAP
 `fail_action` off, or `continue-on-error` on a scan or the HIGH+ step) fails
