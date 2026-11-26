@@ -32,6 +32,10 @@ export interface WorkItemListFilters {
     milestoneId?: string;
     /** Member user ids an item waits on, `none` (2.4b), or `me`: the server reads the caller (2.7a). */
     waitingOnId?: string;
+    /** Goal ids (3.2a): the server resolves each goal's subtree, through projects and items' own goals. */
+    goalId?: string;
+    /** Initiative ids (3.2a): the server resolves their projects. */
+    initiativeId?: string;
     /** `me` only: the server reads the caller from the request context. */
     watching?: 'me';
     /**
@@ -65,6 +69,8 @@ export const LIST_FILTER_KEYS = [
     'waitingOnId',
     'watching',
     'reviewerId',
+    'goalId',
+    'initiativeId',
     'parentId',
     'due',
     'q',
@@ -142,7 +148,8 @@ export function rowBelongs(filters: WorkItemListFilters, row: WorkItemRow): 'yes
     // The watcher set is not on the row: a watch or unwatch revalidates the lists.
     // `waitingOnId=me` names the caller only the server knows: a waiting-on write revalidates those lists.
     // `reviewerId` reads reviewer rows the row does not carry: a review write revalidates those lists.
-    if (f.q || f.due || f.watching || f.reviewerId || waitsOnMe(f) || f.customFields || f.cycleId?.split(',').includes('current')) return 'unknown';
+    // `goalId` and `initiativeId` resolve through the goal tree and projects only the server reads (3.2a).
+    if (f.q || f.due || f.watching || f.reviewerId || f.goalId || f.initiativeId || waitsOnMe(f) || f.customFields || f.cycleId?.split(',').includes('current')) return 'unknown';
     return 'yes';
 }
 

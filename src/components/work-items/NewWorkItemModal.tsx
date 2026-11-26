@@ -36,7 +36,7 @@ import { MentionTextarea } from './mentions/MentionTextarea';
 import { useWorkConfig } from './data/use-work-config';
 import { useWorkItemMutations } from './data/use-work-item-mutations';
 import { useItemTemplates } from './data/use-item-templates';
-import { AssigneePicker, CyclePicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker, WaitingOnPicker } from './pickers';
+import { AssigneePicker, CyclePicker, GoalPicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker, WaitingOnPicker } from './pickers';
 import { useProjectCustomFields } from './data/use-custom-fields';
 import { useFieldSet } from './data/use-field-sets';
 import { CustomFieldInput } from './fields/CustomFieldInput';
@@ -73,6 +73,8 @@ interface FormState {
     dueDate: string | null;
     cycleId: string | null;
     milestoneId: string | null;
+    /** A goal the new item names directly (3.2a, decision 211). */
+    goalId: string | null;
     /** The item template the form started from (2.5c), or none. */
     templateId: string | null;
 }
@@ -120,6 +122,7 @@ export function NewWorkItemModal({
             dueDate: null,
             cycleId: initial?.cycleId && config.cycleById.get(initial.cycleId)?.teamId === teamId ? initial.cycleId : null,
             milestoneId: initial?.milestoneId && config.milestoneById.get(initial.milestoneId)?.projectId === projectId ? initial.milestoneId : null,
+            goalId: null,
             templateId: null,
         };
     }, [config, initial, liveProjects]);
@@ -229,6 +232,7 @@ export function NewWorkItemModal({
                 dueDate: form.dueDate,
                 cycleId: form.cycleId,
                 milestoneId: form.milestoneId,
+                goalId: form.goalId,
                 customFields: form.customFields,
             });
             if (gaps.length > 0) {
@@ -254,6 +258,7 @@ export function NewWorkItemModal({
             ...(Object.keys(form.customFields).length ? { customFields: form.customFields } : {}),
             ...(form.cycleId ? { cycleId: form.cycleId } : {}),
             ...(form.milestoneId ? { milestoneId: form.milestoneId } : {}),
+            ...(form.goalId ? { goalId: form.goalId } : {}),
             ...(initial?.parentId ? { parentId: initial.parentId } : {}),
         };
         // From a template, send it and only what the person changed: the
@@ -421,6 +426,11 @@ export function NewWorkItemModal({
                                             value={form.milestoneId}
                                             onChange={(v) => set('milestoneId', v)}
                                         />
+                                    </FormField>
+                                )}
+                                {(config.goals ?? []).length > 0 && offered('goal') && (
+                                    <FormField label={t('fields.goal')} required={isRequired('goal')}>
+                                        <GoalPicker id="work-item-goal-input" value={form.goalId} onChange={(v) => set('goalId', v)} />
                                     </FormField>
                                 )}
                             </div>

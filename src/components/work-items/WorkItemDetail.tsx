@@ -51,7 +51,8 @@ import { CustomFieldInput } from './fields/CustomFieldInput';
 import { RepeatControl } from './detail/RepeatControl';
 import { PinnedAnswer, useMarkAnswer } from './detail/AnswerControls';
 import { ReviewSteps, useReviewWaitingOn } from './detail/ReviewSteps';
-import { AssigneePicker, CyclePicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker, WaitingOnPicker } from './pickers';
+import { AssigneePicker, CyclePicker, GoalPicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker, WaitingOnPicker } from './pickers';
+import { AncestryBreadcrumb } from './detail/AncestryBreadcrumb';
 
 export type DetailTab = 'overview' | 'sub-items' | 'links' | 'comments' | 'activity';
 const TABS: readonly DetailTab[] = ['overview', 'sub-items', 'links', 'comments', 'activity'];
@@ -95,7 +96,10 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
     const router = useRouter();
     const tenantHref = useTenantHref();
     const { tenantSlug, userId: viewerId } = useTenantContext();
-    const perms = usePermissions().work_items;
+    const allPerms = usePermissions();
+    const perms = allPerms.work_items;
+    // Naming a goal also asks goals.view (3.2a); without it the view configuration offers none.
+    const namesGoals = allPerms.goals?.view === true;
     const config = useWorkConfig();
     const mutations = useWorkItemMutations();
     const collab = useWorkItemCollab(workItemId);
@@ -126,6 +130,7 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                       dueDate: item.dueDate,
                       cycleId: item.cycleId ?? null,
                       milestoneId: item.milestoneId ?? null,
+                      goalId: item.goalId ?? null,
                       answerCommentId: item.answerCommentId ?? null,
                       customFields: item.customFields ?? {},
                   }
@@ -292,6 +297,16 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                     />
                 </PropertyRow>
             )}
+            {offers('goal') && (
+                <PropertyRow label={t('fields.goal')} required={requiredMark('goal')} htmlFor={`goal-${item.id}`}>
+                    <GoalPicker
+                        id={`goal-${item.id}`}
+                        value={item.goalId ?? null}
+                        disabled={!perms.edit || !namesGoals}
+                        onChange={(goalId) => void mutations.setGoal(row, goalId)}
+                    />
+                </PropertyRow>
+            )}
             <PropertyRow label={t('fields.repeat')}>
                 <RepeatControl itemId={item.id} hasDueDate={item.dueDate !== null} archived={Boolean(item.project.archivedAt)} />
             </PropertyRow>
@@ -448,6 +463,8 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
     );
 
     const meta = item && (
+        <div className="space-y-tight">
+        <AncestryBreadcrumb workItemId={item.id} onOpenItem={openItem} />
         <div className="flex flex-wrap items-center gap-2 text-xs text-content-muted">
             <span className="font-mono">{item.key}</span>
             <StateBadge name={item.state?.name ?? config.stateById.get(item.stateId)?.name} category={item.stateCategory} />
@@ -462,6 +479,7 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                     </button>
                 </span>
             )}
+        </div>
         </div>
     );
 

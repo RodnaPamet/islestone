@@ -10,6 +10,8 @@
  *
  * Written fresh for Islestone.
  */
+import { goalAffordances } from '@/app-layer/policies/goal.policies';
+import type { GoalAffordances } from '@/lib/goals/types';
 import { notFound } from 'next/navigation';
 
 import { mayManageNotificationSettings } from '@/app-layer/policies/notification-settings.policies';
@@ -30,6 +32,7 @@ export async function settingsPageAccess(
     templates: TemplateAffordances;
     manageNotificationSettings: boolean;
     recipientLists: RecipientListAffordances;
+    goals: GoalAffordances;
 }> {
     const session = await getSessionOrThrow();
     let ctx;
@@ -54,5 +57,7 @@ export async function settingsPageAccess(
         manageNotificationSettings: mayManageNotificationSettings(ctx),
         // Settings → Recipient lists (2.7e): the usecases' own predicates.
         recipientLists: recipientListAffordances(ctx),
+        // A project's initiative (3.2a): the usecases' own predicates.
+        goals: goalAffordances(ctx),
     };
 }

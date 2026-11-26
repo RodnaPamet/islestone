@@ -20,6 +20,7 @@ import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { ApiClientError, apiSend } from '@/lib/data/api-client';
 import { useTenantSWR } from '@/lib/data/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
+import type { WorkItemAncestry } from '@/lib/goals/types';
 import type { RecipientListWatchersResult } from '@/lib/recipient-lists/types';
 import type { CommentRow, LinkRow, RelationRow, WatcherRow, WorkItemDetailData } from '@/lib/work-items/types';
 
@@ -44,12 +45,18 @@ export const itemPaths = (id: string) => {
         relations: `${base}/relations`,
         links: `${base}/links`,
         activity: `${base}/activity`,
+        ancestry: `${base}/ancestry`,
     };
 };
 
 /** The detail read: the full page and the sheet both call it. */
 export function useWorkItem(id: string | null) {
     return useTenantSWR<WorkItemDetailData>(id ? itemPaths(id).item : null);
+}
+
+/** The item's ancestry (3.2a, decision 220): the breadcrumb's one read. */
+export function useWorkItemAncestry(id: string | null) {
+    return useTenantSWR<WorkItemAncestry>(id ? itemPaths(id).ancestry : null);
 }
 
 export function useWorkItemComments(id: string) {

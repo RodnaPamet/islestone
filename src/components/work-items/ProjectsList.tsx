@@ -28,12 +28,15 @@ export function ProjectsList({
     projects,
     teams,
     mayCreateProject,
+    offerInitiative = false,
 }: {
     title: string;
     projects: ViewProject[];
     teams: Array<{ id: string; name: string }>;
     /** Whether the viewer may create a project, asked on the server. */
     mayCreateProject: boolean;
+    /** Whether the create dialog offers an initiative (`goals.view`, 3.2a), asked on the server. */
+    offerInitiative?: boolean;
 }) {
     const t = useTranslations('workItems');
     const tSettings = useTranslations('settings');
@@ -88,6 +91,7 @@ export function ProjectsList({
                 <ProjectCreateDialog
                     open={creating}
                     onOpenChange={setCreating}
+                    offerInitiative={offerInitiative}
                     onCreated={(project: SettingsProject) => {
                         setCreated((prev) => [
                             ...prev,

@@ -20,6 +20,10 @@
  * create); the server applies the chosen one in the create's transaction,
  * and what it named that the workspace does not hold is shown after.
  *
+ * Sub-phase 3.2a: an optional Initiative, offered when the page's server
+ * side says the viewer may read goals (`offerInitiative`, from
+ * `goalAffordances`); the live, unarchived initiatives are read then.
+ *
  * Written fresh for Islestone.
  */
 import Link from 'next/link';
@@ -35,18 +39,21 @@ import { useToast } from '@/components/ui/hooks';
 import { Input } from '@/components/ui/input';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 
-import { refusalText, type SettingsProject, useProjectTemplates, useSettingsApi, useTeams } from './settings-data';
+import { refusalText, type SettingsProject, useInitiatives, useProjectTemplates, useSettingsApi, useTeams } from './settings-data';
 import { SettingsFormModal } from './SettingsFormModal';
 
 export function ProjectCreateDialog({
     open,
     onOpenChange,
     onCreated,
+    offerInitiative = false,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     /** Called with the created project before the dialog closes; show it here. */
     onCreated: (project: SettingsProject) => void | Promise<void>;
+    /** Offer the Initiative picker: the page's server-side `goalAffordances().view` (3.2a). */
+    offerInitiative?: boolean;
 }) {
     const t = useTranslations('settings');
     const toast = useToast();
@@ -59,7 +66,9 @@ export function ProjectCreateDialog({
     const [keyPrefix, setKeyPrefix] = useState('');
     const [templateId, setTemplateId] = useState('');
     const [dueDate, setDueDate] = useState<string | null>(null);
+    const [initiativeId, setInitiativeId] = useState('');
     const { data: templates } = useProjectTemplates(open);
+    const { data: initiativeList } = useInitiatives(open && offerInitiative);
 
     // Each opening starts empty: reset on the closed-to-open transition only,
     // never while the person types.
@@ -72,6 +81,7 @@ export function ProjectCreateDialog({
             setKeyPrefix('');
             setTemplateId('');
             setDueDate(null);
+            setInitiativeId('');
         }
     }
 
@@ -80,6 +90,10 @@ export function ProjectCreateDialog({
     // after the dialog opened.
     const chosenTeamId = teamId || teams?.[0]?.id || '';
     const teamOptions: ComboboxOption[] = (teams ?? []).map((team) => ({ value: team.id, label: team.name }));
+    const initiativeOptions: ComboboxOption[] = [
+        { value: '', label: t('projects.noInitiative') },
+        ...(initiativeList?.initiatives ?? []).map((x) => ({ value: x.id, label: x.name })),
+    ];
     const templateOptions: ComboboxOption[] = [{ value: '', label: t('projects.noTemplate') }, ...(templates ?? []).map((x) => ({ value: x.id, label: x.name }))];
 
     const submit = async (): Promise<string | null> => {
@@ -92,6 +106,7 @@ export function ProjectCreateDialog({
                 keyPrefix: keyPrefix.trim().toUpperCase(),
                 ...(templateId ? { templateId } : {}),
                 ...(dueDate ? { dueDate } : {}),
+                ...(initiativeId ? { initiativeId } : {}),
             });
             toast.success(t('projects.created', { name: value }));
             const skipped = project.fromTemplate?.skipped ?? [];
@@ -161,6 +176,17 @@ export function ProjectCreateDialog({
             <FormField label={t('projects.dueDate')} description={t('projects.dueDateHint')}>
                 <DatePicker id="project-due-date-input" value={parseYMD(dueDate)} onChange={(d) => setDueDate(toYMD(d))} clearable />
             </FormField>
+            {offerInitiative && (initiativeList?.initiatives ?? []).length > 0 && (
+                <FormField label={t('projects.initiative')} description={t('projects.initiativeHint')}>
+                    <Combobox
+                        id="project-initiative-input"
+                        selected={initiativeOptions.find((o) => o.value === initiativeId) ?? null}
+                        setSelected={(o) => o && setInitiativeId(o.value)}
+                        options={initiativeOptions}
+                        caret
+                    />
+                </FormField>
+            )}
         </SettingsFormModal>
     );
 }

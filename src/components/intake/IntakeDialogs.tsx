@@ -23,7 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { SettingsFormModal } from '@/components/settings/SettingsFormModal';
 import { useWorkConfig } from '@/components/work-items/data/use-work-config';
-import { AssigneePicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker, WaitingOnPicker } from '@/components/work-items/pickers';
+import { AssigneePicker, GoalPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker, WaitingOnPicker } from '@/components/work-items/pickers';
 import { useProjectCustomFields } from '@/components/work-items/data/use-custom-fields';
 import { useFieldSet } from '@/components/work-items/data/use-field-sets';
 import { requirementOf, type FieldKey } from '@/lib/work-items/field-sets';
@@ -63,6 +63,7 @@ function AcceptDialog({ request, open, onOpenChange, onDone }: DialogProps) {
     const [dueDate, setDueDate] = useState<string | null>(null);
     const [startDate, setStartDate] = useState<string | null>(null);
     const [milestoneId, setMilestoneId] = useState<string | null>(null);
+    const [goalId, setGoalId] = useState<string | null>(null);
     const projectFields = useProjectCustomFields(projectId);
     const fieldSet = useFieldSet(typeId || undefined, projectId, projectFields.filter((f) => !f.archived).map((f) => f.id));
     const offered = (key: FieldKey) => requirementOf(fieldSet, key) !== 'HIDDEN';
@@ -93,6 +94,7 @@ function AcceptDialog({ request, open, onOpenChange, onDone }: DialogProps) {
                             ...(dueDate && isRequired('dueDate') ? { dueDate } : {}),
                             ...(startDate && isRequired('startDate') ? { startDate } : {}),
                             ...(milestoneId && isRequired('milestone') ? { milestoneId } : {}),
+                            ...(goalId && isRequired('goal') ? { goalId } : {}),
                         },
                         request.version,
                     );
@@ -146,6 +148,11 @@ function AcceptDialog({ request, open, onOpenChange, onDone }: DialogProps) {
             {isRequired('milestone') && (
                 <FormField label={tAccept('milestone')} required>
                     <MilestonePicker id="intake-accept-milestone" projectId={projectId} value={milestoneId} onChange={setMilestoneId} />
+                </FormField>
+            )}
+            {isRequired('goal') && (
+                <FormField label={tAccept('goal')} required>
+                    <GoalPicker id="intake-accept-goal" value={goalId} onChange={setGoalId} />
                 </FormField>
             )}
         </SettingsFormModal>

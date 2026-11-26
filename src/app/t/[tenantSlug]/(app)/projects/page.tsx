@@ -1,6 +1,7 @@
 import { getTranslations } from 'next-intl/server';
 
 import { mayCreateProject } from '@/app-layer/policies/work-config.policies';
+import { mayReadGoals } from '@/app-layer/policies/goal.policies';
 import { ProjectsList } from '@/components/work-items/ProjectsList';
 import { workItemPageContext } from '@/lib/server/work-item-pages.server';
 
@@ -15,5 +16,5 @@ export default async function ProjectsPage({ params }: { params: Promise<{ tenan
     const { tenantSlug } = await params;
     const { ctx, config } = await workItemPageContext(tenantSlug);
     const tNav = await getTranslations('nav');
-    return <ProjectsList title={tNav('projects')} projects={config.projects} teams={config.teams} mayCreateProject={mayCreateProject(ctx)} />;
+    return <ProjectsList title={tNav('projects')} projects={config.projects} teams={config.teams} mayCreateProject={mayCreateProject(ctx)} offerInitiative={mayReadGoals(ctx)} />;
 }
