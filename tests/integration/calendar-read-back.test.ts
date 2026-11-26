@@ -402,7 +402,7 @@ describeFn('calendar read-back, end to end against a fake provider (3.3c)', () =
             moveTo(ids.otto!, ids.otto1!, day(30));
             await expect(run(ids.otto!)).rejects.toThrow(/page link outside its own origin/);
             expect(mockSafeFetch).not.toHaveBeenCalled();
-            expect(fake.requests.some((x) => x.url.startsWith('https://evil.example'))).toBe(false);
+            expect(fake.requests.some((x) => new URL(x.url).origin === 'https://evil.example')).toBe(false);
             fake.graphNextLinkOrigin = 'https://graph.microsoft.com';
             fake.graphPageSize = 2;
         });
