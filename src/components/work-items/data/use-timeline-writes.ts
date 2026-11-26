@@ -8,9 +8,10 @@
  *   - **One item's dates** (the confirmation unticked): `PATCH
  *     /work-items/:id { startDate, dueDate }` with `If-Match`, the write the
  *     detail makes, so its field-set, permission and audit rules are the
- *     API's. Optimistic over the cached timeline with rollback; the answer is
- *     placed in every mounted view (`applyRow`). A 409 shows "changed by
- *     someone else" and re-reads the timeline.
+ *     API's. Optimistic over the cached timelines and calendars (3.3a moves
+ *     items through this same path, decision 241) with rollback; the answer
+ *     is placed in every mounted view (`applyRow`). A 409 shows "changed by
+ *     someone else" and re-reads the timelines and calendars.
  *   - **With the items it pushes later** (ticked; decision 194): the new bars
  *     show at once and the write is held five seconds behind the undo toast,
  *     then sent from its action as `POST /work-items/bulk/dates`, each item's
