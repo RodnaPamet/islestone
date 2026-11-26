@@ -5,10 +5,11 @@
  * Copied from inflect-compliance `src/app-layer/usecases/search.ts` at
  * 5528464fc54a8681956f3b9ce23ca9c075f0420e (BUSL-1.1) and cut down: its
  * eight compliance queries and the global framework read are gone; two
- * queries remain, work items and projects, each a bounded, ranked raw read in
- * its repository (`WorkItemRepository.searchTitles`,
- * `ProjectRepository.searchNames`) over the indexes of migration
- * `20261203120000_search_titles`. Kept from the source: the one read
+ * queries remain, work items and projects, each a bounded, ranked read in
+ * its repository over the indexes of migration `20261203120000_search_titles`
+ * (since decision 245 through the search functions,
+ * `WorkItemRepository.searchTitleIds` and `ProjectRepository.searchNameIds`,
+ * which return ids, then one read of the rows by id). Kept from the source: the one read
  * transaction, per-domain skipping, the `perTypeLimit * 3` headroom, rank
  * then cap, and the response shape.
  *
@@ -85,15 +86,28 @@ export async function searchWorkspace(
     return runInTenantReadContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const keyHitId = searchItems ? await keyHitIdFor(db, ctx, v, query) : null;
-        const [items, projects, contentMatches] = await Promise.all([
-            searchItems ? WorkItemRepository.searchTitles(db, ctx, v, query, { limit: dbLimit, keyHitId }) : Promise.resolve([]),
-            ProjectRepository.searchNames(db, ctx, v, query, { limit: dbLimit }),
+        // The three matches are the search functions (owner decision 245):
+        // ids and ranks only, read on their indexes under row-level security.
+        const [titleIds, projectIds, contentMatches] = await Promise.all([
+            searchItems ? WorkItemRepository.searchTitleIds(db, ctx, v, query, { limit: dbLimit, keyHitId }) : Promise.resolve([]),
+            ProjectRepository.searchNameIds(db, ctx, v, query, { limit: dbLimit }),
             searchItems ? SearchVectorRepository.matchItems(db, ctx, v, query, dbLimit) : Promise.resolve([]),
         ]);
 
-        const titled = new Set(items.map((row) => row.id));
+        const titled = new Set(titleIds.map((t) => t.id));
         const contentOnly = contentMatches.filter((m) => !titled.has(m.workItemId));
-        const contentRows = await contentItemRows(db, ctx, v, contentOnly);
+        // One read of every matched item's row, by id, under the same visibility.
+        const [itemRows, projects] = await Promise.all([
+            WorkItemRepository.findSearchRows(db, ctx, v, [...titled, ...contentOnly.map((m) => m.workItemId)]),
+            orderedProjectRows(db, ctx, v, projectIds),
+        ]);
+        const rowsById = new Map(itemRows.map((r) => [r.id, r] as const));
+        // A row that vanished between the match and the read is dropped.
+        const items = titleIds.flatMap((t) => rowsById.get(t.id) ?? []);
+        const contentRows = contentOnly.flatMap((match) => {
+            const row = rowsById.get(match.workItemId);
+            return row ? [{ row, match }] : [];
+        });
 
         const hits: SearchHit[] = [
             ...items.map((row) => workItemHit(row, query, slug)),
@@ -107,18 +121,11 @@ export async function searchWorkspace(
     });
 }
 
-/**
- * The key and title of each content-only match, in the match's order. Read
- * by id under the same visibility (`findSearchRows`); a row that vanished
- * between the two reads is dropped.
- */
-async function contentItemRows(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, matches: readonly SearchVectorMatch[]) {
+/** The matched projects' rows, in the match's order. */
+async function orderedProjectRows(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, matches: ReadonlyArray<{ id: string }>): Promise<ProjectSearchRow[]> {
     if (matches.length === 0) return [];
-    const rows = new Map((await WorkItemRepository.findSearchRows(db, ctx, v, matches.map((m) => m.workItemId))).map((r) => [r.id, r] as const));
-    return matches.flatMap((match) => {
-        const row = rows.get(match.workItemId);
-        return row ? [{ row, match }] : [];
-    });
+    const rows = new Map((await ProjectRepository.findSearchRows(db, ctx, v, matches.map((m) => m.id))).map((r) => [r.id, r] as const));
+    return matches.flatMap((m) => rows.get(m.id) ?? []);
 }
 
 /**

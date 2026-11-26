@@ -50,7 +50,7 @@ import { DUE_FILTERS, DUE_SOON_DAYS, type DueFilter } from '../domain/work-item-
 import { OPEN_CATEGORY_FILTER, WORKFLOW_STATE_CATEGORIES } from '../domain/workflow-state';
 import {
     JOB_PROJECT_VISIBILITY_WHERE,
-    projectVisibilitySql,
+    projectVisibilityArgs,
     projectVisibilityWhere,
     type ProjectVisibility,
 } from '../policies/project-visibility';
@@ -111,13 +111,22 @@ export interface WorkItemFilters {
      * the `q` match; ignored without `q`.
      */
     fullTextMatchIds?: readonly string[];
+    /**
+     * INTERNAL, never from a request: the live, visible items whose title holds
+     * `q` (`titleSubstringIds`, owner decision 245), set by the list usecase
+     * when fewer than the cap matched. When set, the `q` filter matches these
+     * ids instead of `title ILIKE '%q%'`, which row-level security keeps from
+     * using the trigram index; when not set (a broad `q`, or a caller that did
+     * not resolve it), the filter keeps the `ILIKE` itself.
+     */
+    titleSubstringMatchIds?: readonly string[];
     /** Include archived projects' items (default: excluded). */
     includeArchived?: boolean;
     /** Custom-field conditions (2.4), each already parsed against its field's type. */
     customFields?: ReadonlyArray<{ field: { id: string; type: CustomFieldType }; condition: CustomFieldCondition }>;
 }
 
-/** One search candidate (`WorkItemRepository.searchTitles`). */
+/** One search row (`WorkItemRepository.findSearchRows`, after `searchTitleIds` or `SearchVectorRepository.matchItems`). */
 export interface WorkItemSearchRow {
     id: string;
     title: string;
@@ -471,11 +480,17 @@ export class WorkItemRepository {
         for (const { field, condition } of filters.customFields ?? []) and.push(customFieldWhere(ctx, field, condition));
 
         if (filters.q) {
-            // `title ILIKE '%q%'`, served by `WorkItem_search_title_trgm` (2.7b,
-            // docs/search.md) under this where's `deletedAt: null`. Prisma
-            // passes `contains` into the pattern unescaped, so a typed `%` or
-            // `_` was a wildcard; `escapeLike` makes it match itself.
-            const or: Prisma.WorkItemWhereInput[] = [{ title: { contains: escapeLike(filters.q), mode: 'insensitive' } }];
+            // The title substring (2.7b, docs/search.md, "The list's q filter"):
+            // the ids `search_work_item_title_substring` found on the trigram
+            // index when the usecase resolved them (decision 245), else
+            // `title ILIKE '%q%'` here, which under row-level security is a
+            // filter: cheap when `q` is broad (a page of matches is found
+            // quickly in the list's own order), and correct for any caller.
+            // Prisma passes `contains` into the pattern unescaped, so a typed
+            // `%` or `_` was a wildcard; `escapeLike` makes it match itself.
+            const or: Prisma.WorkItemWhereInput[] = filters.titleSubstringMatchIds
+                ? [{ id: { in: [...filters.titleSubstringMatchIds] } }]
+                : [{ title: { contains: escapeLike(filters.q), mode: 'insensitive' } }];
             if (keyHit) or.push({ projectId: keyHit.projectId, number: keyHit.number });
             // Full text (2.7f): stemmed titles, descriptions and comments, the
             // matched ids already filtered by the same visibility and liveness.
@@ -1396,63 +1411,62 @@ export class WorkItemRepository {
      * Live, visible items of unarchived projects whose title holds the
      * query (substring, `WorkItem_search_title_trgm`) or all of its words
      * (full text through `islestone_bg_en`, stemmed, 2.7f; `WorkItem_search_title_fts`), plus the item a
-     * typed key resolved to (`keyHitId`). Ordered so the best candidates make
-     * the cut: the key hit, an exact title, a title prefix, the full-text
-     * rank, the trigram similarity, then the id; the usecase ranks the rows
-     * it gets (`computeRankScore`). Bounded by `limit` (at most
-     * {@link SEARCH_ROW_CAP}).
+     * typed key resolved to (`keyHitId`), as ids in candidate order (the key
+     * hit, an exact title, a title prefix, the full-text rank, the trigram
+     * similarity, then the id); the usecase reads their rows by id
+     * (`findSearchRows`) and ranks them (`computeRankScore`). Bounded by
+     * `limit` (at most {@link SEARCH_ROW_CAP}, which the function also caps).
      *
-     * Raw SQL because Prisma cannot order by a rank; the soft-delete
-     * predicate and the visibility fragment (`projectVisibilitySql`) are in
-     * this method's own `WHERE`, as every `WorkItem` read's are
-     * (tests/unit/repositories/search-repository-predicates.test.ts). The
-     * query is a bind parameter, never interpolated.
+     * The read is the SECURITY DEFINER function `search_work_item_titles`
+     * (owner decision 245, migration `20261214120000_search_definer_functions`,
+     * docs/search.md): it reads the workspace from `app.tenant_id` itself and
+     * filters it, `deletedAt`, the archived filter and project visibility in
+     * its own `WHERE`, so its GIN indexes are searched with their operators
+     * under row-level security. The query and the patterns are bind
+     * parameters, never interpolated.
      */
-    static async searchTitles(
+    static async searchTitleIds(
         db: PrismaTx,
-        ctx: RequestContext,
+        _ctx: RequestContext,
         v: ProjectVisibility,
         query: string,
         opts: { limit: number; keyHitId?: string | null },
-    ): Promise<WorkItemSearchRow[]> {
+    ): Promise<Array<{ id: string; ordinal: number }>> {
         const limit = Math.min(Math.max(1, Math.floor(opts.limit)), SEARCH_ROW_CAP);
-        const keyHit = opts.keyHitId ? Prisma.sql` OR w."id" = ${opts.keyHitId}` : Prisma.empty;
-        const keyFirst = opts.keyHitId ? Prisma.sql`(w."id" = ${opts.keyHitId}) DESC, ` : Prisma.empty;
-        return db.$queryRaw<WorkItemSearchRow[]>(Prisma.sql`
-            SELECT w."id", w."title", w."number", p."keyPrefix"
-              FROM "WorkItem" w
-              JOIN "Project" p ON p."id" = w."projectId" AND p."tenantId" = w."tenantId"
-             WHERE w."tenantId" = ${ctx.tenantId}
-               AND w."deletedAt" IS NULL
-               AND ${projectVisibilitySql(v, { projectAlias: 'p', projectIdColumn: 'w."projectId"' })}
-               AND (w."title" ILIKE ${containsPattern(query)}
-                    OR to_tsvector('islestone_bg_en', w."title") @@ plainto_tsquery('islestone_bg_en', ${query})${keyHit})
-             ORDER BY ${keyFirst}(lower(w."title") = lower(${query})) DESC,
-                      (w."title" ILIKE ${prefixPattern(query)}) DESC,
-                      ts_rank(to_tsvector('islestone_bg_en', w."title"), plainto_tsquery('islestone_bg_en', ${query})) DESC,
-                      similarity(w."title", ${query}) DESC,
-                      w."id" ASC
-             LIMIT ${limit}`);
+        const rows = await db.$queryRaw<Array<{ id: string; ordinal: number }>>(Prisma.sql`
+            SELECT t."id", t."ordinal"
+              FROM search_work_item_titles(${query}::text, ${containsPattern(query)}::text, ${prefixPattern(query)}::text, ${opts.keyHitId ?? null}::text,
+                                           ${projectVisibilityArgs(v)}, ${limit}::integer) t
+             ORDER BY t."ordinal"`);
+        return rows.map((r) => ({ id: r.id, ordinal: Number(r.ordinal) }));
     }
 
     /**
      * Live, visible items whose title matches the query in full text through
      * `islestone_bg_en` (stems in either language, `websearch_to_tsquery`
      * syntax), for the list's `q` (2.7f); `WorkItem_search_title_fts` serves
-     * it. At most `cap` (at most `SEARCH_MATCH_CAP`) ids.
+     * it, inside the definer function `search_work_item_title_words`
+     * (decision 245). At most `cap` (at most `SEARCH_MATCH_CAP`) ids.
      */
-    static async titleFullTextIds(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, query: string, cap: number): Promise<string[]> {
+    static async titleFullTextIds(db: PrismaTx, _ctx: RequestContext, v: ProjectVisibility, query: string, cap: number): Promise<string[]> {
         const limit = Math.min(Math.max(1, Math.floor(cap)), SEARCH_MATCH_CAP);
         const rows = await db.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-            SELECT w."id"
-              FROM "WorkItem" w
-              JOIN "Project" p ON p."id" = w."projectId" AND p."tenantId" = w."tenantId"
-             WHERE w."tenantId" = ${ctx.tenantId}
-               AND w."deletedAt" IS NULL
-               AND ${projectVisibilitySql(v, { projectAlias: 'p', projectIdColumn: 'w."projectId"' })}
-               AND to_tsvector('islestone_bg_en', w."title") @@ websearch_to_tsquery('islestone_bg_en', ${query})
-             ORDER BY w."id" ASC
-             LIMIT ${limit}`);
+            SELECT t."id" FROM search_work_item_title_words(${query}::text, ${projectVisibilityArgs(v)}, ${limit}::integer) t`);
+        return rows.map((r) => r.id);
+    }
+
+    /**
+     * Live, visible items whose title holds `q` as a substring (`ILIKE`,
+     * `%` and `_` matched as text), for the list's `q` (decision 245):
+     * `WorkItem_search_title_trgm`, inside the definer function
+     * `search_work_item_title_substring`. A set of at most `cap` (at most
+     * `SEARCH_MATCH_CAP`) ids, in no order: a result of `cap` ids means there
+     * may be more, and the caller then filters by the pattern itself.
+     */
+    static async titleSubstringIds(db: PrismaTx, _ctx: RequestContext, v: ProjectVisibility, q: string, cap: number): Promise<string[]> {
+        const limit = Math.min(Math.max(1, Math.floor(cap)), SEARCH_MATCH_CAP);
+        const rows = await db.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+            SELECT t."id" FROM search_work_item_title_substring(${containsPattern(q)}::text, ${projectVisibilityArgs(v)}, ${limit}::integer) t`);
         return rows.map((r) => r.id);
     }
 

@@ -25,6 +25,9 @@ export const AUTO_EXPLAIN_SETTINGS: ReadonlyArray<readonly [string, string]> = [
     ['auto_explain.log_timing', 'off'],
     ['auto_explain.log_triggers', 'off'],
     ['auto_explain.log_format', 'json'],
+    // The search functions' own statements (owner decision 245): a function
+    // scan's plan says nothing about the index its body searched.
+    ['auto_explain.log_nested_statements', 'on'],
     ['auto_explain.log_level', 'notice'],
 ];
 
@@ -86,12 +89,27 @@ export function indexesUsed(plan: PlanNode): string[] {
         .filter((name): name is string => typeof name === 'string');
 }
 
+/**
+ * The marker every search function's one statement carries in a block
+ * comment (migration
+ * `20261214120000_search_definer_functions`): a plan whose query text holds it
+ * ran NESTED, inside the function scan of a statement the application sent,
+ * whose buffers already include it.
+ */
+export const NESTED_SEARCH_MARKER = 'islestone:search-definer';
+
+/** Whether a captured plan ran inside a search function (its buffers are its caller's). */
+export function isNestedSearchPlan(p: CapturedPlan): boolean {
+    return p.query.includes(NESTED_SEARCH_MARKER);
+}
+
 /** Shared buffers a statement touched (hit plus read): the root's totals include its children. */
 export function sharedBuffers(plan: PlanNode): number {
     return (plan['Shared Hit Blocks'] ?? 0) + (plan['Shared Read Blocks'] ?? 0);
 }
 
 export interface PlanVerdict {
+    /** Statements the application sent (a search function's own statement is not one). */
     statements: number;
     seqScans: string[];
     indexes: string[];
@@ -103,14 +121,17 @@ export interface PlanVerdict {
  * The verdict on one named query's statements: the guarded tables read by a
  * sequential scan, the indexes used, the buffers touched, and the expected
  * indexes that no statement used. `expected` lists alternatives per entry,
- * `a|b` meaning either.
+ * `a|b` meaning either. A search function's nested statement counts for its
+ * scans and indexes, but not for buffers or statements: the function scan of
+ * the statement that called it already counted them.
  */
 export function judgePlans(plans: readonly CapturedPlan[], expected: readonly string[], guarded: readonly string[] = GUARDED_TABLES): PlanVerdict {
     const seqScans = plans.flatMap((p) => seqScansOn(p.plan, guarded));
     const indexes = [...new Set(plans.flatMap((p) => indexesUsed(p.plan)))].sort();
-    const buffers = plans.reduce((s, p) => s + sharedBuffers(p.plan), 0);
+    const top = plans.filter((p) => !isNestedSearchPlan(p));
+    const buffers = top.reduce((s, p) => s + sharedBuffers(p.plan), 0);
     const missingIndexes = expected.filter((alts) => !alts.split('|').some((name) => indexes.includes(name)));
-    return { statements: plans.length, seqScans, indexes, buffers, missingIndexes };
+    return { statements: top.length, seqScans, indexes, buffers, missingIndexes };
 }
 
 /** An index that must be searched with a condition on its searched column, not only its leading `tenantId`. */

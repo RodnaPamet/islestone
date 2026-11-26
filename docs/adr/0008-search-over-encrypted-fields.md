@@ -71,6 +71,10 @@ A new searchable source is an amendment to this ADR, never a code change alone.
 - **Rebuild.** A job, `search-index-rebuild`, reads each source through the normal (decrypting) client in pages and rewrites its row: scheduled nightly for rows missing or at an older revision (the backfill on first deploy, and after any change to the configuration, its dictionary or the normaliser, which bumps the revision), and on demand for one workspace by an admin, audited. A configuration change is a revision and a rebuild, never a data migration.
 - **Key rotations** need nothing: the vectors are not encrypted.
 
+#### The read path (note, owner decision 245)
+
+Under row-level security `@@` is not `LEAKPROOF`, so a match could not be an index condition and every read filtered the workspace's whole vector entry (H2a's finding F1, `docs/performance.md`). Since decision 245 the match is a scoped `SECURITY DEFINER` function, `search_item_contents` (and one per title and project-name read), owned by a non-login role that bypasses row-level security and may read only the columns it needs: it reads the workspace from `app.tenant_id`, never from an argument, applies the item's and the comment's `deletedAt` and project visibility itself, is bounded, and returns item and comment ids with their rank, never text. Nothing is marked `LEAKPROOF` and no table's row-level security changes; the rows a search shows are read by id under row-level security as before. `docs/search.md`, "The search functions", records the functions and their guards. This changes how the stored vectors are read, not what is stored or who may see it.
+
 #### Handling the plaintext on the way in
 
 The plaintext crosses to Postgres as a bind parameter of the write and of the query (`websearch_to_tsquery('islestone_bg_en', $1)`). It is never logged by the application (no query text in logs, audit entries or metrics), and the database keeps its defaults that keep parameters out of its own logs (`log_statement = none`, `log_parameter_max_length_on_error = 0`); `docs/deployment.md` records both. Descriptions are capped before vectorising so the vector stays under Postgres's size limit.

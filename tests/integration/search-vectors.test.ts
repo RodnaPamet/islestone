@@ -29,12 +29,10 @@
  *
  * Written fresh for Islestone.
  */
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 
 import type { RequestContext } from '@/app-layer/types';
 import { processSearchIndexRebuild } from '@/app-layer/jobs/search-index-rebuild';
-import { SearchVectorRepository } from '@/app-layer/repositories/SearchVectorRepository';
-import { WorkItemRepository } from '@/app-layer/repositories/WorkItemRepository';
 import { createProject } from '@/app-layer/usecases/project';
 import { searchWorkspace } from '@/app-layer/usecases/search';
 import { rebuildSearchIndex } from '@/app-layer/usecases/search-index';
@@ -52,6 +50,8 @@ import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { deleteAuditRowsForTenants } from '../helpers/audit-cleanup';
 import { prismaTestClient, resetDatabase } from '../helpers/db';
 import { makeRequestContext } from '../helpers/make-context';
+import { nestedSearchPlans } from '../helpers/search-plans';
+import { conditionMisses } from '../perf/plan-capture';
 
 import { DB_AVAILABLE } from './db-helper';
 
@@ -346,66 +346,24 @@ describeFn('search over descriptions and comments (2.7f)', () => {
             );
             await prisma.$executeRawUnsafe('ANALYZE "WorkItem"');
             await prisma.$executeRawUnsafe('ANALYZE "SearchVector"');
+            await prisma.$executeRawUnsafe('ANALYZE "Project"');
+            await prisma.$executeRawUnsafe('ANALYZE "Comment"');
         });
 
         afterAll(async () => {
             await prisma.$executeRawUnsafe(`DELETE FROM "WorkItem" WHERE "id" LIKE $1`, `${FILLER}%`);
         });
 
-        /**
-         * The plan with only bitmap scans and hash joins allowed: with one
-         * project in the workspace the planner's merge-join estimate otherwise
-         * prefers walking a btree, which says nothing about whether the
-         * expression and the partial predicate are spelled so an index CAN
-         * serve them, which is what these tests hold.
-         */
-        async function planOf(sql: string, params: unknown[], withoutIndexes: readonly string[] = []): Promise<string> {
-            let plan = '';
-            await prisma
-                .$transaction(async (tx) => {
-                    // Dropped inside the transaction, which always rolls back.
-                    for (const index of withoutIndexes) await tx.$executeRawUnsafe(`DROP INDEX "${index}"`);
-                    await tx.$executeRawUnsafe('SET LOCAL enable_seqscan = off');
-                    await tx.$executeRawUnsafe('SET LOCAL enable_indexscan = off');
-                    await tx.$executeRawUnsafe('SET LOCAL enable_mergejoin = off');
-                    await tx.$executeRawUnsafe('SET LOCAL enable_nestloop = off');
-                    const rows = await tx.$queryRawUnsafe<Array<{ 'QUERY PLAN': unknown }>>(`EXPLAIN (FORMAT JSON) ${sql}`, ...params);
-                    plan = JSON.stringify(rows[0]!['QUERY PLAN']);
-                    throw new Error('roll back');
-                })
-                .catch((err: unknown) => {
-                    if (!(err instanceof Error) || err.message !== 'roll back') throw err;
-                });
-            return plan;
-        }
-        const capture = () => {
-            let captured: Prisma.Sql | null = null;
-            const db = { $queryRaw: async (q: Prisma.Sql) => ((captured = q), []) } as never;
-            return { db, sql: () => captured! };
-        };
-
-        it('the description and comment match can use the tenant-leading vector index', async () => {
-            const c = capture();
-            await SearchVectorRepository.matchItems(c.db, owner, { kind: 'ALL' }, 'фактура', 20);
-            // The tenant-leading btrees answer `tenantId = $1` as cheaply by the
-            // planner's estimate (every row of the workspace); without them the
-            // vector index must serve the match, which proves the read names
-            // the configuration and the match as the partial index needs.
-            const plan = await planOf(c.sql().text, c.sql().values, [
-                'SearchVector_tenantId_revision_idx',
-                'SearchVector_tenantId_workItemId_idx',
-                'SearchVector_tenantId_commentId_idx',
-                'SearchVector_one_per_comment',
-                'SearchVector_one_per_description',
-            ]);
-            expect(plan).toContain('SearchVector_search_lexemes');
-            expect(plan).toMatch(/lexemes @@ /);
+        // Since decision 245 each read is a search function; its own statement
+        // is planned as `app_user` in the workspace, under row-level security.
+        it('the description and comment match searches the tenant-leading vector index with @@, as app_user', async () => {
+            const plans = await nestedSearchPlans(tenantId, `SELECT * FROM search_item_contents($1, true, '{}', 20)`, ['фактура']);
+            expect(conditionMisses(plans, [{ index: 'SearchVector_search_lexemes', operator: '@@' }])).toEqual([]);
         });
 
-        it('the list\'s stemmed title match can use the islestone_bg_en title index', async () => {
-            const c = capture();
-            await WorkItemRepository.titleFullTextIds(c.db, owner, { kind: 'ALL' }, 'фактура', 20);
-            expect(await planOf(c.sql().text, c.sql().values)).toContain('WorkItem_search_title_fts');
+        it('the list\'s stemmed title match searches the islestone_bg_en title index with @@, as app_user', async () => {
+            const plans = await nestedSearchPlans(tenantId, `SELECT * FROM search_work_item_title_words($1, true, '{}', 20)`, ['фактура']);
+            expect(conditionMisses(plans, [{ index: 'WorkItem_search_title_fts', operator: '@@' }])).toEqual([]);
         });
     });
 

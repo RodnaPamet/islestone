@@ -255,6 +255,17 @@ async function fullTextMatchIdsFor(db: PrismaTx, ctx: RequestContext, v: Project
     return [...new Set([...titles, ...content.map((m) => m.workItemId)])];
 }
 
+/**
+ * The live, visible items whose title holds `q` (owner decision 245), read on
+ * the trigram index through the search function, or `undefined` when the cap
+ * came back full: then there may be more, and the list filters by the
+ * pattern itself (a broad `q`, whose matches its own order finds quickly).
+ */
+async function titleSubstringMatchIdsFor(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, q: string): Promise<string[] | undefined> {
+    const ids = await WorkItemRepository.titleSubstringIds(db, ctx, v, q, SEARCH_MATCH_CAP);
+    return ids.length < SEARCH_MATCH_CAP ? ids : undefined;
+}
+
 /** Resolve a `q` that parses as a key to its project and number (any prefix the project had). */
 async function keyHitFor(db: PrismaTx, ctx: RequestContext, q: string | undefined): Promise<KeyHit | null> {
     const parsed = q ? parseKey(q) : null;
@@ -301,6 +312,7 @@ export async function resolveListFiltersInTx(
     // `q` also matches stemmed titles, descriptions and comments (2.7f,
     // ADR 0008): the ids are the usecase's, never the request's.
     listFilters.fullTextMatchIds = filters.q ? await fullTextMatchIdsFor(db, ctx, v, filters.q) : undefined;
+    listFilters.titleSubstringMatchIds = filters.q ? await titleSubstringMatchIdsFor(db, ctx, v, filters.q) : undefined;
     // An empty parameter is no filter; a resolved empty list matches nothing.
     if (filters.cycleId) listFilters.cycleId = await resolveCycleFilter(db, ctx, filters.cycleId);
     else delete listFilters.cycleId;

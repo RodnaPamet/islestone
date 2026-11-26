@@ -3,8 +3,10 @@
  * sync"; owner decision 124).
  *
  *   1. Only `src/app-layer/repositories/SearchVectorRepository.ts` touches the
- *      `SearchVector` table: no other file under `src/` names it in SQL or
- *      reaches its Prisma delegate.
+ *      `SearchVector` table: no other file under `src/` names it in SQL,
+ *      reaches its Prisma delegate or calls `search_item_contents`, the
+ *      search function that reads it (owner decision 245; its body is pinned
+ *      by `search-definer-functions.test.ts`).
  *   2. Every function under `src/app-layer/` that writes a description or a
  *      comment's body calls the seam in the same function, so in the same
  *      transaction: a call of `WorkItemRepository.create`,
@@ -46,7 +48,7 @@ function tableTouchers(root: string): string[] {
         .filter((rel) => rel.startsWith('src/') && /\.tsx?$/.test(rel) && rel !== SEAM)
         .filter((rel) => {
             const src = fs.readFileSync(path.join(root, rel), 'utf8');
-            return /"SearchVector"/.test(src) || /\.searchVector\b/.test(src);
+            return /"SearchVector"/.test(src) || /\.searchVector\b/.test(src) || /\bsearch_item_contents\b/.test(src);
         });
 }
 
@@ -216,6 +218,7 @@ describe('the detectors, against a planted repository', () => {
             ].join('\n'),
         );
         plant('src/app-layer/usecases/sneaky.ts', 'export const q = Prisma.sql`DELETE FROM "SearchVector"`;\n');
+        plant('src/app-layer/repositories/OtherRepository.ts', 'export const q = Prisma.sql`SELECT * FROM search_item_contents(${x})`;\n');
         plant('scripts/seed-other.ts', 'await db.$executeRawUnsafe(`INSERT INTO "SearchVector" ("id") VALUES (1)`);\n');
         plant('scripts/verify-other.ts', 'await db.$queryRawUnsafe(`SELECT count(*) FROM "SearchVector"`);\n');
         plant('src/app-layer/usecases/bulky.ts', 'await SearchVectorRepository.insertBulkForSeed(db, ctx, rows);\n');
@@ -232,8 +235,8 @@ describe('the detectors, against a planted repository', () => {
         expect(found.find((w) => w.fn === 'careful')?.calls).toBe(true);
     });
 
-    it('flags SQL against the table outside the seam', () => {
-        expect(tableTouchers(root)).toEqual(['src/app-layer/usecases/sneaky.ts']);
+    it('flags SQL against the table, or a call of its search function, outside the seam', () => {
+        expect(tableTouchers(root)).toEqual(['src/app-layer/repositories/OtherRepository.ts', 'src/app-layer/usecases/sneaky.ts']);
     });
 
     it('flags a script that writes the table, not one that reads it', () => {

@@ -76,8 +76,10 @@ const RUNNERS: Record<string, Runner> = {
         // As `listWorkItems` builds it: stemmed titles and contents first, then the list with `q`.
         const titles = await WorkItemRepository.titleFullTextIds(db, ctx, v, CONTENT_QUERY, 1000);
         const contents = await SearchVectorRepository.matchItems(db, ctx, v, CONTENT_QUERY, 1000);
+        const substring = await WorkItemRepository.titleSubstringIds(db, ctx, v, CONTENT_QUERY, 1000);
         const ids = [...new Set([...titles, ...contents.map((m) => m.workItemId)])];
-        return WorkItemRepository.list(db, ctx, v, { q: CONTENT_QUERY, fullTextMatchIds: ids }, page('manual'));
+        const titleSubstringMatchIds = substring.length < 1000 ? substring : undefined;
+        return WorkItemRepository.list(db, ctx, v, { q: CONTENT_QUERY, fullTextMatchIds: ids, titleSubstringMatchIds }, page('manual'));
     },
     'list: the Deleted view': (w, db, ctx, v) => WorkItemRepository.listDeleted(db, ctx, v),
     'board: one column (by state)': (w, db, ctx, v) => list({ projectId: w.bigProjectId, stateId: w.stateId })(w, db, ctx, v),
@@ -109,7 +111,11 @@ const RUNNERS: Record<string, Runner> = {
         await ReviewRepository.itemsInStateRequiringReview(db, ctx, w.stateId);
         return WorkItemRepository.lockInState(db, ctx, w.stateId);
     },
-    'search: titles (trigram and full text)': (w, db, ctx, v) => WorkItemRepository.searchTitles(db, ctx, v, 'проект', { limit: 20 }),
+    'search: titles (trigram and full text)': async (w, db, ctx, v) => {
+        // As `searchWorkspace` reads them: the candidates, then their rows by id.
+        const hits = await WorkItemRepository.searchTitleIds(db, ctx, v, 'проект', { limit: 20 });
+        return WorkItemRepository.findSearchRows(db, ctx, v, hits.map((h) => h.id));
+    },
     'search: contents and snippets': async (w, db, ctx, v) => {
         const hits = await SearchVectorRepository.matchItems(db, ctx, v, CONTENT_QUERY, 20);
         await WorkItemRepository.findSearchRows(db, ctx, v, hits.map((h) => h.workItemId));
@@ -156,8 +162,10 @@ const RUNNERS: Record<string, Runner> = {
         return WorkItemRepository.orderedPage(db, ctx, w.projectId, undefined, 500);
     },
     'job: the search-index rebuild': async (w, db, ctx) => {
-        await SearchVectorRepository.staleDescriptionPage(db, ctx, null, { force: false });
-        return SearchVectorRepository.staleCommentPage(db, ctx, null, { force: false });
+        // One page of each kind, through the keyset (after 'c', which sorts before every cuid): a page
+        // reads its own rows only, so its cost does not grow with the workspace (issue #79).
+        await SearchVectorRepository.staleDescriptionPage(db, ctx, 'c', { force: false });
+        return SearchVectorRepository.staleCommentPage(db, ctx, 'c', { force: true });
     },
 };
 

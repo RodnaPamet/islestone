@@ -13,10 +13,16 @@
  * text, never a parameter (`tests/guards/search-configuration-literal.test.ts`):
  * a planner matches an expression index only on a constant.
  *
- * Every read filters the workspace, the item's `deletedAt`, a comment's
- * `deletedAt` and project visibility in its own `WHERE`
- * (`tests/unit/repositories/search-repository-predicates.test.ts`), and names
- * the configuration (the GIN index is partial on it).
+ * The match (`matchItems`) is the SECURITY DEFINER function
+ * `search_item_contents` (owner decision 245, issue #78; migration
+ * `20261214120000_search_definer_functions`; docs/search.md, "The search
+ * functions"): under row-level security `@@` could not be an index condition,
+ * so the function, which reads the workspace from `app.tenant_id` itself,
+ * filters the workspace, the item's and a comment's `deletedAt`, the
+ * configuration and project visibility in its own `WHERE`, and returns ids
+ * and ranks only. This module is its only caller
+ * (`tests/guards/search-vector-write-seam.test.ts`). The rebuild's reads stay
+ * plain SQL under row-level security, in pages bounded to their own rows.
  *
  * Written fresh for Islestone.
  */
@@ -24,7 +30,7 @@ import { randomUUID } from 'node:crypto';
 
 import { Prisma } from '@prisma/client';
 
-import { projectVisibilitySql, type ProjectVisibility } from '../policies/project-visibility';
+import { projectVisibilityArgs, type ProjectVisibility } from '../policies/project-visibility';
 import type { RequestContext } from '../types';
 import type { PrismaTx } from '@/lib/db-context';
 import { SEARCH_VECTOR_REVISION, searchableText } from '@/lib/search/configuration';
@@ -41,6 +47,22 @@ export interface SearchVectorMatch {
     /** `null`: the description matched best; otherwise that comment. */
     commentId: string | null;
     rank: number;
+}
+
+/**
+ * One page of the rebuild's walk: the stale sources among the page's rows,
+ * and the cursor of the next page (null when the walk is over).
+ */
+export interface RebuildPage {
+    ids: string[];
+    next: string | null;
+}
+
+function rebuildPageOf(rows: ReadonlyArray<{ id: string; stale: boolean }>): RebuildPage {
+    return {
+        ids: rows.filter((r) => r.stale).map((r) => r.id),
+        next: rows.length === REBUILD_PAGE_SIZE ? rows[rows.length - 1]!.id : null,
+    };
 }
 
 /** The most matched items one read returns (the list filter's bound). */
@@ -133,69 +155,81 @@ export class SearchVectorRepository {
      * The live, visible items whose description or a live comment matches the
      * query (`websearch_to_tsquery`: words, "phrases", `or`, `-word`), best
      * first, each once with its best source; at most `cap` (at most
-     * {@link SEARCH_MATCH_CAP}).
+     * {@link SEARCH_MATCH_CAP}, which the function also caps). The workspace
+     * is the transaction's `app.tenant_id`, read by the function; `ctx` names
+     * nothing to it.
      */
-    static async matchItems(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, query: string, cap: number): Promise<SearchVectorMatch[]> {
+    static async matchItems(db: PrismaTx, _ctx: RequestContext, v: ProjectVisibility, query: string, cap: number): Promise<SearchVectorMatch[]> {
         const limit = Math.min(Math.max(1, Math.floor(cap)), SEARCH_MATCH_CAP);
         const rows = await db.$queryRaw<Array<{ workItemId: string; commentId: string | null; rank: number }>>(Prisma.sql`
             SELECT m."workItemId", m."commentId", m."rank"
-              FROM (
-                SELECT DISTINCT ON (s."workItemId") s."workItemId", s."commentId",
-                       ts_rank(s."lexemes", websearch_to_tsquery('islestone_bg_en', ${query}))::float8 AS "rank"
-                  FROM "SearchVector" s
-                  JOIN "WorkItem" w ON w."id" = s."workItemId" AND w."tenantId" = s."tenantId"
-                  JOIN "Project" p ON p."id" = w."projectId" AND p."tenantId" = w."tenantId"
-                  LEFT JOIN "Comment" c ON c."id" = s."commentId" AND c."tenantId" = s."tenantId"
-                 WHERE s."tenantId" = ${ctx.tenantId}
-                   AND s."configName" = 'islestone_bg_en'
-                   AND s."lexemes" @@ websearch_to_tsquery('islestone_bg_en', ${query})
-                   AND w."deletedAt" IS NULL
-                   AND (s."commentId" IS NULL OR c."deletedAt" IS NULL)
-                   AND ${projectVisibilitySql(v, { projectAlias: 'p', projectIdColumn: 'w."projectId"' })}
-                 ORDER BY s."workItemId", "rank" DESC, (s."commentId" IS NULL) DESC, s."commentId" ASC
-              ) m
-             ORDER BY m."rank" DESC, m."workItemId" ASC
-             LIMIT ${limit}`);
+              FROM search_item_contents(${query}::text, ${projectVisibilityArgs(v)}, ${limit}::integer) m`);
         return rows.map((r) => ({ workItemId: r.workItemId, commentId: r.commentId, rank: Number(r.rank) }));
     }
 
     // ── The rebuild (search-index-rebuild) ──────────────────────────────
 
     /**
-     * One page of work items, after `afterId` in id order, whose description
-     * vector is missing or older than the current revision (all of them when
-     * `force`). Deleted items are included: a restore needs no rebuild. Ids
-     * only; the caller reads the text through the decrypting client.
+     * One page of the rebuild's walk over work items with a description (issue
+     * #79): the next {@link REBUILD_PAGE_SIZE} of them after `afterId` in id
+     * order, and of those the ones whose description vector is missing, older
+     * than the current revision or built with another configuration (all of
+     * them when `force`). The page reads only its own rows: the items by the
+     * `(id, tenantId)` key from the cursor, then each one's vector through
+     * `SearchVector_one_per_description`, never the workspace's whole vector
+     * table. `next` is the last item the page read (the cursor of the next
+     * page), or null when the walk is over. Deleted items are included: a
+     * restore needs no rebuild. Ids only; the caller reads the text through
+     * the decrypting client.
      */
-    static async staleDescriptionPage(db: PrismaTx, ctx: RequestContext, afterId: string | null, opts: { force: boolean }): Promise<string[]> {
-        const rows = await db.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-            SELECT w."id"
-              FROM "WorkItem" w
-              LEFT JOIN "SearchVector" s
-                ON s."tenantId" = w."tenantId" AND s."workItemId" = w."id" AND s."commentId" IS NULL
-             WHERE w."tenantId" = ${ctx.tenantId}
-               AND w."description" IS NOT NULL
-               AND (${afterId}::text IS NULL OR w."id" > ${afterId})
-               AND (${opts.force} OR s."id" IS NULL OR s."revision" < ${SEARCH_VECTOR_REVISION} OR s."configName" <> 'islestone_bg_en')
-             ORDER BY w."id" ASC
-             LIMIT ${REBUILD_PAGE_SIZE}`);
-        return rows.map((r) => r.id);
+    static async staleDescriptionPage(db: PrismaTx, ctx: RequestContext, afterId: string | null, opts: { force: boolean }): Promise<RebuildPage> {
+        const after = afterId === null ? Prisma.empty : Prisma.sql`AND w."id" > ${afterId}`;
+        const rows = await db.$queryRaw<Array<{ id: string; stale: boolean }>>(Prisma.sql`
+            SELECT page."id",
+                   (${opts.force} OR s."revision" IS NULL OR s."revision" < ${SEARCH_VECTOR_REVISION} OR s."configName" <> 'islestone_bg_en') AS "stale"
+              FROM (
+                SELECT w."id"
+                  FROM "WorkItem" w
+                 WHERE w."tenantId" = ${ctx.tenantId}
+                   AND w."description" IS NOT NULL
+                   ${after}
+                 ORDER BY w."id" ASC
+                 LIMIT ${REBUILD_PAGE_SIZE}
+              ) page
+              LEFT JOIN LATERAL (
+                SELECT v."revision", v."configName"
+                  FROM "SearchVector" v
+                 WHERE v."tenantId" = ${ctx.tenantId}
+                   AND v."workItemId" = page."id"
+                   AND v."commentId" IS NULL
+              ) s ON true
+             ORDER BY page."id" ASC`);
+        return rebuildPageOf(rows);
     }
 
-    /** As {@link staleDescriptionPage}, for live comments. */
-    static async staleCommentPage(db: PrismaTx, ctx: RequestContext, afterId: string | null, opts: { force: boolean }): Promise<string[]> {
-        const rows = await db.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-            SELECT c."id"
-              FROM "Comment" c
-              LEFT JOIN "SearchVector" s
-                ON s."tenantId" = c."tenantId" AND s."commentId" = c."id"
-             WHERE c."tenantId" = ${ctx.tenantId}
-               AND c."deletedAt" IS NULL
-               AND (${afterId}::text IS NULL OR c."id" > ${afterId})
-               AND (${opts.force} OR s."id" IS NULL OR s."revision" < ${SEARCH_VECTOR_REVISION} OR s."configName" <> 'islestone_bg_en')
-             ORDER BY c."id" ASC
-             LIMIT ${REBUILD_PAGE_SIZE}`);
-        return rows.map((r) => r.id);
+    /** As {@link staleDescriptionPage}, for live comments (`SearchVector_one_per_comment`). */
+    static async staleCommentPage(db: PrismaTx, ctx: RequestContext, afterId: string | null, opts: { force: boolean }): Promise<RebuildPage> {
+        const after = afterId === null ? Prisma.empty : Prisma.sql`AND c."id" > ${afterId}`;
+        const rows = await db.$queryRaw<Array<{ id: string; stale: boolean }>>(Prisma.sql`
+            SELECT page."id",
+                   (${opts.force} OR s."revision" IS NULL OR s."revision" < ${SEARCH_VECTOR_REVISION} OR s."configName" <> 'islestone_bg_en') AS "stale"
+              FROM (
+                SELECT c."id"
+                  FROM "Comment" c
+                 WHERE c."tenantId" = ${ctx.tenantId}
+                   AND c."deletedAt" IS NULL
+                   ${after}
+                 ORDER BY c."id" ASC
+                 LIMIT ${REBUILD_PAGE_SIZE}
+              ) page
+              LEFT JOIN LATERAL (
+                SELECT v."revision", v."configName"
+                  FROM "SearchVector" v
+                 WHERE v."tenantId" = ${ctx.tenantId}
+                   AND v."commentId" = page."id"
+              ) s ON true
+             ORDER BY page."id" ASC`);
+        return rebuildPageOf(rows);
     }
 
     /**
