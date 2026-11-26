@@ -26,6 +26,14 @@ const PURPOSE = 'islestone-intake-form-token-v1';
 export const FORM_TOKEN_MIN_AGE_MS = 3_000;
 export const FORM_TOKEN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const NONCE = /^[A-Za-z0-9_-]{22}$/;
+/**
+ * The signature as `issueFormToken` spells it: 32 bytes, 43 base64url
+ * characters. Node's decoder ignores characters outside the alphabet and the
+ * two bits the last character carries past the 32nd byte, so without this a
+ * token with a character appended or its last character changed still
+ * verified (found by Hardening H2f's fuzzing). One token, one spelling.
+ */
+const MAC = /^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/;
 
 function mac(publicId: string, payload: string): Buffer {
     return createHmac('sha256', deriveSubkey(PURPOSE)).update(`${publicId}|${payload}`).digest();
@@ -50,7 +58,7 @@ export function verifyFormToken(token: string, publicId: string, definitionVersi
     const parts = token.split('.');
     if (parts.length !== 5 || parts[0] !== 'v1') return { ok: false, reason: 'MALFORMED' };
     const [, versionRaw, issuedRaw, nonce, macRaw] = parts as [string, string, string, string, string];
-    if (!/^\d{1,9}$/.test(versionRaw) || !/^\d{1,15}$/.test(issuedRaw) || !NONCE.test(nonce)) return { ok: false, reason: 'MALFORMED' };
+    if (!/^\d{1,9}$/.test(versionRaw) || !/^\d{1,15}$/.test(issuedRaw) || !NONCE.test(nonce) || !MAC.test(macRaw)) return { ok: false, reason: 'MALFORMED' };
     const given = Buffer.from(macRaw, 'base64url');
     const expected = mac(publicId, parts.slice(0, 4).join('.'));
     if (given.length !== expected.length || !timingSafeEqual(given, expected)) return { ok: false, reason: 'BAD_SIGNATURE' };

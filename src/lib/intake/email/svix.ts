@@ -7,7 +7,8 @@
  *   key     = base64-decode(secret without its `whsec_` prefix)
  *   expect  = base64(HMAC-SHA256(key, signed))
  *   header  `svix-signature`: a space-separated list of `v1,<base64>`; any
- *           one matching is enough (several are sent while a secret rotates)
+ *           one matching is enough (several are sent while a secret rotates),
+ *           its text equal to `expect` exactly
  *
  * Refused outside five minutes either side of now (a replayed delivery), and
  * compared in constant time. Over the raw bytes exactly as received: the body
@@ -40,11 +41,15 @@ export function verifySvixSignature(input: {
     if (!/^\d{1,12}$/.test(timestamp)) return { ok: false, reason: 'STALE_TIMESTAMP' };
     const now = input.nowSeconds ?? Math.floor(Date.now() / 1000);
     if (Math.abs(now - Number(timestamp)) > SVIX_TOLERANCE_SECONDS) return { ok: false, reason: 'STALE_TIMESTAMP' };
-    const expected = Buffer.from(svixSignature(secret, id, timestamp, rawBody), 'base64');
+    // Compared as the base64 text Svix sends, never as decoded bytes: Node's
+    // base64 decoder skips characters outside the alphabet, so a decoded
+    // comparison accepted a signature with a character inserted (found by
+    // Hardening H2f's fuzzing). Svix's own libraries compare the text too.
+    const expected = Buffer.from(svixSignature(secret, id, timestamp, rawBody), 'utf8');
     for (const entry of signature.split(' ')) {
         const [version, value] = entry.split(',', 2);
         if (version !== 'v1' || !value) continue;
-        const given = Buffer.from(value, 'base64');
+        const given = Buffer.from(value, 'utf8');
         if (given.length === expected.length && timingSafeEqual(given, expected)) return { ok: true };
     }
     return { ok: false, reason: 'BAD_SIGNATURE' };
