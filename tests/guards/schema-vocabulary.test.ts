@@ -256,6 +256,8 @@ describe('the schema speaks ADR 0006', () => {
             'Account',
             'AuditLog',
             'AuditOutbox',
+            'CalendarConnection',
+            'CalendarSyncedEvent',
             'Comment',
             'CustomField',
             'CustomFieldOption',
@@ -292,6 +294,7 @@ describe('the schema speaks ADR 0006', () => {
             'SearchVector',
             'Team',
             'Tenant',
+            'TenantCalendarSettings',
             'TenantCustomRole',
             'TenantInvite',
             'TenantMembership',
@@ -323,7 +326,7 @@ describe('the schema speaks ADR 0006', () => {
             'WorkingCalendar',
             'WorkingCalendarHoliday',
         ]);
-        expect(ids.filter((i) => i.kind === 'enum').length).toBe(34);
+        expect(ids.filter((i) => i.kind === 'enum').length).toBe(38);
         expect(ids).toEqual(expect.arrayContaining([{ kind: 'value', name: 'MEMBER', where: 'Role.MEMBER' }]));
     });
 });

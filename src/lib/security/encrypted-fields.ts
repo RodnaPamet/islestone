@@ -107,6 +107,11 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // names stay plaintext (breadcrumbs, the roadmap, notifications).
     Goal: ['description'],
     Initiative: ['description'],
+    // Calendar sync (roadmap 3.3b, owner decision 238; ADR 0011 §7): a member's
+    // OAuth token pair and its expiry, as one JSON blob, under the workspace's
+    // DEK so both key rotations re-encrypt it. A secret, never rendered,
+    // searched, logged or audited; NULL once revoked or torn down.
+    CalendarConnection: ['tokenEncrypted'],
 } as const;
 
 /** Set of model names with at least one encrypted field. Fast-path check. */

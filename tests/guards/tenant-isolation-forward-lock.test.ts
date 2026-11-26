@@ -52,6 +52,10 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     // Roadmap 3.1a.
     WorkingCalendar: 'tests/integration/working-calendars.test.ts',
     WorkingCalendarHoliday: 'tests/integration/working-calendars.test.ts',
+    // Roadmap 3.3b: calendar sync's three tables.
+    TenantCalendarSettings: 'tests/integration/calendar-sync-isolation.test.ts',
+    CalendarConnection: 'tests/integration/calendar-sync-isolation.test.ts',
+    CalendarSyncedEvent: 'tests/integration/calendar-sync-isolation.test.ts',
     // Sub-phase 3.2a.
     Goal: 'tests/integration/goals.test.ts',
     Initiative: 'tests/integration/goals.test.ts',

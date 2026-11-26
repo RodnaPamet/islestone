@@ -74,6 +74,11 @@ const SENSITIVITY_HEURISTIC =
  * is encrypted or removed.
  */
 const NOT_SENSITIVE: Readonly<Record<string, string>> = {
+    // ── Calendar sync (roadmap 3.3b, ADR 0011) ─────────────────────────
+    'CalendarConnection.revokedReason':
+        "A fixed code (ACCESS_WITHDRAWN or GRANT_INVALID, CHECKed in migration 20261218130100), never a provider's body.",
+    'CalendarSyncedEvent.contentHash':
+        'A truncated sha256 over the pushed title, date and link (32 hex, CHECKed): it detects a change without storing the content; the title is plaintext on the item anyway (ADR 0002 §11).',
     // ── Search vectors (sub-phase 2.7f) ────────────────────────────────
     'SearchVector.commentId':
         'A pointer to the comment whose vector the row is (a cuid, FK-checked); the vector itself is the classified plaintext derivative SearchVector.lexemes.',

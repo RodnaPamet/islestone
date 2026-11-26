@@ -379,3 +379,35 @@ enum InitiativeStatus {
   COMPLETED
   CANCELLED
 }
+
+/// A calendar provider a member connects (roadmap 3.3b; ADR 0011; decision 236).
+enum CalendarProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+/// A calendar connection's state (roadmap 3.3b; ADR 0011): REVOKED when the
+/// provider refused the token (it is destroyed), DISCONNECTING while the
+/// teardown deletes the remote events (decision 239), CALENDAR_REMOVED when
+/// the member deleted the Islestone calendar (3.3c).
+enum CalendarConnectionState {
+  CONNECTED
+  REVOKED
+  DISCONNECTING
+  CALENDAR_REMOVED
+}
+
+/// A synced event's state (roadmap 3.3b): PENDING_DELETE keeps the record of a
+/// remote event whose delete failed; REMOVED_IN_CALENDAR is 3.3c's.
+enum CalendarSyncedEventState {
+  PUSHED
+  PENDING_DELETE
+  FAILED
+  REMOVED_IN_CALENDAR
+}
+
+/// What a synced event stands for (decision 227: milestones too, read-only).
+enum CalendarSyncedEventKind {
+  WORK_ITEM
+  MILESTONE
+}

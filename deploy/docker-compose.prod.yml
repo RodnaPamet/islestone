@@ -101,6 +101,9 @@ x-runtime-env: &runtime-env
   RESEND_API_KEY: "${RESEND_API_KEY:-}" # pragma: allowlist secret (a reference, resolved from .env.prod)
   RESEND_WEBHOOK_SECRET: "${RESEND_WEBHOOK_SECRET:-}" # pragma: allowlist secret (a reference, resolved from .env.prod)
   INTAKE_EMAIL_AUTHSERV_ID: "${INTAKE_EMAIL_AUTHSERV_ID:-}"
+  # Calendar sync (3.3b, ADR 0011): 1 opens it, empty keeps it closed. It uses
+  # the sign-in apps below (decision 236); the worker refreshes their tokens.
+  CALENDAR_SYNC: "${CALENDAR_SYNC:-}"
   GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"
   GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}" # pragma: allowlist secret (a reference, resolved from .env.prod)
   MICROSOFT_CLIENT_ID: "${MICROSOFT_CLIENT_ID:-}"
