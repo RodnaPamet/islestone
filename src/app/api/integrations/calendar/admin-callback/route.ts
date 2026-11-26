@@ -17,7 +17,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { recordMicrosoftConsent } from '@/app-layer/usecases/calendar-sync-settings';
 import { providerErrorCode, redirectBack } from '@/lib/calendar-sync/callback';
-import { ADMIN_STATE_COOKIE, claimStateNonce, stateMatches, unsealOAuthState } from '@/lib/calendar-sync/oauth-state';
+import { ADMIN_STATE_COOKIE, claimStateNonce, stateMatches, unsealCalendarState } from '@/lib/calendar-sync/oauth-state';
 import { isCalendarSyncOpen } from '@/lib/calendar-sync/switch';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { isAppError } from '@/lib/errors/types';
@@ -26,7 +26,7 @@ import { requirePermission } from '@/lib/security/permission-middleware';
 
 export const GET = withApiErrorHandling(async (req: NextRequest) => {
     if (!isCalendarSyncOpen()) return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'Not Found' } }, { status: 404 });
-    const sealed = unsealOAuthState(req.cookies.get(ADMIN_STATE_COOKIE)?.value, 'admin-consent');
+    const sealed = unsealCalendarState(req.cookies.get(ADMIN_STATE_COOKIE)?.value, 'admin-consent');
     const settings = sealed ? `/t/${sealed.tenantSlug}/settings/calendar-sync` : '/';
     if (!sealed || !stateMatches(req.nextUrl.searchParams.get('state'), sealed)) {
         logger.warn('calendar admin-consent callback refused: state missing or mismatched', { component: 'calendar-sync', hasCookie: req.cookies.has(ADMIN_STATE_COOKIE) });

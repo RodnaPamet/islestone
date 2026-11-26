@@ -21,7 +21,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { completeCalendarConnect } from '@/app-layer/usecases/calendar-connection';
 import { providerErrorCode, redirectBack } from '@/lib/calendar-sync/callback';
-import { CONNECT_STATE_COOKIE, claimStateNonce, stateMatches, unsealOAuthState } from '@/lib/calendar-sync/oauth-state';
+import { CONNECT_STATE_COOKIE, claimStateNonce, stateMatches, unsealCalendarState } from '@/lib/calendar-sync/oauth-state';
 import { isCalendarSyncOpen } from '@/lib/calendar-sync/switch';
 import { withApiErrorHandling } from '@/lib/errors/api';
 import { isAppError } from '@/lib/errors/types';
@@ -35,7 +35,7 @@ const REFUSAL_OUTCOME: Record<string, 'sync_off' | 'not_authorised' | 'refused'>
 
 export const GET = withApiErrorHandling(async (req: NextRequest) => {
     if (!isCalendarSyncOpen()) return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'Not Found' } }, { status: 404 });
-    const sealed = unsealOAuthState(req.cookies.get(CONNECT_STATE_COOKIE)?.value, 'connect');
+    const sealed = unsealCalendarState(req.cookies.get(CONNECT_STATE_COOKIE)?.value, 'connect');
     const preferences = sealed ? `/t/${sealed.tenantSlug}/inbox/preferences` : '/';
     if (!sealed || !stateMatches(req.nextUrl.searchParams.get('state'), sealed)) {
         logger.warn('calendar callback refused: state missing or mismatched', { component: 'calendar-sync', hasCookie: req.cookies.has(CONNECT_STATE_COOKIE) });

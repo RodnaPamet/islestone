@@ -37,7 +37,23 @@ const CALENDAR_PATHS = [
 ];
 const HTTP_MODULE = 'src/app-layer/integrations/providers/calendar/provider-http.ts';
 const ANY_FETCH_CALL = /\w*fetch\s*\(/gi;
-const GOOGLE_REVOKE = /oauth2\.googleapis\.com\/revoke|accounts\.google\.com\/o\/oauth2\/revoke|googleapis\.com\/oauth2\/v\d+\/revoke/;
+const URL_LITERAL = /https?:\/\/[^\s'"`]+/g;
+const REVOKE_PATH = /^\/(?:o\/oauth2\/|oauth2\/v\d+\/)?revoke\/?$/;
+
+/** A URL in the source that names Google's token revocation endpoint, parsed rather than matched as text. */
+function namesGoogleRevoke(code: string): boolean {
+    return (code.match(URL_LITERAL) ?? []).some((literal) => {
+        let url: URL;
+        try {
+            url = new URL(literal);
+        } catch {
+            return false;
+        }
+        const host = url.hostname.toLowerCase();
+        const google = host === 'accounts.google.com' || host === 'googleapis.com' || host.endsWith('.googleapis.com');
+        return google && REVOKE_PATH.test(url.pathname);
+    });
+}
 const NEXT_AUTH_IMPORT = /from\s+'(next-auth|@next-auth\/[^']+)(\/[^']*)?'|require\(\s*'next-auth/;
 
 function sources(root: string) {
@@ -63,7 +79,7 @@ export function calendarFetchSinks(root: string): string[] {
 }
 
 export function googleRevokeCallers(root: string): string[] {
-    return sources(root).filter(({ code }) => GOOGLE_REVOKE.test(code)).map(({ rel }) => rel);
+    return sources(root).filter(({ code }) => namesGoogleRevoke(code)).map(({ rel }) => rel);
 }
 
 export function calendarNextAuthImports(root: string): string[] {
@@ -102,6 +118,8 @@ describe('the detectors, against a planted repository', () => {
             'src/lib/calendar-sync/fine.ts': "// fetch(x) in a comment\nimport type { Session } from 'next-auth';\nexport const a = 1;\n",
             'src/app/api/integrations/calendar/callback/route.ts': "import { getServerSession } from 'next-auth';\n",
             'src/lib/somewhere.ts': "await post('https://oauth2.googleapis.com/revoke?token=' + t);\n",
+            'src/lib/legacy.ts': "const u = `https://accounts.google.com/o/oauth2/revoke?token=${t}`;\n",
+            'src/lib/unrelated.ts': "const u = 'https://example.com/revoke'; const v = 'https://oauth2.googleapis.com/token';\n",
             'src/lib/elsewhere.ts': 'await fetch(u);\n',
         };
         for (const [rel, content] of Object.entries(plant)) {
@@ -117,7 +135,7 @@ describe('the detectors, against a planted repository', () => {
     });
 
     it('flags the revoke endpoint wherever it is named, and a value import of next-auth in a calendar file (not a type import)', () => {
-        expect(googleRevokeCallers(root)).toEqual(['src/lib/somewhere.ts']);
+        expect(googleRevokeCallers(root).sort()).toEqual(['src/lib/legacy.ts', 'src/lib/somewhere.ts']);
         expect(calendarNextAuthImports(root)).toEqual(['src/app/api/integrations/calendar/callback/route.ts']);
     });
 });

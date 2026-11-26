@@ -61,7 +61,7 @@ function mac(payload: string): Buffer {
 }
 
 /** A fresh nonce and, for a connection, a PKCE verifier with its S256 challenge. */
-export function newOAuthSecrets(): { nonce: string; verifier: string; challenge: string } {
+export function newConnectNonces(): { nonce: string; verifier: string; challenge: string } {
     const verifier = randomBytes(48).toString('base64url');
     return {
         nonce: randomBytes(24).toString('base64url'),
@@ -70,13 +70,13 @@ export function newOAuthSecrets(): { nonce: string; verifier: string; challenge:
     };
 }
 
-export function sealOAuthState(state: Omit<CalendarOAuthState, 'v' | 'issuedAt'>, now: number = Date.now()): string {
+export function sealCalendarState(state: Omit<CalendarOAuthState, 'v' | 'issuedAt'>, now: number = Date.now()): string {
     const payload = Buffer.from(JSON.stringify({ v: 1, ...state, issuedAt: now })).toString('base64url');
     return `${payload}.${mac(payload).toString('base64url')}`;
 }
 
 /** The state, when the cookie is Islestone's, whole and young; null otherwise. */
-export function unsealOAuthState(cookie: string | undefined | null, purpose: CalendarOAuthPurpose, now: number = Date.now()): CalendarOAuthState | null {
+export function unsealCalendarState(cookie: string | undefined | null, purpose: CalendarOAuthPurpose, now: number = Date.now()): CalendarOAuthState | null {
     if (typeof cookie !== 'string' || cookie.length > 2048) return null;
     const dot = cookie.indexOf('.');
     if (dot < 1 || dot !== cookie.lastIndexOf('.')) return null;

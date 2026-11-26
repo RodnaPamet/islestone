@@ -28,7 +28,7 @@ import { CalendarSyncRepository } from '../repositories/CalendarSyncRepository';
 import type { RequestContext } from '../types';
 import { enqueueTeardowns } from './calendar-sync-enqueue';
 import { appLink } from '@/app-layer/notifications/app-link';
-import { ADMIN_STATE_COOKIE, newOAuthSecrets, sealOAuthState } from '@/lib/calendar-sync/oauth-state';
+import { ADMIN_STATE_COOKIE, newConnectNonces, sealCalendarState } from '@/lib/calendar-sync/oauth-state';
 import { isProviderConfigured } from '@/lib/calendar-sync/switch';
 import type { CalendarSyncSettingsView } from '@/lib/calendar-sync/types';
 import { runInTenantContext, runInTenantReadContext, type PrismaTx } from '@/lib/db-context';
@@ -113,8 +113,8 @@ export async function startMicrosoftConsent(ctx: RequestContext): Promise<{ cons
     const redirectUri = absoluteCallback(ADMIN_CALLBACK_PATH);
     if (!redirectUri) throw new ConflictError('This deployment has no public address to return to.', { reason: 'NO_PUBLIC_ORIGIN' });
     if (!ctx.tenantSlug) throw new ConflictError('The workspace could not be named.', { reason: 'NO_WORKSPACE_SLUG' });
-    const { nonce } = newOAuthSecrets();
-    const value = sealOAuthState({ purpose: 'admin-consent', nonce, tenantSlug: ctx.tenantSlug, userId: ctx.userId, provider: 'MICROSOFT' });
+    const { nonce } = newConnectNonces();
+    const value = sealCalendarState({ purpose: 'admin-consent', nonce, tenantSlug: ctx.tenantSlug, userId: ctx.userId, provider: 'MICROSOFT' });
     return { consentUrl: buildMicrosoftAdminConsentUrl({ redirectUri, state: nonce }), stateCookie: { name: ADMIN_STATE_COOKIE, value } };
 }
 

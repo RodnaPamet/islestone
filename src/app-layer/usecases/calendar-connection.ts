@@ -35,7 +35,7 @@ import type { RequestContext } from '../types';
 import { enqueueConnectionSync, enqueueTeardowns } from './calendar-sync-enqueue';
 import { syncWindow } from './calendar-sync-run';
 import { CONNECT_CALLBACK_PATH, absoluteCallback, microsoftConsentGranted } from './calendar-sync-settings';
-import { CONNECT_STATE_COOKIE, newOAuthSecrets, sealOAuthState } from '@/lib/calendar-sync/oauth-state';
+import { CONNECT_STATE_COOKIE, newConnectNonces, sealCalendarState } from '@/lib/calendar-sync/oauth-state';
 import { isProviderConfigured } from '@/lib/calendar-sync/switch';
 import { CALENDAR_PROVIDERS, CALENDAR_SYNC_ITEM_LIMIT, type MyCalendarSyncView, type ProviderUnavailableReason } from '@/lib/calendar-sync/types';
 import { runInTenantContext, runInTenantReadContext } from '@/lib/db-context';
@@ -114,7 +114,7 @@ export async function startCalendarConnect(
     const redirectUri = absoluteCallback(CONNECT_CALLBACK_PATH);
     if (!redirectUri) throw new ConflictError('This deployment has no public address to return to.', { reason: 'NO_PUBLIC_ORIGIN' });
     if (!ctx.tenantSlug) throw new ConflictError('The workspace could not be named.', { reason: 'NO_WORKSPACE_SLUG' });
-    const { nonce, verifier, challenge } = newOAuthSecrets();
+    const { nonce, verifier, challenge } = newConnectNonces();
     const authorizeUrl = buildCalendarAuthorizeUrl({
         provider,
         redirectUri,
@@ -122,7 +122,7 @@ export async function startCalendarConnect(
         codeChallenge: challenge,
         microsoftDirectoryId: settings.s?.microsoftExternalTenantId ?? null,
     });
-    const value = sealOAuthState({ purpose: 'connect', nonce, tenantSlug: ctx.tenantSlug, userId: ctx.userId, provider, verifier });
+    const value = sealCalendarState({ purpose: 'connect', nonce, tenantSlug: ctx.tenantSlug, userId: ctx.userId, provider, verifier });
     return { authorizeUrl, stateCookie: { name: CONNECT_STATE_COOKIE, value } };
 }
 

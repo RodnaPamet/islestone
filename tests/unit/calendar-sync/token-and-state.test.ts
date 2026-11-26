@@ -26,7 +26,7 @@ import {
     resolveCalendarAccessToken,
 } from '@/app-layer/integrations/providers/calendar/token';
 import { googleEventBody, graphEventBody } from '@/app-layer/integrations/providers/calendar/writer';
-import { newOAuthSecrets, sealOAuthState, stateMatches, unsealOAuthState, STATE_MAX_AGE_MS } from '@/lib/calendar-sync/oauth-state';
+import { newConnectNonces, sealCalendarState, stateMatches, unsealCalendarState, STATE_MAX_AGE_MS } from '@/lib/calendar-sync/oauth-state';
 import { checkProductionCalendarSync } from '@/lib/security/startup-calendar-sync-check';
 
 const DIRECTORY = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
@@ -194,10 +194,10 @@ describe('the sealed state', () => {
     const base = { purpose: 'connect' as const, tenantSlug: 'acme', userId: 'user_1', provider: 'GOOGLE' as const };
 
     it('round-trips; the verifier hashes to the challenge (S256)', () => {
-        const { nonce, verifier, challenge } = newOAuthSecrets();
+        const { nonce, verifier, challenge } = newConnectNonces();
         expect(createHash('sha256').update(verifier).digest('base64url')).toBe(challenge);
-        const sealed = sealOAuthState({ ...base, nonce, verifier }, 1_000);
-        const state = unsealOAuthState(sealed, 'connect', 2_000);
+        const sealed = sealCalendarState({ ...base, nonce, verifier }, 1_000);
+        const state = unsealCalendarState(sealed, 'connect', 2_000);
         expect(state).toMatchObject({ ...base, nonce, verifier });
         expect(stateMatches(nonce, state!)).toBe(true);
         expect(stateMatches(`${nonce}x`, state!)).toBe(false);
@@ -205,17 +205,17 @@ describe('the sealed state', () => {
     });
 
     it('refuses a tampered payload, another purpose, an old cookie and garbage', () => {
-        const { nonce, verifier } = newOAuthSecrets();
-        const sealed = sealOAuthState({ ...base, nonce, verifier }, 1_000);
+        const { nonce, verifier } = newConnectNonces();
+        const sealed = sealCalendarState({ ...base, nonce, verifier }, 1_000);
         const [payload, mac] = sealed.split('.');
         const forged = Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(payload!, 'base64url').toString()), userId: 'user_2' })).toString('base64url');
-        expect(unsealOAuthState(`${forged}.${mac}`, 'connect', 2_000)).toBeNull();
-        expect(unsealOAuthState(sealed, 'admin-consent', 2_000)).toBeNull();
-        expect(unsealOAuthState(sealed, 'connect', 1_000 + STATE_MAX_AGE_MS + 1)).toBeNull();
-        expect(unsealOAuthState('garbage', 'connect')).toBeNull();
-        expect(unsealOAuthState(undefined, 'connect')).toBeNull();
+        expect(unsealCalendarState(`${forged}.${mac}`, 'connect', 2_000)).toBeNull();
+        expect(unsealCalendarState(sealed, 'admin-consent', 2_000)).toBeNull();
+        expect(unsealCalendarState(sealed, 'connect', 1_000 + STATE_MAX_AGE_MS + 1)).toBeNull();
+        expect(unsealCalendarState('garbage', 'connect')).toBeNull();
+        expect(unsealCalendarState(undefined, 'connect')).toBeNull();
         // A connection's state without its verifier is no state.
-        expect(unsealOAuthState(sealOAuthState({ ...base, nonce }, 1_000), 'connect', 2_000)).toBeNull();
+        expect(unsealCalendarState(sealCalendarState({ ...base, nonce }, 1_000), 'connect', 2_000)).toBeNull();
     });
 });
 
