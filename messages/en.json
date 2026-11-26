@@ -494,7 +494,7 @@
     "nav": {
         "account": "Account",
         "accountMenu": "Account menu",
-        "accountMenuFor": "Account menu for {name}",
+        "accountMenuFor": "Account menu for {name}, {initials}",
         "brandHomeNamed": "{initials}: Islestone — go to My Work",
         "collapseSidebarNamed": "{app} — collapse sidebar",
         "expandSidebar": "Expand sidebar",
@@ -951,6 +951,7 @@
             "countMore": "{count}+",
             "addIn": "Add a work item to {column}",
             "pickedUp": "Picked up {key}.",
+            "moving": "Moving {key}.",
             "position": "{column}, position {position} of {total}.",
             "inLane": "Lane {lane}.",
             "dropped": "Dropped {key} in {column} at position {position}.",

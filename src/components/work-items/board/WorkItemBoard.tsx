@@ -26,7 +26,7 @@ import { Button } from '@inflect/ui/components/ui/button';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { Combobox } from '@/components/ui/combobox';
 import { InitialsAvatar } from '@/components/ui/initials-avatar';
-import { VirtualizedList } from '@/components/ui/virtualized-list';
+import { VirtualizedList, type VirtualizedListHandle } from '@/components/ui/virtualized-list';
 import { useToast } from '@/components/ui/hooks';
 import { PRIORITY_ORDER } from '@/lib/work-items/presentation';
 import type { WorkItemRow } from '@/lib/work-items/types';
@@ -126,6 +126,8 @@ function BoardCard(props: CardProps) {
                     onKeyDown={(e) => onKey(e, row, column, lane)}
                 >
                     <p className="font-mono text-xs text-content-muted">{row.key}</p>
+                    {/* A space between key and title, so the visible text reads as the
+                        name says it (WCAG 2.5.3, label in name; H2e's browser axe). */}{' '}
                     <p className="line-clamp-2 text-sm text-content-emphasis">{row.title}</p>
                 </div>
                 {canMove && moveOptions.length > 0 && (
@@ -168,6 +170,7 @@ function BoardCell({
     virtualize,
     canDropFromLane,
     label,
+    focusIndex,
     children,
 }: {
     column: number;
@@ -176,15 +179,27 @@ function BoardCell({
     virtualize: boolean;
     canDropFromLane: (lane: number) => boolean;
     label: string;
+    /** The index of the card that should hold focus, when it is in this cell (else -1). */
+    focusIndex: number;
     children: (row: WorkItemRow, index: number) => React.ReactNode;
 }) {
     const ref = useRef<HTMLDivElement | null>(null);
+    const listRef = useRef<VirtualizedListHandle | null>(null);
     useDropCell(ref, { column, lane }, canDropFromLane);
+    // A virtualised list renders only the rows in view: scroll the card that should hold
+    // focus into the window, so it mounts and the board can focus it (a drop at the
+    // bottom of a long column re-renders the column from the top).
+    useEffect(() => {
+        if (virtualize && focusIndex >= 0) listRef.current?.scrollToItem(focusIndex, 'smart');
+    }, [virtualize, focusIndex]);
     if (virtualize) {
         return (
-            <div ref={ref} className="min-h-0 flex-1" data-board-cell={`${column}:${lane}`}>
+            // The list is this element, named as the plain cell's list is; the
+            // windowed scroller inside it carries no role of its own.
+            <div ref={ref} role="list" aria-label={label} className="min-h-0 flex-1" data-board-cell={`${column}:${lane}`}>
                 <VirtualizedList
-                    aria-label={label}
+                    ref={listRef}
+                    role="presentation"
                     itemCount={rows.length}
                     itemSize={CARD_HEIGHT}
                     itemKey={(i) => rows[i]?.id ?? i}
@@ -233,6 +248,16 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
     const [grab, setGrab] = useState<{ itemId: string; target: GrabTarget } | null>(null);
     const [announcement, setAnnouncement] = useState('');
     const [focusId, setFocusId] = useState<string | null>(null);
+    /** "Load more" pressed in a column: focus goes to the first card it brings (the button may go). */
+    const [loadFocus, setLoadFocus] = useState<{ columnId: string; from: number } | null>(null);
+    /** The first card a "Load more" brought, once it has arrived. */
+    const loadedFirstId = loadFocus ? (columnData[loadFocus.columnId]?.items[loadFocus.from]?.id ?? null) : null;
+    /** The card that holds focus after a move or a "Load more", until the person moves focus. */
+    const heldId = loadedFirstId ?? focusId;
+    /** The card that should hold focus: the one picked up, else the one held. */
+    const focusTarget = grab?.itemId ?? heldId;
+    /** A focus target whose card was not mounted when the board last rendered (a virtualised row out of view). */
+    const pendingFocus = useRef<string | null>(null);
 
     const registerLoader = useCallback((id: string, loadMore: () => void) => {
         loaders.current[id] = loadMore;
@@ -341,6 +366,12 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
         return laneBy === 'none' ? where : `${where} ${tBoard('board.inLane', { lane: laneLabel(lanes[lane] ?? '') })}`;
     };
 
+    /** A drop's announcement: the card, the column, the position and, on a board with lanes, the lane. */
+    const dropped = (row: WorkItemRow, column: number, lane: number, index: number) => {
+        const where = tBoard('board.dropped', { key: row.key, column: columnNames[column] ?? '', position: index + 1 });
+        return laneBy === 'none' ? where : `${where} ${tBoard('board.inLane', { lane: laneLabel(lanes[lane] ?? '') })}`;
+    };
+
     const commitMove = (row: WorkItemRow, column: number, lane: number, index: number) => {
         const col = columns[column];
         if (!col) return;
@@ -356,6 +387,11 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
         if (column === currentColumn && lane === currentLane && index === currentIndex) return;
         const placement = placementFor(cell, index, row);
         void mutations.moveOnBoard(row, { stateId, ...placement });
+        // Placed after the last card loaded while the column has more pages: the list
+        // leaves such a row for the next page to bring, so bring it now, or the card
+        // (and the focus it holds) would leave the board.
+        const loaded = columnData[col.id];
+        if (loaded?.hasMore && placement.afterId && loaded.items[loaded.items.length - 1]?.id === placement.afterId) loaders.current[col.id]?.();
         const laneKey = lanes[lane] ?? '';
         if (lane !== currentLane && lanesMovable) {
             const moved = { ...row, stateId, ...(placement.sortKey ? { sortKey: placement.sortKey } : {}) };
@@ -394,15 +430,42 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
 
     // Keep keyboard focus on the moved card: it re-mounts in its new cell.
     useEffect(() => {
-        const id = grab?.itemId ?? focusId;
-        if (!id) return;
-        const el = cardEls.current.get(id);
+        const el = focusTarget ? cardEls.current.get(focusTarget) : undefined;
+        pendingFocus.current = focusTarget && !el ? focusTarget : null;
         if (el && document.activeElement !== el) el.focus();
     });
 
+    // A card carried within its cell keeps its element, and React restores its focus
+    // without scrolling: bring it into view on every keyboard step.
+    useEffect(() => {
+        if (!grab) return;
+        cardEls.current.get(grab.itemId)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    }, [grab]);
+
+    // The moved card holds focus only until the person moves it: focus anywhere else
+    // ends the hold, so a later re-render (a page loaded, a filter typed, a server
+    // answer) never takes focus back.
+    useEffect(() => {
+        if (!focusId && !loadFocus) return;
+        const release = (e: FocusEvent) => {
+            if (heldId && e.target === cardEls.current.get(heldId)) return;
+            pendingFocus.current = null;
+            setFocusId(null);
+            setLoadFocus(null);
+        };
+        document.addEventListener('focusin', release);
+        return () => document.removeEventListener('focusin', release);
+    }, [focusId, loadFocus, heldId]);
+
     const register = useCallback((id: string, el: HTMLElement | null) => {
-        if (el) cardEls.current.set(id, el);
-        else cardEls.current.delete(id);
+        if (el) {
+            cardEls.current.set(id, el);
+            // A card that mounts later (a virtualised row scrolled into view) takes the focus it is owed.
+            if (pendingFocus.current === id) {
+                pendingFocus.current = null;
+                if (document.activeElement !== el) el.focus();
+            }
+        } else cardEls.current.delete(id);
     }, []);
 
     const onKey = (e: KeyboardEvent<HTMLElement>, row: WorkItemRow, column: number, lane: number) => {
@@ -429,7 +492,7 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
             e.preventDefault();
             const next = nextTarget(grab.target, direction, { columns: columns.length, lanes: lanes.length, lanesMovable }, (c, l) => cellRows(c, l, row.id).length);
             setGrab({ itemId: row.id, target: next });
-            setAnnouncement(describe(next.column, next.lane, next.index, cellRows(next.column, next.lane, row.id).length));
+            setAnnouncement(`${tBoard('board.moving', { key: row.key })} ${describe(next.column, next.lane, next.index, cellRows(next.column, next.lane, row.id).length)}`);
             return;
         }
         if (e.key === ' ' || e.key === 'Enter') {
@@ -438,7 +501,7 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
             setGrab(null);
             setFocusId(row.id);
             commitMove(row, c, l, index);
-            setAnnouncement(tBoard('board.dropped', { key: row.key, column: columnNames[c] ?? '', position: index + 1 }));
+            setAnnouncement(dropped(row, c, l, index));
             return;
         }
         if (e.key === 'Escape' || e.key === 'Tab') {
@@ -452,7 +515,7 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
     const onMoveTo = (row: WorkItemRow, column: number) => {
         const lane = Math.max(0, lanes.indexOf(laneKeyOf(row, laneBy, laneCtx)));
         commitMove(row, column, lane, cellRows(column, lane, row.id).length);
-        setAnnouncement(tBoard('board.dropped', { key: row.key, column: columnNames[column] ?? '', position: cellRows(column, lane, row.id).length + 1 }));
+        setAnnouncement(dropped(row, column, lane, cellRows(column, lane, row.id).length));
     };
 
     // A card may cross lanes only where the lane's field is one a drop may
@@ -535,6 +598,7 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
                                             rows={rows}
                                             label={laneBy === 'none' ? name : `${name}, ${laneLabel(laneKey)}`}
                                             virtualize={laneBy === 'none' && rows.length > VIRTUALIZE_COLUMN_AT && !grab}
+                                            focusIndex={focusTarget ? rows.findIndex((r) => r.id === focusTarget) : -1}
                                             canDropFromLane={laneDropRules[lane]!}
                                         >
                                             {(row) => (
@@ -556,7 +620,12 @@ export function WorkItemBoard({ scope, columns, laneBy, onOpen, onCreate, canEdi
                                             )}
                                         </BoardCell>
                                         {lane === lanes.length - 1 && state?.hasMore && (
-                                            <Button variant="ghost" size="sm" text={tBoard('list.loadMore')} onClick={() => loaders.current[col.id]?.()} />
+                                            <Button variant="ghost" size="sm" text={tBoard('list.loadMore')} onClick={() => {
+                                                    setFocusId(null);
+                                                    setLoadFocus({ columnId: col.id, from: state.items.length });
+                                                    loaders.current[col.id]?.();
+                                                }}
+                                            />
                                         )}
                                     </section>
                                 );
