@@ -255,6 +255,14 @@ describeFn('calendar sync, end to end against a fake provider', () => {
             expect(rows).toHaveLength(3);
             expect(rows.every((x) => x.state === 'PUSHED' && x.remoteEventId && x.remoteVersion)).toBe(true);
 
+            // The synced-event rows are bookkeeping, outside the audit extension (owner decision,
+            // 2026-11-26); the connection's own writes are still recorded.
+            const trail = await prisma.auditLog.findMany({ where: { tenantId: a.tenantId }, select: { detailsJson: true } });
+            const lifecycle = trail.map((x) => x.detailsJson as { category?: string; entityName?: string } | null).filter((d) => d?.category === 'entity_lifecycle');
+            const entities = new Set(lifecycle.map((d) => d!.entityName));
+            expect(entities.has('CalendarSyncedEvent')).toBe(false);
+            expect(entities.has('CalendarConnection')).toBe(true);
+
             // An unchanged calendar: the next run makes no provider call.
             const settled = fake.requests.length;
             expect((await runCalendarSync({ tenantId: a.tenantId, connectionId: ids.megConnection! })).outcome).toBe('nothing');
