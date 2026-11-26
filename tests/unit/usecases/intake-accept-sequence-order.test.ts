@@ -5,6 +5,11 @@
  * the accept's transaction, with the request's claim, the requester's watch
  * and the accept's audit entry; after the COMMIT, the create's bells, then
  * the decision's automation event. A refused accept writes nothing.
+ *
+ * The accept waits its turn in its target project's queue before it opens
+ * its transaction, and leaves it after the commit (Hardening H2, issue #70:
+ * a waiting accept holds no pooled connection); with no project named, the
+ * request's own project is read first, in a read of its own.
  */
 const events: string[] = [];
 
@@ -14,6 +19,16 @@ jest.mock('@/lib/db-context', () => ({
         const result = await cb({});
         events.push('tx:commit');
         return result;
+    },
+}));
+jest.mock('@/app-layer/usecases/project-sequence-queue', () => ({
+    inProjectSequenceQueue: async (_tenantId: string, projectId: string, fn: () => Promise<unknown>) => {
+        events.push(`queue:enter:${projectId}`);
+        try {
+            return await fn();
+        } finally {
+            events.push('queue:leave');
+        }
     },
 }));
 jest.mock('@/app-layer/events/audit', () => ({
@@ -124,6 +139,10 @@ describe('intake accept side-effect order', () => {
     it('the create core, the claim, the watch and the audit inside the transaction; the bells and the decision after the commit', async () => {
         await acceptIntakeRequest(ctx, 'r1', { typeId: 'ty1' }, 3);
         expect(events).toEqual([
+            // The request's project, read in a read of its own.
+            'tx:begin',
+            'tx:commit',
+            'queue:enter:p1',
             'tx:begin',
             'lock:request',
             'create:in-tx',
@@ -133,6 +152,7 @@ describe('intake accept side-effect order', () => {
             'watch:u-requester',
             'audit:INTAKE_REQUEST_ACCEPTED',
             'tx:commit',
+            'queue:leave',
             'bells:create',
             'automation:INTAKE_REQUEST_DECIDED',
         ]);
@@ -140,7 +160,12 @@ describe('intake accept side-effect order', () => {
 
     it('a stale version is a 409 that creates nothing and emits nothing', async () => {
         await expect(acceptIntakeRequest(ctx, 'r1', { typeId: 'ty1' }, 2)).rejects.toMatchObject({ status: 409 });
-        expect(events).toEqual(['tx:begin', 'lock:request']);
+        expect(events).toEqual(['tx:begin', 'tx:commit', 'queue:enter:p1', 'tx:begin', 'lock:request', 'queue:leave']);
+    });
+
+    it('an accept into a project it names queues in that project, with no read first', async () => {
+        await acceptIntakeRequest(ctx, 'r1', { typeId: 'ty1', projectId: 'p1' }, 3);
+        expect(events.slice(0, 2)).toEqual(['queue:enter:p1', 'tx:begin']);
     });
 
     it('an accept with no If-Match is a 428 before any transaction', async () => {
