@@ -6,7 +6,7 @@
  */
 import { LANE_BY_VALUES, laneMovableInScope } from '@/components/work-items/board/board-model';
 import { WORK_ITEM_FILTER_KEYS } from '@/components/work-items/filter-defs';
-import { SavedViewConfigSchema } from '@/lib/schemas/saved-view';
+import { CreateSavedViewSchema, SavedViewConfigSchema } from '@/lib/schemas/saved-view';
 
 describe('saved-view configuration keys', () => {
     it.each(WORK_ITEM_FILTER_KEYS)('accepts the %s filter', (key) => {
@@ -29,5 +29,13 @@ describe('milestone lanes take drops on a one-project board only (2.5b)', () => 
         expect(laneMovableInScope('milestone', undefined)).toBe(false);
         expect(laneMovableInScope('cycle', undefined)).toBe(true);
         expect(laneMovableInScope('label', 'p1')).toBe(false);
+    });
+});
+
+describe('the calendar layout (3.3a)', () => {
+    it('a saved view stores CALENDAR and its two switches, strictly', () => {
+        expect(CreateSavedViewSchema.safeParse({ name: 'Due', layout: 'CALENDAR', config: { calendar: { showCycles: false, showMilestones: true } } }).success).toBe(true);
+        expect(SavedViewConfigSchema.safeParse({ calendar: { showCycles: true } }).success).toBe(false);
+        expect(SavedViewConfigSchema.safeParse({ calendar: { showCycles: true, showMilestones: true, month: '2026-03' } }).success).toBe(false);
     });
 });

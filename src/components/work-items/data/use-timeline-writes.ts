@@ -31,7 +31,7 @@ import { useMemo } from 'react';
 import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { ApiClientError, apiSend } from '@/lib/data/api-client';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
-import { withEdge, withoutEdge, withRowDates, type TimelineEdge, type TimelineRow } from '@/lib/work-items/timeline';
+import { withEdge, withoutEdge, type TimelineEdge, type TimelineRow } from '@/lib/work-items/timeline';
 import type { ItemDates, PushedItem } from '@/lib/work-items/reschedule';
 import type { WorkItemDetailData } from '@/lib/work-items/types';
 
@@ -59,14 +59,14 @@ export function useTimelineWrites() {
             return err instanceof ApiClientError && err.reason ? err.reason : t('failed');
         };
         const refused = (err: unknown) => {
-            cache.revalidateTimelines();
+            cache.revalidateDated();
             toast.error(reasonOf(err));
         };
 
         return {
             /** One item's dates (`PATCH`, `If-Match`): resolves `true` once the server has them. */
             async changeDates(row: TimelineRow, to: ItemDates): Promise<boolean> {
-                cache.updateTimelines((current) => withRowDates(current, [{ id: row.id, ...to }]));
+                cache.placeDates([{ id: row.id, ...to }]);
                 try {
                     const saved = await apiSend<WorkItemDetailData>('PATCH', apiUrl(`/work-items/${row.id}`), { startDate: to.startDate, dueDate: to.dueDate }, { ifMatch: row.version });
                     cache.applyRow(toRow(saved), saved);
@@ -84,7 +84,7 @@ export function useTimelineWrites() {
             reschedule({ row, to, pushed }: DateChangeRequest): void {
                 const forward = [{ id: row.id, ...to }, ...pushed.map((p) => ({ id: p.id, ...p.to }))];
                 const back = [{ id: row.id, startDate: row.startDate, dueDate: row.dueDate }, ...pushed.map((p) => ({ id: p.id, ...p.from }))];
-                cache.updateTimelines((current) => withRowDates(current, forward));
+                cache.placeDates(forward);
                 triggerUndo({
                     message: tTimeline('moving', { key: row.key, count: pushed.length }),
                     undoMessage: t('undo'),
@@ -93,9 +93,9 @@ export function useTimelineWrites() {
                             dragged: { id: row.id, version: row.version, startDate: to.startDate, dueDate: to.dueDate },
                             pushed: pushed.map((p) => ({ id: p.id, version: p.version, startDate: p.to.startDate, dueDate: p.to.dueDate })),
                         }),
-                    undoAction: () => cache.updateTimelines((current) => withRowDates(current, back)),
+                    undoAction: () => cache.placeDates(back),
                     onCommit: (result) => {
-                        cache.updateTimelines((current) => withRowDates(current, result.items));
+                        cache.placeDates(result.items);
                         // Lists and details hold these rows too: read them again.
                         cache.revalidateLists();
                         for (const item of result.items) void cache.revalidateItem(item.id);

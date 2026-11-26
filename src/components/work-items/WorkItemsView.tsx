@@ -57,13 +57,14 @@ import { useSavedView } from './data/use-saved-views';
 import { CustomFieldsManager } from './fields/CustomFieldsManager';
 import { SavedViewsMenu } from './SavedViewsMenu';
 import type { buildWorkItemFilterDefs } from './filter-defs';
-import { LayoutToggle, type WorkItemLayout } from './LayoutToggle';
+import { LayoutToggle, layoutOf, type WorkItemLayout } from './LayoutToggle';
 import { NewWorkItemModal } from './NewWorkItemModal';
 import { AssigneePicker } from './pickers';
 import { useWorkItemColumnChoices, useWorkItemColumns } from './use-work-item-columns';
 import { useListFiltersFromContext, useWorkItemFilterContext } from './use-work-item-filter-context';
 import { WorkItemSheet } from './WorkItemSheet';
 import { DEFAULT_TIMELINE_SETTINGS, TimelineView, type TimelineMode, type TimelineSettings } from './timeline/TimelineView';
+import { CalendarView, DEFAULT_CALENDAR_SETTINGS, type CalendarSettings } from './calendar/CalendarView';
 
 export interface WorkItemsViewProps {
     /**
@@ -242,6 +243,8 @@ function WorkItemsViewBody({
     // The timeline's settings per view (3.1b), and Chart or Table per viewer (decision 203).
     const [timelineSettings, setTimelineSettings] = useLocalStorage<TimelineSettings>(uiStorageKey('work-items', 'timeline', viewKey), DEFAULT_TIMELINE_SETTINGS);
     const [timelineMode, setTimelineMode] = useLocalStorage<TimelineMode>(uiStorageKey('work-items', 'timeline-mode'), 'chart');
+    // The calendar's settings per view (3.3a): its cycle bands and its milestone and project due-date markers.
+    const [calendarSettings, setCalendarSettings] = useLocalStorage<CalendarSettings>(uiStorageKey('work-items', 'calendar', viewKey), DEFAULT_CALENDAR_SETTINGS);
     const [sheetId, setSheetId] = useState<string | null>(null);
     const [creating, setCreating] = useState<{ stateId?: string } | null>(null);
     const [showDeleted, setShowDeleted] = useState(false);
@@ -275,7 +278,7 @@ function WorkItemsViewBody({
 
     const snapshot = useCallback(
         () => ({
-            layout: layout === 'board' ? ('BOARD' as const) : layout === 'timeline' ? ('TIMELINE' as const) : ('LIST' as const),
+            layout: layout === 'board' ? ('BOARD' as const) : layout === 'timeline' ? ('TIMELINE' as const) : layout === 'calendar' ? ('CALENDAR' as const) : ('LIST' as const),
             config: {
                 filters: Object.fromEntries(Object.entries(filterApi.state).filter(([, v]) => v.length > 0)),
                 ...(filterApi.search ? { q: filterApi.search } : {}),
@@ -283,9 +286,10 @@ function WorkItemsViewBody({
                 laneBy,
                 columns: columnChoices.filter((c) => columnsGear.columnVisibility[c.id] !== false).map((c) => c.id),
                 timeline: timelineSettings,
+                calendar: { ...DEFAULT_CALENDAR_SETTINGS, ...calendarSettings },
             },
         }),
-        [layout, filterApi.state, filterApi.search, sort, laneBy, columnChoices, columnsGear.columnVisibility, timelineSettings],
+        [layout, filterApi.state, filterApi.search, sort, laneBy, columnChoices, columnsGear.columnVisibility, timelineSettings, calendarSettings],
     );
 
     const applyView = useCallback(
@@ -293,8 +297,9 @@ function WorkItemsViewBody({
             filterApi.clearAll();
             for (const [key, values] of Object.entries(view.config.filters ?? {})) if (values.length) filterApi.add(key, values);
             filterApi.setSearch(view.config.q ?? '');
-            setLayout(view.layout === 'BOARD' ? 'board' : view.layout === 'TIMELINE' ? 'timeline' : 'list');
+            setLayout(layoutOf(view.layout.toLowerCase()));
             if (view.config.timeline) setTimelineSettings(view.config.timeline);
+            if (view.config.calendar) setCalendarSettings(view.config.calendar);
             setLaneBy((view.config.laneBy as LaneBy) || 'none');
             setSort(view.config.sort || 'manual');
             if (view.config.columns) {
@@ -304,7 +309,7 @@ function WorkItemsViewBody({
                 columnsGear.setColumnVisibility(map);
             }
         },
-        [filterApi, setLayout, setLaneBy, setSort, columnChoices, columnsGear, setTimelineSettings],
+        [filterApi, setLayout, setLaneBy, setSort, columnChoices, columnsGear, setTimelineSettings, setCalendarSettings],
     );
 
     // `?view=<id>` (the Views page's links) applies that view once.
@@ -319,10 +324,10 @@ function WorkItemsViewBody({
         applyView(deepLinked);
     }, [deepLinked, appliedDeepLink, applyView]);
 
-    // `?layout=timeline` (a roadmap bar, 3.2c decision 217) opens that layout once, and is remembered like a choice.
+    // `?layout=timeline` (a roadmap bar, 3.2c decision 217) or `?layout=calendar` opens that layout once, and is remembered like a choice.
     const deepLayout = searchParams?.get('layout') ?? null;
     useEffect(() => {
-        if (deepLayout === 'timeline' || deepLayout === 'board' || deepLayout === 'list') setLayout(deepLayout);
+        if (deepLayout === 'timeline' || deepLayout === 'board' || deepLayout === 'list' || deepLayout === 'calendar') setLayout(deepLayout);
     }, [deepLayout, setLayout]);
 
     // `?create=1` opens the create dialog (the "new" deep link).
@@ -441,6 +446,29 @@ function WorkItemsViewBody({
                                     onModeChange={setTimelineMode}
                                     onOpen={(id) => setSheetId(id)}
                                     highlightRange={cycleRange}
+                                    canEdit={perms.edit}
+                                />
+                            </ListPageShell.Body>
+                            {sheet}
+                        </ListPageShell>
+                    );
+                }
+                if (layout === 'calendar') {
+                    return (
+                        <ListPageShell>
+                            <ListPageShell.Header>
+                                <PageHeader title={header.title} description={header.description} actions={actions} />
+                            </ListPageShell.Header>
+                            <ListPageShell.Filters className="space-y-section">
+                                {summary}
+                                {toolbar(createButton)}
+                            </ListPageShell.Filters>
+                            <ListPageShell.Body>
+                                <CalendarView
+                                    filters={filters}
+                                    settings={{ ...DEFAULT_CALENDAR_SETTINGS, ...calendarSettings }}
+                                    onSettingsChange={setCalendarSettings}
+                                    onOpen={(id) => setSheetId(id)}
                                     canEdit={perms.edit}
                                 />
                             </ListPageShell.Body>

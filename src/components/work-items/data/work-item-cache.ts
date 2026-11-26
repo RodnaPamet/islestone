@@ -31,7 +31,8 @@ import { useMemo } from 'react';
 import { useSWRConfig } from 'swr';
 
 import type { WorkItemDetailData, WorkItemPage, WorkItemRow } from '@/lib/work-items/types';
-import { placeRowInTimeline, removeRowFromTimeline, type TimelineResponse } from '@/lib/work-items/timeline';
+import { placeRowInTimeline, removeRowFromTimeline, withRowDates, type TimelineDateChange, type TimelineResponse } from '@/lib/work-items/timeline';
+import { placeRowInCalendar, removeRowFromCalendar, withCalendarDates, type CalendarResponse } from '@/lib/work-items/calendar';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
 
 import { compareRows, rowBelongs, type WorkItemListFilters } from './list-filters';
@@ -65,6 +66,29 @@ export function registerWorkItemTimeline(timeline: RegisteredTimeline): () => vo
     timelines.add(timeline);
     return () => {
         timelines.delete(timeline);
+    };
+}
+
+/**
+ * A mounted calendar (3.3a, `useWorkItemCalendar`). A write places the row in
+ * its cached copy when it holds it (`placeRowInCalendar`, the list's own
+ * `rowBelongs` for its filters); a row it does not hold that may now be due
+ * in its window, or a bulk change, re-reads it.
+ */
+export interface RegisteredCalendar {
+    filters: WorkItemListFilters;
+    /** Apply a change to the cached calendar; `fn` answers `null` when it cannot place the change. */
+    update: (fn: (current: CalendarResponse) => CalendarResponse | null) => void;
+    revalidate: () => void;
+}
+
+const calendars = new Set<RegisteredCalendar>();
+
+/** Register a mounted calendar; returns the unregister function. */
+export function registerWorkItemCalendar(calendar: RegisteredCalendar): () => void {
+    calendars.add(calendar);
+    return () => {
+        calendars.delete(calendar);
     };
 }
 
@@ -144,6 +168,14 @@ export interface WorkItemCache {
     updateTimelines: (fn: (current: TimelineResponse) => TimelineResponse | null) => void;
     /** Re-read every mounted timeline (after a refusal, or a change the client cannot place). */
     revalidateTimelines: () => void;
+    /**
+     * New dates shown in every mounted timeline (the engine re-run there) and
+     * calendar (3.3a) at once: a change of dates before it is sent, its undo,
+     * and the server's answer.
+     */
+    placeDates: (changes: readonly TimelineDateChange[]) => void;
+    /** Re-read every mounted timeline and calendar (after a refused change of dates). */
+    revalidateDated: () => void;
 }
 
 export function useWorkItemCache(): WorkItemCache {
@@ -154,6 +186,7 @@ export function useWorkItemCache(): WorkItemCache {
             applyRow(row, detail) {
                 for (const list of lists) list.update((pages) => placeRow(pages, list.filters, row));
                 for (const timeline of timelines) timeline.update((current) => placeRowInTimeline(current, row));
+                for (const calendar of calendars) calendar.update((current) => placeRowInCalendar(current, row, rowBelongs(calendar.filters, row)));
                 // Only a detail that is loaded: SWR drops an in-flight fetch's
                 // answer when its key is mutated after the fetch began, so a
                 // write landing while a sheet was still loading left it
@@ -167,11 +200,13 @@ export function useWorkItemCache(): WorkItemCache {
             removeRow(id) {
                 for (const list of lists) list.update((pages) => removeRowFromPages(pages, id));
                 for (const timeline of timelines) timeline.update((current) => removeRowFromTimeline(current, id));
+                for (const calendar of calendars) calendar.update((current) => removeRowFromCalendar(current, id) ?? current);
             },
             revalidateLists(match) {
                 for (const list of lists) if (!match || match(list.filters)) list.revalidate();
                 // A timeline reads its whole scope: any change a list re-reads for may move it.
                 for (const timeline of timelines) timeline.revalidate();
+                for (const calendar of calendars) calendar.revalidate();
             },
             revalidateItem(id) {
                 return mutate(apiUrl(workItemDetailPath(id)));
@@ -189,6 +224,14 @@ export function useWorkItemCache(): WorkItemCache {
             },
             revalidateTimelines() {
                 for (const timeline of timelines) timeline.revalidate();
+            },
+            placeDates(changes) {
+                for (const timeline of timelines) timeline.update((current) => withRowDates(current, changes));
+                for (const calendar of calendars) calendar.update((current) => withCalendarDates(current, changes));
+            },
+            revalidateDated() {
+                for (const timeline of timelines) timeline.revalidate();
+                for (const calendar of calendars) calendar.revalidate();
             },
         }),
         [mutate, cache, apiUrl],

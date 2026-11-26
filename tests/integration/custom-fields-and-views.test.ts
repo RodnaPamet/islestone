@@ -374,6 +374,13 @@ describeFn('custom fields and saved views', () => {
             expect((await listSavedViews(viewer, undefined)).views.map((v) => v.id)).toContain(shared.id);
         });
 
+        it('a calendar view stores CALENDAR and its two switches (3.3a)', async () => {
+            const view = await createSavedView(member, { name: 'Due dates', visibility: 'PERSONAL', layout: 'CALENDAR', config: { ...config, calendar: { showCycles: false, showMilestones: true } } });
+            expect(view.layout).toBe('CALENDAR');
+            expect(view.config.calendar).toEqual({ showCycles: false, showMilestones: true });
+            expect((await getSavedView(member, view.id)).layout).toBe('CALENDAR');
+        });
+
         it('a VIEWER saves and edits its own personal view, audited, and is refused a shared one (decision 60)', async () => {
             const own = await createSavedView(viewer, { name: 'Viewer only', visibility: 'PERSONAL', layout: 'LIST', config });
             expect(own).toMatchObject({ visibility: 'PERSONAL', mine: true, createdByUserId: viewer.userId });

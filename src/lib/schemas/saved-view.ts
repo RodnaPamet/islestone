@@ -31,6 +31,13 @@ export const TimelineConfigSchema = z
     })
     .strict();
 
+export const CalendarConfigSchema = z
+    .object({
+        showCycles: z.boolean(),
+        showMilestones: z.boolean(),
+    })
+    .strict();
+
 export const SavedViewConfigSchema = z
     .object({
         /** The filter system's state: key → selected values. */
@@ -56,13 +63,15 @@ export const SavedViewConfigSchema = z
         columns: z.array(z.string().min(1).max(70)).max(60).optional(),
         /** The timeline's settings (3.1b): its zoom, the critical path and the "No dates" list. */
         timeline: TimelineConfigSchema.optional(),
+        /** The calendar's settings (3.3a): its cycle bands and its milestone and project due-date markers. */
+        calendar: CalendarConfigSchema.optional(),
     })
     .strict();
 
 export type SavedViewConfig = z.infer<typeof SavedViewConfigSchema>;
 
-/** Layouts accepted now: TIMELINE since 3.1b; CALENDAR arrives with 3.3. */
-export const SAVED_VIEW_LAYOUTS = ['LIST', 'BOARD', 'TIMELINE'] as const;
+/** Layouts accepted: TIMELINE since 3.1b, CALENDAR since 3.3a (every value of `ViewLayout`). */
+export const SAVED_VIEW_LAYOUTS = ['LIST', 'BOARD', 'TIMELINE', 'CALENDAR'] as const;
 
 export const CreateSavedViewSchema = z
     .object({
