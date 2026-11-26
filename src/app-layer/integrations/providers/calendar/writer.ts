@@ -14,7 +14,7 @@
  *
  * Server-only. Written fresh for Islestone.
  */
-import { ProviderHttpError } from '@/app-layer/integrations/http-errors';
+import { CalendarGoneError, ProviderHttpError } from '@/app-layer/integrations/http-errors';
 import { nextDay, type DesiredSyncedEvent } from '@/app-layer/domain/calendar-sync';
 
 import { providerRequest } from './provider-http';
@@ -37,7 +37,7 @@ export interface CalendarWriter {
     /** Deletes the calendar only when it holds no event (decision 239). */
     deleteCalendarIfEmpty(calendarId: string): Promise<'deleted' | 'not_empty' | 'gone'>;
     find(calendarId: string, clientEventId: string): Promise<FoundEvent | null>;
-    /** Inserts with the client id; a duplicate is found and adopted, never inserted twice. */
+    /** Inserts with the client id; a duplicate is found and adopted, never inserted twice. `CalendarGoneError` when the calendar is gone. */
     insert(calendarId: string, clientEventId: string, event: DesiredSyncedEvent): Promise<{ remoteEventId: string; remoteVersion: string | null }>;
     patch(calendarId: string, remoteEventId: string, clientEventId: string, event: DesiredSyncedEvent, opts?: { restore?: boolean }): Promise<{ remoteVersion: string | null } | 'gone'>;
     /** A missing event (404, 410) counts as removed. */
@@ -96,6 +96,7 @@ export function googleWriter(accessToken: string): CalendarWriter {
         async find(calendarId, clientEventId) {
             const q = new URLSearchParams({ privateExtendedProperty: `${CLIENT_ID_PROPERTY}=${clientEventId}`, showDeleted: 'true', maxResults: '5' });
             const res = await providerRequest(`${GOOGLE}/calendars/${enc(calendarId)}/events?${q.toString()}`, { method: 'GET', headers: auth(accessToken) });
+            if (res.status === 404) throw new CalendarGoneError();
             if (!res.ok) throw new ProviderHttpError(res.status);
             const items = (res.json as { items?: unknown } | null)?.items;
             const first = Array.isArray(items) ? (items as Array<{ id?: unknown; etag?: unknown; status?: unknown }>).find((i) => str(i.id)) : undefined;
@@ -108,6 +109,8 @@ export function googleWriter(accessToken: string): CalendarWriter {
                 headers: json(accessToken),
                 body: JSON.stringify({ id: clientEventId, ...googleEventBody(clientEventId, event) }),
             });
+            // The calendar itself is gone (decision 232): the connection's, not the event's.
+            if (res.status === 404) throw new CalendarGoneError();
             if (res.status === 409) {
                 // The id exists already: an earlier insert went through, or a
                 // deleted event keeps its id reserved. Adopt it with this content.
@@ -176,6 +179,7 @@ export function graphWriter(accessToken: string): CalendarWriter {
             const filter = `singleValueExtendedProperties/Any(ep: ep/id eq '${GRAPH_PROPERTY_ID}' and ep/value eq '${clientEventId}')`;
             const q = new URLSearchParams({ $filter: filter, $select: 'id,changeKey', $top: '1' });
             const res = await providerRequest(`${GRAPH}/me/calendars/${enc(calendarId)}/events?${q.toString()}`, { method: 'GET', headers: auth(accessToken) });
+            if (res.status === 404) throw new CalendarGoneError();
             if (!res.ok) throw new ProviderHttpError(res.status);
             const value = (res.json as { value?: unknown } | null)?.value;
             const first = Array.isArray(value) ? (value as Array<{ id?: unknown; changeKey?: unknown }>).find((v) => str(v.id)) : undefined;
@@ -192,6 +196,7 @@ export function graphWriter(accessToken: string): CalendarWriter {
                     singleValueExtendedProperties: [{ id: GRAPH_PROPERTY_ID, value: clientEventId }],
                 }),
             });
+            if (res.status === 404) throw new CalendarGoneError();
             const id = str((res.json as { id?: unknown } | null)?.id);
             if (!res.ok || !id) throw new ProviderHttpError(res.status);
             return { remoteEventId: id, remoteVersion: str((res.json as { changeKey?: unknown }).changeKey) };

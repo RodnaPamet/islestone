@@ -43,3 +43,15 @@ export class ProviderHttpError extends Error {
         this.name = 'ProviderHttpError';
     }
 }
+
+/**
+ * The connection's dedicated calendar is gone at the provider (roadmap 3.3c,
+ * decision 232: "the whole Islestone calendar deleted"): an insert into it, or
+ * a listing of it, answered 404. The connection moves to CALENDAR_REMOVED.
+ */
+export class CalendarGoneError extends Error {
+    constructor() {
+        super('The Islestone calendar no longer exists at the provider.');
+        this.name = 'CalendarGoneError';
+    }
+}
