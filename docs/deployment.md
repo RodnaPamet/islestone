@@ -596,28 +596,63 @@ The drill was exercised locally on 2026-11-19 against a migrated test database
 
 ## Security scans
 
-Hardening H1's scans run report-only first (owner decision 47):
+Hardening H1's scans ran report-only for a week (owner decision 47) and are
+blocking since 2026-11-26:
 
-- **Trivy**, CRITICAL and HIGH, fixed vulnerabilities only, on both images:
-  in CI's `Image` job (SARIF to the Security tab, categories
-  `trivy-image-app` and `trivy-image-worker`) and before every push in
-  `release.yml`.
+- **Trivy**, CRITICAL and HIGH with a fix available (`ignore-unfixed`), on
+  both images, with `exit-code: "1"`: in CI's `Image` job on every pull
+  request (SARIF to the Security tab, categories `trivy-image-app` and
+  `trivy-image-worker`, limited to the same severities by
+  `limit-severities-for-sarif`, because trivy-action otherwise drops the
+  severity filter for SARIF and the job would gate on every severity; the
+  upload runs after a failed scan too) and before every push in
+  `release.yml`, where a finding stops the run before anything reaches GHCR,
+  so `:latest` stays on the last image that passed. The Postgres image's scan
+  in `release.yml`, which runs only when its tag is bumped, blocks the same
+  way.
 - **OWASP ZAP baseline**, nightly (`.github/workflows/dast.yml`, 03:17 UTC):
   the standalone server against Postgres and Redis, signed in as a workspace
   owner the run registers, with SARIF (`zap-baseline`), the HTML report as an
-  artifact, and an issue for findings. `.zap/rules.tsv` lists the false
-  positives, each with its reason; `.zap/assert-no-high-risk.mjs` names every
-  High, allowlisted or not.
+  artifact, and an issue for findings. `fail_action: true` fails the run on
+  any alert of Low risk or above (zap-baseline skips Informational ones) that
+  `.zap/rules.tsv` does not excuse, and `.zap/assert-no-high-risk.mjs` fails
+  it on every High, excused or not.
 
-Both carry a dated marker, `TRIVY-NON-BLOCKING-UNTIL: 2026-12-03` and
-`DAST-NON-BLOCKING-UNTIL: 2026-12-03`: two weeks from the decision.
-`tests/guards/security-scan-deferral.test.ts` fails CI the day after that date
-while a scan is still non-blocking. To make them blocking: in `ci.yml` and
-`release.yml` set the Trivy steps' `exit-code` to `"1"`; in `dast.yml` set
-`fail_action: true` and remove `continue-on-error` from the scan and the
-HIGH+ step; delete the markers. To defer instead, move the date (at most 60
-days ahead) with the reason in the pull request.
+ZAP signs in by injecting the session cookie (`ZAP_AUTH_HEADER*`). It adds the
+header only to a request whose host *name* contains `ZAP_AUTH_HEADER_SITE`,
+so the value is `localhost`, without the port: with `localhost:3106` the
+header matched nothing, and every nightly until H1 scanned signed out (its
+alerts name only signed-out URLs such as `/login?next=%2Ftenants`). The run
+registers its owner with a random address, not a timestamp, because ZAP
+reports a Unix timestamp in a signed-in page (10096) and the address is on
+every one.
 
-Triage: a finding is fixed in the app, or, for a false positive below High,
-listed in `.zap/rules.tsv` (ZAP) or `.trivyignore` (Trivy; none yet) with the
-reason and the condition that retires it. A High is fixed, never listed.
+`tests/guards/security-scan-deferral.test.ts` keeps them blocking: a workflow
+that holds a non-blocking scan (Trivy `exit-code` other than `"1"`, ZAP
+`fail_action` off, or `continue-on-error` on a scan or the HIGH+ step) fails
+CI unless it carries one `TRIVY-NON-BLOCKING-UNTIL: YYYY-MM-DD` or
+`DAST-NON-BLOCKING-UNTIL: …` marker, at most 60 days ahead, and fails again
+the day after that date; a marker beside scans that all block is refused as
+stale. To defer a scan, add the marker with the reason in the pull request.
+The same guard holds Trivy to CRITICAL,HIGH with fixes available and its
+SARIF limited to those severities, every `.zap/rules.tsv` entry to a reason
+and every `.trivyignore` entry to an expiry and a reason.
+
+Triage: a finding is fixed in the app. Otherwise:
+
+- **ZAP**, a false positive below High may be excused in `.zap/rules.tsv`
+  with a reason naming the evidence. Prefer `OUTOFSCOPE`, which excuses one
+  rule on named URLs only (a tab-separated line `<pluginId> OUTOFSCOPE
+  ^http://localhost:3106/…$`, anchored, its reason in the comment block directly above it, naming the
+  rule), to `IGNORE`, which silences the rule everywhere and at every risk.
+  10044 (Big Redirect) is out of scope on `/` and `/tenants` only: Next.js's
+  `redirect()` from a server component sends the root-layout shell with the
+  307, and both bodies were checked to carry no session data.
+- **Trivy**, a finding with no fix available is not reported
+  (`ignore-unfixed`). One that has a fix in Trivy's database but cannot be
+  taken yet may go in `.trivyignore` (none yet) as
+  `<id> exp:YYYY-MM-DD`, the expiry inside the 60-day window, with the reason
+  and the condition that retires it in the comment directly above. Never
+  lower a severity or widen an excuse to get green.
+
+A High is fixed, never listed.

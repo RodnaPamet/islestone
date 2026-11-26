@@ -20,7 +20,12 @@ a repository with one owner.
 2. **Release and publish.** `.github/workflows/release.yml` runs on the merge:
    semantic-release tags a version when the commit subjects call for one, and
    both images are built, scanned and pushed to GHCR (`:sha-<short>`,
-   `:<version>`, `:latest`).
+   `:<version>`, `:latest`). The Trivy scan blocks (Hardening H1): a
+   CRITICAL or HIGH vulnerability with a fix available stops the run before
+   any push, so `:latest` stays on the last image that passed. The `Image`
+   check on the pull request runs the same scan first, and the nightly ZAP
+   baseline fails on any unexcused alert (`docs/deployment.md`, "Security
+   scans").
 3. **Roll-out.** Watchtower on the VM follows `:latest` and rolls `app`,
    `worker` and `migrate` within minutes; the migrations run before the new
    code serves (`docs/deployment.md`, "How an image reaches production").
