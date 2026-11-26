@@ -38,7 +38,7 @@ import { useCallback, useState, type ReactElement, type ReactNode } from 'react'
 import { useTranslations } from 'next-intl';
 
 import { Popover } from '@/components/ui/popover';
-import { InitialsAvatar } from '@/components/ui/initials-avatar';
+import { InitialsAvatar, getInitials } from '@/components/ui/initials-avatar';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 import { LocaleSwitcher, type LocaleSwitcherProps } from './LocaleSwitcher';
 import { NAV_BAR_SLOT_PRESS } from './nav-bar';
@@ -332,7 +332,10 @@ export function UserMenu({
                 <button
                     type="button"
                     className={AVATAR_BUTTON_CLASS}
-                    aria-label={tNav('accountMenuFor', { name: effectiveName })}
+                    // The visible initials are in the name too (WCAG 2.5.3, label in
+                    // name; Hardening H2e's browser axe): a voice-control user says
+                    // what they see.
+                    aria-label={tNav('accountMenuFor', { name: effectiveName, initials: getInitials(effectiveName) })}
                     aria-expanded={open}
                     aria-haspopup="menu"
                     data-testid="top-chrome-user-menu"

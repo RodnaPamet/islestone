@@ -456,3 +456,18 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * Toast text contrast (Hardening H2e, the browser axe pass; WCAG 1.4.3).
+ * Sonner's light rich colours put error and info text at 4.35:1 and warning
+ * text at 3.07:1 on their own tints, under AA's 4.5:1 for 13px text; these
+ * lightnesses give 5.8, 5.7 and 5.5:1 with the same hues. The board's refused
+ * move speaks through an error toast. Unlayered, and one selector stronger
+ * than Sonner's own (`[data-sonner-toaster][data-sonner-theme=light]`, which
+ * it injects unlayered), so the dark theme's colours, which pass, stand.
+ */
+:root [data-sonner-toaster][data-sonner-theme='light'] {
+  --error-text: hsl(360, 100%, 38%);
+  --info-text: hsl(210, 92%, 38%);
+  --warning-text: hsl(31, 92%, 32%);
+}

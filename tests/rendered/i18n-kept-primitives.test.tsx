@@ -98,7 +98,7 @@ describe('the shell primitives render their own copy', () => {
             </TooltipProvider>,
         );
         const trigger = screen.getByTestId('top-chrome-user-menu');
-        expect(trigger.getAttribute('aria-label')).toBe('Account menu for Account');
+        expect(trigger.getAttribute('aria-label')).toBe('Account menu for Account, A');
         fireEvent.click(trigger);
         const menu = await screen.findByRole('menu');
         expect(menu.getAttribute('aria-label')).toBe('Account menu');

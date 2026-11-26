@@ -1707,7 +1707,7 @@ The authenticated application shell (sidebar, top chrome, mobile drawer), the th
 | `src/components/layout/environment-badge.tsx` | same | COPY+EDIT | A set-state-in-effect line carries its disable directive and reason. |
 | `src/components/layout/tenant-switcher.tsx` | same | COPY+EDIT | Rows go to `/t/<slug>/my-work`. |
 | `src/components/layout/org-workspace-switcher.tsx` | same | COPY+EDIT | Rows go to `/t/<slug>/my-work`. |
-| `src/components/layout/user-menu.tsx` | same | COPY+EDIT | Comment (`LOCALE_COOKIE`). |
+| `src/components/layout/user-menu.tsx` | same | COPY+EDIT | Comment (`LOCALE_COOKIE`); the trigger's name ends with the avatar's initials (`getInitials`), so the visible text is in the name (WCAG 2.5.3, Hardening H2e). |
 | `src/components/layout/LocaleSwitcher.tsx` | same | COPY+EDIT | Comments (`LOCALE_COOKIE`). |
 | `src/components/layout/notifications-bell.tsx` | same | COPY+EDIT | The open workspace's routes only: no flat `/api/notifications` fallback, nothing rendered outside a workspace; `body` for `message` (ADR 0006); "View all" opens the Inbox; relative time through next-intl's `relativeTime`; links used as stored (no legacy-link rewriter); comments. |
 | `src/components/layout/session-expired-notice.tsx` | same | COPY+EDIT | Comment (the bell's poll, not the calendar badge). |
@@ -1804,7 +1804,7 @@ The authenticated application shell (sidebar, top chrome, mobile drawer), the th
 | `tests/rendered/session-expiry-swr-seam.test.tsx` | same | COPY+EDIT | Fixture keys. |
 | `tests/rendered/theme-storage-on-choice.test.tsx` | same | COPY+EDIT | A dark and a light system, live following and a choice overriding the system, for the provider and the script; the matchMedia double answers per query. |
 | `tests/rendered/locale-switcher.test.tsx` | same | COPY+EDIT | A mocked second locale. |
-| `tests/rendered/i18n-kept-primitives.test.tsx` | same | COPY+EDIT | The shell's primitives only, English only. |
+| `tests/rendered/i18n-kept-primitives.test.tsx` | same | COPY+EDIT | The shell's primitives only, English only; the account menu's name with its initials (H2e). |
 | `tests/rendered/root-error-pages-go-to-the-picker.test.tsx` | same | COPY+EDIT | The 404 case; a root error-page case; no `/dashboard` shim. |
 | `tests/unit/theme-provider.test.ts` | same | COPY+EDIT | Islestone's names and default; the globals.css checks are the shell's. |
 | `tests/unit/ui-storage.test.ts` | same | COPY+EDIT | The `islestone` prefix. |

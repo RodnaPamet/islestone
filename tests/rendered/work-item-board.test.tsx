@@ -315,4 +315,65 @@ describe('the board', () => {
         await waitFor(() => expect(calls.some((r) => r.path === '/work-items/wi-1/assign')).toBe(true));
         expect(calls.find((r) => r.path === '/work-items/wi-1/assign')?.body).toEqual({ assigneeId: 'u-bob' });
     });
+
+    // Hardening H2e: what the browser pass found (docs/accessibility.md).
+    describe('accessibility found in the browser (H2e)', () => {
+        it('names the card in every move announcement, and the lane in a drop', async () => {
+            const rows = [row(1, { assigneeId: 'u-ada' }), row(2, { assigneeId: 'u-bob' })];
+            installFetch({
+                'GET /work-items': columnsRoute(rows),
+                'GET /users/assignable': { body: MEMBERS },
+                'POST /work-items/wi-1/move': { body: detail(row(1, { assigneeId: 'u-ada', sortKey: 'a1' })) },
+                'POST /work-items/wi-1/assign': { body: detail(row(1, { assigneeId: 'u-bob', version: 2 })) },
+            });
+            renderBoard({ laneBy: 'assignee' });
+            await screen.findByText('Item 2');
+            const c = card('ISL-1', 'Item 1');
+            c.focus();
+            fireEvent.keyDown(c, { key: ' ' });
+            fireEvent.keyDown(card('ISL-1', 'Item 1'), { key: 'ArrowDown' });
+            expect(announcements()).toHaveTextContent('Moving ISL-1. Todo, position 1 of 2. Lane Bob Builder.');
+            fireEvent.keyDown(card('ISL-1', 'Item 1'), { key: 'ArrowRight' });
+            expect(announcements()).toHaveTextContent('Moving ISL-1. In progress, position 1 of 1. Lane Bob Builder.');
+            fireEvent.keyDown(card('ISL-1', 'Item 1'), { key: ' ' });
+            expect(announcements()).toHaveTextContent('Dropped ISL-1 in In progress at position 1. Lane Bob Builder.');
+        });
+
+        it('shows the key and the title as separate words, as the name says them (WCAG 2.5.3)', async () => {
+            installFetch({ 'GET /work-items': columnsRoute([row(1)]), 'GET /users/assignable': { body: MEMBERS } });
+            renderBoard();
+            await screen.findByText('Item 1');
+            expect(card('ISL-1', 'Item 1').textContent).toBe('ISL-1 Item 1');
+        });
+
+        it('gives focus back to the moved card only until the person moves it elsewhere', async () => {
+            const move = deferred<void>();
+            installFetch({
+                'GET /work-items': columnsRoute([row(1), row(2)]),
+                'GET /users/assignable': { body: MEMBERS },
+                'POST /work-items/wi-1/move': async () => {
+                    await move.promise;
+                    return { body: detail(row(1, { stateId: 'st-progress', stateCategory: 'STARTED', sortKey: 'a5', version: 2 })) };
+                },
+            });
+            renderBoard();
+            await screen.findByText('Item 1');
+            const c = card('ISL-1', 'Item 1');
+            c.focus();
+            fireEvent.keyDown(c, { key: ' ' });
+            fireEvent.keyDown(card('ISL-1', 'Item 1'), { key: 'ArrowRight' });
+            await act(async () => {
+                fireEvent.keyDown(card('ISL-1', 'Item 1'), { key: ' ' });
+            });
+            await waitFor(() => expect(within(column('In progress')).getByText('Item 1')).toBeInTheDocument());
+            expect(card('ISL-1', 'Item 1')).toHaveFocus();
+
+            // The person moves on before the server answers; the answer re-renders the
+            // board, and focus stays where they put it.
+            act(() => card('ISL-2', 'Item 2').focus());
+            await act(async () => move.resolve());
+            await waitFor(() => expect(within(column('In progress')).getByText('Item 1')).toBeInTheDocument());
+            expect(card('ISL-2', 'Item 2')).toHaveFocus();
+        });
+    });
 });
