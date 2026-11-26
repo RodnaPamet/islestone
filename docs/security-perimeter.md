@@ -242,6 +242,25 @@ metadata range whatever it says. `tests/guards/ssrf-egress-coverage.test.ts`
 fails on an outbound `fetch` sink that does not go through `safeFetch`, and
 `tests/guards/egress-allowlist.test.ts` holds the three properties.
 
+**Calendar providers (roadmap 3.3b).** Calendar sync talks to four fixed
+origins (`oauth2.googleapis.com`, `www.googleapis.com`,
+`login.microsoftonline.com`, `graph.microsoft.com`) through one module,
+`src/app-layer/integrations/providers/calendar/provider-http.ts`: the URL is
+checked against the list (https, no credentials, no port) before a plain
+`fetch` with no redirects, a timeout and a capped body read, the pinned-host
+pattern of the Resend API. No person configures these hosts and no
+server-supplied URL is followed (3.3c's Graph `@odata.nextLink` will go
+through `safeFetch` with its origin pinned). `tests/guards/calendar-sync-egress.test.ts`
+holds it as the only calendar sync module that calls `fetch`, refuses any
+mention of Google's token revocation endpoint (decision 236) and any import of
+the auth library from the calendar flow (ADR 0004 A3). The OAuth round trip's
+state is an HMAC-sealed, HttpOnly, `SameSite=Lax` cookie scoped to
+`/api/integrations/calendar`, bound to the member and the workspace,
+carrying the PKCE verifier and claimed once in Redis; the callbacks are
+signed-in paths (not machine callers) that ask `requirePermission` for the
+state's workspace and refuse a state minted for another person
+(`docs/calendar-sync.md`).
+
 Outbound webhooks sign their body with `computeHmacSha256`
 (`src/app-layer/integrations/webhook-crypto.ts`) and build their headers
 with `buildOutboundHeaders` (`src/app-layer/events/webhook-headers.ts`).

@@ -54,6 +54,7 @@ tripwire.
 | `WorkItem` | `description` | A work item's description (sub-phase 2.2, ADR 0002 §11). The title stays plaintext: it is searched and quoted. |
 | `Comment` | `body` | A comment's text (2.2). |
 | `WorkItemTemplate` | `description` | An item template's description (sub-phase 2.5c, owner decision 73). Its name and title stay plaintext. |
+| `CalendarConnection` | `tokenEncrypted` | A member's calendar OAuth token pair and its expiry, one JSON blob (roadmap 3.3b, owner decision 238; ADR 0011 §7): under the workspace's DEK so both key rotations re-encrypt it; NULL once revoked or torn down; never rendered, logged or audited. Not on `Account`: a calendar grant never rides on a sign-in row. |
 | `ProjectTemplate` | `contentJson` | A project template's whole content, one JSON document (fields, milestones, item templates with their descriptions, starter items), encrypted as one value (2.5c, decision 73). Its name stays plaintext. |
 
 Both are sanitised before they are stored, and an audit entry records that
