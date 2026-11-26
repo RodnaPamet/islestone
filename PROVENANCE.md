@@ -2176,6 +2176,18 @@ Built by [`docs/porting/maps/H2.md`](docs/porting/maps/H2.md) (parts 1.1 to 1.3 
 | `scripts/seed-scale/` (the rest), `scripts/ci-postgres.sh` (`--pg-stat-statements`, `CI_PG_PREFIX`), `SearchVectorRepository.insertBulkForSeed`, `WorkItemRepository.lockItemsOfPerson` (the `UNION`), migration `20261213120000_list_scale_indexes`, the `perf` Jest project and its setup files, the `Performance (10k)` job in `.github/workflows/ci.yml` | — | — | — | Islestone-owned | Written fresh. |
 | `tests/perf/` (the rest), `tests/guards/plan-checked-queries-coverage.test.ts`, the H2a additions to `tests/guards/search-vector-write-seam.test.ts` and `schema-index-coverage.test.ts`, `tests/unit/perf/plan-capture.test.ts`, `tests/unit/seed-scale/seed-scale.test.ts`, `tests/integration/seed-scale.test.ts` | — | — | — | Islestone-owned | Written fresh. |
 
+## Hardening H2b: the latency harness, the budgets and the nightly run
+
+Built by [`docs/porting/maps/H2.md`](docs/porting/maps/H2.md) (parts 1.4 to 1.7) under owner decisions 166 to 169; see [`docs/performance.md`](docs/performance.md). **Nothing was copied.** inflect-compliance's load-test tooling was read for its lessons; k6 and its scenarios were not taken (decision 169).
+
+| File | Source | Commit | Licence | Action | Changes |
+|---|---|---|---|---|---|
+| `scripts/perf/lib.mjs` (`refusalsOf`: a run whose requests failed or were signed out measured nothing, whatever its latency) | inflect-compliance `scripts/k6-summary-gate.mjs` (its header) | `5528464fc54a8681956f3b9ce23ca9c075f0420e` | BUSL-1.1 | PATTERN | Pattern only, no code copied: the lesson only. |
+| `.github/workflows/perf.yml` (a red night opens or comments on one issue) | inflect-compliance `.github/workflows/integration-stress.yml` (its header) | `5528464fc54a8681956f3b9ce23ca9c075f0420e` | BUSL-1.1 | PATTERN | Pattern only, no code copied: the lesson only; the workflow is written fresh. |
+| `scripts/perf/budgets.json` (budgets stated per class of request, read and write) | inflect-compliance `docs/slos.md` | `5528464fc54a8681956f3b9ce23ca9c075f0420e` | BUSL-1.1 | PATTERN | Pattern only, no code copied: the numbers are decision 167's. |
+| `scripts/perf/` (the rest: `run.mjs`, `lib.d.mts`, `serve.sh`, `nightly-seed.sh`), `.github/workflows/perf.yml`, the H2b changes to the `Performance (10k)` job in `.github/workflows/ci.yml`, `maxBuffers100k` in `tests/perf/plan-checked-queries.ts` and its use in `tests/perf/plans.test.ts`, the fixture timeout in `tests/perf/statements.test.ts` | — | — | — | Islestone-owned | Written fresh. |
+| `tests/unit/perf/harness.test.ts`, the H2b addition to `tests/guards/plan-checked-queries-coverage.test.ts` | — | — | — | Islestone-owned | Written fresh. |
+
 ## Findings F1 and F2: the search functions and the rebuild's pages (owner decision 245)
 
 Built under owner decision 245 (`docs/porting/maps/H2.md`, "Finding F1, decided"; issues #78 and #79); see [`docs/search.md`](docs/search.md), "The search functions", and [`docs/performance.md`](docs/performance.md), "Findings". **Nothing was copied.**
