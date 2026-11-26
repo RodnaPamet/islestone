@@ -19,6 +19,12 @@
 import { createHash } from 'node:crypto';
 
 /** The role that owns every search function: NOLOGIN, BYPASSRLS, column SELECT only. */
+
+/** Escapes every regular-expression metacharacter, backslash included. */
+function escapeRegExp(text: string): string {
+    return text.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+}
+
 export const SEARCH_DEFINER_ROLE = 'app_search_definer';
 
 /** The fixed search path every search function sets. */
@@ -226,7 +232,7 @@ export function definerProblems(spec: SearchDefinerSpec, def: Pick<SearchDefiner
     // (decision 250), the walk's literal one-past-the-bound.
     const limits = [...flat.matchAll(/\bLIMIT\s+(LEAST\(GREATEST\(COALESCE\(p_limit, 0\), 0\), \d+\)|\d+|\S+)/g)].map((m) => m[1]!);
     const caps = limits.filter((l) => l.startsWith('LEAST('));
-    const capped = caps.length === 1 && new RegExp(`LIMIT ${caps[0]!.replace(/[()]/g, '\\$&')}\\s*;`).test(flat) ? /(\d+)\)$/.exec(caps[0]!) : null;
+    const capped = caps.length === 1 && new RegExp(`LIMIT ${escapeRegExp(caps[0]!)}\\s*;`).test(flat) ? /(\d+)\)$/.exec(caps[0]!) : null;
     if (!capped) problems.push('is not bounded by LIMIT LEAST(GREATEST(COALESCE(p_limit, 0), 0), <cap>)');
     else if (Number(capped[1]) !== spec.cap) problems.push(`caps at ${capped[1]}, not ${spec.cap}`);
     const others = limits.filter((l) => !l.startsWith('LEAST('));
