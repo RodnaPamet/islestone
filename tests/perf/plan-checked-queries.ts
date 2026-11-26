@@ -25,8 +25,9 @@
  * in the function scan that ran it. `maxBuffers100k` is the same budget on
  * the 100k seed, judged by the nightly run (H2b, .github/workflows/perf.yml):
  * about twice what H2b measured there and never below the 10k budget
- * (docs/performance.md, "The 100k budgets"). At another shape the buffers
- * are reported, not judged.
+ * (docs/performance.md, "The 100k budgets"); the two content reads' 100k
+ * budgets are about twice what the fix of finding F3 measured (decision 250,
+ * issue #89). At another shape the buffers are reported, not judged.
  */
 
 export interface PlanCheckedQuery {
@@ -64,7 +65,7 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'list: project, label filter', methods: ['WorkItemRepository.list'], indexes: ['WorkItemLabel_tenantId_labelId_workItemId_idx'], maxBuffers: 1100, maxBuffers100k: 2800 },
     { name: 'list: project, custom-field filter', methods: ['WorkItemRepository.list'], indexes: ['CustomFieldValue_tenantId_fieldId_optionId_idx'], maxBuffers: 2100, maxBuffers100k: 7400 },
     { name: 'list: project, sorted by a custom field', methods: ['WorkItemRepository.listByCustomField'], indexes: ['CustomFieldValue_tenantId_fieldId_optionId_idx'], maxBuffers: 5500, maxBuffers100k: 25000 },
-    { name: 'list: q (titles, stemmed titles, contents)', methods: ['WorkItemRepository.titleFullTextIds', 'SearchVectorRepository.matchItems', 'WorkItemRepository.titleSubstringIds', 'WorkItemRepository.list'], indexes: ['WorkItem_search_title_fts', 'WorkItem_search_title_trgm', 'SearchVector_search_lexemes'], maxBuffers: 7000, maxBuffers100k: 181000, conditions: [{ index: 'WorkItem_search_title_fts', operator: '@@' }, { index: 'SearchVector_search_lexemes', operator: '@@' }, { index: 'WorkItem_search_title_trgm', operator: '~~*' }] },
+    { name: 'list: q (titles, stemmed titles, contents)', methods: ['WorkItemRepository.titleFullTextIds', 'SearchVectorRepository.matchItems', 'WorkItemRepository.titleSubstringIds', 'WorkItemRepository.list'], indexes: ['WorkItem_search_title_fts', 'WorkItem_search_title_trgm', 'SearchVector_search_lexemes', 'SearchVector_search_recent'], maxBuffers: 7000, maxBuffers100k: 86000, conditions: [{ index: 'WorkItem_search_title_fts', operator: '@@' }, { index: 'SearchVector_search_lexemes', operator: '@@' }, { index: 'WorkItem_search_title_trgm', operator: '~~*' }] },
     { name: 'list: the Deleted view', methods: ['WorkItemRepository.listDeleted'], indexes: ['WorkItem_tenantId_deletionId_idx|WorkItem_deletedAt_idx'], maxBuffers: 1800, maxBuffers100k: 4100 },
     // ── The board: one column of the large project ────────────────────────
     { name: 'board: one column (by state)', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_stateId_sortKey_idx'], maxBuffers: 800, maxBuffers100k: 850 },
@@ -106,7 +107,7 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'counts: items in a state', methods: ['TeamRepository.countItemsInState', 'ReviewRepository.itemsInStateRequiringReview', 'WorkItemRepository.lockInState'], indexes: ['WorkItem_tenantId_stateId_idx'], maxBuffers: 6500, maxBuffers100k: 21000 },
     // ── Search: the palette's raw reads ────────────────────────────────────
     { name: 'search: titles (trigram and full text)', methods: ['WorkItemRepository.searchTitleIds'], indexes: ['WorkItem_search_title_fts', 'WorkItem_search_title_trgm'], maxBuffers: 1800, maxBuffers100k: 14000, conditions: [{ index: 'WorkItem_search_title_trgm', operator: '~~*' }, { index: 'WorkItem_search_title_fts', operator: '@@' }] },
-    { name: 'search: contents and snippets', methods: ['SearchVectorRepository.matchItems', 'WorkItemRepository.findSearchRows', 'WorkItemRepository.searchSnippetSources'], indexes: ['SearchVector_search_lexemes', 'WorkItem_search_live_ids', 'Comment_search_live_ids'], maxBuffers: 5000, maxBuffers100k: 174000, conditions: [{ index: 'SearchVector_search_lexemes', operator: '@@' }] },
+    { name: 'search: contents and snippets', methods: ['SearchVectorRepository.matchItems', 'WorkItemRepository.findSearchRows', 'WorkItemRepository.searchSnippetSources'], indexes: ['SearchVector_search_lexemes', 'SearchVector_search_recent', 'WorkItem_search_live_ids', 'Comment_search_live_ids'], maxBuffers: 5000, maxBuffers100k: 73000, conditions: [{ index: 'SearchVector_search_lexemes', operator: '@@' }] },
     // ── The timeline (3.1b) and the calendars it reads (3.1a) ──────────────
     { name: 'timeline: scope, count and relations', methods: ['WorkItemRepository.listForTimeline', 'WorkItemRepository.countForTimeline', 'WorkItemRepository.timelineContextRows'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 2000, maxBuffers100k: 6300 },
     // ── The calendar (3.3a): a month grid's 42 days, its count and the undated items ──

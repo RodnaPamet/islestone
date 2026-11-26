@@ -19,12 +19,7 @@
     },
     "list-q": {
       "label": "List with q (titles, stemmed titles, contents)",
-      "budgets": { "10k": { "p50": 150, "p95": 350 }, "100k": { "p50": 250, "p95": 600 } },
-      "knownFinding": {
-        "id": "F3",
-        "shapes": ["100k"],
-        "why": "a content match ranks every matching vector before it takes its limit, so it grows with the matches (33,356 vectors for the measured query at 100k); docs/performance.md, Findings"
-      }
+      "budgets": { "10k": { "p50": 150, "p95": 270 }, "100k": { "p50": 250, "p95": 320 } }
     },
     "board-column": {
       "label": "Board, one column of the largest project",
@@ -36,12 +31,7 @@
     },
     "search": {
       "label": "Search, the command palette (titles, keys, projects, contents; limit 20)",
-      "budgets": { "10k": { "p50": 100, "p95": 250 }, "100k": { "p50": 200, "p95": 500 } },
-      "knownFinding": {
-        "id": "F3",
-        "shapes": ["100k"],
-        "why": "a content match ranks every matching vector before it takes its limit, so it grows with the matches (33,356 vectors for the measured query at 100k); docs/performance.md, Findings"
-      }
+      "budgets": { "10k": { "p50": 100, "p95": 250 }, "100k": { "p50": 200, "p95": 330 } }
     },
     "detail": {
       "label": "Detail, the item",

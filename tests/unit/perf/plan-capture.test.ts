@@ -55,6 +55,13 @@ describe('seqScansOn', () => {
         expect(seqScansOn(plan)).toEqual(['Comment']);
         expect(seqScansOn(listPlan)).toEqual([]);
     });
+
+    it('does not count a scan the executor never started (a branch behind a one-time filter), and counts one without ANALYZE figures', () => {
+        const never: PlanNode = { 'Node Type': 'Result', 'Actual Loops': 1, Plans: [{ 'Node Type': 'Seq Scan', 'Relation Name': 'SearchVector', 'Actual Loops': 0 }] };
+        expect(seqScansOn(never)).toEqual([]);
+        expect(seqScansOn({ ...never, Plans: [{ 'Node Type': 'Seq Scan', 'Relation Name': 'SearchVector', 'Actual Loops': 1 }] })).toEqual(['SearchVector']);
+        expect(seqScansOn({ ...never, Plans: [{ 'Node Type': 'Seq Scan', 'Relation Name': 'SearchVector' }] })).toEqual(['SearchVector']);
+    });
 });
 
 describe('judgePlans', () => {
