@@ -110,6 +110,13 @@ export interface SearchResponseMeta {
     truncated: boolean;
     /** Per-type cap actually applied. */
     perTypeLimit: number;
+    /**
+     * More descriptions and comments matched than the content search ranks
+     * (owner decision 250): the content hits are the best of the most
+     * recently written matches, and the palette says so. Titles, keys and
+     * project names are always searched in full.
+     */
+    contentMatchesBounded: boolean;
 }
 
 export interface SearchResponse {

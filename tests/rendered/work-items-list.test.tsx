@@ -71,6 +71,22 @@ describe('the work-item list', () => {
         expect(mockReplace).not.toHaveBeenCalled();
     });
 
+    it('says it is showing recent matches when the search\'s content matches were bounded (decision 250)', async () => {
+        routes({ 'GET /work-items': { body: { ...page([row(1)]), contentMatchesBounded: true } } });
+        renderList();
+        await screen.findByRole('link', { name: 'Item 1' });
+        expect(screen.getByRole('note')).toHaveTextContent(
+            'Many descriptions and comments match this search: showing the most recent of those matches. Titles and keys are searched in full.',
+        );
+    });
+
+    it('says nothing about recent matches when every content match was ranked', async () => {
+        routes({ 'GET /work-items': { body: { ...page([row(1)]), contentMatchesBounded: false } } });
+        renderList();
+        await screen.findByRole('link', { name: 'Item 1' });
+        expect(screen.queryByRole('note')).toBeNull();
+    });
+
     it('reads the list with the view\'s project and the manual order', async () => {
         const { calls } = routes();
         renderList();

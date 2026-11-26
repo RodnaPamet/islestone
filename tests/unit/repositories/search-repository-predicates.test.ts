@@ -16,7 +16,7 @@
 import type { Prisma } from '@prisma/client';
 
 import { ProjectRepository } from '@/app-layer/repositories/ProjectRepository';
-import { REBUILD_PAGE_SIZE, SEARCH_MATCH_CAP, SearchVectorRepository } from '@/app-layer/repositories/SearchVectorRepository';
+import { CONTENT_CANDIDATE_BOUND, REBUILD_PAGE_SIZE, SEARCH_MATCH_CAP, SearchVectorRepository, matchesOf } from '@/app-layer/repositories/SearchVectorRepository';
 import { WorkItemRepository } from '@/app-layer/repositories/WorkItemRepository';
 import { projectVisibilityArgs, type ProjectVisibility } from '@/app-layer/policies/project-visibility';
 import type { PrismaTx } from '@/lib/db-context';
@@ -201,5 +201,56 @@ describe('SearchVectorRepository writes (2.7f)', () => {
         expect(text(sent[0]!)).toContain('ON CONFLICT ("tenantId", "commentId") WHERE "commentId" IS NOT NULL');
         await SearchVectorRepository.replaceForSource(db, ctx, { workItemId: 'w1', commentId: 'c1' }, '<@user-1>');
         expect(text(sent[1]!)).toMatch(/^ DELETE FROM "SearchVector" WHERE "tenantId" = \$1 AND "workItemId" = \$2 AND "commentId" = \$3$/);
+    });
+});
+
+describe('SearchVectorRepository.matchItems: the candidate bound (decision 250)', () => {
+    function answering(rows: unknown[]) {
+        return { $queryRaw: jest.fn(async () => rows) } as unknown as PrismaTx;
+    }
+
+    it('reads the function\'s bounded column with its ids and ranks', async () => {
+        const { db, sent } = recorder();
+        await SearchVectorRepository.matchItems(db, ctx, ALL, 'фактура', 20);
+        expect(text(sent[0]!)).toMatch(/^ SELECT m\."workItemId", m\."commentId", m\."rank", m\."bounded" FROM search_item_contents\(/);
+    });
+
+    it('is bounded when the function says the walk was cut, with every match kept in rank order', async () => {
+        const db = answering([
+            { workItemId: 'w2', commentId: null, rank: '0.5', bounded: true },
+            { workItemId: 'w1', commentId: 'c1', rank: 0.25, bounded: true },
+        ]);
+        await expect(SearchVectorRepository.matchItems(db, ctx, ALL, 'фактура', 20)).resolves.toEqual({
+            matches: [
+                { workItemId: 'w2', commentId: null, rank: 0.5 },
+                { workItemId: 'w1', commentId: 'c1', rank: 0.25 },
+            ],
+            bounded: true,
+        });
+    });
+
+    it('is not bounded when every candidate was ranked, nor when nothing matched', async () => {
+        await expect(SearchVectorRepository.matchItems(answering([{ workItemId: 'w1', commentId: null, rank: 0.1, bounded: false }]), ctx, ALL, 'x', 20)).resolves.toMatchObject({ bounded: false });
+        await expect(SearchVectorRepository.matchItems(answering([]), ctx, ALL, 'x', 20)).resolves.toEqual({ matches: [], bounded: false });
+    });
+
+    it('matchesOf reads a NULL flag as not bounded', () => {
+        expect(matchesOf([{ workItemId: 'w1', commentId: null, rank: 1, bounded: null }]).bounded).toBe(false);
+    });
+
+    it('names the bound the function walks', () => {
+        expect(CONTENT_CANDIDATE_BOUND).toBe(2000);
+    });
+});
+
+describe('SearchVectorRepository.replaceForSource: the row\'s time (decision 250)', () => {
+    it('a write of the text stamps the row now; the rebuild keeps an existing row\'s time', async () => {
+        const write = recorder();
+        await SearchVectorRepository.replaceForSource(write.db, ctx, { workItemId: 'w1', commentId: null }, 'Body');
+        expect(text(write.sent[0]!)).toContain('"updatedAt" = EXCLUDED."updatedAt"');
+        const rebuild = recorder();
+        await SearchVectorRepository.replaceForSource(rebuild.db, ctx, { workItemId: 'w1', commentId: 'c1' }, 'Body', { keepTime: true });
+        expect(text(rebuild.sent[0]!)).toContain('"updatedAt" = "SearchVector"."updatedAt"');
+        expect(text(rebuild.sent[0]!)).toMatch(/VALUES \(.*now\(\)\)/);
     });
 });

@@ -19,6 +19,12 @@
 import { createHash } from 'node:crypto';
 
 /** The role that owns every search function: NOLOGIN, BYPASSRLS, column SELECT only. */
+
+/** Escapes every regular-expression metacharacter, backslash included. */
+function escapeRegExp(text: string): string {
+    return text.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+}
+
 export const SEARCH_DEFINER_ROLE = 'app_search_definer';
 
 /** The fixed search path every search function sets. */
@@ -38,6 +44,21 @@ export interface SearchDefinerSpec {
     returns: readonly string[];
     /** sha256 of the body between `$fn$` delimiters, as written in the migration. A change is a reviewed diff. */
     bodySha256: string;
+    /**
+     * Owner decision 250: it ranks only a bounded candidate set, the newest
+     * `candidates` matches read one past the bound, reached by a walk of the
+     * newest `walkWindow` vectors (in a workspace of at least
+     * `largeWorkspace` vectors, for a query matching at least `denseMatches`
+     * of the newest `denseSample`) or else by every match; `bounded` says the
+     * bound cut them. Absent: no candidate bound.
+     */
+    candidates?: { bound: number; walkWindow: number; largeWorkspace: number; denseSample: number; denseMatches: number };
+    /**
+     * Decision 250: every call planned with its arguments folded to constants
+     * (`SET plan_cache_mode = force_custom_plan`) and never compiled
+     * (`SET jit = off`). Absent: no setting but `search_path`.
+     */
+    planSettings?: boolean;
 }
 
 export const SEARCH_DEFINER_FUNCTIONS: readonly SearchDefinerSpec[] = [
@@ -83,8 +104,10 @@ export const SEARCH_DEFINER_FUNCTIONS: readonly SearchDefinerSpec[] = [
         caller: 'src/app-layer/repositories/SearchVectorRepository.ts',
         tables: { s: 'SearchVector', w: 'WorkItem', p: 'Project', c: 'Comment' },
         cap: 1000,
-        returns: ['workItemId', 'commentId', 'rank'],
-        bodySha256: '1609db20fa86f48c46478a0112365f09fe6322ecdcd0118987055e8d4aa7c9b0',
+        returns: ['workItemId', 'commentId', 'rank', 'bounded'],
+        bodySha256: 'a93ffe3144d4ca5bc07bc219c04af1c199817ef7604e346502a5dd905da105b4',
+        candidates: { bound: 2000, walkWindow: 50000, largeWorkspace: 100000, denseSample: 2000, denseMatches: 100 },
+        planSettings: true,
     },
 ];
 
@@ -138,6 +161,15 @@ export function definerProblems(spec: SearchDefinerSpec, def: Pick<SearchDefiner
         problems.push(`search_path is not fixed to ${SEARCH_DEFINER_SEARCH_PATH}`);
     }
     if (/\bLEAKPROOF\b/i.test(attributes) && !/\bNOT\s+LEAKPROOF\b/i.test(attributes)) problems.push('marked LEAKPROOF');
+    const configured = [...attributes.matchAll(/\bSET\s+(\w+)\s*(?:=|\bTO\b)\s*([^\n]*)/gi)].map((m) => ({ name: m[1]!.toLowerCase(), value: m[2]!.trim() }));
+    for (const s of configured) {
+        if (s.name === 'search_path') continue;
+        if (s.name === 'plan_cache_mode' && spec.planSettings && s.value === 'force_custom_plan') continue;
+        if (s.name === 'jit' && spec.planSettings && s.value === 'off') continue;
+        problems.push(`sets ${s.name} = ${s.value}`);
+    }
+    if (spec.planSettings && !configured.some((s) => s.name === 'plan_cache_mode')) problems.push('does not set plan_cache_mode = force_custom_plan');
+    if (spec.planSettings && !configured.some((s) => s.name === 'jit')) problems.push('does not set jit = off');
     const paramNames = def.params.split(',').map((p) => p.trim().split(/\s+/)[0]!).filter(Boolean);
     for (const name of paramNames) if (/tenant/i.test(name)) problems.push(`takes the workspace as an argument (${name})`);
     if (!paramNames.includes('p_limit')) problems.push('has no p_limit parameter');
@@ -195,10 +227,50 @@ export function definerProblems(spec: SearchDefinerSpec, def: Pick<SearchDefiner
     if (spec.tables.s === 'SearchVector' && !flat.includes(`s."configName" = 'islestone_bg_en'`)) problems.push('does not name the configuration');
 
     // ── The bound ────────────────────────────────────────────────────
-    const limits = [...flat.matchAll(/\bLIMIT\s+([^;]+?)\s*;/g)].map((m) => m[1]!);
-    const capped = limits.length === 1 ? /^LEAST\(GREATEST\(COALESCE\(p_limit, 0\), 0\), (\d+)\)$/.exec(limits[0]!) : null;
+    // Every LIMIT is either the cap on what is returned (once, the last
+    // clause of the query) or, for a function with a candidate bound
+    // (decision 250), the walk's literal one-past-the-bound.
+    const limits = [...flat.matchAll(/\bLIMIT\s+(LEAST\(GREATEST\(COALESCE\(p_limit, 0\), 0\), \d+\)|\d+|\S+)/g)].map((m) => m[1]!);
+    const caps = limits.filter((l) => l.startsWith('LEAST('));
+    const capped = caps.length === 1 && new RegExp(`LIMIT ${escapeRegExp(caps[0]!)}\\s*;`).test(flat) ? /(\d+)\)$/.exec(caps[0]!) : null;
     if (!capped) problems.push('is not bounded by LIMIT LEAST(GREATEST(COALESCE(p_limit, 0), 0), <cap>)');
     else if (Number(capped[1]) !== spec.cap) problems.push(`caps at ${capped[1]}, not ${spec.cap}`);
+    const others = limits.filter((l) => !l.startsWith('LEAST('));
+    if (spec.candidates === undefined) {
+        for (const l of others) problems.push(`has another LIMIT ${l}`);
+    } else {
+        const { bound: c, walkWindow, largeWorkspace, denseSample, denseMatches } = spec.candidates;
+        const expected = [largeWorkspace, denseSample, walkWindow, c + 1, c + 1].map(String);
+        if (JSON.stringify(others) !== JSON.stringify(expected)) problems.push(`does not walk as pinned (LIMIT ${others.join(', ') || 'none'}, not ${expected.join(', ')})`);
+        const count = (needle: string) => flat.split(needle).length - 1;
+        // Every read of the vectors names the workspace and the configuration before the next read.
+        const reads = flat.split('FROM public."SearchVector" s').slice(1);
+        if (reads.some((after) => !after.includes(`s."tenantId" = v_tenant AND s."configName" = 'islestone_bg_en'`))) {
+            problems.push('reads "SearchVector" without the workspace and the configuration');
+        }
+        // The walk and the full match each carry every predicate (the full match's item predicates in `live`).
+        for (const [needle, what] of [
+            [`s."lexemes" @@ websearch_to_tsquery('islestone_bg_en', p_query)`, 'the match'],
+            ['JOIN public."Project" p ON p."id" = w."projectId" AND p."tenantId" = w."tenantId"', 'the project, joined in its workspace,'],
+            ['w."deletedAt" IS NULL', 'the item\'s deletedAt'],
+            ['(s."commentId" IS NULL OR EXISTS (SELECT 1 FROM public."Comment" c WHERE c."id" = s."commentId" AND c."tenantId" = v_tenant AND c."deletedAt" IS NULL))', 'the comment\'s deletedAt'],
+            ['p."deletedAt" IS NULL AND p."archivedAt" IS NULL', 'the project\'s liveness'],
+            [`(p_all_projects IS TRUE OR w."projectId" = ANY (COALESCE(p_project_ids, '{}'::text[])))`, 'project visibility'],
+            ['ORDER BY s."updatedAt" DESC, s."id" DESC LIMIT 2001'.replace('2001', String(c + 1)), 'newest first, one past the bound'],
+        ] as const) {
+            if (count(needle) !== 2) problems.push(`does not apply ${what} to both the walk and the full match`);
+        }
+        // The walk joins the item in its workspace; the full match only the live, visible items of the workspace.
+        if (count('JOIN public."WorkItem" w ON w."id" = s."workItemId" AND w."tenantId" = s."tenantId"') !== 1) problems.push('does not join the walk\'s item in its workspace');
+        if (!flat.includes(`FROM public."WorkItem" w JOIN public."Project" p ON p."id" = w."projectId" AND p."tenantId" = w."tenantId" WHERE w."tenantId" = v_tenant AND w."deletedAt" IS NULL`) || !flat.includes('FROM matched s JOIN live l ON l."id" = s."workItemId"')) {
+            problems.push('does not keep the full match to the workspace\'s live, visible items');
+        }
+        if (!flat.includes(`ORDER BY s."updatedAt" DESC, s."id" DESC LIMIT ${walkWindow}) s`)) problems.push('does not walk the newest vectors first (s."updatedAt", s."id")');
+        if (!flat.includes(`count(*) >= ${largeWorkspace} AS "large"`) || !flat.includes(`count(*) >= ${denseMatches} AS "dense"`)) problems.push('does not gate the walk on the workspace\'s size and the query\'s density');
+        if (!flat.includes(`WHERE (SELECT count(*) FROM recent) > ${c}`) || !flat.includes(`WHERE (SELECT count(*) FROM recent) <= ${c}`)) problems.push(`does not fall back to every match when the walk holds ${c} or fewer`);
+        if (!flat.includes(`(count(*) OVER ()) > ${c} AS "bounded"`)) problems.push(`does not say when more than ${c} candidates matched ("bounded")`);
+        if (!flat.includes(`WHERE r."recency" <= ${c}`)) problems.push(`ranks more than ${c} candidates`);
+    }
 
     return problems;
 }

@@ -61,6 +61,12 @@ export interface EntitySearchState {
      * neither — a newer query superseded it.
      */
     failed: boolean;
+    /**
+     * More descriptions and comments matched than the search ranks (owner
+     * decision 250, `meta.contentMatchesBounded`): the palette says it is
+     * showing recent matches.
+     */
+    contentMatchesBounded: boolean;
 }
 
 // ─── Tunables ─────────────────────────────────────────────────────────
@@ -113,6 +119,7 @@ export function useEntitySearch(
         disabled: tenantSlug === null,
         unavailable: !ENTITY_SEARCH_AVAILABLE,
         failed: false,
+        contentMatchesBounded: false,
     });
     // Track requests so a stale debounce doesn't overwrite a fresh
     // result even if AbortController fires after the new request
@@ -123,12 +130,12 @@ export function useEntitySearch(
         const unavailable = !ENTITY_SEARCH_AVAILABLE;
         if (tenantSlug === null) {
             // eslint-disable-next-line react-hooks/set-state-in-effect
-            setState({ loading: false, results: [], disabled: true, unavailable, failed: false });
+            setState({ loading: false, results: [], disabled: true, unavailable, failed: false, contentMatchesBounded: false });
             return;
         }
         const trimmed = query.trim();
         if (unavailable || trimmed.length < MIN_QUERY_LENGTH) {
-            setState({ loading: false, results: [], disabled: false, unavailable, failed: false });
+            setState({ loading: false, results: [], disabled: false, unavailable, failed: false, contentMatchesBounded: false });
             return;
         }
 
@@ -157,6 +164,7 @@ export function useEntitySearch(
                 unavailable: false,
                 results: hits.map(adaptHit),
                 failed,
+                contentMatchesBounded: payload?.meta?.contentMatchesBounded === true,
             });
         }, DEBOUNCE_MS);
 

@@ -247,16 +247,18 @@ function sortCursorOf(raw: string | undefined, spec: SortSpec): SortCursor | und
 /**
  * The live, visible items whose title (stemmed), description or a live
  * comment matches `q` in full text (2.7f), each at most `SEARCH_MATCH_CAP`;
- * the list keeps its own sort.
+ * the list keeps its own sort. `contentMatchesBounded`: more descriptions and
+ * comments matched than the content match ranks (owner decision 250), so the
+ * content half holds the most recently written matches only.
  */
-async function fullTextMatchIdsFor(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, q: string): Promise<string[]> {
+async function fullTextMatchIdsFor(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, q: string): Promise<{ ids: string[]; contentMatchesBounded: boolean }> {
     const query = normaliseSearchQuery(q);
-    if (!query) return [];
+    if (!query) return { ids: [], contentMatchesBounded: false };
     const [titles, content] = await Promise.all([
         WorkItemRepository.titleFullTextIds(db, ctx, v, query, SEARCH_MATCH_CAP),
         SearchVectorRepository.matchItems(db, ctx, v, query, SEARCH_MATCH_CAP),
     ]);
-    return [...new Set([...titles, ...content.map((m) => m.workItemId)])];
+    return { ids: [...new Set([...titles, ...content.matches.map((m) => m.workItemId)])], contentMatchesBounded: content.bounded };
 }
 
 /**
@@ -353,7 +355,14 @@ export async function resolveListFiltersInTx(
     v: ProjectVisibility,
     query: ListWorkItemsQuery,
     sortFieldId: string | null = null,
-): Promise<{ listFilters: WorkItemFilters; keyHit: KeyHit | null; today: Date; sortField: { id: string; type: CustomFieldType } | null }> {
+): Promise<{
+    listFilters: WorkItemFilters;
+    keyHit: KeyHit | null;
+    today: Date;
+    sortField: { id: string; type: CustomFieldType } | null;
+    /** `q`'s content half was cut to the most recent matches (decision 250). */
+    contentMatchesBounded: boolean;
+}> {
     const { customFields: rawConditions, order: _order, dir: _dir, cursor: _cursor, limit: _limit, ...filters } = query;
     void _order;
     void _dir;
@@ -365,7 +374,8 @@ export async function resolveListFiltersInTx(
     const listFilters: WorkItemFilters = { ...filters, customFields: conditions };
     // `q` also matches stemmed titles, descriptions and comments (2.7f,
     // ADR 0008): the ids are the usecase's, never the request's.
-    listFilters.fullTextMatchIds = filters.q ? await fullTextMatchIdsFor(db, ctx, v, filters.q) : undefined;
+    const fullText = filters.q ? await fullTextMatchIdsFor(db, ctx, v, filters.q) : undefined;
+    listFilters.fullTextMatchIds = fullText?.ids;
     listFilters.titleSubstringMatchIds = filters.q ? await titleSubstringMatchIdsFor(db, ctx, v, filters.q) : undefined;
     // An empty parameter is no filter; a resolved empty list matches nothing.
     if (filters.cycleId) listFilters.cycleId = await resolveCycleFilter(db, ctx, filters.cycleId);
@@ -377,7 +387,7 @@ export async function resolveListFiltersInTx(
     else delete listFilters.initiativeId;
     if (filters.goalId) listFilters.goalScope = await resolveGoalFilter(db, ctx, v, filters.goalId);
     else delete listFilters.goalId;
-    return { listFilters, keyHit, today, sortField };
+    return { listFilters, keyHit, today, sortField, contentMatchesBounded: fullText?.contentMatchesBounded ?? false };
 }
 
 /**
@@ -396,7 +406,7 @@ export async function listWorkItems(ctx: RequestContext, query: ListWorkItemsQue
     const { dir, cursor: rawCursor } = query;
     return runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
-        const { listFilters, keyHit, today, sortField } = await resolveListFiltersInTx(db, ctx, v, query, sortFieldId);
+        const { listFilters, keyHit, today, sortField, contentMatchesBounded } = await resolveListFiltersInTx(db, ctx, v, query, sortFieldId);
         if (sortField) {
             const direction = dir ?? 'asc';
             const valueKind = CUSTOM_FIELD_TYPE_SPECS[sortField.type].column === 'dateValue' ? 'date' : 'string';
@@ -419,13 +429,15 @@ export async function listWorkItems(ctx: RequestContext, query: ListWorkItemsQue
             return {
                 items: items.map(toWorkItemDto),
                 pageInfo: page.next ? { hasNextPage: true, nextCursor: encodeSortCursor(page.next) } : { hasNextPage: false },
+                contentMatchesBounded,
             };
         }
         const sort = listSortSpec(order as ListSort, order === 'manual' ? undefined : (dir ?? DEFAULT_SORT_DIRECTION[order as ListSort]));
         const cursor = sortCursorOf(rawCursor, sort);
         const rows = await WorkItemRepository.list(db, ctx, v, listFilters, { limit, sort, cursor, keyHit, today });
         const page = computeSortPage(rows, limit, sort);
-        return { items: page.items.map(toWorkItemDto), pageInfo: page.pageInfo };
+        // Decision 250: `q`'s description and comment matches are the most recent ones only.
+        return { items: page.items.map(toWorkItemDto), pageInfo: page.pageInfo, contentMatchesBounded };
     });
 }
 

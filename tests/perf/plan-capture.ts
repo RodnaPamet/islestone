@@ -75,10 +75,16 @@ export function planNodes(root: PlanNode): PlanNode[] {
     return out;
 }
 
-/** The guarded tables a plan reads with a sequential scan. */
+/**
+ * The guarded tables a plan reads with a sequential scan. A scan the executor
+ * never started (`Actual Loops` 0, a branch behind a one-time filter: the walk
+ * `search_item_contents` plans for a large workspace, never run in a small one,
+ * decision 250) reads nothing and is not counted; a plan without ANALYZE
+ * figures counts every scan.
+ */
 export function seqScansOn(plan: PlanNode, guarded: readonly string[] = GUARDED_TABLES): string[] {
     return planNodes(plan)
-        .filter((n) => n['Node Type'] === 'Seq Scan' && n['Relation Name'] !== undefined && guarded.includes(n['Relation Name']))
+        .filter((n) => n['Node Type'] === 'Seq Scan' && n['Relation Name'] !== undefined && guarded.includes(n['Relation Name']) && n['Actual Loops'] !== 0)
         .map((n) => n['Relation Name']!);
 }
 

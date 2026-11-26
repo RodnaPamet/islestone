@@ -329,21 +329,27 @@ describeFn('search over descriptions and comments (2.7f)', () => {
 
         beforeAll(async () => {
             // Enough live rows and vectors in the workspace (20,000) that the
-            // planner weighs the indexes as in a busy workspace (as 2.7b's test).
-            const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { teamId: true } });
-            const state = await prisma.workflowState.findFirstOrThrow({ where: { teamId: project.teamId }, select: { id: true, category: true } });
-            await prisma.$executeRawUnsafe(
-                `INSERT INTO "WorkItem" ("id", "tenantId", "teamId", "projectId", "number", "typeId", "title", "stateId", "stateCategory", "createdByUserId", "sortKey", "updatedAt")
-                 SELECT $1 || g, $2, $3, $4, 100000 + g, $5, 'Пълнеж ' || md5(g::text) || ' widget ' || g, $6, $7::"WorkflowStateCategory", $8, 'f' || lpad(g::text, 6, '0'), now()
-                   FROM generate_series(1, 20000) g`,
-                FILLER, tenantId, project.teamId, projectId, typeId, state.id, state.category, owner.userId,
-            );
-            await prisma.$executeRawUnsafe(
-                `INSERT INTO "SearchVector" ("id", "tenantId", "workItemId", "commentId", "lexemes", "configName", "revision", "updatedAt")
-                 SELECT $1 || g, $2, $1 || g, NULL, to_tsvector('islestone_bg_en', 'пълнеж ' || md5(g::text)), 'islestone_bg_en', 1, now()
-                   FROM generate_series(1, 20000) g`,
-                FILLER, tenantId,
-            );
+            // planner weighs the indexes as in a busy workspace (as 2.7b's
+            // test), beside another workspace as busy: with one workspace
+            // holding every row, reading the whole table is the cheaper plan.
+            const fill = async (prefix: string, tenant: string, inProject: string, ofType: string, by: string) => {
+                const project = await prisma.project.findUniqueOrThrow({ where: { id: inProject }, select: { teamId: true } });
+                const state = await prisma.workflowState.findFirstOrThrow({ where: { teamId: project.teamId }, select: { id: true, category: true } });
+                await prisma.$executeRawUnsafe(
+                    `INSERT INTO "WorkItem" ("id", "tenantId", "teamId", "projectId", "number", "typeId", "title", "stateId", "stateCategory", "createdByUserId", "sortKey", "updatedAt")
+                     SELECT $1 || g, $2, $3, $4, 100000 + g, $5, 'Пълнеж ' || md5(g::text) || ' widget ' || g, $6, $7::"WorkflowStateCategory", $8, 'f' || lpad(g::text, 6, '0'), now()
+                       FROM generate_series(1, 20000) g`,
+                    prefix, tenant, project.teamId, inProject, ofType, state.id, state.category, by,
+                );
+                await prisma.$executeRawUnsafe(
+                    `INSERT INTO "SearchVector" ("id", "tenantId", "workItemId", "commentId", "lexemes", "configName", "revision", "updatedAt")
+                     SELECT $1 || g, $2, $1 || g, NULL, to_tsvector('islestone_bg_en', 'пълнеж ' || md5(g::text)), 'islestone_bg_en', 1, now()
+                       FROM generate_series(1, 20000) g`,
+                    prefix, tenant,
+                );
+            };
+            await fill(FILLER, tenantId, projectId, typeId, owner.userId);
+            await fill(`${FILLER}o-`, otherTenantId, otherProjectId, otherTypeId, outsider.userId);
             await prisma.$executeRawUnsafe('ANALYZE "WorkItem"');
             await prisma.$executeRawUnsafe('ANALYZE "SearchVector"');
             await prisma.$executeRawUnsafe('ANALYZE "Project"');

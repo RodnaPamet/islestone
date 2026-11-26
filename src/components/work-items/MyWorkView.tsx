@@ -44,6 +44,7 @@ import { OPEN_CATEGORIES } from '@/app-layer/domain/workflow-state';
 import type { WorkItemListFilters } from './data/list-filters';
 import { useWorkItemList } from './data/use-work-item-list';
 import { NewWorkItemModal } from './NewWorkItemModal';
+import { RecentMatchesNote } from './RecentMatchesNote';
 import { useWorkItemColumns } from './use-work-item-columns';
 import { useListFiltersFromContext, useWorkItemFilterContext } from './use-work-item-filter-context';
 import { WorkItemSheet } from './WorkItemSheet';
@@ -160,6 +161,7 @@ function MyWorkSection({ id, filters, onOpen }: { id: MyWorkSectionId; filters: 
             </div>
             {id === 'dueSoon' && <p className="text-xs text-content-muted">{tSection('myWork.sections.dueSoon.description', days)}</p>}
             {id === 'toReview' && <p className="text-xs text-content-muted">{tSection('myWork.sections.toReview.description')}</p>}
+            {list.contentMatchesBounded && <RecentMatchesNote />}
             <DataTable<WorkItemRow>
                 data={list.items}
                 columns={columns}

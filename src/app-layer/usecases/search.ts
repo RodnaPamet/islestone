@@ -34,7 +34,10 @@
  *     by its title keeps its title hit, and the rest rank below every title
  *     match (`computeContentScore`). The best `SNIPPET_HITS` of them carry a
  *     snippet of the matched text, decrypted and read under the same
- *     visibility in the same transaction; nothing is stored.
+ *     visibility in the same transaction; nothing is stored. Only the most
+ *     recently written matches are ranked (owner decision 250,
+ *     `CONTENT_CANDIDATE_BOUND`); `meta.contentMatchesBounded` says when
+ *     there were more, and the palette says it is showing recent matches.
  *   - **Not searched:** intake requests, templates, project-template content
  *     and personal data (decision 124).
  */
@@ -43,7 +46,7 @@ import { assertCanReadWorkConfig } from '../policies/work-config.policies';
 import { mayReadWorkItems } from '../policies/work-item.policies';
 import { visibleProjects, type ProjectVisibility } from '../policies/project-visibility';
 import { ProjectRepository, type ProjectSearchRow } from '../repositories/ProjectRepository';
-import { SearchVectorRepository, type SearchVectorMatch } from '../repositories/SearchVectorRepository';
+import { SearchVectorRepository, type SearchVectorMatch, type SearchVectorMatches } from '../repositories/SearchVectorRepository';
 import { WorkItemRepository, type WorkItemSearchRow } from '../repositories/WorkItemRepository';
 import { formatKey, parseKey } from '../domain/work-item-key';
 import type { RequestContext } from '../types';
@@ -60,6 +63,9 @@ import {
     type SearchHit,
     type SearchResponse,
 } from '@/lib/search/types';
+
+/** A caller without `work_items.view` matches no contents. */
+const NO_CONTENT_MATCHES: SearchVectorMatches = { matches: [], bounded: false };
 
 export interface SearchWorkspaceOptions {
     /** Hits per type, 1 to `MAX_PER_TYPE_LIMIT` (default `DEFAULT_PER_TYPE_LIMIT`). */
@@ -88,11 +94,12 @@ export async function searchWorkspace(
         const keyHitId = searchItems ? await keyHitIdFor(db, ctx, v, query) : null;
         // The three matches are the search functions (owner decision 245):
         // ids and ranks only, read on their indexes under row-level security.
-        const [titleIds, projectIds, contentMatches] = await Promise.all([
+        const [titleIds, projectIds, content] = await Promise.all([
             searchItems ? WorkItemRepository.searchTitleIds(db, ctx, v, query, { limit: dbLimit, keyHitId }) : Promise.resolve([]),
             ProjectRepository.searchNameIds(db, ctx, v, query, { limit: dbLimit }),
-            searchItems ? SearchVectorRepository.matchItems(db, ctx, v, query, dbLimit) : Promise.resolve([]),
+            searchItems ? SearchVectorRepository.matchItems(db, ctx, v, query, dbLimit) : Promise.resolve(NO_CONTENT_MATCHES),
         ]);
+        const contentMatches = content.matches;
 
         const titled = new Set(titleIds.map((t) => t.id));
         const contentOnly = contentMatches.filter((m) => !titled.has(m.workItemId));
@@ -117,7 +124,8 @@ export async function searchWorkspace(
         // Rank, then cap: the strongest hits of each type survive.
         const { kept, perTypeCounts, truncated } = capPerType(sortHits(hits), limit);
         await attachSnippets(db, ctx, v, kept, contentOnly, query);
-        return { hits: kept, meta: { query, perTypeCounts, truncated, perTypeLimit: limit } };
+        // Decision 250: only the most recent content matches were ranked.
+        return { hits: kept, meta: { query, perTypeCounts, truncated, perTypeLimit: limit, contentMatchesBounded: content.bounded } };
     });
 }
 
@@ -235,7 +243,7 @@ function projectHit(row: ProjectSearchRow, query: string, slug: string): SearchH
 function emptyResponse(query: string, limit: number): SearchResponse {
     return {
         hits: [],
-        meta: { query, perTypeCounts: { workItem: 0, project: 0 }, truncated: false, perTypeLimit: limit },
+        meta: { query, perTypeCounts: { workItem: 0, project: 0 }, truncated: false, perTypeLimit: limit, contentMatchesBounded: false },
     };
 }
 
