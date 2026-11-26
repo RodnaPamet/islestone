@@ -46,8 +46,19 @@ export async function readCappedBytes(source: BodySource, maxBytes: number): Pro
     return all;
 }
 
+/**
+ * The body as text: UTF-8, as JSON must be (RFC 8259 §8.1). Bytes that are
+ * not UTF-8 are refused (400), never read as replacement characters: a body
+ * a sender cannot have meant is not quietly rewritten into one it did not
+ * send (found by Hardening H2f's fuzzing).
+ */
 export async function readCappedBody(source: BodySource, maxBytes: number): Promise<string> {
-    return new TextDecoder('utf-8', { fatal: false }).decode(await readCappedBytes(source, maxBytes));
+    const bytes = await readCappedBytes(source, maxBytes);
+    try {
+        return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+        throw new AppError('The request body is not valid UTF-8.', 'INVALID_UTF8', 400);
+    }
 }
 
 /** A capped body parsed as JSON; anything else is a 400. */

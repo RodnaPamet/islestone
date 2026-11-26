@@ -1,0 +1,15 @@
+From: Mail Delivery Subsystem <MAILER-DAEMON@mx.example.org>
+Return-Path: <>
+Subject: Undelivered Mail Returned to Sender
+Content-Type: multipart/report; report-type=delivery-status; boundary="r"
+
+--r
+Content-Type: text/plain
+
+This is the mail system.
+--r
+Content-Type: message/delivery-status
+
+Final-Recipient: rfc822; nobody@example.org
+Action: failed
+--r--

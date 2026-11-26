@@ -68,9 +68,12 @@ const RICH_TEXT_COVERAGE: Readonly<
     IntakeRequest: { usecases: ['src/app-layer/usecases/intake-request.ts'], sanitizer: 'sanitizePlainText' },
     Goal: { usecases: ['src/app-layer/usecases/goal.ts'], sanitizer: 'sanitizePlainText' },
     Initiative: { usecases: ['src/app-layer/usecases/initiative.ts'], sanitizer: 'sanitizePlainText' },
-    // Sub-phase 2.6c: a follow-up email's text (and an emailed request's,
-    // through intake-request's `cleanText`), sanitised before it is stored.
-    IntakeFollowUp: { usecases: ['src/app-layer/usecases/intake-email.ts'], sanitizer: 'sanitizePlainText' },
+    // Sub-phase 2.6c: a follow-up email's text (and an emailed request's),
+    // sanitised before it is stored by intake-email's writers through
+    // intake-request's `cleanText`, the one sanitising call both share. (Until
+    // H2f intake-email also called the sanitiser itself, for the sender's name;
+    // that is `cleanRequesterName` in src/lib/intake/requester-name.ts now.)
+    IntakeFollowUp: { usecases: ['src/app-layer/usecases/intake-request.ts'], sanitizer: 'sanitizePlainText' },
     // Sub-phase 2.8a: a reviewer's response text (decision 157).
     WorkItemReviewer: { usecases: ['src/app-layer/usecases/review.ts'], sanitizer: 'sanitizePlainText' },
 };

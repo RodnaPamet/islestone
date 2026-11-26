@@ -41,6 +41,15 @@ export class IntakeEmailRepository {
     // ─── Inbound deliveries ─────────────────────────────────────────────
 
     /** The delivery already recorded for this webhook delivery or this email, if any. */
+    /**
+     * Lock a project's intake row for the rest of the transaction: an inbound
+     * delivery's repeat check, throttles and insert run under it, one at a
+     * time per address (H2f).
+     */
+    static async lockProjectIntake(db: PrismaTx, ctx: Ctx, projectId: string): Promise<void> {
+        await db.$queryRaw`SELECT "projectId" FROM "ProjectIntake" WHERE "projectId" = ${projectId} AND "tenantId" = ${ctx.tenantId} FOR UPDATE`;
+    }
+
     static async findInbound(db: PrismaTx, ctx: Ctx, svixId: string, emailId: string) {
         return db.intakeInboundEmail.findFirst({
             where: { tenantId: ctx.tenantId, OR: [{ svixId }, { emailId }] },

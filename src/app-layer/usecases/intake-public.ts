@@ -56,15 +56,16 @@ import { appLink } from '../notifications/app-link';
 import { enqueueEmail } from '../notifications/enqueue';
 import type { RequestContext } from '../types';
 import { cleanText, cleanTitle, enqueueRequesterNotices, notifyIntakeReceived, storedAnswersOf } from './intake-request';
+import { inIntakeWriteQueue } from './intake-write-queue';
 import { runInTenantContext } from '@/lib/db-context';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
 import { AppError, ConflictError, badRequest, notFound } from '@/lib/errors/types';
-import { compilePublicIntakeRequestSchema, INTAKE_LIMITS, readDefinition, type IntakeAnswer, type IntakeFormDefinition } from '@/lib/intake/form-definition';
+import { compilePublicIntakeRequestSchema, readDefinition, type IntakeAnswer, type IntakeFormDefinition } from '@/lib/intake/form-definition';
+import { cleanRequesterName } from '@/lib/intake/requester-name';
 import { isPublicIntakeOpen } from '@/lib/intake/public-switch';
 import { issueFormToken, verifyFormToken, verifyProofOfWork } from '@/lib/intake/public/form-token';
 import { intakeReference } from '@/lib/intake/reference';
 import { hashForLookup } from '@/lib/security/encryption';
-import { sanitizePlainText } from '@/lib/security/sanitize';
 
 /** A form's public id: 16 random bytes, base64url (`createIntakeForm`). */
 const PUBLIC_ID = /^[A-Za-z0-9_-]{22}$/;
@@ -247,12 +248,15 @@ export async function submitPublicIntakeRequest(publicId: string, raw: unknown, 
         requesterEmail?: string;
         wantsUpdates?: boolean;
     };
-    const name = input.requesterName ? sanitizePlainText(input.requesterName).replace(/\s+/g, ' ').trim().slice(0, INTAKE_LIMITS.requesterName) || null : null;
+    const name = cleanRequesterName(input.requesterName);
     const email = input.requesterEmail ? input.requesterEmail.trim() : null;
     const updatesRequested = input.wantsUpdates === true && email !== null;
 
     const ctx = await buildTenantSystemJobContext({ tenantId: form.tenantId, tenantSlug: form.tenantSlug, job: 'intake-public-submit' });
-    const created = await runInTenantContext(ctx, async (db) => {
+    // The workspace's public submits take their turn in this process first
+    // (`intake-write-queue.ts`): both daily caps are counted in the
+    // transaction, and a waiter must not hold a connection (H2f).
+    const created = await inIntakeWriteQueue(`public-submit:${form.tenantId}`, () => runInTenantContext(ctx, async (db) => {
         // The daily caps, counted under the form's row lock so two submits
         // count one after the other.
         if (!(await IntakeRepository.lockForm(db, ctx, form.id))) throw publicFormNotFound();
@@ -326,7 +330,7 @@ export async function submitPublicIntakeRequest(publicId: string, raw: unknown, 
         }
         const updates: PublicIntakeUpdates = !updatesRequested ? 'NONE' : confirmedBefore ? 'CONFIRMED' : 'CONFIRM_PENDING';
         return { row, updates };
-    });
+    }));
     if (created === null) {
         return { reference: randomBytes(6).toString('hex').slice(0, 8).toUpperCase(), confirmation: form.definition.confirmation, updates: updatesRequested ? 'CONFIRM_PENDING' : 'NONE' };
     }

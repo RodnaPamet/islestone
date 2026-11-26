@@ -1,0 +1,23 @@
+From: Bob <bob@example.org>
+To: abcdefghjkmn@in.islestone.cloud
+Subject: Fwd: Outage notice
+Message-ID: <fwd-0001@example.org>
+Content-Type: multipart/mixed; boundary="fwd"
+
+--fwd
+Content-Type: text/plain; charset=us-ascii
+
+See the message below.
+
+---------- Forwarded message ---------
+From: Ops <ops@example.org>
+--fwd
+Content-Type: message/rfc822
+Content-Disposition: attachment; filename="outage.eml"
+
+From: Ops <ops@example.org>
+Subject: Outage notice
+Content-Type: text/plain
+
+The service is down.
+--fwd--

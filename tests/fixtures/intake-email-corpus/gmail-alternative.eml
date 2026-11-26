@@ -1,0 +1,36 @@
+Return-Path: <ada@sender.example>
+Authentication-Results: mx.inbound.test; spf=pass smtp.mailfrom=sender.example; dkim=pass header.d=sender.example header.s=s1; dmarc=pass (p=NONE) header.from=sender.example
+MIME-Version: 1.0
+Date: Tue, 3 Feb 2026 10:00:00 +0000
+Message-ID: <CAF1example0001@mail.sender.example>
+Subject: The printer on floor 2 is jammed
+From: Ada Lovelace <ada@sender.example>
+To: Support <abcdefghjkmn@in.islestone.cloud>
+Content-Type: multipart/alternative; boundary="000000000000a1b2c3d4e5f6"
+
+--000000000000a1b2c3d4e5f6
+Content-Type: text/plain; charset="UTF-8"
+
+Hello,
+
+The printer on floor 2 shows "paper jam" but there is no paper in it.
+
+Thanks,
+Ada
+
+On Mon, 2 Feb 2026 at 09:12, Support <abcdefghjkmn@in.islestone.cloud> wrote:
+> We have received your request.
+
+--000000000000a1b2c3d4e5f6
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+<div dir=3D"ltr">Hello,<div><br></div><div>The printer on floor 2 shows &quot;=
+paper jam&quot; but there is no paper in it.</div><div><br></div><div>Thanks,<=
+/div><div>Ada</div></div><br><div class=3D"gmail_quote"><div dir=3D"ltr" class=
+=3D"gmail_attr">On Mon, 2 Feb 2026 at 09:12, Support &lt;<a href=3D"mailto:abcd=
+efghjkmn@in.islestone.cloud">abcdefghjkmn@in.islestone.cloud</a>&gt; wrote:<br>=
+</div><blockquote class=3D"gmail_quote" style=3D"margin:0px 0px 0px 0.8ex">We h=
+ave received your request.</blockquote></div>
+
+--000000000000a1b2c3d4e5f6--

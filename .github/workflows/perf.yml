@@ -25,6 +25,12 @@ name: Performance (nightly)
 # twice, no retries and four workers, then each spec file alone, so an order
 # dependence a pull request's one retry turns into a pass shows here. A red
 # night opens, or comments on, one issue ("Nightly E2E isolation run is red").
+#
+# Hardening H2f (docs/porting/maps/H2.md part 6; docs/intake.md, "Fuzzing";
+# owner decision 178): the nightly also re-runs the intake fuzz properties
+# (tests/unit/intake/fuzz/) at 20,000 cases each, where a pull request runs
+# 100. A failure prints its seed and path (FC_SEED, FC_PATH) to replay it,
+# and opens or comments on the same issue as a red performance night.
 # Every action is pinned by commit (tests/guards/workflow-action-pinning.test.ts).
 
 on:
@@ -240,12 +246,35 @@ jobs:
           path: playwright-report
           retention-days: 14
 
+  # The intake fuzz properties at 20,000 cases each (H2f, decision 178), in
+  # band so their per-input time bounds measure one property at a time.
+  intake-fuzz:
+    name: Intake fuzzing (20,000 cases)
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Fuzz the intake parsers and schemas (a failure prints FC_SEED and FC_PATH)
+        run: npx jest --selectProjects node --testPathPatterns tests/unit/intake/fuzz --ci --runInBand
+        env:
+          FC_NUM_RUNS: '20000'
+
   # A red night opens one issue, or comments on the open one. This job runs
   # no repository code and is the only one with a write scope.
   report:
     name: Report a red night
-    needs: perf
-    if: always() && needs.perf.result == 'failure' && github.event_name == 'schedule'
+    needs: [perf, intake-fuzz]
+    if: always() && (needs.perf.result == 'failure' || needs.intake-fuzz.result == 'failure') && github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -263,14 +292,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PERF_RESULT: ${{ needs.perf.result }}
+          FUZZ_RESULT: ${{ needs.intake-fuzz.result }}
         run: |
           title='Nightly performance run is red'
           {
-            echo "The nightly performance run at 100k failed on $(date -u +%Y-%m-%d): $RUN_URL"
+            echo "The nightly run failed on $(date -u +%Y-%m-%d): $RUN_URL"
             echo
-            echo 'Budgets: scripts/perf/budgets.json (decision 167); the rules: docs/performance.md, "Latency" (decision 168: 25 % tolerance, one re-run).'
-            echo
-            if [ -f perf-report/100k/perf-summary.md ]; then cat perf-report/100k/perf-summary.md; else echo 'No latency summary was written: the run failed before the harness (seed, plan checks or statements); see the run.'; fi
+            if [ "$FUZZ_RESULT" = failure ]; then
+              echo 'The intake fuzzing job failed (20,000 cases per property, decision 178): its log names each failing property with its FC_SEED and FC_PATH. Replay it with `FC_SEED=<seed> FC_PATH=<path> npx jest <file>`, then fix it with an example test pinned to the seed (docs/intake.md, "Fuzzing").'
+              echo
+            fi
+            if [ "$PERF_RESULT" = failure ]; then
+              echo 'The performance run at 100k failed. Budgets: scripts/perf/budgets.json (decision 167); the rules: docs/performance.md, "Latency" (decision 168: 25 % tolerance, one re-run).'
+              echo
+              if [ -f perf-report/100k/perf-summary.md ]; then cat perf-report/100k/perf-summary.md; else echo 'No latency summary was written: the run failed before the harness (seed, plan checks or statements); see the run.'; fi
+            fi
           } > body.md
           number="$(gh api "repos/$REPO/issues?state=open&creator=github-actions%5Bbot%5D&per_page=100" --jq ".[] | select(.title == \"$title\") | .number" | head -n 1)"
           if [ -n "$number" ]; then

@@ -1,0 +1,17 @@
+From: x@example.com
+Subject: =?x-unknown-42?B?SGVsbG8gd29ybGQ?= =?utf-8?B?***?= =?bogus?Q?a=ZZb?=
+Content-Type: multipart/alternative; boundary=b
+
+--b
+Content-Type: text/plain; charset=x-unknown-42
+Content-Transfer-Encoding: base64
+
+SGVsbG8gd29ybGQ
+SGVsbG8=d29ybGQ===
+!!!not base64!!!
+--b
+Content-Type: text/html; charset="koi8-r"
+Content-Transfer-Encoding: quoted-printable
+
+<p>=F0=D2=C9=D7=C5=D4 =3
+--b--

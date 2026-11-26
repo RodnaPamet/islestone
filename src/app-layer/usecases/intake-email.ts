@@ -47,6 +47,7 @@ import { IntakeRepository } from '../repositories/IntakeRepository';
 import { enqueueEmail } from '../notifications/enqueue';
 import type { RequestContext } from '../types';
 import { cleanText, cleanTitle, notifyIntakeReceived } from './intake-request';
+import { inIntakeWriteQueue } from './intake-write-queue';
 import { env } from '@/env';
 import { runInTenantContext } from '@/lib/db-context';
 import { runWithoutRls } from '@/lib/db/rls-middleware';
@@ -55,10 +56,10 @@ import { contentFromFields, contentFromRaw, type InboundContent } from '@/lib/in
 import { retrieveReceivedEmail, ResendTerminalError } from '@/lib/intake/email/resend-api';
 import { downloadRawEmail } from '@/lib/intake/email/resend-download';
 import { intakeEmailDomain, isInboundEmailOpen } from '@/lib/intake/email/switch';
+import { cleanRequesterName } from '@/lib/intake/requester-name';
 import { intakeReference } from '@/lib/intake/reference';
 import { logger } from '@/lib/observability/logger';
 import { hashForLookup } from '@/lib/security/encryption';
-import { sanitizePlainText } from '@/lib/security/sanitize';
 
 /** Per address: emails an hour and a day; per sender on an address: an hour (docs/porting/maps/2.6.md). */
 export const INBOUND_THROTTLE = { addressPerHour: 30, addressPerDay: 300, senderPerHour: 10 } as const;
@@ -159,7 +160,12 @@ export async function receiveInboundEmailEvent(input: { svixId: string; payload:
 
     let result: { outcome: InboundOutcome; enqueueId: string | null };
     try {
-        result = await runInTenantContext(ctx, async (db) => {
+        // One address's deliveries take their turn in this process, then under
+        // its project intake row's lock: the repeat check and the throttles
+        // count one delivery after another, and a waiter holds no connection
+        // (`intake-write-queue.ts`; H2f).
+        result = await inIntakeWriteQueue(`inbound:${address.tenantId}:${address.projectId}`, () => runInTenantContext(ctx, async (db) => {
+            await IntakeEmailRepository.lockProjectIntake(db, ctx, address.projectId);
             const seen = await IntakeEmailRepository.findInbound(db, ctx, input.svixId, data.email_id);
             if (seen) return { outcome: seen.status === 'PENDING' ? 'REQUEUED' : 'DUPLICATE', enqueueId: seen.status === 'PENDING' ? seen.id : null };
 
@@ -184,7 +190,7 @@ export async function receiveInboundEmailEvent(input: { svixId: string; payload:
                 outcome: dropped,
             });
             return { outcome: dropped ?? 'QUEUED', enqueueId: dropped ? null : row.id };
-        });
+        }));
     } catch (err) {
         // Two deliveries of one email racing: the other recorded it.
         if (isUniqueViolation(err)) return 'DUPLICATE';
@@ -335,7 +341,7 @@ export async function processInboundEmail(input: { tenantId: string; inboundId: 
         const authenticated = c.senderCheck === 'VERIFIED' && c.fromAddress !== null;
         const member = authenticated && fromHash ? await IntakeEmailRepository.activeMemberByEmailHash(db, ctx, fromHash) : null;
         const replyToken = mintReplyToken();
-        const name = c.fromName ? sanitizePlainText(c.fromName).replace(/\s+/g, ' ').trim().slice(0, 100) || null : null;
+        const name = cleanRequesterName(c.fromName);
         const created = await IntakeRepository.createRequest(db, ctx, {
             projectId: row.projectId,
             channel: 'EMAIL',

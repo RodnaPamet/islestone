@@ -18,6 +18,13 @@ name: DAST (ZAP baseline)
 # without a dated deferral marker, so neither can quietly go back to
 # report-only.
 #
+# The public intake surface (Hardening H2f, owner decision 178): the run
+# publishes a public form, and `.zap/public-intake-hook.py` passes its page
+# (`/f/<publicId>`), a submission and a confirmation through ZAP, so the
+# passive rules read them; the spider alone reaches nothing that no signed-in
+# page links to. `.zap/public-intake-setup.mjs` takes the page's signed token
+# and solves its proof-of-work, as the page itself would.
+#
 # Adapted from inflect-compliance `.github/workflows/dast.yml` at
 # 5528464fc54a8681956f3b9ce23ca9c075f0420e (PROVENANCE.md): one role (the
 # workspace owner the run registers) instead of four seeded ones, and
@@ -89,6 +96,8 @@ jobs:
           DATA_ENCRYPTION_KEY: dast-data-encryption-key-not-a-real-secret-0001 # pragma: allowlist secret
           RATE_LIMIT_MODE: memory
           AUTH_PUBLIC_SIGNUP: '1'
+          # Public intake forms are closed in production unless opened (H2f scans them).
+          INTAKE_PUBLIC_FORMS: '1'
         run: |
           nohup npm run start > /tmp/app.log 2>&1 &
           for i in $(seq 1 90); do
@@ -109,8 +118,8 @@ jobs:
           email="dast-$(openssl rand -hex 8)@example.com"
           password="Dast!$(openssl rand -hex 16)"
           echo "::add-mask::$password"
-          curl -fsS -X POST "$base/api/auth/register" -H 'Content-Type: application/json' \
-            --data "{\"action\":\"register\",\"email\":\"$email\",\"password\":\"$password\",\"name\":\"DAST Owner\",\"orgName\":\"DAST\"}" -o /dev/null
+          reg="$(curl -fsS -X POST "$base/api/auth/register" -H 'Content-Type: application/json' \
+            --data "{\"action\":\"register\",\"email\":\"$email\",\"password\":\"$password\",\"name\":\"DAST Owner\",\"orgName\":\"DAST\"}")"
           jar="$(mktemp)"
           csrf="$(curl -fsS -c "$jar" "$base/api/auth/csrf" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>process.stdout.write(JSON.parse(d).csrfToken))')"
           curl -fsS -c "$jar" -b "$jar" -X POST "$base/api/auth/callback/credentials" \
@@ -130,6 +139,17 @@ jobs:
             echo "ZAP_AUTH_HEADER_SITE=localhost"
             echo "ZAP_AUTH_HEADER_VALUE=next-auth.session-token=$session"
           } >> "$GITHUB_ENV"
+          # H2f: a public intake form in the new workspace, and the requests
+          # the hook sends through ZAP (zap-public-intake.json, read by
+          # .zap/public-intake-hook.py from the mounted workspace).
+          field() { node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const v=process.argv[1].split(".").reduce((o,k)=>o?.[k],JSON.parse(d));if(typeof v!=="string")process.exit(1);process.stdout.write(v)})' "$1"; }
+          api="$base/api/t/$(printf '%s' "$reg" | field tenant.slug)"
+          send() { curl -fsS -b "$jar" -X "$1" "$api$2" -H 'Content-Type: application/json' --data "$3" "${@:4}"; }
+          team="$(send POST /teams '{"name":"DAST team"}' | field id)"
+          project="$(send POST /projects "{\"teamId\":\"$team\",\"name\":\"DAST project\",\"keyPrefix\":\"DST\"}" | field id)"
+          send PUT "/projects/$project/intake" '{"enabled":true}' -o /dev/null
+          public_id="$(send POST /intake/forms "{\"projectId\":\"$project\",\"name\":\"DAST form\",\"access\":\"PUBLIC\",\"definition\":{\"intro\":\"Scanned nightly.\",\"confirmation\":\"Thanks.\",\"fields\":[{\"id\":\"f1\",\"kind\":\"SHORT_TEXT\",\"label\":\"Where\",\"required\":false}],\"requester\":{\"name\":\"OPTIONAL\",\"email\":\"OPTIONAL\"}}}" | field publicId)"
+          node .zap/public-intake-setup.mjs "$base" "$public_id" > zap-public-intake.json
       # Fails on any WARN or FAIL alert (Low risk and above; zap-baseline
       # skips Informational ones) that `.zap/rules.tsv` neither ignores nor
       # puts out of scope.
@@ -138,7 +158,7 @@ jobs:
         with:
           target: http://localhost:3106
           rules_file_name: .zap/rules.tsv
-          cmd_options: '-z "-config api.disablekey=true"'
+          cmd_options: '-z "-config api.disablekey=true" --hook=/zap/wrk/.zap/public-intake-hook.py'
           token: ${{ secrets.GITHUB_TOKEN }}
           issue_title: ZAP baseline findings (nightly)
           allow_issue_writing: true
