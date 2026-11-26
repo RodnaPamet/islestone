@@ -99,7 +99,7 @@ import {
 import type { RequestContext } from '../types';
 import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db-context';
-import { ConflictError, badRequest, notFound } from '@/lib/errors/types';
+import { AppError, ConflictError, badRequest, notFound } from '@/lib/errors/types';
 import { WORK_ITEM_DELETED_LIST_CAP } from '@/lib/list-backfill-cap';
 import {
     clampLimit,
@@ -119,6 +119,10 @@ import { DEFAULT_SORT_DIRECTION, LIST_SORTS, type ListSort, type SortDirection }
 import { resolveListCustomFields, writeInitialCustomFieldValues } from './custom-field';
 import { assertCycleTakesItems, currentCycleIdsInTx } from './cycle';
 import { assertMilestoneOfProject } from './milestone';
+import { assertGoalLinkable } from './work-item-goal';
+import { GoalRepository } from '../repositories/GoalRepository';
+import { InitiativeRepository } from '../repositories/InitiativeRepository';
+import { assertCanReadGoals } from '../policies/goal.policies';
 import { loadUsableTemplate, peopleNamedBy, templateSource, templateUseContextInTx } from './work-item-template';
 import { templateToCreateInput, type TemplateOverrides, type TemplateProjection } from '../domain/work-item-template';
 import { sanitizePlainText } from '@/lib/security/sanitize';
@@ -286,6 +290,56 @@ async function resolveCycleFilter(db: PrismaTx, ctx: RequestContext, raw: string
     return [...members.filter((m) => m !== 'current'), ...current].join(',');
 }
 
+/** The projects a goal filter may reach at most; more is refused with the count, never cut (3.2a). */
+export const GOAL_FILTER_PROJECT_CAP = 1_000;
+/** The goals one goal filter's subtrees may hold. */
+const GOAL_FILTER_GOAL_CAP = 2_000;
+
+function goalFilterIds(raw: string): string[] {
+    return [...new Set(raw.split(',').map((m) => m.trim()).filter(Boolean))];
+}
+
+function goalScopeTooLarge(count: number): AppError {
+    return new AppError(`This filter reaches more than ${GOAL_FILTER_PROJECT_CAP} projects (${count}). Narrow it.`, 'GOAL_SCOPE_TOO_LARGE', 422, true, {
+        reason: 'GOAL_SCOPE_TOO_LARGE',
+        count,
+        limit: GOAL_FILTER_PROJECT_CAP,
+    });
+}
+
+/**
+ * `initiativeId` (3.2a, decision 220): the initiatives' visible, live
+ * projects (archived ones included). Naming one asks `goals.view`; a deleted
+ * or unknown initiative is 404 `INITIATIVE_NOT_FOUND`.
+ */
+async function resolveInitiativeFilter(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, raw: string): Promise<string[]> {
+    assertCanReadGoals(ctx);
+    const ids = goalFilterIds(raw);
+    const found = await InitiativeRepository.getManyLite(db, ctx, ids);
+    if (found.length !== ids.length || found.some((i) => i.deletedAt)) throw notFound('Initiative not found', { reason: 'INITIATIVE_NOT_FOUND' });
+    const projectIds = await ProjectRepository.idsOfInitiatives(db, ctx, v, ids, GOAL_FILTER_PROJECT_CAP + 1);
+    if (projectIds.length > GOAL_FILTER_PROJECT_CAP) throw goalScopeTooLarge(projectIds.length);
+    return projectIds;
+}
+
+/**
+ * `goalId` (3.2a, decisions 211 and 220): each goal's live subtree, and the
+ * visible projects of those goals' live initiatives. An item matches through
+ * its project OR through its own goal. Naming one asks `goals.view`; a
+ * deleted or unknown goal is 404 `GOAL_NOT_FOUND`.
+ */
+async function resolveGoalFilter(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, raw: string): Promise<{ projectIds: string[]; goalIds: string[] }> {
+    assertCanReadGoals(ctx);
+    const ids = goalFilterIds(raw);
+    const found = await GoalRepository.getManyLite(db, ctx, ids);
+    if (found.length !== ids.length || found.some((g) => g.deletedAt)) throw notFound('Goal not found', { reason: 'GOAL_NOT_FOUND' });
+    const goalIds = await GoalRepository.liveSubtreeIds(db, ctx, ids, GOAL_FILTER_GOAL_CAP);
+    const initiativeIds = await InitiativeRepository.liveIdsOfGoals(db, ctx, goalIds);
+    const projectIds = await ProjectRepository.idsOfInitiatives(db, ctx, v, initiativeIds, GOAL_FILTER_PROJECT_CAP + 1);
+    if (projectIds.length > GOAL_FILTER_PROJECT_CAP) throw goalScopeTooLarge(projectIds.length);
+    return { projectIds, goalIds };
+}
+
 /**
  * The list's filters as the repository reads them (2.3 to 2.7): the request's
  * facets, its `cf.<fieldId>` conditions parsed against their fields, `q`'s
@@ -316,6 +370,13 @@ export async function resolveListFiltersInTx(
     // An empty parameter is no filter; a resolved empty list matches nothing.
     if (filters.cycleId) listFilters.cycleId = await resolveCycleFilter(db, ctx, filters.cycleId);
     else delete listFilters.cycleId;
+    // Goals and initiatives (3.2a, decision 220): one bounded read each.
+    delete listFilters.goalScope;
+    delete listFilters.initiativeProjectIds;
+    if (filters.initiativeId) listFilters.initiativeProjectIds = await resolveInitiativeFilter(db, ctx, v, filters.initiativeId);
+    else delete listFilters.initiativeId;
+    if (filters.goalId) listFilters.goalScope = await resolveGoalFilter(db, ctx, v, filters.goalId);
+    else delete listFilters.goalId;
     return { listFilters, keyHit, today, sortField };
 }
 
@@ -470,6 +531,8 @@ export interface CreateWorkItemInput {
     cycleId?: string | null;
     /** A milestone of the project (2.5b). */
     milestoneId?: string | null;
+    /** A live, unarchived goal of the workspace, named directly (3.2a, decision 211); asks `goals.view`. */
+    goalId?: string | null;
     /** The active member the item waits on (2.4b); refused into a closed state. */
     waitingOnUserId?: string | null;
     /**
@@ -548,6 +611,8 @@ function requestNames(input: CreateWorkItemInput, key: FieldKey): boolean {
             return input.cycleId !== undefined;
         case 'milestone':
             return input.milestoneId !== undefined;
+        case 'goal':
+            return input.goalId !== undefined;
         default:
             return true;
     }
@@ -586,6 +651,7 @@ function itemFieldValues(row: NonNullable<Awaited<ReturnType<typeof WorkItemRepo
         dueDate: dto.dueDate,
         cycleId: dto.cycleId,
         milestoneId: dto.milestoneId,
+        goalId: dto.goalId,
         answerCommentId: dto.answerCommentId,
         customFields: dto.customFields,
     };
@@ -603,6 +669,7 @@ function createValues(plan: CreateWorkItemInput): FieldValues {
         dueDate: plan.dueDate ?? null,
         cycleId: plan.cycleId ?? null,
         milestoneId: plan.milestoneId ?? null,
+        goalId: plan.goalId ?? null,
         customFields: plan.customFields ?? {},
     };
 }
@@ -703,6 +770,7 @@ export async function createWorkItemInTx(
             dueDate: (v2.dueDate as string | null | undefined) ?? null,
             cycleId: v2.cycleId ?? null,
             milestoneId: v2.milestoneId ?? null,
+            goalId: v2.goalId ?? null,
             customFields: v2.customFields ?? {},
         };
     }
@@ -719,6 +787,8 @@ export async function createWorkItemInTx(
     }
     if (plan.cycleId) await assertCycleTakesItems(db, ctx, plan.cycleId, project.teamId);
     if (plan.milestoneId) await assertMilestoneOfProject(db, ctx, plan.milestoneId, project.id);
+    // The direct goal (3.2a): live, unarchived, read FOR KEY SHARE; naming one asks goals.view.
+    if (plan.goalId) await assertGoalLinkable(db, ctx, plan.goalId);
     if (labelIds.length > 0) await assertLabelsUsable(db, ctx, labelIds, project.teamId);
     const subItems = fromTemplate?.subItems ?? opts.subItems ?? [];
     if (input.parentId) await assertParentAllowed(db, ctx, v, input.parentId, { projectId: project.id, subtreeHeight: subItems.length > 0 ? 1 : 0 });
@@ -747,6 +817,7 @@ export async function createWorkItemInTx(
         parentId: input.parentId ?? null,
         cycleId: plan.cycleId ?? null,
         milestoneId: plan.milestoneId ?? null,
+        goalId: plan.goalId ?? null,
         recurrenceId: opts.recurrenceId ?? null,
         occurrenceOn: parseDateOnly(opts.occurrenceOn ?? null),
         sortKey,
@@ -778,6 +849,7 @@ export async function createWorkItemInTx(
             parentId: row.parentId,
             ...(row.cycleId ? { cycleId: row.cycleId } : {}),
             ...(row.milestoneId ? { milestoneId: row.milestoneId } : {}),
+            ...(row.goalId ? { goalId: row.goalId } : {}),
             ...(row.waitingOnUserId ? { waitingOnUserId: row.waitingOnUserId } : {}),
             ...(customFieldIds.length ? { customFieldIds } : {}),
             ...(fromTemplate ? { templateId: input.templateId, ...(fromTemplate.skipped.length ? { templateSkipped: fromTemplate.skipped } : {}) } : {}),

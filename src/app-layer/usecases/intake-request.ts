@@ -486,6 +486,7 @@ export interface AcceptIntakeInput {
     cycleId?: string | null;
     /** Fields a type's field set may require (2.4b-b): a milestone of the target project, who it waits on, dates. */
     milestoneId?: string | null;
+    goalId?: string | null;
     waitingOnUserId?: string | null;
     startDate?: string | null;
     dueDate?: string | null;
@@ -538,6 +539,7 @@ export async function acceptIntakeRequest(ctx: RequestContext, id: string, input
                 labelIds: input.labelIds,
                 cycleId: input.cycleId ?? null,
                 milestoneId: input.milestoneId ?? null,
+                goalId: input.goalId ?? null,
                 waitingOnUserId: input.waitingOnUserId ?? null,
                 startDate: input.startDate ?? null,
                 dueDate: input.dueDate ?? null,

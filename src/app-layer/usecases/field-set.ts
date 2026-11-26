@@ -152,6 +152,9 @@ function withoutField(values: FieldValues, key: FieldKey): FieldValues {
         case 'answer':
             out.answerCommentId = null;
             break;
+        case 'goal':
+            out.goalId = null;
+            break;
     }
     return out;
 }

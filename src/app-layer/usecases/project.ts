@@ -34,6 +34,8 @@ import { visibleProjects } from '../policies/project-visibility';
 import { isValidKeyPrefix, normaliseKeyPrefix } from '../domain/work-item-key';
 import { ensureDefaultWorkItemTypes } from './work-item-type';
 import { applyProjectTemplateInTx } from './project-template';
+import { lockLinkableInitiative } from './initiative';
+import { assertCanNameGoals } from '../policies/goal.policies';
 import type { RequestContext } from '../types';
 import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db-context';
@@ -95,9 +97,11 @@ const TEMPLATE_TX = { timeout: 60_000 };
 
 export async function createProject(
     ctx: RequestContext,
-    input: { teamId: string; name: string; keyPrefix: string; templateId?: string; dueDate?: string | null },
+    input: { teamId: string; name: string; keyPrefix: string; templateId?: string; dueDate?: string | null; initiativeId?: string | null },
 ) {
     assertCanCreateProject(ctx);
+    // Naming an initiative also asks to read goals (3.2a, decision 213).
+    if (input.initiativeId) assertCanNameGoals(ctx);
     const name = sanitizePlainText(input.name).trim();
     const keyPrefix = checkedPrefix(input.keyPrefix);
     const dueDate = input.dueDate !== undefined ? parseProjectDueDate(input.dueDate) : undefined;
@@ -105,7 +109,9 @@ export async function createProject(
         if (!(await TeamRepository.getById(db, ctx, input.teamId))) throw notFound('Team not found');
         await assertPrefixFree(db, ctx, keyPrefix);
         await ensureDefaultWorkItemTypes(db, ctx);
-        const created = await ProjectRepository.create(db, ctx, { teamId: input.teamId, name, keyPrefix, dueDate });
+        // A live, unarchived initiative, read FOR KEY SHARE (3.2a); project templates carry none.
+        const initiative = input.initiativeId ? await lockLinkableInitiative(db, ctx, input.initiativeId) : null;
+        const created = await ProjectRepository.create(db, ctx, { teamId: input.teamId, name, keyPrefix, dueDate, initiativeId: initiative?.id ?? null });
         // A project template (2.5c) is applied in this transaction: a failure
         // part-way leaves no project. What it named and the workspace does not
         // hold is reported in the response and in the PROJECT_CREATED entry.
@@ -124,11 +130,12 @@ export async function createProject(
                 entityName: 'Project',
                 operation: 'created',
                 summary: 'PROJECT_CREATED',
-                ...(project.dueDate ? { changedFields: ['dueDate'] } : {}),
+                ...(project.dueDate || initiative ? { changedFields: [...(project.dueDate ? ['dueDate'] : []), ...(initiative ? ['initiativeId'] : [])] } : {}),
             },
             metadata: {
                 teamId: input.teamId,
                 keyPrefix,
+                ...(initiative ? { initiativeId: initiative.id } : {}),
                 ...(fromTemplate ? { projectTemplateId: fromTemplate.projectTemplateId, ...fromTemplate.counts, templateSkipped: fromTemplate.skipped } : {}),
             },
         });

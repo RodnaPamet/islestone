@@ -20,7 +20,7 @@ import { gitFiles } from '../helpers/git-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const T = 'src/app/api/t/[tenantSlug]';
-const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates', 'intake', 'search', 'recipient-lists', 'working-calendar'].map((r) => `${T}/${r}/`);
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates', 'intake', 'search', 'recipient-lists', 'working-calendar', 'goals', 'initiatives'].map((r) => `${T}/${r}/`);
 
 type Spec = Partial<Record<'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', string>>;
 const W = `${T}/work-items`;
@@ -78,6 +78,18 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${T}/projects/[projectId]/recipient-lists/[listId]/restore/route.ts`]: { POST: 'projects.edit' },
     [`${W}/[workItemId]/watchers/recipient-list/route.ts`]: { POST: 'work_items.edit' },
     [`${W}/[workItemId]/milestone/route.ts`]: { PUT: 'work_items.edit' },
+    // Sub-phase 3.2a (owner decisions 211, 213 and 220).
+    [`${W}/[workItemId]/goal/route.ts`]: { PUT: 'work_items.edit' },
+    [`${W}/[workItemId]/ancestry/route.ts`]: { GET: 'work_items.view' },
+    [`${T}/projects/[projectId]/initiative/route.ts`]: { PUT: 'projects.edit' },
+    [`${T}/goals/route.ts`]: { GET: 'goals.view', POST: 'goals.manage' },
+    [`${T}/goals/[goalId]/route.ts`]: { GET: 'goals.view', PATCH: 'goals.manage', DELETE: 'goals.manage' },
+    [`${T}/goals/[goalId]/archive/route.ts`]: { POST: 'goals.manage' },
+    [`${T}/goals/[goalId]/restore/route.ts`]: { POST: 'goals.manage' },
+    [`${T}/initiatives/route.ts`]: { GET: 'goals.view', POST: 'goals.manage' },
+    [`${T}/initiatives/[initiativeId]/route.ts`]: { GET: 'goals.view', PATCH: 'goals.manage', DELETE: 'goals.manage' },
+    [`${T}/initiatives/[initiativeId]/archive/route.ts`]: { POST: 'goals.manage' },
+    [`${T}/initiatives/[initiativeId]/restore/route.ts`]: { POST: 'goals.manage' },
     // Sub-phase 2.4b (owner decision 104: waiting on under `work_items.edit`).
     [`${W}/[workItemId]/waiting-on/route.ts`]: { PUT: 'work_items.edit' },
     // Sub-phase 2.4b-c (owner decisions 113 to 116: the answer under `work_items.edit`, the Question type under `admin.manage`).

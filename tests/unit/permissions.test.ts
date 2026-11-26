@@ -40,6 +40,7 @@ describe('the PermissionSet schema', () => {
             'views',
             'cycles',
             'intake',
+            'goals',
             'docs',
             'canvas',
             'automations',
@@ -99,6 +100,8 @@ describe('the role matrix', () => {
                 'cycles.manage',
                 'intake.view',
                 'intake.triage',
+                'goals.view',
+                'goals.manage',
                 'docs.view',
                 'docs.create',
                 'docs.edit',
@@ -122,6 +125,7 @@ describe('the role matrix', () => {
                 'views.create',
                 'views.edit',
                 'cycles.view',
+                'goals.view',
                 'docs.view',
                 'canvas.view',
                 'agents.view',
@@ -152,6 +156,15 @@ describe('the role matrix', () => {
         expect(intakeKeys('MEMBER')).toEqual(['intake.triage', 'intake.view']);
         expect(intakeKeys('VIEWER')).toEqual([]);
         expect(intakeKeys('GUEST')).toEqual([]);
+    });
+
+    it('goals (decision 213): Owners, Admins and Members view and manage, Viewers view, Guests nothing', () => {
+        const goalKeys = (role: Role) => granted(getPermissionsForRole(role)).filter((k) => k.startsWith('goals.'));
+        expect(goalKeys('OWNER')).toEqual(['goals.manage', 'goals.view']);
+        expect(goalKeys('ADMIN')).toEqual(['goals.manage', 'goals.view']);
+        expect(goalKeys('MEMBER')).toEqual(['goals.manage', 'goals.view']);
+        expect(goalKeys('VIEWER')).toEqual(['goals.view']);
+        expect(goalKeys('GUEST')).toEqual([]);
     });
 
     it('no role but OWNER and ADMIN holds an admin or billing key', () => {
@@ -194,6 +207,10 @@ describe('hasPermission over the matrix', () => {
         ['MEMBER', 'intake.triage', true],
         ['VIEWER', 'intake.view', false],
         ['GUEST', 'intake.view', false],
+        ['MEMBER', 'goals.manage', true],
+        ['VIEWER', 'goals.view', true],
+        ['VIEWER', 'goals.manage', false],
+        ['GUEST', 'goals.view', false],
     ] as const)('%s → %s is %s', (role, key, expected) => {
         expect(hasPermission(getPermissionsForRole(role), key)).toBe(expected);
     });

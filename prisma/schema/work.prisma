@@ -86,6 +86,11 @@ model Project {
   /// The project's due date (roadmap 3.1, owner decision 188, ADR 0002 §16):
   /// date-only, optional, a deadline for the schedule and nothing else.
   dueDate         DateTime? @db.Date
+  /// The initiative the project serves (sub-phase 3.2, ADR 0002 §2): at most
+  /// one; `(initiativeId, tenantId)` → `Initiative(id, tenantId)`,
+  /// `ON DELETE SET NULL ("initiativeId")` in SQL, so the purge (decision
+  /// 219) clears the link. Kept while the initiative is soft-deleted.
+  initiativeId    String?
   version         Int       @default(1)
   archivedAt      DateTime?
   deletedAt       DateTime?
@@ -96,6 +101,7 @@ model Project {
 
   tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   team                 Team                  @relation(fields: [teamId, tenantId], references: [id, tenantId])
+  initiative           Initiative?           @relation(fields: [initiativeId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
   workItems            WorkItem[]
   customFields         CustomField[]
   savedViews           SavedView[]
@@ -115,6 +121,8 @@ model Project {
   @@unique([id, teamId, tenantId])
   @@unique([tenantId, keyPrefix])
   @@index([tenantId, teamId])
+  /// The initiative's FK, and an initiative's projects (3.2).
+  @@index([tenantId, initiativeId])
   /// The purge sweep across every workspace (ADR 0002 §13's one exception).
   @@index([deletedAt])
 }
@@ -264,6 +272,12 @@ model WorkItem {
   /// `comment_answer_not_deleted` (SQL) refuses soft-deleting the marked
   /// comment. Offered only where the item's field set shows the answer.
   answerCommentId String?
+  /// The goal the item names directly (sub-phase 3.2a, owner decision 211):
+  /// one goal of the workspace, set by a person, never inherited (a sub-item
+  /// does not take its parent's). `(goalId, tenantId)` → `Goal(id, tenantId)`,
+  /// `ON DELETE SET NULL ("goalId")` in SQL for the purge (decision 219). Kept
+  /// on moves; not watched by the transition trigger.
+  goalId          String?
 
   tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project        Project             @relation(fields: [projectId, teamId, tenantId], references: [id, teamId, tenantId], onDelete: Cascade)
@@ -276,6 +290,7 @@ model WorkItem {
   cycle          Cycle?              @relation(fields: [cycleId, teamId, tenantId], references: [id, teamId, tenantId], onDelete: Restrict, onUpdate: NoAction)
   milestone      Milestone?          @relation(fields: [milestoneId, projectId, tenantId], references: [id, projectId, tenantId], onDelete: NoAction, onUpdate: NoAction)
   answerComment  Comment?            @relation("WorkItemAnswer", fields: [answerCommentId, id, tenantId], references: [id, workItemId, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  goal           Goal?               @relation(fields: [goalId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
   subItems       WorkItem[]          @relation("WorkItemParent")
   recurrence     WorkItemRecurrence? @relation("RecurrenceOccurrences", fields: [recurrenceId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
   recurrenceRule WorkItemRecurrence? @relation("RecurrenceSource")
@@ -328,6 +343,10 @@ model WorkItem {
   @@index([tenantId, recurrenceId])
   /// The marked answer's FK (2.4b-c): the comment trigger's lookup.
   @@index([tenantId, answerCommentId])
+  /// The direct goal's FK, the `goalId` filter and a goal's direct-item count (3.2).
+  @@index([tenantId, goalId, stateCategory])
+  /// A project's items by category: an initiative's and a goal's progress (3.2).
+  @@index([tenantId, projectId, stateCategory])
   /// The purge sweep across every workspace (ADR 0002 §13's one exception).
   @@index([deletedAt])
 }

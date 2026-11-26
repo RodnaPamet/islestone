@@ -54,6 +54,7 @@ describe('GUARD: executors read their payload', () => {
         expect(regs.map((r) => r.job).sort()).toEqual([
             'audit-outbox-flush',
             'cycle-rollover',
+            'goal-purge',
             'health-check',
             'intake-email-fetch',
             'intake-purge',

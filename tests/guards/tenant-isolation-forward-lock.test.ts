@@ -52,6 +52,9 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     // Roadmap 3.1a.
     WorkingCalendar: 'tests/integration/working-calendars.test.ts',
     WorkingCalendarHoliday: 'tests/integration/working-calendars.test.ts',
+    // Sub-phase 3.2a.
+    Goal: 'tests/integration/goals.test.ts',
+    Initiative: 'tests/integration/goals.test.ts',
     // Sub-phases 2.1–2.2.
     Team: 'tests/integration/work-tables-isolation.test.ts',
     WorkflowState: 'tests/integration/work-tables-isolation.test.ts',

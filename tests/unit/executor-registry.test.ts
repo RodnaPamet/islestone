@@ -44,6 +44,7 @@ describe('executorRegistry — default registrations', () => {
         expect(reg.listRegistered().sort()).toEqual([
             'audit-outbox-flush',
             'cycle-rollover',
+            'goal-purge',
             'health-check',
             'intake-email-fetch',
             'intake-purge',

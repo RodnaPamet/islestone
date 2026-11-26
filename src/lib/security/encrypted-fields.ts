@@ -101,6 +101,12 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // required to Return, sanitised before it is stored, never searched and
     // never mentions. Its write-once trigger admits the rotations' re-wrap.
     WorkItemReviewer: ['responseText'],
+    // Goals and initiatives (sub-phase 3.2, docs/porting/maps/3.2.md): the
+    // description is business content like an item's, sanitised before it is
+    // stored, never audited and never search-indexed (ADR 0008). Titles and
+    // names stay plaintext (breadcrumbs, the roadmap, notifications).
+    Goal: ['description'],
+    Initiative: ['description'],
 } as const;
 
 /** Set of model names with at least one encrypted field. Fast-path check. */

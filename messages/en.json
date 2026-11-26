@@ -894,6 +894,7 @@
             "customFieldSet": "changed a field",
             "cycleChanged": "changed the cycle",
             "milestoneChanged": "changed the milestone",
+            "goalChanged": "changed the goal",
             "waitingOnChanged": "changed who the item waits on",
             "answerMarked": "marked an answer",
             "answerCleared": "cleared the answer",

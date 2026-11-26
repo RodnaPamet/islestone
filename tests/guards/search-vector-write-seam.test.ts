@@ -111,7 +111,9 @@ function writers(root: string): Writer[] {
                 let needs: Writer['needs'] | null = null;
                 if (ITEM_OR_COMMENT_WRITES.includes(callee)) needs = 'replaceForSource';
                 else if (callee === COMMENT_DELETE) needs = 'removeForSource';
-                else if (/\bupdateVersioned$/.test(callee)) {
+                // A work item's versioned write (a goal's or an initiative's, 3.2a, is
+                // not a search source: ADR 0008 indexes neither description).
+                else if (/(^|\.)updateVersioned$/.test(callee) && !/^(GoalRepository|InitiativeRepository)\./.test(callee)) {
                     const fn = enclosingFunctionName(node);
                     if (fn && /\bdescription\b/.test(fn.node.getText(sf))) needs = 'replaceForSource';
                 }
