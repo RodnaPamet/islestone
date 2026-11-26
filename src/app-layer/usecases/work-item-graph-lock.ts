@@ -20,8 +20,15 @@
  * at 5528464fc54a8681956f3b9ce23ca9c075f0420e: same
  * `pg_advisory_xact_lock(hashtext($1))`, the key and the docblock rewritten
  * for the work-item graph.
+ *
+ * Islestone's addition (owner decision 254): the lock is taken only inside the
+ * workspace's turn in the in-process graph queue (`inWorkItemGraphQueue`,
+ * `work-item-graph-queue.ts`), so a waiting graph write holds no pooled
+ * connection; a caller outside its turn is a programming error and throws.
  */
 import type { Prisma } from '@prisma/client';
+
+import { holdsWorkItemGraphTurn } from './work-item-graph-queue';
 
 export function workItemGraphLockKey(tenantId: string): string {
     return `work-item-graph:${tenantId}`;
@@ -31,5 +38,8 @@ export async function lockWorkItemGraph(
     db: Pick<Prisma.TransactionClient, '$executeRawUnsafe'>,
     tenantId: string,
 ): Promise<void> {
+    if (!holdsWorkItemGraphTurn(tenantId)) {
+        throw new Error('lockWorkItemGraph runs only inside inWorkItemGraphQueue for its workspace (decision 254).');
+    }
     await db.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, workItemGraphLockKey(tenantId));
 }

@@ -71,6 +71,7 @@ import { resolveListRecipients } from '../notifications/recipient-list';
 import { dayKeyInTz } from '../notifications/work-item-due';
 import { blockSenderInTx } from './intake-blocked-senders';
 import { formIsOpen } from './intake-form';
+import { inProjectSequenceQueue } from './project-sequence-queue';
 import { createWorkItemInTx, emitCreatedItemBells } from './work-item';
 import { notificationsTz } from './work-item-shared';
 import type { RequestContext } from '../types';
@@ -497,6 +498,21 @@ export interface AcceptIntakeInput {
 }
 
 /**
+ * Run an accept in its target project's queue (`inProjectSequenceQueue`): the
+ * project the accept names, else the request's own, read first in a short
+ * read of its own. A request the caller cannot see runs directly, and the
+ * accept's own transaction answers the 404. If a move changes the request's
+ * project in between, the sequence row's lock inside the transaction still
+ * serialises the create; the queue only no longer spares it the wait.
+ */
+async function inAcceptQueue<T>(ctx: RequestContext, id: string, projectId: string | undefined, fn: () => Promise<T>): Promise<T> {
+    const target =
+        projectId ??
+        (await runInTenantContext(ctx, async (db) => (await IntakeRepository.getRequest(db, ctx, await visibleProjects(ctx, db), id))?.projectId ?? null));
+    return target ? inProjectSequenceQueue(ctx.tenantId, target, fn) : fn();
+}
+
+/**
  * Accept: create the work item and mark the request, in one transaction.
  * The requester (and the requesters of requests merged into this one) become
  * watchers of the item while they are active members.
@@ -504,7 +520,11 @@ export interface AcceptIntakeInput {
 export async function acceptIntakeRequest(ctx: RequestContext, id: string, input: AcceptIntakeInput, expectedVersion?: number): Promise<IntakeRequestDetail> {
     assertCanAcceptIntake(ctx);
     if (expectedVersion === undefined) throw triagePreconditionRequired();
-    const result = await runInTenantContext(ctx, async (db) => {
+    // The item is numbered under the target project's key-sequence row, so an
+    // accept waits its turn in that project's queue before it opens its
+    // transaction, as a create does (decision 174; Hardening H2, issue #70):
+    // a waiting accept holds no pooled connection.
+    const result = await inAcceptQueue(ctx, id, input.projectId, () => runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const r = await lockForTriage(db, ctx, v, id, 'accept', expectedVersion);
         const targetProjectId = input.projectId ?? r.projectId;
@@ -564,7 +584,7 @@ export async function acceptIntakeRequest(ctx: RequestContext, id: string, input
         await auditTriage(db, ctx, r, 'accept', { workItemId: created.id, targetProjectId, mergedRequests: merged.length });
         const after = (await IntakeRepository.getRequest(db, ctx, v, id))!;
         return { created, after, detail: await detailOf(db, ctx, v, after) };
-    });
+    }));
     // After the commit: the create path's bells, then the decision's event.
     await emitCreatedItemBells(ctx, result.created);
     await afterDecision(ctx, result.after, 'ACCEPTED', { workItemId: result.created.id });

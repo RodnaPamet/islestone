@@ -31,6 +31,12 @@ name: Performance (nightly)
 # (tests/unit/intake/fuzz/) at 20,000 cases each, where a pull request runs
 # 100. A failure prints its seed and path (FC_SEED, FC_PATH) to replay it,
 # and opens or comments on the same issue as a red performance night.
+# Hardening H2c, part 2 (docs/porting/maps/H2.md part 2; issue #70): the
+# nightly concurrency suite (tests/integration/concurrency/) at
+# STRESS_SCALE=4, four times the rounds of a pull request on fresh rows, the
+# writers at once unchanged (tests/helpers/stress-scale.ts), through
+# PgBouncer as CI's Integration job runs it. A red night opens, or comments
+# on, the same issue as a red performance night.
 # Every action is pinned by commit (tests/guards/workflow-action-pinning.test.ts).
 
 on:
@@ -269,12 +275,57 @@ jobs:
         env:
           FC_NUM_RUNS: '20000'
 
+  # The concurrency suite at four times its rounds (H2c, part 2; issue #70).
+  # As ci.yml's Integration job: Islestone's Postgres image through PgBouncer
+  # in transaction mode, an authenticated Redis; throwaway values.
+  concurrency-stress:
+    name: Concurrency suite (STRESS_SCALE=4)
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    services:
+      redis:
+        image: redis:7.4.12-alpine3.22
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://islestone:islestone_ci@127.0.0.1:5432/islestone_test
+      DIRECT_DATABASE_URL: postgresql://islestone:islestone_ci@127.0.0.1:5432/islestone_test
+      DATABASE_URL_TEST: postgresql://islestone:islestone_ci@127.0.0.1:6432/islestone_test
+      DIRECT_DATABASE_URL_TEST: postgresql://islestone:islestone_ci@127.0.0.1:5432/islestone_test
+      REDIS_URL: redis://:islestone_ci@127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Build and start Postgres and PgBouncer (scripts/ci-postgres.sh)
+        run: scripts/ci-postgres.sh islestone_test --pgbouncer
+      - name: Configure Redis (noeviction, password)
+        run: |
+          docker exec ${{ job.services.redis.id }} redis-cli CONFIG SET maxmemory-policy noeviction
+          docker exec ${{ job.services.redis.id }} redis-cli CONFIG SET requirepass islestone_ci
+      - run: npm run migrate:deploy
+      - name: The concurrency suite, four times the rounds
+        run: npm run test:integration -- --ci tests/integration/concurrency
+        env:
+          STRESS_SCALE: '4'
+
   # A red night opens one issue, or comments on the open one. This job runs
   # no repository code and is the only one with a write scope.
   report:
     name: Report a red night
-    needs: [perf, intake-fuzz]
-    if: always() && (needs.perf.result == 'failure' || needs.intake-fuzz.result == 'failure') && github.event_name == 'schedule'
+    needs: [perf, intake-fuzz, concurrency-stress]
+    if: always() && (needs.perf.result == 'failure' || needs.intake-fuzz.result == 'failure' || needs.concurrency-stress.result == 'failure') && github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -294,6 +345,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           PERF_RESULT: ${{ needs.perf.result }}
           FUZZ_RESULT: ${{ needs.intake-fuzz.result }}
+          STRESS_RESULT: ${{ needs.concurrency-stress.result }}
         run: |
           title='Nightly performance run is red'
           {
@@ -301,6 +353,10 @@ jobs:
             echo
             if [ "$FUZZ_RESULT" = failure ]; then
               echo 'The intake fuzzing job failed (20,000 cases per property, decision 178): its log names each failing property with its FC_SEED and FC_PATH. Replay it with `FC_SEED=<seed> FC_PATH=<path> npx jest <file>`, then fix it with an example test pinned to the seed (docs/intake.md, "Fuzzing").'
+              echo
+            fi
+            if [ "$STRESS_RESULT" = failure ]; then
+              echo 'The concurrency suite failed at STRESS_SCALE=4 (tests/integration/concurrency/, issue #70): a race that loses only some rounds. Its log names the test and the round; run it with `STRESS_SCALE=4 npm run test:integration -- <file>` through PgBouncer (docs/porting/maps/H2.md part 2). A deadlock (40P01) or an expired transaction is a lock-order or queue defect to fix, never a retry to add.'
               echo
             fi
             if [ "$PERF_RESULT" = failure ]; then

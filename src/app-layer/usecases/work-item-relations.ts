@@ -33,6 +33,7 @@ import { formatKey } from '../domain/work-item-key';
 import { stateTransitionEffects } from '../domain/workflow-state';
 import { endOpenRoundsOnClose } from './review-engine';
 import { lockWorkItemGraph } from './work-item-graph-lock';
+import { inWorkItemGraphQueue } from './work-item-graph-queue';
 import { afterStateCommit, applyStateAudit } from './work-item';
 import { keyOf, loadVisibleItem, loadWritableItem } from './work-item-shared';
 import type { RequestContext } from '../types';
@@ -63,7 +64,8 @@ export async function listWorkItemRelations(ctx: RequestContext, workItemId: str
 export async function addWorkItemRelation(ctx: RequestContext, workItemId: string, input: { type: WorkItemRelationType; toId: string }) {
     assertCanEditWorkItems(ctx);
     if (input.toId === workItemId) throw badRequest('A work item cannot be related to itself.');
-    const outcome = await runInTenantContext(ctx, async (db) => {
+    // The workspace's graph turn before the transaction (decision 254).
+    const outcome = await inWorkItemGraphQueue(ctx.tenantId, () => runInTenantContext(ctx, async (db) => {
         // FIRST, before any row read: the graph lock (ADR 0002 §6).
         await lockWorkItemGraph(db, ctx.tenantId);
         const v = await visibleProjects(ctx, db);
@@ -123,7 +125,7 @@ export async function addWorkItemRelation(ctx: RequestContext, workItemId: strin
         }
         if (input.type === 'DUPLICATES') duplicateMove = await markDuplicateCancelled(db, ctx, v, from);
         return { relation, duplicateMove };
-    });
+    }));
     if (outcome.duplicateMove) await afterStateCommit(ctx, [outcome.duplicateMove]);
     return outcome.relation;
 }
@@ -151,7 +153,8 @@ async function markDuplicateCancelled(
 
 export async function removeWorkItemRelation(ctx: RequestContext, workItemId: string, relationId: string) {
     assertCanEditWorkItems(ctx);
-    return runInTenantContext(ctx, async (db) => {
+    // The workspace's graph turn before the transaction (decision 254).
+    return inWorkItemGraphQueue(ctx.tenantId, () => runInTenantContext(ctx, async (db) => {
         await lockWorkItemGraph(db, ctx.tenantId);
         const v = await visibleProjects(ctx, db);
         const item = await loadWritableItem(db, ctx, v, workItemId);
@@ -175,5 +178,5 @@ export async function removeWorkItemRelation(ctx: RequestContext, workItemId: st
             metadata: { relationId },
         });
         return { deleted: true };
-    });
+    }));
 }

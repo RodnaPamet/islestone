@@ -1,7 +1,7 @@
 /**
  * Intake writes that serialise on one row wait their turn in this process
  * before they open a transaction (Hardening H2f; the pattern of owner
- * decision 174, `project-sequence-queue.ts`).
+ * decision 174, on the one in-process queue, `write-queue.ts`).
  *
  * A public submit counts a form's and its workspace's daily caps under the
  * form's row lock, and an inbound webhook counts an address's throttles under
@@ -22,28 +22,17 @@
  * webhooks); the row lock stays the guarantee across processes.
  */
 
-/** The tail of each key's queue: resolves when the last write in it finishes. */
-const tails = new Map<string, Promise<void>>();
+import { keyedWriteQueue } from './write-queue';
+
+/** One write at a time per key: the row lock serialises them anyway. */
+const queue = keyedWriteQueue({ concurrency: 1 });
 
 /** Run `fn` once every write queued before it under the same key has finished. */
 export async function inIntakeWriteQueue<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const prior = tails.get(key) ?? Promise.resolve();
-    let release: () => void = () => undefined;
-    const mine = new Promise<void>((resolve) => {
-        release = resolve;
-    });
-    const tail = prior.then(() => mine);
-    tails.set(key, tail);
-    await prior;
-    try {
-        return await fn();
-    } finally {
-        release();
-        if (tails.get(key) === tail) tails.delete(key);
-    }
+    return queue.run(key, fn);
 }
 
 /** How many keys have a write running or waiting (for tests). */
 export function queuedIntakeKeyCount(): number {
-    return tails.size;
+    return queue.size();
 }

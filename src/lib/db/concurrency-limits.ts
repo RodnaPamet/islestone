@@ -384,3 +384,24 @@ export const AUDIT_APPEND_TX_OPTIONS = {
  * is unchanged.
  */
 export const WORK_ITEM_CREATE_BURST_PER_PROJECT = 25;
+
+/**
+ * Graph writes of ONE workspace that run at once in a process (owner decision
+ * 254, 2026-11-26; Hardening H2; issue #70): 1, the rest waiting in
+ * `src/app-layer/usecases/work-item-graph-queue.ts` without a connection.
+ *
+ * Every write to `parentId` or a relation takes the workspace's graph lock
+ * (`lockWorkItemGraph`, a transaction-level advisory lock) FIRST in its
+ * transaction, so the database runs them one at a time whatever this number
+ * says: a second write let through would only open a transaction, take a
+ * pooled connection and wait on the lock with it, which is the pattern that
+ * emptied the pool for creates (decision 174) and accepts. One running write
+ * holds at most two server connections (its transaction and its audit
+ * append), well below PgBouncer's 20 (`DEFAULT_POOL_SIZE`), leaving the rest
+ * to the workspace's other writers and to every other workspace. A burst over
+ * it waits its turn; it is never refused. Measured on 2026-11-26 before the
+ * queue: 25 simultaneous graph writes in one workspace
+ * (`tests/integration/concurrency/graph-writes.test.ts`) failed with expired
+ * transactions.
+ */
+export const WORK_ITEM_GRAPH_WRITES_PER_WORKSPACE = 1;

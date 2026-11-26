@@ -48,6 +48,7 @@ import { assertReviewAllowsDone } from './review-defaults';
 import { lockWorkItemGraph } from './work-item-graph-lock';
 import { afterStateCommit, applyStateAudit, assertParentAllowed, getWorkItem, sortKeyForPosition } from './work-item';
 import { inProjectSequenceQueue } from './project-sequence-queue';
+import { inWorkItemGraphQueue } from './work-item-graph-queue';
 import { assertProjectWritable, emitWatcherActivity, keyOf, loadWritableItem, throwWriteConflict } from './work-item-shared';
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
@@ -165,7 +166,8 @@ export async function reparentWorkItem(
     expectedVersion?: number,
 ) {
     assertCanEditWorkItems(ctx);
-    const moved = await runInTenantContext(ctx, async (db) => {
+    // The workspace's graph turn before the transaction (decision 254).
+    const moved = await inWorkItemGraphQueue(ctx.tenantId, () => runInTenantContext(ctx, async (db) => {
         // FIRST: the graph lock (ADR 0002 §6), before any row read.
         await lockWorkItemGraph(db, ctx.tenantId);
         const v = await visibleProjects(ctx, db);
@@ -192,7 +194,7 @@ export async function reparentWorkItem(
             metadata: { fromParentId: item.parentId, toParentId: input.parentId },
         });
         return { item, changed: true };
-    });
+    }));
     if (moved.changed) {
         await emitWatcherActivity(ctx, [
             {
@@ -210,7 +212,10 @@ export async function moveWorkItemToProject(ctx: RequestContext, id: string, inp
     assertCanEditWorkItems(ctx);
     // The destination receives new items: its create gate applies too.
     assertCanCreateWorkItem(ctx);
-    const outcome = await runInTenantContext(ctx, async (db) => {
+    // The workspace's graph turn before the transaction (decision 254). A move
+    // also takes both projects' sequence rows, after the graph lock; it does
+    // not queue on them, being the only graph write running in the workspace.
+    const outcome = await inWorkItemGraphQueue(ctx.tenantId, () => runInTenantContext(ctx, async (db) => {
         await lockWorkItemGraph(db, ctx.tenantId);
         const v = await visibleProjects(ctx, db);
         const item = await loadWritableItem(db, ctx, v, id);
@@ -306,7 +311,7 @@ export async function moveWorkItemToProject(ctx: RequestContext, id: string, inp
             },
         });
         return { fromKey, toKey, movedCount: rows.length };
-    });
+    }));
     await emitWatcherActivity(ctx, [
         { workItemId: id, kind: 'updated', discriminator: `move:${outcome.toKey}`, detail: `moved from ${outcome.fromKey} to ${outcome.toKey}` },
     ]);
