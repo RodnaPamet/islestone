@@ -38,29 +38,23 @@
  * proves.
  */
 
-/** The tail of each project's queue: resolves when the last write in it finishes. */
-const tails = new Map<string, Promise<void>>();
+import { keyedWriteQueue } from './write-queue';
 
-/** Run `fn` once every write queued before it in the same project has finished. */
+/** One write at a time per project: the sequence row serialises them anyway. */
+const queue = keyedWriteQueue({ concurrency: 1 });
+
+/**
+ * Run `fn` once every write queued before it in the same project has
+ * finished (at once when this context already runs in that project's turn).
+ * A write that also takes the workspace's graph lock enters the graph queue
+ * first (`work-item-graph-queue.ts`, decision 254), as its transaction takes
+ * the graph lock before the sequence row.
+ */
 export async function inProjectSequenceQueue<T>(tenantId: string, projectId: string, fn: () => Promise<T>): Promise<T> {
-    const key = `${tenantId}:${projectId}`;
-    const prior = tails.get(key) ?? Promise.resolve();
-    let release: () => void = () => undefined;
-    const mine = new Promise<void>((resolve) => {
-        release = resolve;
-    });
-    const tail = prior.then(() => mine);
-    tails.set(key, tail);
-    await prior;
-    try {
-        return await fn();
-    } finally {
-        release();
-        if (tails.get(key) === tail) tails.delete(key);
-    }
+    return queue.run(`${tenantId}:${projectId}`, fn);
 }
 
 /** How many projects have a write running or waiting (for tests). */
 export function queuedProjectCount(): number {
-    return tails.size;
+    return queue.size();
 }

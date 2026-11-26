@@ -72,6 +72,7 @@ import { todayInTz } from '../notifications/work-item-due';
 import { lockWorkItemGraph } from './work-item-graph-lock';
 import { lockedSubset } from '../repositories/work-item-locks';
 import { inProjectSequenceQueue } from './project-sequence-queue';
+import { inWorkItemGraphQueue } from './work-item-graph-queue';
 import { enqueueCalendarSync, enqueueCalendarSyncForItems } from './calendar-sync-enqueue';
 import { recordMentionsInTx } from './mention';
 import { endOpenRoundsOnClose, withdrawNewAssigneeRows, type ReviewNoticeOut } from './review-engine';
@@ -711,6 +712,11 @@ async function watchIfAnswerShown(db: PrismaTx, ctx: RequestContext, set: Resolv
  * request id and channel). The caller asserts `work_items.create`, and rings
  * the due and assignment bells after ITS commit (`emitCreatedItemBells`).
  */
+/** Whether a create takes the workspace's graph lock: a parent, or a template's sub-items. */
+function takesGraphLock(input: Pick<CreateWorkItemInput, 'parentId' | 'templateId'>): boolean {
+    return !!(input.parentId || input.templateId);
+}
+
 export async function createWorkItemInTx(
     db: PrismaTx,
     ctx: RequestContext,
@@ -719,7 +725,7 @@ export async function createWorkItemInTx(
 ): Promise<WorkItemDto & { templateSkipped?: string[] }> {
     // The graph lock comes FIRST, before any row read or lock (a
     // template may bring sub-items, which are parent links).
-    if (input.parentId || input.templateId) await lockWorkItemGraph(db, ctx.tenantId);
+    if (takesGraphLock(input)) await lockWorkItemGraph(db, ctx.tenantId);
     const v = await visibleProjects(ctx, db);
     const project = await ProjectRepository.getVisible(db, ctx, v, input.projectId);
     if (!project) throw notFound('Project not found');
@@ -931,10 +937,14 @@ export async function createWorkItem(ctx: RequestContext, input: CreateWorkItemI
     // A template's sub-items (up to 50) are made in the same transaction.
     const mentions = { notify: [] as string[] };
     // Creates in one project take turns before opening a transaction, so a
-    // waiting create holds no pooled connection (decision 174).
-    const result = await inProjectSequenceQueue(ctx.tenantId, input.projectId, () =>
-        runInTenantContext(ctx, (db) => createWorkItemInTx(db, ctx, input, { mentions }), input.templateId ? { timeout: 20_000 } : undefined),
-    );
+    // waiting create holds no pooled connection (decision 174). A create that
+    // takes the graph lock (a parent, or a template's sub-items) first takes
+    // its workspace's graph turn, in the locks' order (decision 254).
+    const create = () =>
+        inProjectSequenceQueue(ctx.tenantId, input.projectId, () =>
+            runInTenantContext(ctx, (db) => createWorkItemInTx(db, ctx, input, { mentions }), input.templateId ? { timeout: 20_000 } : undefined),
+        );
+    const result = takesGraphLock(input) ? await inWorkItemGraphQueue(ctx.tenantId, create) : await create();
     // After the commit: the due reminder, the assignment bell and the waiting-on bell (2.4b),
     // then the people the description mentions (2.7d).
     await emitDueBell(ctx, { ...result, dueDate: parseDateOnly(result.dueDate) });
@@ -1752,7 +1762,8 @@ export async function rescheduleWorkItems(ctx: RequestContext, input: Reschedule
     const ids = changes.map((c) => c.id);
     if (new Set(ids).size !== ids.length) throw badRequest('Each work item may appear once.');
     const rescheduleId = randomUUID();
-    const outcome = await runInTenantContext(ctx, async (db) => {
+    // The workspace's graph turn before the transaction (decision 254).
+    const outcome = await inWorkItemGraphQueue(ctx.tenantId, () => runInTenantContext(ctx, async (db) => {
         // FIRST: the graph lock, then the rows in id order (decision 173).
         await lockWorkItemGraph(db, ctx.tenantId);
         const v = await visibleProjects(ctx, db);
@@ -1854,7 +1865,7 @@ export async function rescheduleWorkItems(ctx: RequestContext, input: Reschedule
             metadata: { rescheduleId, pushedIds: input.pushed.map((p) => p.id), pushedCount: input.pushed.length },
         });
         return changes.map((c) => ({ change: c, item: byId.get(c.id)! }));
-    });
+    }));
 
     await emitWatcherActivity(
         ctx,
