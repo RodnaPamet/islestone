@@ -354,7 +354,10 @@ describeFn('search over descriptions and comments (2.7f)', () => {
             await prisma.$executeRawUnsafe('ANALYZE "SearchVector"');
             await prisma.$executeRawUnsafe('ANALYZE "Project"');
             await prisma.$executeRawUnsafe('ANALYZE "Comment"');
-        });
+            // Seeding 40,000 items and 40,000 vectors in bulk (each row through the
+            // transition trigger and the GIN and trigram indexes) takes close to the
+            // project's 30 s default on a CI runner; the checks themselves are fast.
+        }, 120_000);
 
         afterAll(async () => {
             await prisma.$executeRawUnsafe(`DELETE FROM "WorkItem" WHERE "id" LIKE $1`, `${FILLER}%`);
