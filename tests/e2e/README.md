@@ -29,6 +29,60 @@ Specs that exercise the UI of these gates still test the **rendering** of the
 state; the **server enforcement** of the same gates is covered by tests that
 run with `AUTH_TEST_MODE` unset instead.
 
+## Isolation (Hardening H2g)
+
+Owner decision 180 (`docs/porting/maps/H2.md`, part 7). The suite runs
+`fullyParallel`, and a pull request's run retries a failure once, so a spec
+that depends on another spec, on the order or on the day would pass anyway.
+Four things stop it:
+
+  1. **No state shared through variables.** A top-level `let` or `var`
+     written in one `test()` and read in another fails
+     `tests/guards/e2e-isolation.test.ts` (ported from inflect-compliance; its
+     `BASELINE` is empty). Create what a test needs inside it, or in a
+     `beforeEach`, or make the steps one `test()` with `test.step(...)`.
+  2. **Signed-in specs use the per-test workspace.** A spec that calls
+     `signInAs`, `page.goto('/t/…')` or sends a request to `/api/t/…` imports
+     `test` from `./fixtures` (`isolatedTenant`, `authedPage`: a fresh, empty
+     workspace per `test()`). The same guard fails a spec that does not. There
+     is no seeded workspace to share.
+  3. **No shared rate-limit budget.** Every spec reaches the server from
+     `127.0.0.1`, and the limits are keyed by IP; `AUTH_TEST_MODE=1` bypasses
+     every tier, so no spec spends another's budget. The guard fails if the
+     webServer loses `AUTH_TEST_MODE=1` or `NEXT_TEST_MODE=1` while the base URL
+     is loopback. The server enqueues into the one Redis but no worker runs, so
+     nothing a spec enqueues reaches another; a spec that one day starts the
+     worker must key what it asserts by its own workspace.
+  4. **One "today" for the run.** `playwright.config.ts` pins `E2E_TODAY`
+     (`YYYY-MM-DD`) when the run starts, as the date in `NOTIFICATIONS_TZ`
+     (`Europe/London` by default), unless the caller set one, and passes it to
+     the server. The server honours it only beside `NEXT_TEST_MODE=1`, through
+     the one clock seam, `todayClock` (`src/lib/clock.ts`): cycles, repeats,
+     due soon, the due reminders, milestones, calendars, the timeline and the
+     roadmap all read that day, however long the run takes.
+     `tests/guards/today-clock-seam.test.ts` refuses a fresh clock read beside
+     the date helpers. A spec builds dates from `e2eToday()`, `e2eDay(n)` or
+     `plannedDay(n)` in `e2e-utils.ts`, never from its own clock. Production
+     refuses `E2E_TODAY` as it refuses `AUTH_TEST_MODE`: in `src/env.ts` and at
+     startup (`src/lib/security/startup-test-clock-check.ts`). Only "today"
+     moves: stored times (`createdAt`, a transition's time) stay real, and the
+     browser's own clock is not changed (no spec reads it). With
+     `reuseExistingServer` (local runs only) a server started on another day
+     keeps that day's `E2E_TODAY`: stop it first.
+
+**The nightly isolation run** (`.github/workflows/perf.yml`, the
+`e2e-isolation` job, on the schedule and on dispatch) builds the app and runs
+`playwright test --repeat-each=2 --retries=0 --workers=4`, then each spec file
+alone (`--retries=0`), and a red night opens or comments on one issue
+("Nightly E2E isolation run is red"). Pull requests keep `retries: 1`: the
+nightly run is where order dependence shows. Locally:
+
+```bash
+NEXT_PUBLIC_APP_URL=http://127.0.0.1:3100 npm run build
+npx playwright test --repeat-each=2 --retries=0 --workers=4
+for spec in $(git ls-files 'tests/e2e/*.spec.ts'); do npx playwright test "$spec" --retries=0 || echo "FAILED ALONE: $spec"; done
+```
+
 ## Why not a sibling `playwright.real-auth.config.ts`?
 
 A second Playwright config pointed at a no-`AUTH_TEST_MODE=1` server, fed by a
