@@ -30,7 +30,10 @@ import type { GoalStatus } from '@prisma/client';
 
 import { logEvent } from '../events/audit';
 import { GoalRepository, GOAL_SUBTREE_CAP, type GoalPatch, type GoalRow } from '../repositories/GoalRepository';
-import { InitiativeRepository } from '../repositories/InitiativeRepository';
+import { InitiativeRepository, type InitiativeRow } from '../repositories/InitiativeRepository';
+import { visibleProjects } from '../policies/project-visibility';
+import { goalSummariesInTx, initiativeSummariesInTx, NO_SUMMARY, workspaceToday } from './goal-progress';
+import { healthHistoryInTx } from './goal-health';
 import { assertCanManageGoals, assertCanReadGoals, mayReadGoals } from '../policies/goal.policies';
 import { childFits, goalMoveRefusal, groupRoots, MAX_GOAL_DEPTH } from '../domain/goal-tree';
 import { lockGoalTree } from './goal-tree-lock';
@@ -55,7 +58,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { ConflictError } from '@/lib/errors/types';
 import { GOAL_TITLE_MAX } from '@/lib/schemas/goal';
-import type { GoalData, InitiativeData, ViewGoal, ViewInitiative } from '@/lib/goals/types';
+import type { GoalData, GoalDetail, GoalSummary, ViewGoal, ViewInitiative } from '@/lib/goals/types';
 
 /**
  * The live, unarchived goals and initiatives the views name (the Goal picker,
@@ -84,20 +87,30 @@ export interface ListGoalsQuery {
     health?: string;
 }
 
-/** The goals, flat with `parentId`, in status, due date and title order; `deleted=true` is the Deleted view. */
-export async function listGoals(ctx: RequestContext, query: ListGoalsQuery = {}): Promise<{ goals: GoalData[] }> {
+/**
+ * The goals, flat with `parentId`, in status, due date and title order, each
+ * with its progress and "late" (3.2b); `deleted=true` is the Deleted view,
+ * where none shows progress.
+ */
+export async function listGoals(ctx: RequestContext, query: ListGoalsQuery = {}): Promise<{ goals: GoalSummary[] }> {
     assertCanReadGoals(ctx);
     const statuses = parseStatuses(query.status);
     const health = parseHealth(query.health);
     return runInTenantContext(ctx, async (db) => {
-        const rows = await GoalRepository.list(db, ctx, {
-            deleted: query.deleted === 'true',
-            includeArchived: query.archived === 'true',
-            statuses,
-            leadUserId: query.leadUserId,
-            health,
-        });
-        return { goals: [...rows].sort(byStatusDueTitle<GoalRow>((r) => r.title)).map(toGoalDto) };
+        const deleted = query.deleted === 'true';
+        const rows = [
+            ...(await GoalRepository.list(db, ctx, {
+                deleted,
+                includeArchived: query.archived === 'true',
+                statuses,
+                leadUserId: query.leadUserId,
+                health,
+            })),
+        ].sort(byStatusDueTitle<GoalRow>((r) => r.title));
+        if (deleted) return { goals: rows.map((r) => ({ ...toGoalDto(r), ...NO_SUMMARY })) };
+        const v = await visibleProjects(ctx, db);
+        const { summaries } = await goalSummariesInTx(db, ctx, v, rows, await workspaceToday(db, ctx));
+        return { goals: rows.map((r) => ({ ...toGoalDto(r), ...(summaries.get(r.id) ?? NO_SUMMARY) })) };
     });
 }
 
@@ -108,12 +121,18 @@ async function loadLiveGoal(db: PrismaTx, ctx: RequestContext, id: string): Prom
     return goal;
 }
 
-/** A goal, its live ancestors (root first, the walk stopping at a deleted one), live children and initiatives. */
-export async function getGoal(ctx: RequestContext, id: string): Promise<{ goal: GoalData; ancestors: GoalData[]; children: GoalData[]; initiatives: InitiativeData[] }> {
+/**
+ * A goal's page (3.2b): the goal with its progress, its live ancestors (root
+ * first, the walk stopping at a deleted one), its live children and
+ * initiatives with theirs, its level and whether a child goal fits, the items
+ * naming it directly, and its health history.
+ */
+export async function getGoal(ctx: RequestContext, id: string): Promise<GoalDetail> {
     assertCanReadGoals(ctx);
     return runInTenantContext(ctx, async (db) => {
         const goal = await loadLiveGoal(db, ctx, id);
-        const chain = (await GoalRepository.ancestorsIncludingDeleted(db, ctx, goal.id)).slice(1);
+        const fullChain = await GoalRepository.ancestorsIncludingDeleted(db, ctx, goal.id);
+        const chain = fullChain.slice(1);
         const byId = new Map((await GoalRepository.getMany(db, ctx, chain.map((c) => c.id))).map((g) => [g.id, g]));
         const ancestorRows: GoalRow[] = [];
         for (const step of chain) {
@@ -121,13 +140,21 @@ export async function getGoal(ctx: RequestContext, id: string): Promise<{ goal: 
             if (!row || row.deletedAt) break;
             ancestorRows.push(row);
         }
-        const children = await GoalRepository.liveChildren(db, ctx, goal.id);
-        const initiatives = await InitiativeRepository.list(db, ctx, { includeArchived: true, goalId: goal.id });
+        const children = (await GoalRepository.liveChildren(db, ctx, goal.id)).sort(byStatusDueTitle<GoalRow>((r) => r.title));
+        const initiatives = (await InitiativeRepository.list(db, ctx, { includeArchived: true, goalId: goal.id })).sort(byStatusDueTitle<InitiativeRow>((r) => r.name));
+        const v = await visibleProjects(ctx, db);
+        const today = await workspaceToday(db, ctx);
+        const { summaries, directItems } = await goalSummariesInTx(db, ctx, v, [goal, ...children], today);
+        const initiativeSummaries = await initiativeSummariesInTx(db, ctx, v, initiatives, today);
         return {
-            goal: toGoalDto(goal),
+            goal: { ...toGoalDto(goal), ...(summaries.get(goal.id) ?? NO_SUMMARY) },
             ancestors: ancestorRows.reverse().map(toGoalDto),
-            children: children.sort(byStatusDueTitle<GoalRow>((r) => r.title)).map(toGoalDto),
-            initiatives: initiatives.map(toInitiativeDto),
+            children: children.map((c) => ({ ...toGoalDto(c), ...(summaries.get(c.id) ?? NO_SUMMARY) })),
+            initiatives: initiatives.map((i) => ({ ...toInitiativeDto(i), ...(initiativeSummaries.get(i.id) ?? NO_SUMMARY) })),
+            depth: fullChain.length,
+            childFits: childFits(fullChain.map((c) => c.id)),
+            directItems: directItems.get(goal.id) ?? 0,
+            healthHistory: await healthHistoryInTx(db, ctx, 'Goal', goal.id),
         };
     });
 }

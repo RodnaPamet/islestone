@@ -204,6 +204,18 @@ export class ProjectRepository {
         return rows.map((r) => r.id);
     }
 
+    /** The live, visible projects (archived ones included) of the given initiatives, each with its initiative (3.2b progress), at most `take`. */
+    static async linksOfInitiatives(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, initiativeIds: readonly string[], take: number): Promise<Array<{ id: string; initiativeId: string }>> {
+        if (initiativeIds.length === 0) return [];
+        const rows = await db.project.findMany({
+            where: { tenantId: ctx.tenantId, initiativeId: { in: [...initiativeIds] }, AND: [projectRowVisibilityWhere(v, { includeArchived: true })] },
+            orderBy: { id: 'asc' },
+            take,
+            select: { id: true, initiativeId: true },
+        });
+        return rows.flatMap((r) => (r.initiativeId ? [{ id: r.id, initiativeId: r.initiativeId }] : []));
+    }
+
     /** An initiative's live, visible projects (archived ones included), by name. */
     static async listOfInitiative(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, initiativeId: string) {
         return db.project.findMany({

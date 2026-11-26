@@ -85,3 +85,6 @@ export const GoalListQuerySchema = z
 export const SetProjectInitiativeSchema = z.object({ initiativeId: Id.nullable() }).strict();
 
 export const SetWorkItemGoalSchema = z.object({ goalId: Id.nullable() }).strict();
+
+/** `PUT /goals/:id/health`, `PUT /initiatives/:id/health` (3.2b, decisions 205 and 214): `null` is "No health set". */
+export const SetHealthSchema = z.object({ health: z.enum(HEALTH_VALUES).nullable() }).strict();

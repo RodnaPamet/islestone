@@ -38,4 +38,19 @@ export class ActivityRepository {
             select: { id: true, action: true, userId: true, actorType: true, detailsJson: true, createdAt: true },
         });
     }
+
+    /**
+     * A goal's or an initiative's health history (3.2b, decision 207): the
+     * `GOAL_HEALTH_SET` / `INITIATIVE_HEALTH_SET` entries, newest first, at
+     * most `take`, served by `[tenantId, entityId, createdAt]`. The values are
+     * in each entry's metadata; there is no written update to read.
+     */
+    static async healthHistory(db: PrismaTx, ctx: Pick<RequestContext, 'tenantId'>, entity: 'Goal' | 'Initiative', entityId: string, take: number) {
+        return db.auditLog.findMany({
+            where: { tenantId: ctx.tenantId, entity, entityId, action: entity === 'Goal' ? 'GOAL_HEALTH_SET' : 'INITIATIVE_HEALTH_SET' },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take,
+            select: { id: true, userId: true, actorType: true, metadataJson: true, createdAt: true },
+        });
+    }
 }

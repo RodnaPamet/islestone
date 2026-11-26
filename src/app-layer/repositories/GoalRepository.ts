@@ -78,6 +78,9 @@ export type GoalPatch = Partial<{
     leadUserId: string | null;
     archivedAt: Date | null;
     archivedByUserId: string | null;
+    health: Health | null;
+    healthSetAt: Date | null;
+    healthSetByUserId: string | null;
 }>;
 
 export class GoalRepository {
@@ -112,6 +115,19 @@ export class GoalRepository {
             orderBy: [{ title: 'asc' }, { id: 'asc' }],
             take: GOALS_LIST_TAKE,
             select: goalLiteSelect,
+        });
+    }
+
+    /**
+     * Every live goal of the workspace, archived ones included, as a tree
+     * (id and parent): progress walks it in memory (3.2b). At most `take`.
+     */
+    static async liveTree(db: PrismaTx, ctx: Ctx, take: number): Promise<Array<{ id: string; parentId: string | null }>> {
+        return db.goal.findMany({
+            where: { tenantId: ctx.tenantId, deletedAt: null },
+            orderBy: { id: 'asc' },
+            take,
+            select: { id: true, parentId: true },
         });
     }
 

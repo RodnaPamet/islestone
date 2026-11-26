@@ -1471,6 +1471,62 @@ export class WorkItemRepository {
 
     // ── Milestones (sub-phase 2.5b) ──────────────────────────────────
 
+    // ── Goals and initiatives (sub-phase 3.2b, decisions 211 and 212) ──
+
+    /**
+     * Live, visible, non-cancelled items per project and category: the
+     * project path of an initiative's and a goal's progress (3.2b, decision
+     * 212). Archived projects count (finished projects are usually archived);
+     * deleted projects do not. Cancelled items never count towards progress,
+     * so the read leaves them out.
+     *
+     * Raw SQL so the predicate is the literal the partial
+     * `WorkItem_progress_project_path` is declared with: Prisma binds an enum
+     * as a cast of a text parameter, which the planner cannot prove implies
+     * the index's predicate. `tenantId`, `deletedAt` (the item's and the
+     * project's) and the caller's visibility are in its own `WHERE`, as the
+     * ancestry's are.
+     */
+    static async countsByProjects(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, projectIds: readonly string[]) {
+        if (projectIds.length === 0) return [];
+        const all = v.kind === 'ALL';
+        const granted = v.kind === 'GRANTED' ? [...v.projectIds] : [];
+        const t = ctx.tenantId;
+        const rows = await db.$queryRaw<Array<{ projectId: string; stateCategory: WorkflowStateCategory; count: number }>>(Prisma.sql`
+            SELECT w."projectId", w."stateCategory", count(*)::int AS "count"
+              FROM "WorkItem" w
+              JOIN "Project" p ON p."id" = w."projectId" AND p."tenantId" = ${t} AND p."deletedAt" IS NULL
+             WHERE w."tenantId" = ${t}
+               AND w."projectId" = ANY(${[...projectIds]}::text[])
+               AND w."deletedAt" IS NULL
+               AND w."stateCategory" <> 'CANCELLED'
+               AND (${all}::boolean OR w."projectId" = ANY(${granted}::text[]))
+             GROUP BY w."projectId", w."stateCategory"`);
+        return rows.map((r) => ({ projectId: r.projectId, stateCategory: r.stateCategory, count: Number(r.count) }));
+    }
+
+    /**
+     * Live, visible, non-cancelled items naming one of `goalIds` directly,
+     * per goal, project and category (decision 211): the direct path of a
+     * goal's progress. The project lets the caller count an item reached both
+     * ways once (`goalProgress` in `domain/progress.ts`). Served by
+     * `[tenantId, goalId, stateCategory]`.
+     */
+    static async countsByGoals(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, goalIds: readonly string[]) {
+        if (goalIds.length === 0) return [];
+        return db.workItem.groupBy({
+            by: ['goalId', 'projectId', 'stateCategory'],
+            where: {
+                tenantId: ctx.tenantId,
+                goalId: { in: [...goalIds] },
+                deletedAt: null,
+                stateCategory: { not: 'CANCELLED' },
+                AND: [projectVisibilityWhere(v, { includeArchived: true })],
+            },
+            _count: { _all: true },
+        });
+    }
+
     /**
      * Live, visible items per milestone and category: the milestones page's
      * progress. An archived project's milestones keep their progress (the
