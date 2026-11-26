@@ -123,7 +123,7 @@ database onto it is a container recreation on the same volume, with no dump
 and no restore.
 
 - **Published** by `release.yml` under the Dockerfile's version tag
-  (`org.opencontainers.image.version`, today `17-0.8.7-bg4.3-r1`) when that tag
+  (`org.opencontainers.image.version`, today `17-0.8.7-bg4.3-r2`) when that tag
   is not yet in GHCR; a published tag is never rebuilt or moved. Change
   anything in `deploy/postgres/` and bump the tag (the Dockerfile's comment and
   label, and the compose file's line), or the release keeps the old image.
@@ -133,10 +133,27 @@ and no restore.
   published it, the run's summary prints `<tag>@sha256:<digest>`, and a
   follow-up pull request puts that on the line and removes the marker
   (`tests/guards/postgres-image-pinning.test.ts` accepts exactly those two
-  states). `17-0.8.7-bg4.3-r1` is pinned at
+  states). `17-0.8.7-bg4.3-r1` was pinned at
   `sha256:796db89d604fee3df2f06b041e8cc417b1597b69ceb0e7f695586df479833835`
-  (release run 26, 2026-11-20). Watchtower never rolls the database
-  (`enable=false`).
+  (release run 26, 2026-11-20); `-r2` is named with the marker until its
+  publish. Watchtower never rolls the database (`enable=false`).
+- **Patched beyond the base** (Hardening H1; owner decisions 247 and 248), so
+  the publish's blocking Trivy scan passes. The Dockerfile upgrades the
+  Debian packages that carried fixed HIGH vulnerabilities (krb5's four
+  libraries, `zlib1g`, `libzstd1`, `zstd`; `apt-get install --only-upgrade`,
+  no recommends, the lists removed) and refuses a build whose installed
+  versions are older than the fixed ones, because `apt-get update` only warns
+  when a mirror cannot be reached. It replaces the base's `gosu` (1.19, Go
+  1.24.6, whose standard library carried fixed CRITICAL and HIGH
+  vulnerabilities) with gosu 1.20 built in its own stage from
+  `github.com/tianon/gosu` at the tag's commit, on
+  `golang:1.27.4-trixie` by index digest, `CGO_ENABLED=0` and upstream's
+  flags; its licence and those of what it links are in
+  `/usr/share/doc/islestone-postgres/gosu/` (`NOTICE`, `PROVENANCE.md`). The
+  build therefore needs the network (Debian's mirrors, GitHub and the Go
+  module proxy). When Trivy reports another package or a newer Go standard
+  library, add or bump it there and bump the tag; a published image is never
+  patched in place.
 - **Fail closed.** Migration `20261207120000_search_configuration` refuses to
   run on a server without the dictionary ("the Bulgarian dictionary could not
   be loaded … This server is not running Islestone's Postgres image"), and the
@@ -186,6 +203,24 @@ $C up -d migrate
 ```
 
 A new cluster (a lost volume) starts on the image directly; nothing extra.
+
+**Moving to `-r2` (owner decision 247).** The same PostgreSQL 17, pgvector,
+dictionary, entrypoint, user and data directory as `-r1`, with patched
+libraries and a rebuilt `gosu`, so the move is a container recreation on the
+same volume, with no migration and no dump:
+
+1. Merge; the release run publishes
+   `ghcr.io/rodnapamet/islestone-postgres:17-0.8.7-bg4.3-r2` after its scan
+   passes, and its summary prints the digest.
+2. A follow-up pull request pins that digest on the compose line and removes
+   the `POSTGRES-IMAGE-DIGEST-PENDING` marker.
+3. After that merge, apply (`deploy/apply.sh`, then `CONFIRM=1`): it pulls
+   the new image and recreates `islestone-postgres` (a restart of a few
+   seconds; the app and the worker reconnect). Until then production keeps
+   running `-r1`: a line naming an unpublished tag cannot be pulled, so do
+   not apply between steps 1 and 2.
+4. Check: `docker exec islestone-postgres gosu --version` (`1.20 (go1.27.4 …)`)
+   and `/api/readyz` (`search: ok`).
 
 ## Health
 
@@ -596,28 +631,71 @@ The drill was exercised locally on 2026-11-19 against a migrated test database
 
 ## Security scans
 
-Hardening H1's scans run report-only first (owner decision 47):
+Hardening H1's scans ran report-only for a week (owner decision 47) and are
+blocking since 2026-11-26:
 
-- **Trivy**, CRITICAL and HIGH, fixed vulnerabilities only, on both images:
-  in CI's `Image` job (SARIF to the Security tab, categories
-  `trivy-image-app` and `trivy-image-worker`) and before every push in
-  `release.yml`.
+- **Trivy**, CRITICAL and HIGH with a fix available (`ignore-unfixed`), on
+  both images, with `exit-code: "1"`: in CI's `Image` job on every pull
+  request (SARIF to the Security tab, categories `trivy-image-app` and
+  `trivy-image-worker`, limited to the same severities by
+  `limit-severities-for-sarif`, because trivy-action otherwise drops the
+  severity filter for SARIF and the job would gate on every severity; the
+  upload runs after a failed scan too) and before every push in
+  `release.yml`, where a finding stops the run before anything reaches GHCR,
+  so `:latest` stays on the last image that passed. The Postgres image's scan
+  in `release.yml`, which runs only when its tag is bumped, blocks the same
+  way; `-r2` upgrades the Debian packages and rebuilds `gosu` for it ("The
+  Postgres image" above).
 - **OWASP ZAP baseline**, nightly (`.github/workflows/dast.yml`, 03:17 UTC):
   the standalone server against Postgres and Redis, signed in as a workspace
   owner the run registers, with SARIF (`zap-baseline`), the HTML report as an
-  artifact, and an issue for findings. `.zap/rules.tsv` lists the false
-  positives, each with its reason; `.zap/assert-no-high-risk.mjs` names every
-  High, allowlisted or not.
+  artifact, and an issue for findings. `fail_action: true` fails the run on
+  any alert of Low risk or above (zap-baseline skips Informational ones) that
+  `.zap/rules.tsv` does not excuse, and `.zap/assert-no-high-risk.mjs` fails
+  it on every High, excused or not.
 
-Both carry a dated marker, `TRIVY-NON-BLOCKING-UNTIL: 2026-12-03` and
-`DAST-NON-BLOCKING-UNTIL: 2026-12-03`: two weeks from the decision.
-`tests/guards/security-scan-deferral.test.ts` fails CI the day after that date
-while a scan is still non-blocking. To make them blocking: in `ci.yml` and
-`release.yml` set the Trivy steps' `exit-code` to `"1"`; in `dast.yml` set
-`fail_action: true` and remove `continue-on-error` from the scan and the
-HIGH+ step; delete the markers. To defer instead, move the date (at most 60
-days ahead) with the reason in the pull request.
+ZAP signs in by injecting the session cookie (`ZAP_AUTH_HEADER*`). It adds the
+header only to a request whose host *name* contains `ZAP_AUTH_HEADER_SITE`,
+so the value is `localhost`, without the port: with `localhost:3106` the
+header matched nothing, and every nightly until H1 scanned signed out (its
+alerts name only signed-out URLs such as `/login?next=%2Ftenants`). The run
+registers its owner with a random address, not a timestamp, because ZAP
+reports a Unix timestamp in a signed-in page (10096) and the address is on
+every one.
 
-Triage: a finding is fixed in the app, or, for a false positive below High,
-listed in `.zap/rules.tsv` (ZAP) or `.trivyignore` (Trivy; none yet) with the
-reason and the condition that retires it. A High is fixed, never listed.
+`tests/guards/security-scan-deferral.test.ts` keeps them blocking: a workflow
+that holds a non-blocking scan (Trivy `exit-code` other than `"1"`, ZAP
+`fail_action` off, or `continue-on-error` on a scan or the HIGH+ step) fails
+CI unless it carries one `TRIVY-NON-BLOCKING-UNTIL: YYYY-MM-DD` or
+`DAST-NON-BLOCKING-UNTIL: …` marker, at most 60 days ahead, and fails again
+the day after that date; a marker beside scans that all block is refused as
+stale. To defer a scan, add the marker with the reason in the pull request.
+The same guard holds Trivy to CRITICAL,HIGH with fixes available and its
+SARIF limited to those severities, every `.zap/rules.tsv` entry to a reason
+and every `.trivyignore` entry to an expiry and a reason.
+
+Triage: a finding is fixed in the app. Otherwise:
+
+- **ZAP**, a false positive below High may be excused in `.zap/rules.tsv`
+  with a reason naming the evidence. Prefer `OUTOFSCOPE`, which excuses one
+  rule on named URLs only (a tab-separated line `<pluginId> OUTOFSCOPE
+  ^http://localhost:3106/…$`, anchored, its reason in the comment block directly above it, naming the
+  rule), to `IGNORE`, which silences the rule everywhere and at every risk.
+  10044 (Big Redirect) is out of scope on `/` and `/tenants` only: Next.js's
+  `redirect()` from a server component sends the root-layout shell with the
+  307, and both bodies were checked to carry no session data.
+  90004 (Site Isolation) is ignored for Cross-Origin-Embedder-Policy alone
+  (owner decision 246): the app sends `Cross-Origin-Opener-Policy` and
+  `Cross-Origin-Resource-Policy` `same-origin` and leaves COEP unset, because
+  `require-corp` would block cross-origin avatars that send no CORP header.
+  ZAP's rules file is keyed by plugin id, not by the rule's alert reference,
+  so the whole rule is ignored and `tests/unit/security-headers.test.ts`
+  holds COOP and CORP.
+- **Trivy**, a finding with no fix available is not reported
+  (`ignore-unfixed`). One that has a fix in Trivy's database but cannot be
+  taken yet may go in `.trivyignore` (none yet) as
+  `<id> exp:YYYY-MM-DD`, the expiry inside the 60-day window, with the reason
+  and the condition that retires it in the comment directly above. Never
+  lower a severity or widen an excuse to get green.
+
+A High is fixed, never listed.

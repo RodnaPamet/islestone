@@ -1,13 +1,40 @@
 # OWASP ZAP baseline — false-positive allowlist (sub-phase 1.8).
 #
-# Format (TAB-separated, 3 columns, read by ZAP): <pluginId> <WARN|IGNORE|FAIL> <reason>
-# Every entry carries its reason; tests/guards/security-scan-deferral.test.ts
-# refuses one without. An IGNORE silences a pluginId at EVERY risk level, so
-# .zap/assert-no-high-risk.mjs reads the ignored alerts too: a High is fixed,
-# never listed here. Entries adapted from inflect-compliance `.zap/rules.tsv`
-# at 5528464fc54a8681956f3b9ce23ca9c075f0420e, with Islestone reasons; the
-# two report-only weeks (owner decision 47) are for triaging the rest.
+# Format (TAB-separated, 3 columns, read by ZAP):
+#   <pluginId> <WARN|IGNORE|FAIL> <reason>
+#   <pluginId> OUTOFSCOPE <URL regex, anchored ^…$>
+# The scan is blocking (Hardening H1): any alert of Low risk or above that is
+# not excused here fails the nightly run. Every entry carries its reason;
+# tests/guards/security-scan-deferral.test.ts refuses one without. An
+# OUTOFSCOPE line's third column is the regex, so its reason is the comment
+# block directly above it. Prefer OUTOFSCOPE to IGNORE: it excuses one rule on
+# the named URLs only, and the rule still fails anywhere else. An IGNORE
+# silences a pluginId at EVERY risk level, so .zap/assert-no-high-risk.mjs
+# reads the ignored alerts too: a High is fixed, never listed here. The IGNORE
+# entries are adapted from inflect-compliance `.zap/rules.tsv` at
+# 5528464fc54a8681956f3b9ce23ca9c075f0420e, with Islestone reasons.
 10202	IGNORE	Absence of Anti-CSRF Tokens: NextAuth v4 uses a double-submit CSRF cookie and token that ZAP cannot see as a form field; the credentials callback refuses a request without it.
 10027	IGNORE	Information Disclosure - Suspicious Comments: matches comments in framework-generated Next.js chunks, which carry no secrets.
 10109	IGNORE	Modern Web Application: informational (the app is JavaScript-driven), not a finding.
 10055	IGNORE	CSP: style-src keeps unsafe-inline by design (a style nonce would make browsers ignore it for style attributes the UI emits) and img-src/connect-src allow the https: scheme for OAuth avatars and Sentry; script-src stays nonce + strict-dynamic with no unsafe-inline (src/lib/security/csp.ts).
+# 90004 Insufficient Site Isolation Against Spectre (owner decision 246).
+# Islestone sends Cross-Origin-Opener-Policy and Cross-Origin-Resource-Policy
+# `same-origin` on every response (src/lib/security-headers.ts, asserted by
+# tests/unit/security-headers.test.ts and the middleware's own responses by
+# tests/unit/auth-flow/middleware-csp.test.ts) and leaves
+# Cross-Origin-Embedder-Policy unset on purpose. ZAP keys this file by plugin
+# id only (zap_common.py load_config), not by the rule's alert reference, so
+# it cannot excuse the COEP alert (90004-2) alone: the whole rule is ignored,
+# and the unit tests are what hold COOP and CORP.
+90004	IGNORE	Site Isolation, for Cross-Origin-Embedder-Policy alone: COEP require-corp would block cross-origin images that send no CORP header, such as Google and Microsoft avatars, so it is not sent. COOP and CORP are sent as same-origin and asserted by tests/unit/security-headers.test.ts.
+# 10044 Big Redirect, out of scope on exactly the two redirects a Next.js
+# server component makes for a signed-in person: `/` (src/app/page.tsx) and
+# the workspace picker's single-destination case (src/app/tenants/page.tsx).
+# App Router's redirect() answers 307 with the streamed root-layout shell
+# (about 105 KB) for the client router. Evidence (2026-11-26, this scan run
+# locally, signed in): both bodies hold the public shell and the
+# NEXT_REDIRECT flight entry naming the Location already sent, and no session
+# data (not the person's email or name, no workspace but the Location's). A
+# signed-out request gets the middleware's bodyless redirect instead.
+10044	OUTOFSCOPE	^http://localhost:3106/?$
+10044	OUTOFSCOPE	^http://localhost:3106/tenants$

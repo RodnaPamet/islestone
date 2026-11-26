@@ -387,12 +387,13 @@ jobs:
           docker run --rm --entrypoint sh "$APP" -c 'test -f server.js && test -d .next/static && test ! -d node_modules/prisma'
           docker run --rm --entrypoint sh "$WORKER" -c 'test -f dist/worker.mjs && test -f dist/scheduler.mjs && test -f dist/worker-healthcheck.mjs'
           docker run --rm --entrypoint node_modules/.bin/prisma "$WORKER" --version
-      # Report-only until the date below (owner decision 47, 2026-11-19): the
-      # scan publishes SARIF and never fails the job. After two clean weeks it
-      # becomes blocking: set exit-code "1" here and in release.yml and delete
-      # the marker. tests/guards/security-scan-deferral.test.ts fails CI once
-      # the date has passed while the scan is still non-blocking.
-      # TRIVY-NON-BLOCKING-UNTIL: 2026-12-03
+      # Blocking since Hardening H1 (2026-11-26; owner decision 47 set the
+      # report-only window before it): a CRITICAL or HIGH vulnerability with a
+      # fix available fails the job, as it fails the publish in release.yml.
+      # The SARIF is limited to those severities, or trivy-action drops the
+      # filter for SARIF and the gate would be every severity. An unfixable
+      # finding may be excused only in `.trivyignore`, with an expiry and a
+      # reason (tests/guards/security-scan-deferral.test.ts).
       - name: Trivy scan of the app image (CRITICAL, HIGH)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -400,9 +401,10 @@ jobs:
           format: sarif
           output: trivy-app.sarif
           severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
           ignore-unfixed: true
           vuln-type: os,library
-          exit-code: '0'
+          exit-code: '1'
           timeout: 15m
       - name: Trivy scan of the worker image (CRITICAL, HIGH)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -411,12 +413,14 @@ jobs:
           format: sarif
           output: trivy-worker.sarif
           severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
           ignore-unfixed: true
           vuln-type: os,library
-          exit-code: '0'
+          exit-code: '1'
           timeout: 15m
       # A pull request from a fork cannot write to the Security tab; the
-      # upload is reporting, not the scan, so its failure fails nothing.
+      # upload is reporting, not the scan, so its failure fails nothing. It
+      # runs after a failed scan too, so the finding reaches the Security tab.
       - name: Upload the app scan to GitHub Security
         if: always()
         continue-on-error: true

@@ -21,10 +21,11 @@
 #
 # The build loads the images into this runner and Trivy reads them before
 # anything reaches the registry (inflect-compliance's ghcr-publish.yml order).
-# The scan is report-only until its dated deferral ends, exactly as in
-# ci.yml's Image job; the SARIF is ci.yml's to upload (that job runs on the
-# same push), so this workflow holds no security-events permission beside its
-# registry write.
+# The scan blocks, exactly as in ci.yml's Image job (Hardening H1): a CRITICAL
+# or HIGH vulnerability with a fix available stops the run before any push,
+# so `:latest` stays on the last image that passed. The SARIF is ci.yml's to
+# upload (that job runs on the same push), so this workflow holds no
+# security-events permission beside its registry write.
 #
 # The token is GITHUB_TOKEN with `packages: write`, never a personal token.
 name: Release
@@ -152,10 +153,9 @@ jobs:
             org.opencontainers.image.licenses=BUSL-1.1
           cache-from: type=gha,scope=islestone-image
           cache-to: type=gha,scope=islestone-image,mode=max,ignore-error=true
-      # Report-only until the date below, like ci.yml's Image job (owner
-      # decision 47). When it becomes blocking, exit-code "1" here stops the
-      # push, and `:latest` stays on the last image that passed.
-      # TRIVY-NON-BLOCKING-UNTIL: 2026-12-03
+      # Blocking, like ci.yml's Image job (Hardening H1): exit-code "1" stops
+      # the run before any push, and `:latest` stays on the last image that
+      # passed.
       - name: Trivy scan of the app image (CRITICAL, HIGH)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -164,7 +164,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           vuln-type: os,library
-          exit-code: '0'
+          exit-code: '1'
           timeout: 15m
       - name: Trivy scan of the worker image (CRITICAL, HIGH)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -174,7 +174,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           vuln-type: os,library
-          exit-code: '0'
+          exit-code: '1'
           timeout: 15m
       # ── Islestone's Postgres image (sub-phase 2.7f, decision 146) ──────
       # Its tag is the Dockerfile's version label; a tag already in GHCR is
@@ -206,6 +206,9 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
+      # Blocking like the app images' scans: a bumped tag whose image carries
+      # a CRITICAL or HIGH vulnerability with a fix available is not
+      # published, and neither is anything after it in this run.
       - name: Trivy scan of the Postgres image (CRITICAL, HIGH)
         if: steps.postgres.outputs.publish == 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -215,7 +218,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           vuln-type: os,library
-          exit-code: '0'
+          exit-code: '1'
           timeout: 15m
       - name: Push the Postgres image to GHCR
         if: steps.postgres.outputs.publish == 'true'

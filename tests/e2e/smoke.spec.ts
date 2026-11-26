@@ -7,6 +7,8 @@ function expectSecurityHeaders(headers: Record<string, string>) {
     expect(headers['content-security-policy']).toContain("frame-ancestors 'none'");
     expect(headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
     expect(headers['permissions-policy']).toContain('camera=()');
+    expect(headers['cross-origin-opener-policy']).toBe('same-origin');
+    expect(headers['cross-origin-resource-policy']).toBe('same-origin');
     // The standalone server (`npm run start`) serves a production build.
     expect(headers['strict-transport-security']).toMatch(/^max-age=\d+; includeSubDomains$/);
     expect(headers).not.toHaveProperty('x-powered-by');

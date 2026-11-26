@@ -1,22 +1,31 @@
 /**
- * The H1 security scans start report-only, and only until a date
- * (owner decision 47, 2026-11-19).
+ * The H1 security scans block, and a scan that does not must say until when
+ * (owner decision 47, 2026-11-19; made blocking 2026-11-26).
  *
  * The nightly OWASP ZAP baseline (.github/workflows/dast.yml) and the Trivy
- * CRITICAL/HIGH image scans (ci.yml's Image job, release.yml's publish) run
- * and publish their findings but do not fail yet. Each workflow that holds a
- * non-blocking scan must carry a machine-readable marker,
+ * CRITICAL/HIGH image scans (ci.yml's Image job, release.yml's publish) fail
+ * their job on a finding. They started report-only for two weeks; a workflow
+ * that holds a non-blocking scan must carry a machine-readable marker,
  * `TRIVY-NON-BLOCKING-UNTIL: YYYY-MM-DD` or `DAST-NON-BLOCKING-UNTIL: …`,
  * and this guard compares it with the real clock: the day after the date, CI
  * fails until the scan is made blocking (or the deferral is moved, with a
  * written reason). A marker left behind once every scan of its kind blocks is
- * refused too: it would read as an open decision that is already made.
+ * refused too: it would read as an open decision that is already made. Since
+ * H1 no workflow carries one, so turning a scan back to report-only fails here
+ * unless the change also dates its own end.
+ *
+ * Beside the clock it holds what makes a blocking scan mean what the docs say:
+ * Trivy at CRITICAL,HIGH with fixes available, its SARIF limited to those
+ * severities (or the action drops the filter and the gate is a different
+ * one); every `.zap/rules.tsv` entry with its reason, an OUTOFSCOPE entry
+ * anchored to named URLs of the scan's own target; and every `.trivyignore`
+ * entry with an expiry inside the deferral window and a reason above it.
  *
  * Pattern from inflect-compliance `tests/guardrails/dast-workflow-pinning.test.ts`
  * at 5528464fc54a8681956f3b9ce23ca9c075f0420e, which rewrote a check that
  * grepped for the shape of a date and so could never fire. This one parses
  * the date, is exercised against fixed clocks, takes its population from git
- * and proves its detector against a planted repository.
+ * and proves its detectors against planted input.
  */
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -112,6 +121,76 @@ function check(root: string, now: Date): Report {
     return { scans, findings };
 }
 
+/** The scan's own target (dast.yml); an OUTOFSCOPE regex names URLs on it and nothing wider. */
+const ZAP_TARGET = 'http://localhost:3106';
+
+/**
+ * What is wrong with a `.zap/rules.tsv`. An IGNORE/WARN/FAIL line carries its
+ * reason in the third column. An OUTOFSCOPE line's third column is the URL
+ * regex ZAP reads, so its reason is the comment block directly above it (other
+ * OUTOFSCOPE lines of the same rule may sit between), and the regex must be
+ * anchored at both ends on the scan's target: an unanchored or wider one would
+ * excuse the rule far beyond the URLs the reason was written for.
+ */
+export function zapRuleProblems(text: string): string[] {
+    const lines = text.split('\n');
+    const problems: string[] = [];
+    let entries = 0;
+    lines.forEach((line, i) => {
+        if (!line.trim() || line.startsWith('#')) return;
+        entries += 1;
+        const [id = '', action = '', third = ''] = line.split('\t');
+        const where = `line ${i + 1} (${id})`;
+        if (!/^\d+(,\d+)*$/.test(id)) problems.push(`${where}: not a plugin id`);
+        if (action === 'OUTOFSCOPE') {
+            if (!third.startsWith(`^${ZAP_TARGET}/`)) problems.push(`${where}: OUTOFSCOPE regex must start ^${ZAP_TARGET}/`);
+            if (!third.endsWith('$') || /\.\*|\.\+/.test(third)) problems.push(`${where}: OUTOFSCOPE regex must name whole URLs (end with $, no .* or .+)`);
+            try {
+                new RegExp(third);
+            } catch {
+                problems.push(`${where}: OUTOFSCOPE regex does not compile`);
+            }
+            let j = i - 1;
+            while (j >= 0 && (lines[j] ?? '').split('\t')[1] === 'OUTOFSCOPE' && (lines[j] ?? '').split('\t')[0] === id) j -= 1;
+            const reason: string[] = [];
+            while (j >= 0 && (lines[j] ?? '').startsWith('#')) reason.unshift((lines[j--] ?? '').slice(1));
+            const said = reason.join(' ');
+            if (said.length < 80 || !said.includes(id)) problems.push(`${where}: OUTOFSCOPE needs a reason comment directly above it that names ${id}`);
+        } else if (!/^(IGNORE|WARN|FAIL)$/.test(action)) {
+            problems.push(`${where}: action ${action || '(none)'} is not IGNORE, WARN, FAIL or OUTOFSCOPE`);
+        } else if (third.trim().length <= 20) {
+            problems.push(`${where}: needs a reason in the third column`);
+        }
+    });
+    if (entries === 0) problems.push('no entries');
+    return problems;
+}
+
+/**
+ * What is wrong with a `.trivyignore`. An entry is allowed only for a finding
+ * that cannot be fixed yet, so it expires (`exp:YYYY-MM-DD`, Trivy stops
+ * honouring it after that day) within the deferral window, and the comment
+ * directly above it says why. Without an expiry an excuse outlives its reason.
+ */
+export function trivyIgnoreProblems(text: string, now: Date): string[] {
+    const lines = text.split('\n');
+    const problems: string[] = [];
+    lines.forEach((line, i) => {
+        if (!line.trim() || line.startsWith('#')) return;
+        const where = `line ${i + 1}`;
+        const m = /^(CVE-\d{4}-\d+|GHSA(?:-[0-9a-z]{4}){3}|AVD-[A-Z]+-\d+)\s+exp:(\d{4}-\d{2}-\d{2})\s*$/.exec(line.trim());
+        if (!m) {
+            problems.push(`${where}: an entry is one vulnerability id and exp:YYYY-MM-DD`);
+            return;
+        }
+        const verdict = deferralVerdict(m[2] as string, now);
+        if (verdict !== 'active') problems.push(`${where}: ${m[1]} expiry ${m[2]} is ${verdict}`);
+        const above = lines[i - 1] ?? '';
+        if (!above.startsWith('#') || above.slice(1).trim().length <= 20) problems.push(`${where}: ${m[1]} needs a reason comment directly above it`);
+    });
+    return problems;
+}
+
 describe('the deferral clock', () => {
     const now = new Date('2026-11-19T10:00:00Z');
 
@@ -148,28 +227,96 @@ describe('the security scans in this repository', () => {
         }).toMatchObject({ findings: [] });
     });
 
-    it('scan for CRITICAL and HIGH, both', () => {
+    it('scan for CRITICAL and HIGH, both, with fixes available, and keep a SARIF report to those severities', () => {
         for (const file of ['.github/workflows/ci.yml', '.github/workflows/release.yml']) {
             const wf = yaml.load(fs.readFileSync(path.join(REPO_ROOT, file), 'utf8')) as Workflow;
             const trivy = Object.values(wf.jobs ?? {}).flatMap((j) => j.steps ?? []).filter((s) => kindOf(s) === 'TRIVY');
-            for (const s of trivy) expect({ file, severity: s.with?.severity }).toEqual({ file, severity: 'CRITICAL,HIGH' });
+            for (const s of trivy) {
+                // trivy-action unsets the severity filter for SARIF unless told
+                // not to, and then exit-code "1" would gate on every severity.
+                const sarifLimited = s.with?.format !== 'sarif' || truthy(s.with?.['limit-severities-for-sarif']);
+                expect({ file, step: s.name, severity: s.with?.severity, fixedOnly: truthy(s.with?.['ignore-unfixed']), sarifLimited }).toEqual({
+                    file,
+                    step: s.name,
+                    severity: 'CRITICAL,HIGH',
+                    fixedOnly: true,
+                    sarifLimited: true,
+                });
+            }
         }
     });
 
-    it('give every ZAP allowlist entry a reason', () => {
-        const rows = fs
-            .readFileSync(path.join(REPO_ROOT, '.zap/rules.tsv'), 'utf8')
-            .split('\n')
-            .filter((l) => l.trim() && !l.startsWith('#'));
-        expect(rows.length).toBeGreaterThan(0);
-        for (const row of rows) {
-            const [id, action, reason] = row.split('\t');
-            expect({ id, action: /^(IGNORE|WARN|FAIL)$/.test(action ?? ''), reason: (reason ?? '').length > 20 }).toEqual({
-                id,
-                action: true,
-                reason: true,
+    it('give every ZAP allowlist entry a reason, and scope every OUTOFSCOPE entry to named URLs', () => {
+        expect(zapRuleProblems(fs.readFileSync(path.join(REPO_ROOT, '.zap/rules.tsv'), 'utf8'))).toEqual([]);
+    });
+
+    it('expire every .trivyignore entry inside the deferral window, each with its reason', () => {
+        const ignoreFiles = gitFiles(REPO_ROOT).filter((f) => path.posix.basename(f).startsWith('.trivyignore'));
+        for (const file of ignoreFiles) {
+            expect({ file, problems: trivyIgnoreProblems(fs.readFileSync(path.join(REPO_ROOT, file), 'utf8'), new Date()) }).toEqual({
+                file,
+                problems: [],
             });
         }
+    });
+});
+
+describe('the allowlist checkers, against planted input', () => {
+    const now = new Date('2026-11-26T10:00:00Z');
+    const reason = '# 10044 Big Redirect: out of scope on the root redirect only, because the body is the public shell, checked.';
+
+    it('pass a reasoned IGNORE and a reasoned, anchored OUTOFSCOPE', () => {
+        expect(
+            zapRuleProblems(
+                [
+                    '10109\tIGNORE\tModern Web Application: informational, not a finding.',
+                    reason,
+                    '10044\tOUTOFSCOPE\t^http://localhost:3106/?$',
+                    '10044\tOUTOFSCOPE\t^http://localhost:3106/tenants$',
+                ].join('\n'),
+            ),
+        ).toEqual([]);
+    });
+
+    it('refuse an IGNORE without a reason, an unknown action, and OUTOFSCOPE entries that are unexplained or too wide', () => {
+        expect(
+            zapRuleProblems(
+                [
+                    '10109\tIGNORE\tshort',
+                    '10038\tSKIP\tCSP header not set on static files, a long enough reason.',
+                    '10044\tOUTOFSCOPE\t^http://localhost:3106/$',
+                    reason,
+                    '10044\tOUTOFSCOPE\t^http://localhost:3106/.*$',
+                    reason.replace('10044', '10096'),
+                    '10044\tOUTOFSCOPE\thttp://localhost:3106/login',
+                ].join('\n'),
+            ),
+        ).toEqual([
+            'line 1 (10109): needs a reason in the third column',
+            'line 2 (10038): action SKIP is not IGNORE, WARN, FAIL or OUTOFSCOPE',
+            'line 3 (10044): OUTOFSCOPE needs a reason comment directly above it that names 10044',
+            'line 5 (10044): OUTOFSCOPE regex must name whole URLs (end with $, no .* or .+)',
+            'line 7 (10044): OUTOFSCOPE regex must start ^http://localhost:3106/',
+            'line 7 (10044): OUTOFSCOPE regex must name whole URLs (end with $, no .* or .+)',
+            'line 7 (10044): OUTOFSCOPE needs a reason comment directly above it that names 10044',
+        ]);
+        expect(zapRuleProblems('# only a comment\n')).toEqual(['no entries']);
+    });
+
+    it('pass a reasoned .trivyignore entry that expires inside the window, and refuse the rest', () => {
+        const why = '# no fixed package in Alpine 3.23 yet; the library is not loaded by the app';
+        expect(trivyIgnoreProblems([why, 'CVE-2026-1234 exp:2026-12-20'].join('\n'), now)).toEqual([]);
+        expect(
+            trivyIgnoreProblems(
+                ['CVE-2026-1 exp:2026-12-20', why, 'CVE-2026-2', why, 'CVE-2026-3 exp:2026-11-01', why, 'CVE-2026-4 exp:2027-06-01'].join('\n'),
+                now,
+            ),
+        ).toEqual([
+            'line 1: CVE-2026-1 needs a reason comment directly above it',
+            'line 3: an entry is one vulnerability id and exp:YYYY-MM-DD',
+            'line 5: CVE-2026-3 expiry 2026-11-01 is expired',
+            'line 7: CVE-2026-4 expiry 2027-06-01 is unreasonable',
+        ]);
     });
 });
 

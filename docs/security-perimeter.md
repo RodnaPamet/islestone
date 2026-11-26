@@ -16,8 +16,14 @@ into it (`PROVENANCE.md`).
 Every response carries the baseline set from `src/lib/security-headers.ts`:
 `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
 `Referrer-Policy: strict-origin-when-cross-origin`, a restrictive
-`Permissions-Policy` and, in production, `Strict-Transport-Security` (two
-years, `includeSubDomains`). `next.config.ts` sets them on every route; the
+`Permissions-Policy`, `Cross-Origin-Opener-Policy: same-origin`,
+`Cross-Origin-Resource-Policy: same-origin` and, in production,
+`Strict-Transport-Security` (two years, `includeSubDomains`).
+`Cross-Origin-Embedder-Policy` is deliberately not sent: `require-corp` would
+refuse cross-origin images without a CORP header, such as Google and
+Microsoft avatars (owner decision 246; ZAP's 90004 is excused for it in
+`.zap/rules.tsv`). The Google and Microsoft sign-ins are full-page
+redirects, never popups, so COOP `same-origin` does not cut them off. `next.config.ts` sets them on every route; the
 middleware sets them again on a response it answers itself (a 401, a 403, a
 redirect, a 429, a preflight), which `next.config.ts`'s `headers()` does not
 reach.

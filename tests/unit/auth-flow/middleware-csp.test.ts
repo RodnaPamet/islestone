@@ -16,7 +16,7 @@ jest.mock('next-auth/jwt', () => ({
     getToken: jest.fn().mockResolvedValue(null), // no session cookie
 }));
 
-import middleware from '@/middleware';
+import middleware, { config } from '@/middleware';
 
 const req = (path: string) => new NextRequest(`http://localhost${path}`);
 
@@ -56,6 +56,28 @@ describe('middleware CSP', () => {
         expect(nonceOf(res.headers.get('content-security-policy'))).not.toBeNull();
         expect(res.headers.get('x-frame-options')).toBe('DENY');
         expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+        // Owner decision 246 (ZAP 90004): site isolation reaches the
+        // middleware's own responses too, and COEP is deliberately absent.
+        expect(res.headers.get('cross-origin-opener-policy')).toBe('same-origin');
+        expect(res.headers.get('cross-origin-resource-policy')).toBe('same-origin');
+        expect(res.headers.get('cross-origin-embedder-policy')).toBeNull();
+    });
+
+    // Hardening H1 (the ZAP baseline's 10038): these three are not files the
+    // build serves, so Next.js answers them with the HTML not-found page; the
+    // matcher once skipped them and that page went out with no policy.
+    it('reaches favicon.ico, robots.txt and sitemap.xml, and gives each the nonce policy', async () => {
+        const [pattern] = config.matcher;
+        const matches = (path: string) => new RegExp(`^${pattern}$`).test(path);
+        for (const path of ['/favicon.ico', '/robots.txt', '/sitemap.xml']) {
+            expect({ path, matched: matches(path) }).toEqual({ path, matched: true });
+            const res = await middleware(req(path));
+            expect({ path, status: res.status, location: res.headers.get('location') }).toEqual({ path, status: 200, location: null });
+            expect(nonceOf(res.headers.get('content-security-policy'))).not.toBeNull();
+            expect(res.headers.get('x-middleware-request-x-csp-nonce')).toBe(nonceOf(res.headers.get('content-security-policy')));
+        }
+        expect(matches('/_next/static/chunks/main.js')).toBe(false);
+        expect(matches('/_next/image')).toBe(false);
     });
 
     it('sends it report-only when CSP_REPORT_ONLY is set', async () => {

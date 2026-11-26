@@ -504,11 +504,18 @@ export default async function middleware(
 }
 
 /**
- * Matcher: run middleware on all routes EXCEPT static assets.
+ * Matcher: run middleware on all routes EXCEPT the build's static assets.
  * The public path check inside the middleware handles /login, /api/auth, etc.
+ *
+ * `favicon.ico`, `robots.txt` and `sitemap.xml` are NOT skipped (Hardening
+ * H1, the ZAP baseline's 10038): Islestone serves none of them as a file (the
+ * icon is `src/app/icon.svg`, `public/` is empty), so Next.js answers each
+ * with the HTML not-found page, and a skipped path got that page with no
+ * Content-Security-Policy. Through the middleware they are public paths
+ * (`PUBLIC_PATH_EXACT` in guard.ts) and get the nonce policy like every page.
  */
 export const config = {
     matcher: [
-        '/((?!_next/static|_next/image|favicon\\.ico|robots\\.txt|sitemap\\.xml).*)',
+        '/((?!_next/static|_next/image).*)',
     ],
 };
