@@ -45,6 +45,7 @@ export const PREFERENCE_TYPES = [
     'WORK_ITEM_DUE',
     'INTAKE_REQUEST_RECEIVED',
     'INTAKE_REQUEST_WOKEN',
+    'CALENDAR_CHANGE_NOT_APPLIED',
 ] as const satisfies readonly NotificationType[];
 
 export type PreferenceType = (typeof PREFERENCE_TYPES)[number];
@@ -69,6 +70,24 @@ export const IMMEDIATE_EMAIL_TYPES = [
 
 export function offersImmediateEmail(type: NotificationType): boolean {
     return (IMMEDIATE_EMAIL_TYPES as readonly string[]).includes(type);
+}
+
+/**
+ * The types offered in the bell only, never by email (3.3c, owner decision
+ * 230: "in-app only, no email"): a calendar change that was not applied. The
+ * CHECK `NotificationPreference_in_app_only_types` (migration
+ * `20261219120100_calendar_read_back`) holds the same list.
+ */
+export const IN_APP_ONLY_TYPES = ['CALENDAR_CHANGE_NOT_APPLIED'] as const satisfies readonly PreferenceType[];
+
+export function offersEmail(type: NotificationType): boolean {
+    return !(IN_APP_ONLY_TYPES as readonly string[]).includes(type);
+}
+
+/** The email choices a type offers: OFF alone for an in-app-only type, IMMEDIATE only for the direct types. */
+export function emailChoicesFor(type: NotificationType): EmailDelivery[] {
+    if (!offersEmail(type)) return ['OFF'];
+    return EMAIL_DELIVERIES.filter((d) => d !== 'IMMEDIATE' || offersImmediateEmail(type));
 }
 
 /**
@@ -109,6 +128,8 @@ export const PREFERENCE_DEFAULTS: Record<NotificationType, PreferenceChoice> = {
     WORK_ITEM_DUE: { inApp: true, email: 'DAILY' },
     INTAKE_REQUEST_RECEIVED: { inApp: true, email: 'OFF' },
     INTAKE_REQUEST_WOKEN: { inApp: true, email: 'OFF' },
+    // Sub-phase 3.3c (decision 230): in the bell only, never email.
+    CALENDAR_CHANGE_NOT_APPLIED: { inApp: true, email: 'OFF' },
 };
 
 /** What the workspace's settings say (`TenantNotificationSettings`). */
@@ -155,6 +176,8 @@ export function resolveDelivery(type: NotificationType, stored: StoredPreference
     // one; a type moved off the list later would leave one) reads as DAILY:
     // never louder than the type allows, never silently off.
     if (chosen.email === 'IMMEDIATE' && !offersImmediateEmail(type)) chosen = { ...chosen, email: 'DAILY' };
+    // An in-app-only type is never mailed, whatever a row says (the CHECK refuses one).
+    if (!offersEmail(type) && chosen.email !== 'OFF') chosen = { ...chosen, email: 'OFF' };
 
     const muted = ceiling.mutedInAppTypes.includes(type);
     const inApp = chosen.inApp && !muted;
@@ -175,11 +198,13 @@ export function resolveDelivery(type: NotificationType, stored: StoredPreference
 }
 
 /**
- * Is a choice one the member may save? `IMMEDIATE` only for the direct types;
+ * Is a choice one the member may save? No email for an in-app-only type;
+ * `IMMEDIATE` only for the direct types;
  * `DAILY` with the bell off only where the digest reads the items. Returns the
  * refusal's code, or `null`.
  */
-export function choiceRefusal(type: PreferenceType, choice: PreferenceChoice): 'IMMEDIATE_NOT_OFFERED' | 'DAILY_NEEDS_IN_APP' | null {
+export function choiceRefusal(type: PreferenceType, choice: PreferenceChoice): 'EMAIL_NOT_OFFERED' | 'IMMEDIATE_NOT_OFFERED' | 'DAILY_NEEDS_IN_APP' | null {
+    if (choice.email !== 'OFF' && !offersEmail(type)) return 'EMAIL_NOT_OFFERED';
     if (choice.email === 'IMMEDIATE' && !offersImmediateEmail(type)) return 'IMMEDIATE_NOT_OFFERED';
     if (choice.email === 'DAILY' && !choice.inApp && !digestReadsItems(type)) return 'DAILY_NEEDS_IN_APP';
     return null;

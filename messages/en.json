@@ -2512,7 +2512,8 @@
             "WORK_ITEM_WATCH_UPDATE": "Watched work items",
             "WORK_ITEM_DUE": "Due dates",
             "INTAKE_REQUEST_RECEIVED": "New intake requests",
-            "INTAKE_REQUEST_WOKEN": "Snoozed intake requests back"
+            "INTAKE_REQUEST_WOKEN": "Snoozed intake requests back",
+            "CALENDAR_CHANGE_NOT_APPLIED": "Calendar changes not applied"
         },
         "listLabel": "Notifications",
         "unreadMark": "Unread",
@@ -2575,7 +2576,8 @@
         "saved": "Preferences saved",
         "failed": "Your preferences could not be saved. Try again.",
         "loadFailed": "Your preferences could not be loaded. Try again.",
-        "inboxLink": "Back to the Inbox"
+        "inboxLink": "Back to the Inbox",
+        "bellOnly": "Bell only: never sent by email"
     },
     "recipientLists": {
         "workspaceTitle": "Recipient lists",

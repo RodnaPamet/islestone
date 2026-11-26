@@ -109,6 +109,10 @@ enum NotificationType {
   /// Sub-phase 2.8a: a review round completed, to the item's assignee and
   /// whoever sent the round (decision 161).
   WORK_ITEM_REVIEW_COMPLETED
+  /// Sub-phase 3.3c: a day the member moved in their calendar was not applied
+  /// (a stale change, a refused edit, a moved milestone event), to that
+  /// member, in-app only (owner decisions 227 and 230).
+  CALENDAR_CHANGE_NOT_APPLIED
 }
 
 /// The kind of an outbound email in `NotificationOutbox` (sub-phase 1.6).

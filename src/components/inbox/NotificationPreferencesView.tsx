@@ -102,18 +102,23 @@ export function NotificationPreferencesView({ children }: { children?: ReactNode
                                         {row.inAppCap && <p className="text-xs text-content-muted">{t(`cap.${row.inAppCap}`)}</p>}
                                     </td>
                                     <td>
-                                        <div className="w-48 max-w-full">
-                                            <Combobox
-                                                id={`pref-email-${row.type}`}
-                                                selected={options.find((o) => o.value === (row.emailCap ? row.effectiveEmail : row.email)) ?? null}
-                                                setSelected={(o) => o && void save({ type: row.type, inApp: row.inApp, email: o.value as EmailDelivery })}
-                                                options={options}
-                                                disabled={busy || row.emailCap === 'WORKSPACE_EMAIL_OFF'}
-                                                caret
-                                                hideSearch
-                                                buttonProps={{ 'aria-label': t('emailFor', { type: label }) }}
-                                            />
-                                        </div>
+                                        {row.emailChoices.length === 1 ? (
+                                            // An in-app-only kind (a calendar change not applied, 3.3c): no choice to offer.
+                                            <p className="text-xs text-content-muted">{t('bellOnly')}</p>
+                                        ) : (
+                                            <div className="w-48 max-w-full">
+                                                <Combobox
+                                                    id={`pref-email-${row.type}`}
+                                                    selected={options.find((o) => o.value === (row.emailCap ? row.effectiveEmail : row.email)) ?? null}
+                                                    setSelected={(o) => o && void save({ type: row.type, inApp: row.inApp, email: o.value as EmailDelivery })}
+                                                    options={options}
+                                                    disabled={busy || row.emailCap === 'WORKSPACE_EMAIL_OFF'}
+                                                    caret
+                                                    hideSearch
+                                                    buttonProps={{ 'aria-label': t('emailFor', { type: label }) }}
+                                                />
+                                            </div>
+                                        )}
                                         {row.emailCap && <p className="text-xs text-content-muted">{t(`cap.${row.emailCap}`)}</p>}
                                     </td>
                                     <td>
