@@ -4,8 +4,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    # .npmrc sets save-exact; keep every version pinned.
-    versioning-strategy: increase
+    # .npmrc sets save-exact; keep every version pinned. `increase-if-necessary`
+    # moves the root's exact pins (a newer version never satisfies them) but
+    # leaves a range that already accepts the new version alone: the mirrored
+    # packages/ui/package.json is byte-for-byte inflect-compliance's and must
+    # never be rewritten here (`increase` raised its ranges' floors, #98).
+    versioning-strategy: increase-if-necessary
     open-pull-requests-limit: 10
     # Pull request titles are Conventional Commits (owner decision 51): the
     # PR title check fails any other. "build(deps): bump …".
