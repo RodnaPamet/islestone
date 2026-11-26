@@ -6,9 +6,8 @@
  */
 import type { APIRequestContext } from '@playwright/test';
 
+import { e2eDay as day } from './e2e-utils';
 import { expect, test } from './fixtures';
-
-const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
 
 async function seed(api: APIRequestContext, slug: string) {
     const base = `/api/t/${slug}`;

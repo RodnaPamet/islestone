@@ -59,6 +59,7 @@ import {
     type CalendarResponse,
     type CalendarTooLargeDetails,
 } from '@/lib/work-items/calendar';
+import { todayClock } from '@/lib/clock';
 
 /** The calendar's query: the list's filters (its order, cursor and page size do not apply) and the window. */
 export type CalendarQuery = Omit<ListWorkItemsQuery, 'order' | 'dir' | 'cursor' | 'limit'> & { from: string; to: string };
@@ -162,7 +163,7 @@ export async function getWorkItemCalendar(ctx: RequestContext, query: CalendarQu
         return {
             from,
             to,
-            asOf: fromEpochDay(todayIn(cal.timeZone, new Date())),
+            asOf: fromEpochDay(todayIn(cal.timeZone, todayClock(cal.timeZone))),
             items: rows.map((r) => ({
                 id: r.id,
                 key: formatKey(r.project.keyPrefix, r.number),

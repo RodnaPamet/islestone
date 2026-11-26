@@ -69,6 +69,7 @@ import {
     type RoadmapTooLargeDetails,
 } from '@/lib/goals/roadmap';
 import type { RoadmapQuery } from '@/lib/schemas/goal';
+import { todayClock } from '@/lib/clock';
 
 function tooLarge(what: RoadmapTooLargeDetails['what'], count: number, limit: number): AppError {
     const details: RoadmapTooLargeDetails = { reason: ROADMAP_TOO_LARGE, count, limit, what };
@@ -167,8 +168,8 @@ export async function getRoadmap(ctx: RequestContext, query: RoadmapQuery = {}):
         // 5. The calendars of the teams in view, and today.
         const teamIds = [...new Set([...projects.map((p) => p.teamId), ...rows.flatMap((r) => (r.teamId ? [r.teamId] : []))])];
         const calendars = await resolveWorkingCalendars(db, ctx, teamIds);
-        const today = todayIn(calendars.workspace.timeZone, new Date());
-        const milestoneToday = toEpochDay(todayInTz(new Date(), notificationsTz()));
+        const today = todayIn(calendars.workspace.timeZone, todayClock(calendars.workspace.timeZone));
+        const milestoneToday = toEpochDay(todayInTz(todayClock(notificationsTz()), notificationsTz()));
 
         // ── Projects ──
         const projectRows = new Map<string, RoadmapAggregateRow[]>();

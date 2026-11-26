@@ -48,6 +48,7 @@ import type { RequestContext } from '../types';
 import { resolveWorkingCalendars } from './working-calendar';
 import type { PrismaTx } from '@/lib/db-context';
 import { ConflictError } from '@/lib/errors/types';
+import { todayClock } from '@/lib/clock';
 
 /** A bell (and, for a request or a return, an email) the caller rings after its commit. */
 export interface ReviewNoticeOut {
@@ -171,7 +172,7 @@ export async function openStepInTx(
     // "today" in that calendar's zone (ADR 0009 §13 as amended, decision 192).
     // The day is stored: no later change to a calendar moves it.
     const calendar = (await resolveWorkingCalendars(db, ctx, [item.teamId])).forTeam(item.teamId);
-    const dueOn = epochDayToDate(workingDaysAfter(calendar.compiled, todayIn(calendar.timeZone, now), step.dueInWorkingDays));
+    const dueOn = epochDayToDate(workingDaysAfter(calendar.compiled, todayIn(calendar.timeZone, todayClock(calendar.timeZone, now)), step.dueInWorkingDays));
     await ReviewRepository.openStep(db, ctx, step.id, now, dueOn);
     await logEvent(db, ctx, {
         action: 'WORK_ITEM_REVIEW_STEP_OPENED',

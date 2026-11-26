@@ -125,7 +125,7 @@ describe('secrets', () => {
     });
 
     it('never sets a test switch or turns validation or rate limits off', () => {
-        const forbidden = ['AUTH_TEST_MODE', 'NEXT_TEST_MODE', 'SKIP_ENV_VALIDATION', 'RATE_LIMIT_ENABLED', 'NEXT_PUBLIC_TEST_MODE'];
+        const forbidden = ['AUTH_TEST_MODE', 'NEXT_TEST_MODE', 'E2E_TODAY', 'SKIP_ENV_VALIDATION', 'RATE_LIMIT_ENABLED', 'NEXT_PUBLIC_TEST_MODE'];
         for (const [name, def] of Object.entries(compose.services)) {
             const set = Object.keys(environmentOf(def)).filter((key) => forbidden.includes(key));
             expect({ name, set }).toEqual({ name, set: [] });

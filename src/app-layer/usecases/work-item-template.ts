@@ -40,6 +40,7 @@ import { ConflictError, badRequest, notFound } from '@/lib/errors/types';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { TEMPLATE_LIMITS } from '@/lib/schemas/template';
 import type { WorkItemPriority, WorkItemTemplateData } from '@/lib/work-items/types';
+import { todayClock } from '@/lib/clock';
 
 function asRecord(v: Prisma.JsonValue | null): Record<string, unknown> {
     return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
@@ -98,7 +99,7 @@ export async function templateUseContextInTx(
         MembershipRepository.listActiveUserIds(db, ctx, [...new Set(peopleNamed)]),
     ]);
     return {
-        today: todayInTz(new Date(), notificationsTz()),
+        today: todayInTz(todayClock(notificationsTz()), notificationsTz()),
         usableLabelIds: new Set(labels.map((l) => l.id)),
         activeMemberIds: active,
         liveFields: new Map(fields.map((f) => [f.id, { type: f.type, liveOptionIds: new Set(f.options.filter((o) => !o.archivedAt).map((o) => o.id)) }])),

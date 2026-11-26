@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { DEV_FALLBACK_DATA_ENCRYPTION_KEY } from './lib/security/encryption-constants';
 import { parseCidr } from './lib/security/cidr';
+import { isCalendarDate } from './lib/calendar-date';
 
 import { skipEnvValidation } from './env-skip';
 
@@ -127,6 +128,30 @@ export const env = createEnv({
             }),
         /** Set by the Playwright webServer only; see AUTH_TEST_MODE. */
         NEXT_TEST_MODE: z.enum(['0', '1']).optional(),
+        /**
+         * The E2E server's fixed "today", a `YYYY-MM-DD` date (Hardening H2g,
+         * owner decision 180). Honoured only while NEXT_TEST_MODE is "1", by
+         * the one clock seam, `todayClock` (src/lib/clock.ts). Refused in
+         * production unless NEXT_TEST_MODE is "1", as AUTH_TEST_MODE is, and
+         * again at startup (src/lib/security/startup-test-clock-check.ts).
+         */
+        E2E_TODAY: z
+            .string()
+            .refine((val) => isCalendarDate(val), 'E2E_TODAY must be a calendar date, YYYY-MM-DD')
+            .optional()
+            .superRefine((val, ctx) => {
+                if (process.env.NODE_ENV !== 'production') return;
+                if (process.env.NEXT_TEST_MODE === '1') return;
+                if (val !== undefined) {
+                    ctx.addIssue({
+                        code: 'custom',
+                        message:
+                            'E2E_TODAY must not be set in production. It fixes the date every ' +
+                            'cycle, repeat, due date and reminder reads. Remove it from the ' +
+                            'production environment.',
+                    });
+                }
+            }),
         /** "1": a password sign-in needs a verified email address. */
         AUTH_REQUIRE_EMAIL_VERIFICATION: z.enum(['0', '1']).optional(),
         /** "1": the sign-in page hides the email and password form. */
@@ -448,6 +473,7 @@ export const env = createEnv({
         MICROSOFT_TENANT_ID: process.env.MICROSOFT_TENANT_ID,
         AUTH_TEST_MODE: process.env.AUTH_TEST_MODE,
         NEXT_TEST_MODE: process.env.NEXT_TEST_MODE,
+        E2E_TODAY: process.env.E2E_TODAY,
         AUTH_REQUIRE_EMAIL_VERIFICATION: process.env.AUTH_REQUIRE_EMAIL_VERIFICATION,
         AUTH_CREDENTIALS_UI_HIDDEN: process.env.AUTH_CREDENTIALS_UI_HIDDEN,
         AUTH_PUBLIC_SIGNUP: process.env.AUTH_PUBLIC_SIGNUP,

@@ -47,6 +47,23 @@ function chromiumExecutablePath(): string | undefined {
 
 const executablePath = chromiumExecutablePath();
 
+/**
+ * The server's fixed "today" (Hardening H2g, owner decision 180): the run's
+ * first day in NOTIFICATIONS_TZ (the server's zone; Europe/London is the
+ * schema's default), or an E2E_TODAY the caller already set. Written to
+ * process.env on the first load of this file, in the runner, so every worker
+ * (which loads it again, maybe after midnight) and the server read the same
+ * day; the specs read it through `e2eToday()` in tests/e2e/e2e-utils.ts, and
+ * the server honours it only beside NEXT_TEST_MODE=1 (`todayClock`,
+ * src/lib/clock.ts).
+ */
+function runToday(): string {
+    const zone = process.env.NOTIFICATIONS_TZ || 'Europe/London';
+    return new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+const E2E_TODAY: string = (process.env.E2E_TODAY ||= runToday());
+if (!/^\d{4}-\d{2}-\d{2}$/.test(E2E_TODAY)) throw new Error(`E2E_TODAY=${E2E_TODAY} is not a YYYY-MM-DD date`);
+
 export default defineConfig({
     testDir: 'tests/e2e',
     fullyParallel: true,
@@ -69,7 +86,10 @@ export default defineConfig({
     ],
     webServer: {
         // AUTH_TEST_MODE=1 turns off the credential throttle and the
-        // mutation-tier rate limit, which the auth specs would trip. The
+        // mutation-tier rate limit, which the auth specs would trip. Every
+        // spec reaches this server from 127.0.0.1, so without it the specs
+        // would share one per-IP budget and fail by order; keep it
+        // (tests/guards/e2e-isolation.test.ts, H2g). The
         // standalone server forces NODE_ENV=production, where src/env.ts
         // refuses the flag unless NEXT_TEST_MODE=1, which only this server sets
         // (tests/unit/security/auth-test-mode-prod-refusal.test.ts).
@@ -109,6 +129,9 @@ export default defineConfig({
             // by default; CI's E2E job runs a Redis service with this password.
             REDIS_URL: process.env.REDIS_URL ?? 'redis://:islestone_dev@127.0.0.1:6379', // pragma: allowlist secret
             NEXT_TELEMETRY_DISABLED: '1',
+            // Hardening H2g: one "today" for the whole run, honoured only
+            // because NEXT_TEST_MODE=1 (src/env.ts refuses it otherwise).
+            E2E_TODAY,
         },
     },
 });
