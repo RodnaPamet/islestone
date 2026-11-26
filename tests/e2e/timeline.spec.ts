@@ -18,17 +18,9 @@ import type { APIRequestContext, Request } from '@playwright/test';
 
 import { computeTimelineSchedule, type TimelineData, type TimelineRow } from '../../src/lib/work-items/timeline';
 
+import { e2eToday, plannedDay as day } from './e2e-utils';
 import { expect, test } from './fixtures';
 
-/** A date-only day `n` days after the first Monday at least three weeks from today (UTC). */
-function day(n: number): string {
-    const d = new Date();
-    d.setUTCHours(0, 0, 0, 0);
-    d.setUTCDate(d.getUTCDate() + 21);
-    while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() + 1);
-    d.setUTCDate(d.getUTCDate() + n);
-    return d.toISOString().slice(0, 10);
-}
 
 async function seed(api: APIRequestContext, slug: string) {
     const base = `/api/t/${slug}`;
@@ -146,7 +138,7 @@ test.describe('the timeline', () => {
             if (chainPos > 0 && chainPos <= 30) edges.push({ id: `r${i}`, fromId: `w${String(i - 1).padStart(5, '0')}`, toId: `w${String(i).padStart(5, '0')}` });
         }
         const data: TimelineData = {
-            asOf: new Date().toISOString().slice(0, 10),
+            asOf: e2eToday(),
             rows,
             edges,
             calendars: [{ id: 'cal', teamId: null, timeZone: 'UTC', workingWeekdays: [1, 2, 3, 4, 5], holidays: [] }],

@@ -14,17 +14,9 @@
  */
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
+import { plannedDay as day } from './e2e-utils';
 import { expect, test } from './fixtures';
 
-/** A date-only day `n` days after the first Monday at least three weeks from today (UTC). */
-function day(n: number): string {
-    const d = new Date();
-    d.setUTCHours(0, 0, 0, 0);
-    d.setUTCDate(d.getUTCDate() + 21);
-    while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() + 1);
-    d.setUTCDate(d.getUTCDate() + n);
-    return d.toISOString().slice(0, 10);
-}
 
 /** The date picker's day button label ("Thursday, March 12th, 2026"). */
 function pickerLabel(ymd: string): string {

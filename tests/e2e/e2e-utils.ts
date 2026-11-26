@@ -30,6 +30,41 @@ const TRANSIENT_ERRORS = ['net::', 'ERR_CONNECTION_REFUSED', 'ERR_EMPTY_RESPONSE
 /** Errors that mean the page/context is dead — retrying on the same page is pointless. */
 const FATAL_ERRORS = ['Target page, context or browser has been closed', 'Target closed'];
 
+/**
+ * The run's fixed "today" (`YYYY-MM-DD`), the day the server reads as today
+ * too (Hardening H2g, owner decision 180): `playwright.config.ts` pins
+ * `E2E_TODAY` once per run and hands it to the server, which honours it
+ * through `todayClock` (src/lib/clock.ts). A spec that needs a date relative
+ * to today builds it from here, never from its own clock, so a run that
+ * crosses midnight cannot put the spec and the server on different days.
+ */
+export function e2eToday(): string {
+    const today = process.env.E2E_TODAY;
+    if (!today || !/^\d{4}-\d{2}-\d{2}$/.test(today)) {
+        throw new Error('E2E_TODAY is not set: run the specs through playwright.config.ts, which pins it.');
+    }
+    return today;
+}
+
+/** The date-only day `offset` calendar days after the run's `e2eToday()`. */
+export function e2eDay(offset: number): string {
+    const d = new Date(`${e2eToday()}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + offset);
+    return d.toISOString().slice(0, 10);
+}
+
+/**
+ * A date-only day `n` days after the first Monday at least three weeks from
+ * the run's `e2eToday()`: far enough ahead that nothing planned on it is due
+ * soon, overdue or in today's window.
+ */
+export function plannedDay(n: number): string {
+    const d = new Date(`${e2eDay(21)}T00:00:00Z`);
+    while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() + 1);
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+}
+
 /** A workspace landing URL: My Work, `/t/<slug>/my-work`. */
 export const LANDING_URL = /\/t\/[^/?#]+\/my-work(?:[?#]|$)/;
 
