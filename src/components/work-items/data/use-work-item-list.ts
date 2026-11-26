@@ -47,6 +47,12 @@ export interface WorkItemListResult {
     isLoadingMore: boolean;
     error: ApiClientError | Error | undefined;
     hasMore: boolean;
+    /**
+     * `q`'s description and comment matches are the most recently written
+     * ones only (owner decision 250): the view says it is showing recent
+     * matches. Read from the first page, which ran the match.
+     */
+    contentMatchesBounded: boolean;
     loadMore: () => void;
     revalidate: () => void;
 }
@@ -141,6 +147,7 @@ export function useWorkItemList(filters: WorkItemListFilters, options: UseWorkIt
         isLoadingMore,
         error,
         hasMore,
+        contentMatchesBounded: data?.[0]?.contentMatchesBounded === true,
         loadMore: () => {
             if (hasMore && !isLoadingMore) void setSize(size + 1);
         },

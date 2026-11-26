@@ -68,6 +68,12 @@ export interface WorkItemRow {
 export interface WorkItemPage {
     items: WorkItemRow[];
     pageInfo: { nextCursor?: string; hasNextPage: boolean };
+    /**
+     * `q`'s description and comment matches are the most recently written
+     * ones only (owner decision 250): the list says it is showing recent
+     * matches. The list route sends it; other pages of this shape do not.
+     */
+    contentMatchesBounded?: boolean;
 }
 
 /** The detail read (`GET /work-items/:id`). */

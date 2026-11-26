@@ -174,6 +174,7 @@ export function CommandPalette() {
         disabled: searchDisabled,
         unavailable: searchUnavailable,
         failed: searchFailed,
+        contentMatchesBounded,
     } = useEntitySearch(
         query,
         tenantSlug,
@@ -535,6 +536,13 @@ export function CommandPalette() {
                                         />
                                     );
                                 })}
+
+                            {/* Decision 250: the content hits are the best of the most recent matches. */}
+                            {hasEntityResults && !searchUnavailable && contentMatchesBounded && (
+                                <p className="px-2 py-1.5 text-xs text-content-muted" role="note" data-testid="command-palette-recent-matches">
+                                    {t('recentMatches')}
+                                </p>
+                            )}
 
                             {/*
                              * Keyboard-shortcut discoverability: show

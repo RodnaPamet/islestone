@@ -50,13 +50,25 @@ import { DB_AVAILABLE } from './db-helper';
 
 const describeFn = DB_AVAILABLE ? describe : describe.skip;
 const TAG = `sdef${Date.now().toString(36)}`;
-const MIGRATION = path.resolve(__dirname, '../../prisma/migrations/20261214120000_search_definer_functions/migration.sql');
+const MIGRATIONS = path.resolve(__dirname, '../../prisma/migrations');
+
+/** Each search function's latest definition across the migrations, in migration order (decision 250 redefines one). */
+function latestDefinitions() {
+    const latest = new Map<string, ReturnType<typeof definitionsIn>[number]>();
+    for (const dir of fs.readdirSync(MIGRATIONS).sort()) {
+        const file = path.join(MIGRATIONS, dir, 'migration.sql');
+        if (!fs.existsSync(file)) continue;
+        for (const def of definitionsIn(fs.readFileSync(file, 'utf8'))) latest.set(def.name, def);
+    }
+    return latest;
+}
 
 /** The columns the owner may read, and nothing else. */
 const OWNER_COLUMNS: Readonly<Record<string, readonly string[]>> = {
     Comment: ['deletedAt', 'id', 'tenantId'],
     Project: ['archivedAt', 'deletedAt', 'id', 'keyPrefix', 'name', 'tenantId'],
-    SearchVector: ['commentId', 'configName', 'lexemes', 'tenantId', 'workItemId'],
+    // `id` and `updatedAt` since decision 250: the walk orders by them.
+    SearchVector: ['commentId', 'configName', 'id', 'lexemes', 'tenantId', 'updatedAt', 'workItemId'],
     WorkItem: ['deletedAt', 'id', 'projectId', 'tenantId', 'title'],
 };
 
@@ -70,7 +82,7 @@ describeFn('the search functions (decision 245)', () => {
     // ─── The catalogue ──────────────────────────────────────────────
 
     describe('the catalogue', () => {
-        const migrated = definitionsIn(fs.readFileSync(MIGRATION, 'utf8'));
+        const migrated = latestDefinitions();
 
         it.each(SEARCH_DEFINER_FUNCTIONS.map((s) => [s.name, s] as const))('%s: definer, fixed search path, owner, EXECUTE and body as the migration says', async (_name, spec) => {
             const rows = await prisma.$queryRaw<
@@ -89,14 +101,14 @@ describeFn('the search functions (decision 245)', () => {
             const fn = rows[0]!;
             expect(fn.prosecdef).toBe(true);
             expect(fn.proleakproof).toBe(false);
-            expect(fn.proconfig).toEqual([`search_path=${SEARCH_DEFINER_SEARCH_PATH}`]);
+            expect(fn.proconfig).toEqual([`search_path=${SEARCH_DEFINER_SEARCH_PATH}`, ...(spec.planSettings ? ['plan_cache_mode=force_custom_plan', 'jit=off'] : [])]);
             expect(fn.owner).toBe(SEARCH_DEFINER_ROLE);
             expect([...fn.acl].sort()).toEqual([`${SEARCH_DEFINER_ROLE}=X/${SEARCH_DEFINER_ROLE}`, `app_user=X/${SEARCH_DEFINER_ROLE}`]);
             // No argument names or carries a workspace.
             expect(fn.args).not.toMatch(/tenant/i);
             expect(fn.identity.replace(/\b\w+ (text|boolean|integer)/g, '$1')).toBe(spec.argTypes);
             // The body that runs is the migration's, and it isolates.
-            const def = migrated.find((d) => d.name === spec.name)!;
+            const def = migrated.get(spec.name)!;
             expect(fn.prosrc).toBe(def.body);
             expect(definerProblems(spec, { ...def, body: fn.prosrc })).toEqual([]);
         });
@@ -203,7 +215,7 @@ describeFn('the search functions (decision 245)', () => {
                 words: (await WorkItemRepository.titleFullTextIds(db, named, v, 'quokka report', 100)).sort(),
                 substring: (await WorkItemRepository.titleSubstringIds(db, named, v, PATTERN_WORD, 100)).sort(),
                 projects: (await ProjectRepository.searchNameIds(db, named, v, PATTERN_WORD, { limit: 50 })).map((p) => p.id).sort(),
-                contents: (await SearchVectorRepository.matchItems(db, named, v, WORD, 100)).map((m) => `${m.workItemId}:${m.commentId ?? 'description'}`).sort(),
+                contents: (await SearchVectorRepository.matchItems(db, named, v, WORD, 100)).matches.map((m) => `${m.workItemId}:${m.commentId ?? 'description'}`).sort(),
             }));
 
         it("each read returns its own workspace's live, visible rows: never a deleted item or comment, nor an archived project", async () => {
@@ -237,7 +249,7 @@ describeFn('the search functions (decision 245)', () => {
         it('a comment match counts while its comment is live', async () => {
             const contents = await runInTenantContext(ownerA, (db) => SearchVectorRepository.matchItems(db, ownerA, ALL, 'коментар', 100));
             // a1's comment is live; a2's is deleted (its vector left behind), a3's item is deleted, a4's project archived.
-            expect(contents.map((m) => `${m.workItemId}:${m.commentId}`)).toEqual([`${ids.a1}:${ids['a1:comment']}`]);
+            expect(contents.matches.map((m) => `${m.workItemId}:${m.commentId}`)).toEqual([`${ids.a1}:${ids['a1:comment']}`]);
         });
 
         it.each([

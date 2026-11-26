@@ -39,13 +39,13 @@ function sectionOf(req: Recorded): 'toReview' | 'assigned' | 'waitingOn' | 'crea
     return 'other';
 }
 
-function routes(answers: Partial<Record<ReturnType<typeof sectionOf>, { items: ReturnType<typeof row>[]; hasNextPage?: boolean; nextCursor?: string }>>) {
+function routes(answers: Partial<Record<ReturnType<typeof sectionOf>, { items: ReturnType<typeof row>[]; hasNextPage?: boolean; nextCursor?: string; contentMatchesBounded?: boolean }>>) {
     return installFetch({
         'GET /work-items': (req) => {
             const a = answers[sectionOf(req)] ?? { items: [] };
             // A second page (after "Load more") answers one more row and ends.
             if (req.search.get('cursor')) return { body: { items: [row(99, { title: 'Page two item' })], pageInfo: { hasNextPage: false } } };
-            return { body: { items: a.items, pageInfo: { hasNextPage: !!a.hasNextPage, nextCursor: a.nextCursor } } };
+            return { body: { items: a.items, pageInfo: { hasNextPage: !!a.hasNextPage, nextCursor: a.nextCursor }, contentMatchesBounded: !!a.contentMatchesBounded } };
         },
         'GET /users/assignable': { body: MEMBERS },
         'GET /work-items/wi-1': { body: detail(shared) },
@@ -186,6 +186,15 @@ describe('My Work', () => {
         expect(next && sectionOf(next)).toBe('assigned');
         await waitFor(() => expect(within(assigned).queryByRole('button', { name: 'Load more in Assigned to me' })).toBeNull());
         expect(within(assigned).getByText('2')).toBeInTheDocument();
+    });
+
+    it('says in a section that it is showing recent matches when its content matches were bounded (decision 250)', async () => {
+        routes({ assigned: { items: [shared], contentMatchesBounded: true }, created: { items: [shared] } });
+        renderMyWork();
+        await within(region('Assigned to me')).findByRole('link', { name: 'Shared item' });
+        expect(within(region('Assigned to me')).getByRole('note')).toHaveTextContent(/showing the most recent of those matches/);
+        await within(region('Created by me')).findByRole('link', { name: 'Shared item' });
+        expect(within(region('Created by me')).queryByRole('note')).toBeNull();
     });
 
     it('opens the detail sheet from a row', async () => {

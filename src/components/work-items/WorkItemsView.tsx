@@ -52,6 +52,7 @@ import { publishListOrder } from './data/list-order';
 import type { WorkItemListFilters } from './data/list-filters';
 import { useWorkConfig } from './data/use-work-config';
 import { useWorkItemList } from './data/use-work-item-list';
+import { RecentMatchesNote } from './RecentMatchesNote';
 import { useWorkItemMutations } from './data/use-work-item-mutations';
 import { useSavedView } from './data/use-saved-views';
 import { CustomFieldsManager } from './fields/CustomFieldsManager';
@@ -598,6 +599,7 @@ function ListLayout({
             header={header}
             kpis={summary}
             filters={{ defs: filterDefs, searchId: 'work-items-search', searchPlaceholder: tList('list.searchPlaceholder'), toolbarLeading: createButton }}
+            banner={list.contentMatchesBounded ? <RecentMatchesNote /> : undefined}
             table={{
                 data: list.items,
                 columns,

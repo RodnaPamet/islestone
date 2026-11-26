@@ -135,7 +135,7 @@ async function verifyWorkspace(bulk: PrismaClient, shape: Shape, slug: string): 
             check(text.length > 0 && !/^v[12]:/.test(text), `${slug}: item ${row.id} did not decrypt`);
             // guardrail-allow: n+1 — the verification's 100 bounded searches, one per sampled description.
             const hits = await SearchVectorRepository.matchItems(db, ctx, v, phraseOf(text), 1000);
-            check(hits.some((h) => h.workItemId === row.id), `${slug}: item ${row.id} is not found by its own description`);
+            check(hits.matches.some((h) => h.workItemId === row.id), `${slug}: item ${row.id} is not found by its own description`);
             decryptedChecked++;
         }
     }, { timeout: 120_000 });

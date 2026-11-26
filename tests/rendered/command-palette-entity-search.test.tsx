@@ -43,7 +43,7 @@ import { ENTITY_SEARCH_AVAILABLE } from '@/components/command-palette/use-entity
 
 const calls: string[] = [];
 
-function searchResponse(hits: SearchHit[], query: string): SearchResponse {
+function searchResponse(hits: SearchHit[], query: string, contentMatchesBounded = false): SearchResponse {
     return {
         hits,
         meta: {
@@ -54,6 +54,7 @@ function searchResponse(hits: SearchHit[], query: string): SearchResponse {
             },
             truncated: false,
             perTypeLimit: 5,
+            contentMatchesBounded,
         },
     };
 }
@@ -87,12 +88,12 @@ const SAMPLE_HITS: SearchHit[] = [
     },
 ];
 
-function installFetchStub(hits: SearchHit[] = SAMPLE_HITS, ok = true) {
+function installFetchStub(hits: SearchHit[] = SAMPLE_HITS, ok = true, contentMatchesBounded = false) {
     (global as unknown as { fetch: jest.Mock }).fetch = jest.fn(async (url: string) => {
         calls.push(url);
         const match = url.match(/[?&]q=([^&]+)/);
         const query = match ? decodeURIComponent(match[1]!) : '';
-        return { ok, json: async () => searchResponse(hits, query) };
+        return { ok, json: async () => searchResponse(hits, query, contentMatchesBounded) };
     });
 }
 
@@ -224,6 +225,23 @@ describe('CommandPalette — entity search (2.7b)', () => {
         // Rendered as text, never as markup.
         expect(rows[1]!.querySelector('b')).toBeNull();
         expect(rows[2]!.querySelector('[data-testid="command-palette-result-match"]')!.textContent).toBe('In the description');
+    });
+
+    it('says it is showing recent matches when the content matches were bounded (decision 250)', async () => {
+        installFetchStub(SAMPLE_HITS, true, true);
+        const { findByRole } = render(<Shell />);
+        await typeIntoPalette('login');
+        const note = await findByRole('note');
+        expect(note.textContent).toBe(
+            'Many descriptions and comments match: showing the best of the most recent ones. Titles and keys are searched in full.',
+        );
+    });
+
+    it('says nothing about recent matches when every content match was ranked', async () => {
+        const { queryByRole, findByTestId } = render(<Shell />);
+        await typeIntoPalette('login');
+        await findByTestId('command-palette-result-workItem');
+        expect(queryByRole('note')).toBeNull();
     });
 
     it('debounces repeated keystrokes into one request', async () => {

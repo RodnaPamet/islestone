@@ -538,6 +538,7 @@
         "entityProject": "Projects",
         "matchedInDescription": "In the description",
         "matchedInComment": "In a comment",
+        "recentMatches": "Many descriptions and comments match: showing the best of the most recent ones. Titles and keys are searched in full.",
         "commands": {
             "goToMyWork": "Go to My Work",
             "goToInbox": "Go to Inbox",
@@ -613,7 +614,8 @@
             "loadFailed": "The work items could not be loaded. Try again.",
             "loadMore": "Load more",
             "resource": "work item",
-            "resourcePlural": "work items"
+            "resourcePlural": "work items",
+            "recentMatches": "Many descriptions and comments match this search: showing the most recent of those matches. Titles and keys are searched in full."
         },
         "myWork": {
             "description": "Your work items: to review, assigned to you, waiting on you, created by you, watched by you, and due soon.",

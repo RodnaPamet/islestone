@@ -160,7 +160,9 @@ describe('the search functions (decision 245)', () => {
 
 describe('the detectors, against a planted repository', () => {
     let root: string;
-    const real = fs.readFileSync(path.join(REPO_ROOT, 'prisma/migrations/20261214120000_search_definer_functions/migration.sql'), 'utf8');
+    const first = fs.readFileSync(path.join(REPO_ROOT, 'prisma/migrations/20261214120000_search_definer_functions/migration.sql'), 'utf8');
+    // search_item_contents is defined again, bounded, by decision 250's migration.
+    const real = fs.readFileSync(path.join(REPO_ROOT, 'prisma/migrations/20261217120000_search_recent_candidates/migration.sql'), 'utf8');
     const spec = SEARCH_DEFINER_FUNCTIONS.find((s) => s.name === 'search_item_contents')!;
     const realDef = definitionsIn(real).find((d) => d.name === spec.name)!;
 
@@ -171,14 +173,15 @@ describe('the detectors, against a planted repository', () => {
             fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
             fs.writeFileSync(path.join(root, rel), content);
         };
-        plant('prisma/migrations/20261214120000_search_definer_functions/migration.sql', real);
+        plant('prisma/migrations/20261214120000_search_definer_functions/migration.sql', first);
+        plant('prisma/migrations/20261217120000_search_recent_candidates/migration.sql', real);
         // A later migration that replaces one function's body with a weaker one and leaks the role.
         const weakened = real
-            .slice(real.indexOf('CREATE FUNCTION search_item_contents'), real.indexOf('-- ─── 8) Ownership'))
+            .slice(real.indexOf('CREATE FUNCTION search_item_contents'), real.indexOf('-- ─── 3) Ownership'))
             .replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION')
-            .replace('AND w."deletedAt" IS NULL', '');
+            .replaceAll('w."deletedAt" IS NULL', 'TRUE');
         plant(
-            'prisma/migrations/20261215000000_later/migration.sql',
+            'prisma/migrations/20261218000000_later/migration.sql',
             `${weakened}\nGRANT EXECUTE ON FUNCTION search_item_contents(text, boolean, text[], integer) TO PUBLIC;\nGRANT INSERT ON "WorkItem" TO ${SEARCH_DEFINER_ROLE};\nGRANT ${SEARCH_DEFINER_ROLE} TO app_user;\nALTER FUNCTION f() LEAKPROOF;\n`,
         );
         plant(spec.caller, 'search_item_contents(');
@@ -201,9 +204,9 @@ describe('the detectors, against a planted repository', () => {
 
     it('finds a role grant beyond column SELECT, a member and a LEAKPROOF marking', () => {
         expect(roleProblems(root)).toEqual([
-            `prisma/migrations/20261215000000_later/migration.sql: marks something LEAKPROOF`,
-            `prisma/migrations/20261215000000_later/migration.sql: grants ${SEARCH_DEFINER_ROLE} INSERT ON "WorkItem"`,
-            `prisma/migrations/20261215000000_later/migration.sql: makes a member of ${SEARCH_DEFINER_ROLE}`,
+            `prisma/migrations/20261218000000_later/migration.sql: marks something LEAKPROOF`,
+            `prisma/migrations/20261218000000_later/migration.sql: grants ${SEARCH_DEFINER_ROLE} INSERT ON "WorkItem"`,
+            `prisma/migrations/20261218000000_later/migration.sql: makes a member of ${SEARCH_DEFINER_ROLE}`,
         ]);
     });
 
@@ -215,17 +218,33 @@ describe('the detectors, against a planted repository', () => {
         ['takes the workspace as an argument', (d: SearchDefinerDefinition) => ({ ...d, params: `p_tenant text, ${d.params}`, body: d.body.replace("NULLIF(current_setting('app.tenant_id', true), '')", 'p_tenant') })],
         ['compares a workspace with p_tenant', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace('s."tenantId" = v_tenant', 's."tenantId" = p_tenant') })],
         ['does not return nothing before its query when app.tenant_id is unset', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace(/IF v_tenant IS NULL THEN\s+RETURN;\s+END IF;/, '') })],
-        ['does not filter c."deletedAt" (the comment)', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace('AND c."deletedAt" IS NULL', '') })],
-        ['does not filter p."deletedAt" and "archivedAt" (the project)', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace('AND p."archivedAt" IS NULL', '') })],
-        ['does not apply project visibility', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace('p_all_projects IS TRUE OR', 'TRUE OR') })],
-        ['reads "WorkItem" without its schema', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace('JOIN public."WorkItem" w', 'JOIN "WorkItem" w') })],
-        ['reads WorkItem without tying its workspace', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace('AND w."tenantId" = s."tenantId"', '') })],
+        ['does not filter c."deletedAt" (the comment)', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replaceAll('AND c."deletedAt" IS NULL', '') })],
+        ['does not filter p."deletedAt" and "archivedAt" (the project)', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replaceAll('AND p."archivedAt" IS NULL', '') })],
+        ['does not apply project visibility', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replaceAll('p_all_projects IS TRUE OR', 'TRUE OR') })],
+        ['reads "WorkItem" without its schema', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replaceAll('JOIN public."WorkItem" w', 'JOIN "WorkItem" w') })],
+        ['reads WorkItem without tying its workspace', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replaceAll('AND w."tenantId" = s."tenantId"', '').replaceAll('w."tenantId" = v_tenant', 'TRUE') })],
         ['is not bounded by LIMIT', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace(/LIMIT LEAST\([^;]*;/, ';') })],
         ['caps at 5000, not 1000', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace('0), 1000)', '0), 5000)') })],
         ['search_path is not fixed', (d: SearchDefinerDefinition) => ({ ...d, attributes: d.attributes.replace(/SET search_path[^\n]*/, '') })],
         ['not SECURITY DEFINER', (d: SearchDefinerDefinition) => ({ ...d, attributes: d.attributes.replace('SECURITY DEFINER', 'SECURITY INVOKER') })],
         ['marked LEAKPROOF', (d: SearchDefinerDefinition) => ({ ...d, attributes: `${d.attributes}\nLEAKPROOF\n` })],
-        ['returns workItemId, commentId, rank, title', (d: SearchDefinerDefinition) => ({ ...d, returns: `${d.returns}, "title" text` })],
+        ['returns workItemId, commentId, rank, bounded, title', (d: SearchDefinerDefinition) => ({ ...d, returns: `${d.returns}, "title" text` })],
+        // Decision 250: the candidate bound, the walk, its gates, its fallback, its flag and the settings.
+        ['does not walk as pinned', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace('LIMIT 50000', 'LIMIT 500000') })],
+        ['does not walk the newest vectors first', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace(/ORDER BY s\."updatedAt" DESC, s\."id" DESC\s+LIMIT 50000/, 'ORDER BY s."id" DESC LIMIT 50000') })],
+        ['does not apply the item\'s deletedAt to both the walk and the full match', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace(/AND w\."deletedAt" IS NULL\n           AND p\."deletedAt" IS NULL/, 'AND p."deletedAt" IS NULL') })],
+        ['does not apply project visibility to both the walk and the full match', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace("AND (p_all_projects IS TRUE OR w.\"projectId\" = ANY (COALESCE(p_project_ids, '{}'::text[])))\n    ), candidates", '), candidates') })],
+        ['does not join the walk\'s item in its workspace', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace('AND w."tenantId" = s."tenantId"', '') })],
+        ['does not keep the full match to the workspace\'s live, visible items', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace('JOIN live l ON l."id" = s."workItemId"', 'JOIN live l ON TRUE') })],
+        ['reads "SearchVector" without the workspace and the configuration', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace(/FROM public\."SearchVector" s\n                 WHERE s\."tenantId" = v_tenant AND s\."configName" = 'islestone_bg_en'\n                 ORDER BY s\."updatedAt" DESC, s\."id" DESC\n                 LIMIT 100000/, 'FROM public."SearchVector" s\n                 LIMIT 100000') })],
+        ['does not gate the walk on the workspace\'s size and the query\'s density', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace('count(*) >= 100 AS "dense"', 'count(*) >= 0 AS "dense"') })],
+        ['does not fall back to every match when the walk holds 2000 or fewer', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace('WHERE (SELECT count(*) FROM recent) <= 2000', 'WHERE false') })],
+        ['does not say when more than 2000 candidates matched', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace('(count(*) OVER ()) > 2000', 'false') })],
+        ['ranks more than 2000 candidates', (d: SearchDefinerDefinition) => ({ ...d, body: d.body.replace('WHERE r."recency" <= 2000', 'WHERE TRUE') })],
+        ['does not set jit = off', (d: SearchDefinerDefinition) => ({ ...d, attributes: d.attributes.replace(/SET jit[^\n]*/, '') })],
+        ['does not set plan_cache_mode = force_custom_plan', (d: SearchDefinerDefinition) => ({ ...d, attributes: d.attributes.replace(/SET plan_cache_mode[^\n]*/, '') })],
+        ['sets plan_cache_mode = force_generic_plan', (d: SearchDefinerDefinition) => ({ ...d, attributes: d.attributes.replace('force_custom_plan', 'force_generic_plan') })],
+        ['sets work_mem = 1GB', (d: SearchDefinerDefinition) => ({ ...d, attributes: `${d.attributes}SET work_mem = 1GB\n` })],
     ])('refuses a body that %s', (problem, mutate) => {
         expect(definerProblems(spec, realDef)).toEqual([]);
         expect(definerProblems(spec, mutate(realDef)).join('\n')).toContain(problem);

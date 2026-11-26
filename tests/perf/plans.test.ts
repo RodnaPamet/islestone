@@ -76,7 +76,7 @@ const RUNNERS: Record<string, Runner> = {
     'list: q (titles, stemmed titles, contents)': async (w, db, ctx, v) => {
         // As `listWorkItems` builds it: stemmed titles and contents first, then the list with `q`.
         const titles = await WorkItemRepository.titleFullTextIds(db, ctx, v, CONTENT_QUERY, 1000);
-        const contents = await SearchVectorRepository.matchItems(db, ctx, v, CONTENT_QUERY, 1000);
+        const contents = (await SearchVectorRepository.matchItems(db, ctx, v, CONTENT_QUERY, 1000)).matches;
         const substring = await WorkItemRepository.titleSubstringIds(db, ctx, v, CONTENT_QUERY, 1000);
         const ids = [...new Set([...titles, ...contents.map((m) => m.workItemId)])];
         const titleSubstringMatchIds = substring.length < 1000 ? substring : undefined;
@@ -132,7 +132,7 @@ const RUNNERS: Record<string, Runner> = {
         return WorkItemRepository.findSearchRows(db, ctx, v, hits.map((h) => h.id));
     },
     'search: contents and snippets': async (w, db, ctx, v) => {
-        const hits = await SearchVectorRepository.matchItems(db, ctx, v, CONTENT_QUERY, 20);
+        const hits = (await SearchVectorRepository.matchItems(db, ctx, v, CONTENT_QUERY, 20)).matches;
         await WorkItemRepository.findSearchRows(db, ctx, v, hits.map((h) => h.workItemId));
         return WorkItemRepository.searchSnippetSources(db, ctx, v, {
             descriptionItemIds: hits.filter((h) => h.commentId === null).slice(0, 5).map((h) => h.workItemId),

@@ -61,7 +61,8 @@ export async function rebuildSearchIndex(ctx: RequestContext, opts: { force?: bo
             const texts = await SearchVectorRepository.descriptionTexts(db, ctx, page.ids);
             for (const id of page.ids) {
                 // guardrail-allow: n+1 — one write per source of a bounded page (REBUILD_PAGE_SIZE).
-                await SearchVectorRepository.replaceForSource(db, ctx, { workItemId: id, commentId: null }, texts.get(id) ?? null);
+                // The text did not change: the row keeps its time (decision 250's walk).
+                await SearchVectorRepository.replaceForSource(db, ctx, { workItemId: id, commentId: null }, texts.get(id) ?? null, { keepTime: true });
             }
             return { written: page.ids.length, next: page.next };
         });
@@ -82,7 +83,7 @@ export async function rebuildSearchIndex(ctx: RequestContext, opts: { force?: bo
             const rows = await SearchVectorRepository.commentTexts(db, ctx, page.ids);
             for (const row of rows) {
                 // guardrail-allow: n+1 — one write per source of a bounded page (REBUILD_PAGE_SIZE).
-                await SearchVectorRepository.replaceForSource(db, ctx, { workItemId: row.workItemId, commentId: row.id }, row.body);
+                await SearchVectorRepository.replaceForSource(db, ctx, { workItemId: row.workItemId, commentId: row.id }, row.body, { keepTime: true });
             }
             return { written: rows.length, next: page.next };
         });
