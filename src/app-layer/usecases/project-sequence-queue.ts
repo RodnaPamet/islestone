@@ -1,8 +1,9 @@
 /**
  * Writes that take a project's key-sequence row wait their turn in this
  * process before they open a transaction (owner decision 174, 2026-11-20;
- * Hardening H2; issue #32): creates, reorders and a board drop that places
- * the item.
+ * Hardening H2; issue #32): creates, reorders, a board drop that places
+ * the item, and an intake accept, which creates its item inside the
+ * request's transaction (issue #70).
  *
  * A create claims its number from the project's `ProjectKeySequence` row,
  * and a placement computes its `sortKey` under the same row's lock, held
@@ -26,8 +27,13 @@
  * reads the item's project first, outside the queue; if a move changes it in
  * between, the row lock inside the transaction still serialises the write,
  * the queue only no longer spares it the wait. The queue is per process (the
- * deployment runs one app container; the worker's repeat job creates one
- * item at a time), and the row lock stays the guarantee across processes.
+ * deployment runs one app container, decision 50; the worker's repeat job
+ * creates one item at a time), and the row lock stays the guarantee across
+ * processes: a second app container would keep numbers gapless but lose the
+ * burst limit, since each process's waiters would hold their own connections
+ * (`docs/work-items.md`, "Writes that touch several items"). A project
+ * template's starter items do not queue: their project is created in the
+ * same transaction, so no other writer can wait on its row.
  * `WORK_ITEM_CREATE_BURST_PER_PROJECT` is the burst the integration suite
  * proves.
  */
