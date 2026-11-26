@@ -132,6 +132,8 @@ describe('the application shell', () => {
             ['Work items', '/t/acme/work-items'],
             ['Projects', '/t/acme/projects'],
             ['Cycles', '/t/acme/cycles'],
+            // Sub-phase 3.2b (decision 222): one Roadmap entry, opening Goals until 3.2c.
+            ['Roadmap', '/t/acme/roadmap/goals'],
             // Sub-phase 2.6a: Intake (an OWNER reads intake) and Forms.
             ['Intake', '/t/acme/intake'],
             ['Forms', '/t/acme/forms'],
@@ -171,7 +173,18 @@ describe('the application shell', () => {
         const ids = Array.from(dialog.querySelectorAll('[data-testid^="command-palette-nav-nav:"]')).map((r) =>
             r.getAttribute('data-href'),
         );
-        expect(ids).toEqual(['/t/acme/my-work', '/t/acme/inbox', '/t/acme/work-items', '/t/acme/projects', '/t/acme/cycles', '/t/acme/forms', '/t/acme/views', '/t/acme/settings']);
+        expect(ids).toEqual([
+            '/t/acme/my-work',
+            '/t/acme/inbox',
+            '/t/acme/work-items',
+            '/t/acme/projects',
+            '/t/acme/cycles',
+            '/t/acme/roadmap/goals',
+            '/t/acme/roadmap/initiatives',
+            '/t/acme/forms',
+            '/t/acme/views',
+            '/t/acme/settings',
+        ]);
 
         fireEvent.click(within(dialog).getByText('Go to Projects'));
         expect(mockPush).toHaveBeenCalledWith('/t/acme/projects');

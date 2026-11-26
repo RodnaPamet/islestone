@@ -123,7 +123,7 @@ export function SidebarContent({ user, onLogout, onNavClick, onToggleCollapse }:
                                 label={item.label}
                                 badge={item.badge}
                                 badgeLabel={item.badgeLabel}
-                                active={pathname.startsWith(item.href)}
+                                active={pathname.startsWith(item.activePrefix ?? item.href)}
                                 onClick={onNavClick}
                             />
                         ))}

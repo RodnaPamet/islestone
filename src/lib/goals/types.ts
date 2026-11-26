@@ -189,3 +189,9 @@ export interface GoalAffordances {
     /** Name an item's goal: `work_items.edit` and `goals.view`. */
     setItemGoal: boolean;
 }
+
+/** What the Roadmap entry's pages offer (3.2b), asked on the server. */
+export interface RoadmapAffordances extends GoalAffordances {
+    /** Create a project already in an initiative (the initiative page; decision 57's one dialog): `projects.create` and `goals.view`. */
+    createProject: boolean;
+}

@@ -16,7 +16,7 @@
 import type { Role } from '@prisma/client';
 import { useTranslations } from 'next-intl';
 
-import { Bell, CalendarRefresh, EnvelopeArrowRight, Folder, GridLayoutRows, InputField, UserCheck, Views } from '@inflect/ui/components/ui/icons/nucleo';
+import { Bell, CalendarRefresh, EnvelopeArrowRight, Folder, GridLayoutRows, InputField, MarketingTarget, UserCheck, Views } from '@inflect/ui/components/ui/icons/nucleo';
 import { membershipOpensAdminConsole } from '@/lib/auth/edge-admin-roles';
 import type { PermissionSet } from '@/lib/permissions';
 import { usePendingIntakeCount } from '@/components/intake/data/intake-data';
@@ -34,8 +34,18 @@ export const NAV_PATHS = {
     intake: '/intake',
     forms: '/forms',
     views: '/views',
+    // Sub-phase 3.2b (decision 222): one sidebar entry, Roadmap, over three
+    // pages. The Roadmap page itself is 3.2c's; until it exists the entry
+    // opens the Goals page (so `roadmap` IS Goals' path, and 3.2c moves it to
+    // `/roadmap` and adds `goals`), and `ROADMAP_AREA` marks the entry
+    // current on every page under it.
+    roadmap: '/roadmap/goals',
+    initiatives: '/roadmap/initiatives',
     settings: '/settings',
 } as const;
+
+/** The Roadmap entry's area: every page under it (decision 222). */
+export const ROADMAP_AREA = '/roadmap';
 
 export type NavRouteKey = keyof typeof NAV_PATHS;
 
@@ -61,6 +71,8 @@ export interface NavItemDef {
     badgeLabel?: string;
     /** If set, the item is shown only when this is strictly `true` (fail-closed). */
     visible?: boolean;
+    /** The path prefix the item is current under, when wider than `href` (the Roadmap entry's three pages). */
+    activePrefix?: string;
 }
 
 export interface NavSectionDef {
@@ -72,7 +84,7 @@ export interface NavSectionDef {
  * The sidebar's sections.
  *
  *   (untitled)   My Work, Inbox — the member's own work and notifications
- *   Workspace    Work items, Projects, Cycles (2.5a), Intake and Forms (2.6a), Views
+ *   Workspace    Work items, Projects, Cycles (2.5a), Roadmap (3.2b), Intake and Forms (2.6a), Views
  *
  * Settings is the footer gear, not a row. Work items (the workspace-wide
  * list and board) and Projects arrived with 2.3; the Inbox unread badge
@@ -104,6 +116,15 @@ export function useNavSections(): NavSectionDef[] {
                 { key: 'projects', href: tenantHref(NAV_PATHS.projects), label: t('projects'), icon: Folder, visible: perms.projects?.view === true },
                 // Sub-phase 2.5a (`cycles.view`).
                 { key: 'cycles', href: tenantHref(NAV_PATHS.cycles), label: t('cycles'), icon: CalendarRefresh, visible: perms.cycles?.view === true },
+                // Sub-phase 3.2b (decision 222, `goals.view`): Goals and Initiatives now, the Roadmap page in 3.2c.
+                {
+                    key: 'roadmap',
+                    href: tenantHref(NAV_PATHS.roadmap),
+                    label: t('roadmap'),
+                    icon: MarketingTarget,
+                    visible: perms.goals?.view === true,
+                    activePrefix: tenantHref(ROADMAP_AREA),
+                },
                 {
                     key: 'intake',
                     href: tenantHref(NAV_PATHS.intake),

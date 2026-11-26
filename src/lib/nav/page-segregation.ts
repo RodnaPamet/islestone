@@ -52,7 +52,20 @@ export const BACK_AFFORDANCE_COHORT_TODO: readonly string[] = [] as const;
  * navigation (`NAV_PATHS` in `@/components/layout/nav-config`); they have no
  * parent within the workspace. The back affordance is forbidden here.
  */
-export const MAIN_PAGES: readonly string[] = ['/my-work', '/inbox', '/work-items', '/views', '/projects', '/cycles', '/intake', '/forms', '/settings'] as const;
+export const MAIN_PAGES: readonly string[] = [
+    '/my-work',
+    '/inbox',
+    '/work-items',
+    '/views',
+    '/projects',
+    '/cycles',
+    // Sub-phase 3.2b (decision 222): the Roadmap entry's Goals and Initiatives pages.
+    '/roadmap/goals',
+    '/roadmap/initiatives',
+    '/intake',
+    '/forms',
+    '/settings',
+] as const;
 
 /**
  * Every other workspace route. The back affordance is required here (unless
@@ -93,6 +106,9 @@ export const SUBPAGES: readonly string[] = [
     // Sub-phase 2.7e: the workspace's recipient lists, and a project's.
     '/settings/recipient-lists',
     '/projects/[projectKey]/recipient-lists',
+    // Sub-phase 3.2b (decision 221): a goal's page, and an initiative's page.
+    '/roadmap/goals/[goalId]',
+    '/roadmap/initiatives/[initiativeId]',
     // Roadmap 3.1a: the workspace's working calendar, and a team's.
     '/settings/working-calendars',
     '/settings/working-calendars/[teamId]',

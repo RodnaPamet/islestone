@@ -6,7 +6,8 @@
  *      Settings pages (`src/components/settings/**`, decision 55) and the
  *      cycle pages (`src/components/cycles/**`, 2.5a), the milestone pages
  *      (`src/components/milestones/**`, 2.5b), the recipient-list pages
- *      (`src/components/recipient-lists/**`, 2.7e), every
+ *      (`src/components/recipient-lists/**`, 2.7e) and the Roadmap pages
+ *      (`src/components/goals/**`, 3.2b), every
  *      DELETE request and every bulk delete is sent from inside a
  *      `triggerUndo(…)` or `removeWithUndo(…)` call, so nothing leaves the
  *      server until the undo window closes.
@@ -46,6 +47,7 @@ const SITE_CONTRACTS: Record<string, string> = {
     'src/components/recipient-lists/use-recipient-lists.ts': 'removing a person from a recipient list (Settings → Recipient lists and a project\'s lists, 2.7e)',
     'src/components/work-items/data/use-review.ts': 'removing a reviewer and removing a review step not yet opened (the detail\'s review section, 2.8b)',
     'src/components/settings/use-type-review-steps.ts': 'removing a default review step of a type (Settings → a type → Review steps, 2.8c)',
+    'src/components/goals/use-goals.ts': 'goal and initiative delete, and taking a project off an initiative (the Goals and Initiatives pages and their pages, 3.2b)',
     'src/components/work-items/data/use-timeline-writes.ts': 'a change of dates with the items it pushes later, held before it is sent, and removing a dependency (the timeline, 3.1c, decision 194)',
 };
 
@@ -54,7 +56,7 @@ const UNDO_CALLEES = new Set(['triggerUndo', 'removeWithUndo']);
 /** A DELETE through `apiSend`, or through the Settings pages' `send` wrapper, or a bulk delete. */
 const DESTRUCTIVE = /(?:apiSend|(?<![\w.$])send)\s*(?:<[^>]*>)?\s*\(\s*'DELETE'|\/bulk\/delete/g;
 /** The folders whose deletes must leave through the undo toast. */
-const UNDO_ROOTS = ['src/components/work-items/', 'src/components/settings/', 'src/components/cycles/', 'src/components/milestones/', 'src/components/recipient-lists/'];
+const UNDO_ROOTS = ['src/components/work-items/', 'src/components/settings/', 'src/components/cycles/', 'src/components/milestones/', 'src/components/recipient-lists/', 'src/components/goals/'];
 
 function ownSources(root: string): Array<{ rel: string; code: string }> {
     const mirrorFile = path.join(root, 'ui-mirror.json');

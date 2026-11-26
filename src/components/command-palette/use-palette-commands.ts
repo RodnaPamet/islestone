@@ -45,6 +45,7 @@ import {
     Moon,
     Settings,
     Sparkles,
+    Target,
     UserCheck,
     type LucideIcon,
 } from 'lucide-react';
@@ -164,6 +165,24 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 icon: CalendarClock,
                 href: href(NAV_PATHS.cycles),
                 keywords: ['burn-up', 'rollover'],
+            },
+            {
+                id: 'nav:goals',
+                group: 'Navigation',
+                label: t('goToGoals'),
+                matchLabel: 'Goals',
+                icon: Target,
+                href: href(NAV_PATHS.roadmap),
+                keywords: ['roadmap', 'outcomes', 'health'],
+            },
+            {
+                id: 'nav:initiatives',
+                group: 'Navigation',
+                label: t('goToInitiatives'),
+                matchLabel: 'Initiatives',
+                icon: Target,
+                href: href(NAV_PATHS.initiatives),
+                keywords: ['roadmap', 'projects'],
             },
             {
                 id: 'nav:forms',
