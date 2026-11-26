@@ -118,6 +118,21 @@ export class CycleRepository {
         });
     }
 
+    /**
+     * The cycles overlapping `[from, to]` (the calendar's bands, 3.3a): of the
+     * named teams, or the named cycles; by start, then id; at most `take`.
+     */
+    static async inWindow(db: PrismaTx, ctx: Ctx, scope: { teamIds?: readonly string[]; ids?: readonly string[] }, from: Date, to: Date, take: number): Promise<CycleRow[]> {
+        const byScope: Prisma.CycleWhereInput = scope.ids ? { id: { in: [...scope.ids] } } : { teamId: { in: [...(scope.teamIds ?? [])] } };
+        if ((scope.ids ?? scope.teamIds ?? []).length === 0) return [];
+        return db.cycle.findMany({
+            where: { tenantId: ctx.tenantId, ...byScope, startsOn: { lte: to }, endsOn: { gte: from } },
+            orderBy: [{ startsOn: 'asc' }, { id: 'asc' }],
+            take,
+            select: cycleSelect,
+        });
+    }
+
     static async nextNumber(db: PrismaTx, ctx: Ctx, teamId: string): Promise<number> {
         const top = await db.cycle.findFirst({
             where: { tenantId: ctx.tenantId, teamId },

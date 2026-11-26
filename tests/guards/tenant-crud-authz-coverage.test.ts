@@ -29,6 +29,7 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${W}/deleted/route.ts`]: { GET: 'work_items.delete' },
     [`${W}/metrics/route.ts`]: { GET: 'work_items.view' },
     [`${W}/timeline/route.ts`]: { GET: 'work_items.view' },
+    [`${W}/calendar/route.ts`]: { GET: 'work_items.view' },
     [`${W}/by-key/[key]/route.ts`]: { GET: 'work_items.view' },
     [`${W}/bulk/assign/route.ts`]: { POST: 'work_items.assign' },
     [`${W}/bulk/state/route.ts`]: { POST: 'work_items.edit' },

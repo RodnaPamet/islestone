@@ -214,6 +214,8 @@ export interface SavedViewData {
         columns?: string[];
         /** The timeline's settings (3.1b). */
         timeline?: { zoom: 'day' | 'week' | 'month' | 'quarter'; showCriticalPath: boolean; showNoDates: boolean };
+        /** The calendar's settings (3.3a). */
+        calendar?: { showCycles: boolean; showMilestones: boolean };
     };
     createdByUserId: string;
     mine: boolean;

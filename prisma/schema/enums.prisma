@@ -241,8 +241,8 @@ enum CustomFieldType {
   CHECKBOX
 }
 
-/// How a saved view renders its rows (ADR 0006 "Layout"). TIMELINE and
-/// CALENDAR are reserved for 3.1 and 3.3: the usecase refuses them until then.
+/// How a saved view renders its rows (ADR 0006 "Layout"). TIMELINE is taken
+/// since 3.1b and CALENDAR since 3.3a.
 enum ViewLayout {
   LIST
   BOARD

@@ -128,6 +128,17 @@ export class ProjectRepository {
         });
     }
 
+    /** The visible projects among `ids` (archived ones included: the calendar's markers, 3.3a). */
+    static async visibleByIds(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, ids: readonly string[]) {
+        if (ids.length === 0) return [];
+        return db.project.findMany({
+            where: { id: { in: [...ids] }, tenantId: ctx.tenantId, AND: [projectRowVisibilityWhere(v, { includeArchived: true })] },
+            orderBy: { id: 'asc' },
+            take: ids.length,
+            select: projectSelect,
+        });
+    }
+
     /** Any project row of the workspace, deleted included (restore, purge). */
     static async getAny(db: PrismaTx, ctx: RequestContext, id: string) {
         return db.project.findFirst({ where: { id, tenantId: ctx.tenantId }, select: projectSelect });

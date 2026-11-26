@@ -116,6 +116,8 @@ const CALLS: Call[] = [
     { file: `${W}/metrics/route.ts`, method: 'GET', path: () => '/work-items/metrics', params: (i) => P(i), itemList: true, write: false, key: 'work_items.view' },
     // Roadmap 3.1b: the timeline (the list's filters, the engine's answer).
     { file: `${W}/timeline/route.ts`, method: 'GET', path: (i) => `/work-items/timeline?projectId=${i.project}`, params: (i) => P(i), itemList: true, write: false, key: 'work_items.view' },
+    // Roadmap 3.3a: the calendar view (the list's filters, a window of dates).
+    { file: `${W}/calendar/route.ts`, method: 'GET', path: (i) => `/work-items/calendar?projectId=${i.project}&from=2026-01-01&to=2026-02-11`, params: (i) => P(i), itemList: true, write: false, key: 'work_items.view' },
     { file: `${W}/by-key/[key]/route.ts`, method: 'GET', path: (i) => `/work-items/by-key/${i.key}`, params: (i) => P(i, { key: i.key }), itemRead: true, write: false, key: 'work_items.view' },
     { file: `${W}/bulk/assign/route.ts`, method: 'POST', path: () => '/work-items/bulk/assign', params: (i) => P(i), body: (i) => ({ workItemIds: [i.other], assigneeId: null }), write: true, key: 'work_items.assign' },
     { file: `${W}/bulk/state/route.ts`, method: 'POST', path: () => '/work-items/bulk/state', params: (i) => P(i), body: (i) => ({ workItemIds: [i.other], stateCategory: 'STARTED' }), write: true, key: 'work_items.edit' },

@@ -254,6 +254,14 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
             'calendars and the engine\'s answer; project visibility narrows every read.',
     },
     {
+        path: new RegExp(`^${T}\\/work-items\\/calendar$`),
+        methods: ['GET'],
+        permission: 'work_items.view',
+        note:
+            'The calendar view (3.3a): the list\'s filters, the items due in a window of at most 62 days (at most 2,000), ' +
+            'cycles (cycles.view) and milestones (projects.view) named as omitted when not held; project visibility narrows every read.',
+    },
+    {
         path: new RegExp(`^${T}\\/work-items\\/by-key\\/[^\\/]+$`),
         methods: ['GET'],
         permission: 'work_items.view',

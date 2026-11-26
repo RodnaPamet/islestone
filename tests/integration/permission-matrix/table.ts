@@ -257,6 +257,10 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         // Counts over what the caller sees.
         { route: 'work-items/metrics/route.ts', method: 'GET', key: 'work_items.view', subject: 'the counts', expect: WS_READ },
         { route: 'work-items/timeline/route.ts', method: 'GET', key: 'work_items.view', subject: 'the timeline of the live items (3.1b)', reveals: (s) => s.workItemId, expect: LIST },
+        {
+            route: 'work-items/calendar/route.ts', method: 'GET', key: 'work_items.view', subject: 'the calendar of a window holding a dated item (3.3a)',
+            fixture: 'itemWithDue', query: () => ({ from: '2051-05-15', to: '2051-06-15' }), reveals: (s) => s.workItemId, expect: LIST,
+        },
         { route: 'work-items/by-key/[key]/route.ts', method: 'GET', key: 'work_items.view', subject: 'an item by its key', expect: READ },
         { route: 'work-items/bulk/assign/route.ts', method: 'POST', key: 'work_items.assign', subject: 'a fresh item', fixture: 'item', body: (s) => ({ workItemIds: [s.workItemId], assigneeId: s.annId }), expect: ITEM_ASSIGN },
         { route: 'work-items/bulk/state/route.ts', method: 'POST', key: 'work_items.edit', subject: 'a fresh item', fixture: 'item', body: (s) => ({ workItemIds: [s.workItemId], stateCategory: 'STARTED' }), expect: ITEM_EDIT },

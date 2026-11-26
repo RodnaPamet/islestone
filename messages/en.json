@@ -655,7 +655,8 @@
             "label": "Layout",
             "list": "List",
             "board": "Board",
-            "timeline": "Timeline"
+            "timeline": "Timeline",
+            "calendar": "Calendar"
         },
         "lanes": {
             "label": "By label",
@@ -1498,6 +1499,86 @@
             "archived": "archived",
             "hidden": "{count, plural, one {# level hidden} other {# levels hidden}}",
             "alsoServes": "Also serves:"
+        },
+        "calendar": {
+            "previous": "Previous",
+            "previousLabel": "Previous month",
+            "today": "Today",
+            "next": "Next",
+            "nextLabel": "Next month",
+            "showCycles": "Cycles",
+            "showMilestones": "Milestones and due dates",
+            "tooLarge": "Narrow the filter: {count, plural, one {# item is} other {# items are}} due in these weeks, and a calendar shows at most {limit}.",
+            "loadFailed": "The calendar could not be read.",
+            "retry": "Try again",
+            "summary": {
+                "shown": "{count, plural, =0 {Nothing due} one {# item due} other {# items due}} in these weeks",
+                "noDueDate": "{count, plural, one {# item has} other {# items have}} no due date",
+                "omitted": {
+                    "cycles": "Cycles are not shown: you cannot see cycles",
+                    "milestones": "Milestones and project due dates are not shown: you cannot see projects"
+                },
+                "truncated": {
+                    "cycles": "Not every cycle is shown: narrow the filter",
+                    "milestones": "Not every milestone is shown: narrow the filter"
+                }
+            },
+            "legend": {
+                "label": "Legend",
+                "today": "Today",
+                "nonWorking": "Non-working day",
+                "holiday": "Holiday",
+                "cycle": "Cycle",
+                "milestone": "Milestone due",
+                "projectDue": "Project due"
+            },
+            "grid": {
+                "dayCell": "{date}: {count, plural, =0 {nothing due} one {# item due} other {# items due}}{extras}",
+                "holiday": "holiday",
+                "holidayShort": "Holiday",
+                "nonWorking": "non-working day",
+                "cycleOn": "{name}",
+                "cycleNumbered": "Cycle {number}",
+                "milestoneDue": "milestone {name} due",
+                "projectDue": "project {name} due",
+                "more": "+{count} more"
+            },
+            "chip": {
+                "open": "{key} {title}, {state}",
+                "moveToDate": "Move {key} to date…"
+            },
+            "day": {
+                "heading": "Due {date}",
+                "close": "Close",
+                "empty": "Nothing is due on this day.",
+                "resource": "item",
+                "resourcePlural": "items",
+                "move": "Move to date…",
+                "moveLabel": "Move {key} to another date",
+                "col": {
+                    "key": "Key",
+                    "title": "Title",
+                    "state": "State",
+                    "project": "Project",
+                    "start": "Start",
+                    "actions": "Actions"
+                }
+            },
+            "move": {
+                "title": "Move {key} to another date",
+                "date": "New due date",
+                "hint": "Its start date, if it has one, moves by the same number of days.",
+                "cancel": "Cancel",
+                "continue": "Continue",
+                "changeTitle": "Change dates for {key}",
+                "openItem": "Open the item",
+                "close": "Close",
+                "loading": "Reading the schedule of {key}…",
+                "loadFailed": "The schedule could not be read, so the change cannot be previewed. Try again.",
+                "tooLarge": "Its project has {count, plural, one {# item} other {# items}}, more than the {limit} a preview reads: change the dates on the item.",
+                "summaryRow": "The dates of {key} follow its sub-items: change theirs.",
+                "notHere": "The dates of {key} cannot be changed here."
+            }
         }
     },
     "settings": {

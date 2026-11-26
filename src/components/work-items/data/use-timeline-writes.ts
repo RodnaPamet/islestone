@@ -8,9 +8,10 @@
  *   - **One item's dates** (the confirmation unticked): `PATCH
  *     /work-items/:id { startDate, dueDate }` with `If-Match`, the write the
  *     detail makes, so its field-set, permission and audit rules are the
- *     API's. Optimistic over the cached timeline with rollback; the answer is
- *     placed in every mounted view (`applyRow`). A 409 shows "changed by
- *     someone else" and re-reads the timeline.
+ *     API's. Optimistic over the cached timelines and calendars (3.3a moves
+ *     items through this same path, decision 241) with rollback; the answer
+ *     is placed in every mounted view (`applyRow`). A 409 shows "changed by
+ *     someone else" and re-reads the timelines and calendars.
  *   - **With the items it pushes later** (ticked; decision 194): the new bars
  *     show at once and the write is held five seconds behind the undo toast,
  *     then sent from its action as `POST /work-items/bulk/dates`, each item's
@@ -31,7 +32,7 @@ import { useMemo } from 'react';
 import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { ApiClientError, apiSend } from '@/lib/data/api-client';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
-import { withEdge, withoutEdge, withRowDates, type TimelineEdge, type TimelineRow } from '@/lib/work-items/timeline';
+import { withEdge, withoutEdge, type TimelineEdge, type TimelineRow } from '@/lib/work-items/timeline';
 import type { ItemDates, PushedItem } from '@/lib/work-items/reschedule';
 import type { WorkItemDetailData } from '@/lib/work-items/types';
 
@@ -59,14 +60,14 @@ export function useTimelineWrites() {
             return err instanceof ApiClientError && err.reason ? err.reason : t('failed');
         };
         const refused = (err: unknown) => {
-            cache.revalidateTimelines();
+            cache.revalidateDated();
             toast.error(reasonOf(err));
         };
 
         return {
             /** One item's dates (`PATCH`, `If-Match`): resolves `true` once the server has them. */
             async changeDates(row: TimelineRow, to: ItemDates): Promise<boolean> {
-                cache.updateTimelines((current) => withRowDates(current, [{ id: row.id, ...to }]));
+                cache.placeDates([{ id: row.id, ...to }]);
                 try {
                     const saved = await apiSend<WorkItemDetailData>('PATCH', apiUrl(`/work-items/${row.id}`), { startDate: to.startDate, dueDate: to.dueDate }, { ifMatch: row.version });
                     cache.applyRow(toRow(saved), saved);
@@ -84,7 +85,7 @@ export function useTimelineWrites() {
             reschedule({ row, to, pushed }: DateChangeRequest): void {
                 const forward = [{ id: row.id, ...to }, ...pushed.map((p) => ({ id: p.id, ...p.to }))];
                 const back = [{ id: row.id, startDate: row.startDate, dueDate: row.dueDate }, ...pushed.map((p) => ({ id: p.id, ...p.from }))];
-                cache.updateTimelines((current) => withRowDates(current, forward));
+                cache.placeDates(forward);
                 triggerUndo({
                     message: tTimeline('moving', { key: row.key, count: pushed.length }),
                     undoMessage: t('undo'),
@@ -93,9 +94,9 @@ export function useTimelineWrites() {
                             dragged: { id: row.id, version: row.version, startDate: to.startDate, dueDate: to.dueDate },
                             pushed: pushed.map((p) => ({ id: p.id, version: p.version, startDate: p.to.startDate, dueDate: p.to.dueDate })),
                         }),
-                    undoAction: () => cache.updateTimelines((current) => withRowDates(current, back)),
+                    undoAction: () => cache.placeDates(back),
                     onCommit: (result) => {
-                        cache.updateTimelines((current) => withRowDates(current, result.items));
+                        cache.placeDates(result.items);
                         // Lists and details hold these rows too: read them again.
                         cache.revalidateLists();
                         for (const item of result.items) void cache.revalidateItem(item.id);
