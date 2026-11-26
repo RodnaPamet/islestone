@@ -98,6 +98,11 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     // ── Progress (3.2b, decisions 211 and 212) ────────────────────────────
     { name: 'counts: progress, the project path', methods: ['WorkItemRepository.countsByProjects'], indexes: ['WorkItem_progress_project_path'], maxBuffers: 10, maxBuffers100k: 100 },
     { name: 'counts: progress, the direct goal path', methods: ['WorkItemRepository.countsByGoals'], indexes: ['WorkItem_tenantId_goalId_stateCategory_idx'], maxBuffers: 10, maxBuffers100k: 50 },
+    // ── The roadmap (3.2c, decision 215): one aggregate for every bar and count ──
+    // 10k: 1,007 buffers measured (budget 2,000). 100k: NOT MEASURED (3.2c could not seed 100k): 20,000 is
+    // ten times the 10k budget, as the read scales with the items of the projects shown; replace it with
+    // about twice the nightly's first 100k measurement.
+    { name: 'roadmap: the aggregate (every project, both paths)', methods: ['WorkItemRepository.roadmapAggregate'], indexes: ['WorkItem_progress_project_path', 'WorkItem_tenantId_goalId_stateCategory_idx'], maxBuffers: 2000, maxBuffers100k: 20000 },
     { name: 'counts: items in a state', methods: ['TeamRepository.countItemsInState', 'ReviewRepository.itemsInStateRequiringReview', 'WorkItemRepository.lockInState'], indexes: ['WorkItem_tenantId_stateId_idx'], maxBuffers: 6500, maxBuffers100k: 21000 },
     // ── Search: the palette's raw reads ────────────────────────────────────
     { name: 'search: titles (trigram and full text)', methods: ['WorkItemRepository.searchTitleIds'], indexes: ['WorkItem_search_title_fts', 'WorkItem_search_title_trgm'], maxBuffers: 1800, maxBuffers100k: 14000, conditions: [{ index: 'WorkItem_search_title_trgm', operator: '~~*' }, { index: 'WorkItem_search_title_fts', operator: '@@' }] },

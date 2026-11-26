@@ -259,6 +259,7 @@ function scenarioRunners(w) {
     );
     const columns = () => w.bigStates.map((s) => listQ(`projectId=${w.big.id}&stateId=${s.id}&order=manual&limit=50`));
     let timelineExtra = null;
+    let roadmapExtra = null;
     return {
         'list-project': single('GET', listQ(`projectId=${p}&order=manual&limit=50`), listCheck),
         'list-workspace-due': single('GET', listQ(`stateCategory=${OPEN_CATEGORIES}&priority=HIGH,URGENT&order=due&limit=50`), listCheck),
@@ -285,6 +286,12 @@ function scenarioRunners(w) {
                 return null;
             },
         ),
+        // The roadmap (3.2c): the whole workspace, as the Roadmap page first reads it.
+        roadmap: single('GET', api('/roadmap'), (b, r) => {
+            if (!Array.isArray(b?.projects) || !Array.isArray(b?.initiatives)) return 'the roadmap answered no projects';
+            roadmapExtra = { projects: b.projects.length, initiatives: b.initiatives.length, milestones: b.milestones?.length ?? 0, gzipBytes: r.gzipped ? r.raw.length : null, bytes: (r.gzipped ? gunzipSync(r.raw) : r.raw).length };
+            return null;
+        }),
         create: single('POST', (run) => ({ path: api('/work-items'), body: { projectId: p, typeId: w.typeId, title: `Perf harness create ${run}`, description: 'Задачата на проекта and a description to index.' } }), null),
         edit: single(
             'PATCH',
@@ -296,6 +303,7 @@ function scenarioRunners(w) {
         reorder: single('POST', (run) => ({ path: api(`/work-items/${reorderItem.id}/move`), body: { position: run % 2 === 0 ? { afterId: anchor.id } : { beforeId: anchor.id } } }), null),
         'bulk-state': single('POST', (run) => ({ path: api('/work-items/bulk/state'), body: { workItemIds: bulkIds, stateId: run % 2 === 0 ? w.unstarted.id : w.backlog.id } }), null),
         _timelineExtra: () => timelineExtra,
+        _roadmapExtra: () => roadmapExtra,
     };
 }
 
@@ -342,6 +350,11 @@ async function runApi(world, writes) {
             if (id === 'timeline') {
                 const t = runners._timelineExtra();
                 if (t) a.extra = `(${world.timeline.label}: ${t.rows} items and ${t.contextRows} context rows, ${t.edges} relations, ${Math.round(t.bytes / 1024)} KB, ${t.gzipBytes === null ? 'not compressed' : `${Math.round(t.gzipBytes / 1024)} KB gzip`})`;
+                a.size = t;
+            }
+            if (id === 'roadmap') {
+                const t = runners._roadmapExtra();
+                if (t) a.extra = `(${t.projects} projects, ${t.initiatives} initiatives, ${t.milestones} milestones, ${Math.round(t.bytes / 1024)} KB, ${t.gzipBytes === null ? 'not compressed' : `${Math.round(t.gzipBytes / 1024)} KB gzip`})`;
                 a.size = t;
             }
             attempts.push(a);

@@ -461,6 +461,9 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         { route: 'initiatives/[initiativeId]/archive/route.ts', method: 'POST', key: 'goals.manage', subject: 'a fresh cancelled initiative', fixture: 'finishedInitiative', body: () => ({ archived: true }), expect: MEMBER_WRITE },
         { route: 'initiatives/[initiativeId]/restore/route.ts', method: 'POST', key: 'goals.manage', subject: 'a fresh deleted initiative', fixture: 'deletedInitiative', expect: MEMBER_WRITE },
         { route: 'initiatives/[initiativeId]/health/route.ts', method: 'PUT', key: 'goals.manage', subject: "an initiative's health", body: () => ({ health: 'ON_TRACK' }), expect: MEMBER_WRITE },
+        // Sub-phase 3.2c (decisions 215 to 217): the roadmap reads under goals.view, and asks projects.view too,
+        // which every role holding goals.view holds.
+        { route: 'roadmap/route.ts', method: 'GET', key: 'goals.view', subject: 'the roadmap', reveals: (s) => s.initiativeId, expect: WS_READ },
         { route: 'teams/route.ts', method: 'GET', key: 'projects.view', subject: 'the teams', expect: WS_READ },
         { route: 'teams/route.ts', method: 'POST', key: 'admin.manage', subject: 'a new team', body: (s) => ({ name: `Team ${s.seq}` }), expect: ADMIN },
         { route: 'teams/[teamId]/route.ts', method: 'GET', key: 'projects.view', subject: 'a team', expect: WS_READ },

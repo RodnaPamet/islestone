@@ -71,6 +71,9 @@ const SCENARIOS: Scenario[] = [
         path: (w) => `/work-items?assigneeId=${w.heavyUserId}&stateCategory=BACKLOG,UNSTARTED,STARTED&limit=50`,
         budget: 8,
     },
+    // The roadmap (3.2c): the map's budget is at most 7 statements whatever the workspace's size.
+    { name: 'roadmap: the whole workspace', file: `${ROUTES}/roadmap/route.ts`, method: 'GET', path: () => '/roadmap', budget: 7 },
+    { name: 'roadmap: grouped by goal', file: `${ROUTES}/roadmap/route.ts`, method: 'GET', path: () => '/roadmap?groupBy=goal', budget: 7 },
     {
         name: 'create: one item with a description',
         file: `${ROUTES}/work-items/route.ts`,

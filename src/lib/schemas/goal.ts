@@ -78,6 +78,22 @@ export const GoalListQuerySchema = z
     })
     .strict();
 
+/** `GET /roadmap` (3.2c): the roadmap's filters (`src/lib/goals/roadmap.ts`). */
+export const RoadmapQuerySchema = z
+    .object({
+        goalId: Id.optional(),
+        initiativeId: Id.optional(),
+        teamId: Id.optional(),
+        leadUserId: Id.optional(),
+        health: z.string().max(200).optional(),
+        status: z.string().max(200).optional(),
+        archived: z.enum(['true', 'false']).optional(),
+        groupBy: z.enum(['initiative', 'goal']).optional(),
+    })
+    .strict();
+
+export type RoadmapQuery = z.infer<typeof RoadmapQuerySchema>;
+
 export const SetProjectInitiativeSchema = z.object({ initiativeId: Id.nullable() }).strict();
 
 export const SetWorkItemGoalSchema = z.object({ goalId: Id.nullable() }).strict();

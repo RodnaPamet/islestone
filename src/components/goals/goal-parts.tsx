@@ -2,7 +2,7 @@
 
 /**
  * The pieces the Roadmap entry's pages share (sub-phase 3.2b): the tab bar
- * between Goals and Initiatives (decision 222), a progress cell ("12 of 40
+ * between the Roadmap page (3.2c), Goals and Initiatives (decision 222), a progress cell ("12 of 40
  * done", "No items", never 100 % of nothing; decision 212), the status and
  * health shown with their names (decision 205: "Status: Started · Health:
  * Completed"), the health control (a person holding `goals.manage`, as the
@@ -36,19 +36,21 @@ const HEALTH_TONE: Record<HealthValue, string> = {
     COMPLETED: 'text-content-emphasis',
 };
 
-/** Goals | Initiatives (the Roadmap page joins them in 3.2c): links, the current one marked. */
+/** Roadmap | Goals | Initiatives (decision 222): links, the current one marked. */
 export function RoadmapTabs() {
     const tTabs = useTranslations('roadmap');
     const tenantHref = useTenantHref();
     const pathname = usePathname();
     const tabs = [
-        { key: 'goals', href: tenantHref(NAV_PATHS.roadmap) },
-        { key: 'initiatives', href: tenantHref(NAV_PATHS.initiatives) },
+        { key: 'roadmap', href: tenantHref(NAV_PATHS.roadmap), exact: true },
+        { key: 'goals', href: tenantHref(NAV_PATHS.goals), exact: false },
+        { key: 'initiatives', href: tenantHref(NAV_PATHS.initiatives), exact: false },
     ] as const;
     return (
         <nav aria-label={tTabs('tabsLabel')} className="flex gap-tight border-b border-border-subtle" data-testid="roadmap-tabs">
             {tabs.map((tab) => {
-                const current = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+                // The Roadmap page's path is the area's: only its own path marks it current.
+                const current = pathname === tab.href || (!tab.exact && pathname.startsWith(`${tab.href}/`));
                 return (
                     <Link
                         key={tab.key}

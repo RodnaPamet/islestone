@@ -775,6 +775,12 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note: "Set or clear a goal's or an initiative's health: a person only (3.2b, decisions 205 and 214).",
     },
     {
+        path: new RegExp(`^${T}\\/roadmap$`),
+        methods: ['GET'],
+        permission: 'goals.view',
+        note: 'The roadmap: initiatives and their projects with derived bars (3.2c, decisions 215 to 217); the usecase asks projects.view too.',
+    },
+    {
         path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/initiative$`),
         methods: ['PUT'],
         permission: 'projects.edit',

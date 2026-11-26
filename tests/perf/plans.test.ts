@@ -22,6 +22,7 @@ import type { PrismaClient } from '@prisma/client';
 
 import { SORT_KEY_REBALANCE_LENGTH } from '@/app-layer/domain/fractional-index';
 import { visibleProjects, type ProjectVisibility } from '@/app-layer/policies/project-visibility';
+import { ProjectRepository } from '@/app-layer/repositories/ProjectRepository';
 import { ReviewRepository } from '@/app-layer/repositories/ReviewRepository';
 import { SearchVectorRepository } from '@/app-layer/repositories/SearchVectorRepository';
 import { TeamRepository } from '@/app-layer/repositories/TeamRepository';
@@ -114,6 +115,12 @@ const RUNNERS: Record<string, Runner> = {
     // The project and the big project (initiatives' projects); the seed holds no goals, so the direct path names one no item names.
     'counts: progress, the project path': (w, db, ctx, v) => WorkItemRepository.countsByProjects(db, ctx, v, [w.projectId, w.bigProjectId]),
     'counts: progress, the direct goal path': (w, db, ctx, v) => WorkItemRepository.countsByGoals(db, ctx, v, ['no-such-goal']),
+    // The whole roadmap of the seeded workspace: every visible project as `getRoadmap` reads them, and the
+    // direct path for a goal no item names (the seed holds no goals).
+    'roadmap: the aggregate (every project, both paths)': async (w, db, ctx, v) => {
+        const projects = await ProjectRepository.roadmapProjects(db, ctx, v, { initiativeIds: [], unlinked: true, liveInitiativeIds: [] }, 501);
+        return WorkItemRepository.roadmapAggregate(db, ctx, v, { projectIds: projects.map((p) => p.id), goalIds: ['no-such-goal'] });
+    },
     'counts: items in a state': async (w, db, ctx) => {
         await TeamRepository.countItemsInState(db, ctx, w.stateId);
         await ReviewRepository.itemsInStateRequiringReview(db, ctx, w.stateId);

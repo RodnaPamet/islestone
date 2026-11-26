@@ -28,6 +28,9 @@ import { scheduleStatusOf, type TimelineResponse, type TimelineRow } from '@/lib
 
 export type TimelineZoom = 'day' | 'week' | 'month' | 'quarter';
 
+/** The roadmap's rows (3.2c, `roadmap-model.ts`): records drawn as bars, groups, and their due dates as diamonds. */
+export type RoadmapTaskKind = 'goal' | 'initiative' | 'roadmap-project' | 'unlinked' | 'no-goal' | 'goal-due' | 'initiative-due';
+
 /** One row the chart draws (handed to the adapter, which maps it to the widget's shape). */
 export interface ChartTask {
     id: string;
@@ -41,7 +44,7 @@ export interface ChartTask {
     start: string;
     /** Last day of the bar (inclusive), `YYYY-MM-DD`; equals `start` for a diamond. */
     end: string;
-    kind: 'item' | 'project' | 'context-group' | 'milestone' | 'project-due';
+    kind: 'item' | 'project' | 'context-group' | 'milestone' | 'project-due' | RoadmapTaskKind;
     critical: boolean;
     late: boolean;
     lateDays: number;

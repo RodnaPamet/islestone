@@ -319,6 +319,12 @@ function WorkItemsViewBody({
         applyView(deepLinked);
     }, [deepLinked, appliedDeepLink, applyView]);
 
+    // `?layout=timeline` (a roadmap bar, 3.2c decision 217) opens that layout once, and is remembered like a choice.
+    const deepLayout = searchParams?.get('layout') ?? null;
+    useEffect(() => {
+        if (deepLayout === 'timeline' || deepLayout === 'board' || deepLayout === 'list') setLayout(deepLayout);
+    }, [deepLayout, setLayout]);
+
     // `?create=1` opens the create dialog (the "new" deep link).
     useEffect(() => {
         if (searchParams?.get('create') === '1' && perms.create) {

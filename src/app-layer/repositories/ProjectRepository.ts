@@ -35,6 +35,31 @@ export interface ProjectSearchRow {
     keyPrefix: string;
 }
 
+/** The roadmap's project scope (3.2c, `roadmapProjects`). */
+export interface RoadmapProjectScope {
+    initiativeIds: readonly string[];
+    /** Also the projects naming no live initiative (the "No initiative" row). */
+    unlinked: boolean;
+    /** Every live initiative of the workspace: a project naming another (a deleted one) is unlinked. */
+    liveInitiativeIds: readonly string[];
+    teamId?: string;
+}
+
+function roadmapProjectWhere(ctx: RequestContext, v: ProjectVisibility, scope: RoadmapProjectScope): Prisma.ProjectWhereInput | null {
+    const or: Prisma.ProjectWhereInput[] = [];
+    if (scope.initiativeIds.length > 0) or.push({ initiativeId: { in: [...scope.initiativeIds] } });
+    if (scope.unlinked) {
+        or.push({ initiativeId: null });
+        or.push({ initiativeId: scope.liveInitiativeIds.length > 0 ? { notIn: [...scope.liveInitiativeIds] } : { not: null } });
+    }
+    if (or.length === 0) return null;
+    return {
+        tenantId: ctx.tenantId,
+        ...(scope.teamId ? { teamId: scope.teamId } : {}),
+        AND: [projectRowVisibilityWhere(v, { includeArchived: true }), { OR: or }],
+    };
+}
+
 export class ProjectRepository {
     /**
      * Live, visible, unarchived projects whose name holds the query
@@ -214,6 +239,41 @@ export class ProjectRepository {
             select: { id: true, initiativeId: true },
         });
         return rows.flatMap((r) => (r.initiativeId ? [{ id: r.id, initiativeId: r.initiativeId }] : []));
+    }
+
+    /**
+     * The roadmap's projects (3.2c): the live, visible projects (archived ones
+     * included) of the given initiatives, and, with `unlinked`, those naming
+     * no live initiative (none, or one of `liveInitiativeIds` is not theirs:
+     * a deleted initiative shows as none). Narrowed to one team when asked.
+     * By name, then id; at most `take`.
+     */
+    static async roadmapProjects(
+        db: PrismaTx,
+        ctx: RequestContext,
+        v: ProjectVisibility,
+        scope: RoadmapProjectScope,
+        take: number,
+    ) {
+        const where = roadmapProjectWhere(ctx, v, scope);
+        if (!where) return [];
+        return db.project.findMany({
+            where,
+            orderBy: [{ name: 'asc' }, { id: 'asc' }],
+            take,
+            select: { id: true, name: true, keyPrefix: true, teamId: true, initiativeId: true, dueDate: true, archivedAt: true },
+        });
+    }
+
+    /** How many projects `roadmapProjects` would read with no limit: the count a refusal names. */
+    static async countRoadmapProjects(
+        db: PrismaTx,
+        ctx: RequestContext,
+        v: ProjectVisibility,
+        scope: RoadmapProjectScope,
+    ): Promise<number> {
+        const where = roadmapProjectWhere(ctx, v, scope);
+        return where ? db.project.count({ where }) : 0;
     }
 
     /** An initiative's live, visible projects (archived ones included), by name. */

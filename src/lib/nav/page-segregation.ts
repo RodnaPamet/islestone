@@ -59,7 +59,8 @@ export const MAIN_PAGES: readonly string[] = [
     '/views',
     '/projects',
     '/cycles',
-    // Sub-phase 3.2b (decision 222): the Roadmap entry's Goals and Initiatives pages.
+    // Decision 222: the Roadmap entry's three pages, the Roadmap page (3.2c), Goals and Initiatives (3.2b).
+    '/roadmap',
     '/roadmap/goals',
     '/roadmap/initiatives',
     '/intake',

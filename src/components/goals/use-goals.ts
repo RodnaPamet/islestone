@@ -28,6 +28,7 @@ export const GOAL_PATHS = {
     initiatives: (query = '') => `/initiatives${query}`,
     initiative: (id: string) => `/initiatives/${encodeURIComponent(id)}`,
     projectInitiative: (projectId: string) => `/projects/${encodeURIComponent(projectId)}/initiative`,
+    roadmap: (query = '') => `/roadmap${query}`,
 } as const;
 
 /** A list query from the filter state: comma-joined values, empty keys left out. */
@@ -81,11 +82,12 @@ export function useGoalWrites() {
     const tInitiatives = useTranslations('initiatives');
     const goalsUrl = apiUrl(GOAL_PATHS.goals());
     const initiativesUrl = apiUrl(GOAL_PATHS.initiatives());
+    const roadmapUrl = apiUrl(GOAL_PATHS.roadmap());
 
-    /** Every goals and initiatives read (lists, pages) again: progress and links move together. */
+    /** Every goals and initiatives read (lists, pages, the roadmap) again: progress and links move together. */
     const revalidate = useCallback(
-        () => mutate((key) => typeof key === 'string' && (key.startsWith(goalsUrl) || key.startsWith(initiativesUrl))),
-        [goalsUrl, initiativesUrl, mutate],
+        () => mutate((key) => typeof key === 'string' && (key.startsWith(goalsUrl) || key.startsWith(initiativesUrl) || key.startsWith(roadmapUrl))),
+        [goalsUrl, initiativesUrl, roadmapUrl, mutate],
     );
 
     const pathOf = useCallback((kind: Kind, id: string) => apiUrl(kind === 'goal' ? GOAL_PATHS.goal(id) : GOAL_PATHS.initiative(id)), [apiUrl]);

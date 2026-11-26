@@ -29,6 +29,7 @@ import { InitiativeView } from '@/components/goals/InitiativeView';
 import { __resetPendingUndoToastsForTest } from '@/components/ui/hooks/use-toast-with-undo';
 import type { GoalDetail, GoalSummary, InitiativeDetail, InitiativeSummary, RoadmapAffordances } from '@/lib/goals/types';
 
+import { uiStorageKey } from '@/lib/ui-storage';
 import { installFetch, MEMBERS, renderWorkspace, TEAM } from '../helpers/work-items-harness';
 
 const MANAGER: RoadmapAffordances = { view: true, manage: true, setHealth: true, linkProject: true, setItemGoal: true, createProject: true };
@@ -226,6 +227,41 @@ describe('the Initiatives page and an initiative\'s page', () => {
             await new Promise((r) => setTimeout(r, 50));
         });
         expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    });
+
+    it('shows its slice of the roadmap (3.2c) and its projects\' planned dates, read with the initiative fixed and archived projects shown', async () => {
+        pathname = '/t/acme/roadmap/initiatives/i-1';
+        window.localStorage.setItem(uiStorageKey('roadmap', 'mode'), JSON.stringify('table'));
+        const roadmap = {
+            asOf: '2026-03-01',
+            groupBy: 'initiative',
+            goals: [],
+            initiatives: [{ id: 'i-1', goalId: null, name: 'Self-serve checkout', status: 'STARTED', dueDate: null, health: null, leadUserId: null, archived: false, span: { start: '2026-01-05', end: '2026-02-20' }, progress: { scope: 5, done: 1, started: 2 }, late: false, finishesAfterDue: false }],
+            projects: [
+                { id: 'p-1', name: 'Checkout', keyPrefix: 'CHK', teamId: TEAM, initiativeId: 'i-1', dueDate: '2026-01-15', archived: false, span: { start: '2026-01-05', end: '2026-02-20' }, progress: { scope: 4, done: 1, started: 2 }, overdue: true, itemDueAfter: true, lateMilestones: 1, late: true, finishesAfterInitiativeDue: false, finishesAfterGoalDue: false },
+                { id: 'p-2', name: 'Old billing', keyPrefix: 'OBL', teamId: TEAM, initiativeId: 'i-1', dueDate: null, archived: true, span: null, progress: { scope: 1, done: 0, started: 0 }, overdue: false, itemDueAfter: false, lateMilestones: 0, late: false, finishesAfterInitiativeDue: false, finishesAfterGoalDue: false },
+            ],
+            milestones: [],
+            unlinked: { shown: false, span: null, progress: { scope: 0, done: 0, started: 0 } },
+        };
+        const { calls } = installFetch({ ...ASSIGNABLE, 'GET /initiatives/i-1': { body: INITIATIVE_DETAIL }, 'GET /roadmap': { body: roadmap } });
+        renderWorkspace(<InitiativeView initialDetail={INITIATIVE_DETAIL} goalOptions={[]} projects={[]} teams={[{ id: TEAM, name: 'Core' }]} affordances={{ ...READER, roadmap: true }} />, { role: 'VIEWER' });
+        expect(screen.getByRole('heading', { level: 2, name: 'Roadmap' })).toBeInTheDocument();
+        const slice = await screen.findByTestId('initiative-roadmap-table');
+        expect(within(slice).getByRole('link', { name: 'Open the timeline of Checkout' })).toHaveAttribute('href', '/t/acme/projects/CHK?layout=timeline');
+        const table = screen.getByTestId('initiative-projects-table');
+        await waitFor(() => expect(within(table).getByText(/Jan 5, 2026 – Feb 20, 2026|5 Jan 2026 – 20 Feb 2026/)).toBeInTheDocument());
+        const read = calls.find((c) => c.path === '/roadmap')!;
+        expect(Object.fromEntries(read.search)).toEqual({ initiativeId: 'i-1', archived: 'true' });
+        window.localStorage.clear();
+    });
+
+    it('reads no roadmap for a caller the server offers none', () => {
+        pathname = '/t/acme/roadmap/initiatives/i-1';
+        const { calls } = installFetch({ ...ASSIGNABLE, 'GET /initiatives/i-1': { body: INITIATIVE_DETAIL } });
+        renderWorkspace(<InitiativeView initialDetail={INITIATIVE_DETAIL} goalOptions={[]} projects={[]} teams={[]} affordances={READER} />, { role: 'VIEWER' });
+        expect(screen.queryByRole('heading', { level: 2, name: 'Roadmap' })).toBeNull();
+        expect(calls.some((c) => c.path === '/roadmap')).toBe(false);
     });
 
     it('offers no project link, removal or health control to a reader', () => {

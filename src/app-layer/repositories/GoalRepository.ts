@@ -9,7 +9,7 @@
  *
  * Written fresh for Islestone.
  */
-import type { GoalStatus, Health, Prisma } from '@prisma/client';
+import { Prisma, type GoalStatus, type Health } from '@prisma/client';
 
 import type { PrismaTx } from '@/lib/db-context';
 import type { RequestContext } from '../types';
@@ -83,6 +83,21 @@ export type GoalPatch = Partial<{
     healthSetByUserId: string | null;
 }>;
 
+/** A live goal or initiative as the roadmap reads it (`roadmapRecords`, 3.2c). */
+export interface RoadmapRecordRow {
+    kind: 'goal' | 'initiative';
+    id: string;
+    /** A goal's parent goal, or an initiative's goal. */
+    parentId: string | null;
+    /** A goal's title or an initiative's name. */
+    label: string;
+    status: GoalStatus;
+    dueDate: Date | null;
+    leadUserId: string | null;
+    health: Health | null;
+    archivedAt: Date | null;
+}
+
 export class GoalRepository {
     static async list(db: PrismaTx, ctx: Ctx, opts: GoalListOptions = {}): Promise<GoalRow[]> {
         const and: Prisma.GoalWhereInput[] = [];
@@ -129,6 +144,28 @@ export class GoalRepository {
             take,
             select: { id: true, parentId: true },
         });
+    }
+
+    /**
+     * Every live goal and initiative of the workspace, archived ones included,
+     * with what the roadmap shows of them (3.2c), in ONE statement (the
+     * roadmap's budget is seven statements a request): never a description.
+     * At most `take` of each, in id order.
+     */
+    static async roadmapRecords(db: PrismaTx, ctx: Ctx, take: number): Promise<RoadmapRecordRow[]> {
+        const t = ctx.tenantId;
+        return db.$queryRaw<RoadmapRecordRow[]>(Prisma.sql`
+            (SELECT 'goal'::text AS "kind", g."id", g."parentId" AS "parentId", g."title" AS "label", g."status"::text AS "status",
+                    g."dueDate", g."leadUserId", g."health"::text AS "health", g."archivedAt"
+               FROM "Goal" g
+              WHERE g."tenantId" = ${t} AND g."deletedAt" IS NULL
+              ORDER BY g."id" LIMIT ${take})
+            UNION ALL
+            (SELECT 'initiative'::text, i."id", i."goalId", i."name", i."status"::text,
+                    i."dueDate", i."leadUserId", i."health"::text, i."archivedAt"
+               FROM "Initiative" i
+              WHERE i."tenantId" = ${t} AND i."deletedAt" IS NULL
+              ORDER BY i."id" LIMIT ${take})`);
     }
 
     /** Any goal of the workspace, deleted included. */
