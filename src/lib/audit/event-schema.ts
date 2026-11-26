@@ -24,6 +24,13 @@ export const EntityLifecycleSchema = z.object({
     before: z.record(z.string(), z.unknown()).optional(),
     after: z.record(z.string(), z.unknown()).optional(),
     summary: z.string().optional(),
+    /**
+     * Where the change came from when not Islestone's own forms: `calendar`, a
+     * day moved in a member's calendar and applied as their edit (roadmap
+     * 3.3c, owner decision 225), with the calendar's provider.
+     */
+    via: z.literal('calendar').optional(),
+    provider: z.enum(['GOOGLE', 'MICROSOFT']).optional(),
 }).strict();
 
 // ─── Status Change ──────────────────────────────────────────────────

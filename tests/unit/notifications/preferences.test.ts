@@ -12,7 +12,9 @@ import { dueGroup } from '@/app-layer/jobs/notification-digest';
 import {
     choiceRefusal,
     EMAIL_DELIVERIES,
+    emailChoicesFor,
     IMMEDIATE_EMAIL_TYPES,
+    IN_APP_ONLY_TYPES,
     PREFERENCE_DEFAULTS,
     PREFERENCE_TYPES,
     resolveDelivery,
@@ -48,6 +50,18 @@ describe('preference defaults and types', () => {
     it('no default is louder than its type allows', () => {
         for (const type of Object.values(NotificationType)) {
             if (PREFERENCE_DEFAULTS[type].email === 'IMMEDIATE') expect(IMMEDIATE_EMAIL_TYPES as readonly string[]).toContain(type);
+            if ((IN_APP_ONLY_TYPES as readonly string[]).includes(type)) expect(PREFERENCE_DEFAULTS[type].email).toBe('OFF');
+        }
+    });
+
+    it('a calendar change not applied is in the bell only (3.3c, decision 230): offered OFF alone, never mailed', () => {
+        expect(IN_APP_ONLY_TYPES).toEqual(['CALENDAR_CHANGE_NOT_APPLIED']);
+        expect(PREFERENCE_DEFAULTS.CALENDAR_CHANGE_NOT_APPLIED).toEqual({ inApp: true, email: 'OFF' });
+        expect(emailChoicesFor('CALENDAR_CHANGE_NOT_APPLIED')).toEqual(['OFF']);
+        expect(emailChoicesFor('WORK_ITEM_ASSIGNED')).toEqual(['OFF', 'IMMEDIATE', 'DAILY']);
+        expect(emailChoicesFor('WORK_ITEM_DUE')).toEqual(['OFF', 'DAILY']);
+        for (const email of EMAIL_DELIVERIES) {
+            expect(resolveDelivery('CALENDAR_CHANGE_NOT_APPLIED', { inApp: true, emailDelivery: email }, OPEN).email).toBe('OFF');
         }
     });
 });
@@ -103,6 +117,12 @@ describe('choiceRefusal', () => {
         expect(choiceRefusal('WORK_ITEM_WATCH_UPDATE', { inApp: false, email: 'DAILY' })).toBe('DAILY_NEEDS_IN_APP');
         expect(choiceRefusal('WORK_ITEM_DUE', { inApp: false, email: 'DAILY' })).toBeNull();
         expect(choiceRefusal('WORK_ITEM_ASSIGNED', { inApp: false, email: 'IMMEDIATE' })).toBeNull();
+    });
+
+    it('refuses any email for an in-app-only kind', () => {
+        expect(choiceRefusal('CALENDAR_CHANGE_NOT_APPLIED', { inApp: true, email: 'DAILY' })).toBe('EMAIL_NOT_OFFERED');
+        expect(choiceRefusal('CALENDAR_CHANGE_NOT_APPLIED', { inApp: true, email: 'IMMEDIATE' })).toBe('EMAIL_NOT_OFFERED');
+        expect(choiceRefusal('CALENDAR_CHANGE_NOT_APPLIED', { inApp: false, email: 'OFF' })).toBeNull();
     });
 });
 

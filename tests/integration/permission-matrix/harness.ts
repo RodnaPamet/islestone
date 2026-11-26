@@ -429,6 +429,19 @@ async function buildFixture(name: FixtureName, w: World, prisma: PrismaClient, c
             });
             return {};
         }
+        // Sync on, and the caller's connection whose Islestone calendar was deleted at the provider (3.3c): "Recreate".
+        case 'ownRemovedCalendar': {
+            process.env.GOOGLE_CLIENT_ID ??= 'matrix-google-client';
+            process.env.GOOGLE_CLIENT_SECRET ??= 'matrix-google-secret'; // pragma: allowlist secret
+            process.env.NEXT_PUBLIC_APP_URL ??= 'https://matrix.example.test';
+            await prisma.tenantCalendarSettings.upsert({ where: { tenantId: w.tenantId }, create: { tenantId: w.tenantId, syncEnabled: true }, update: { syncEnabled: true } });
+            await prisma.calendarConnection.upsert({
+                where: { tenantId_userId_provider: { tenantId: w.tenantId, userId: me, provider: 'GOOGLE' } },
+                create: { tenantId: w.tenantId, userId: me, provider: 'GOOGLE', state: 'CALENDAR_REMOVED', tokenEncrypted: 'matrix-token-never-read' },
+                update: { state: 'CALENDAR_REMOVED', revokedReason: null, tokenEncrypted: 'matrix-token-never-read', externalCalendarId: null },
+            });
+            return {};
+        }
         case 'ownNotification': {
             const row = await prisma.notification.create({ data: { tenantId: w.tenantId, userId: me, title: 'Matrix', body: 'for you' } });
             return { id: row.id };

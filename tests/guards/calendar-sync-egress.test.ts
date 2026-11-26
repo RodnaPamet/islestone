@@ -3,13 +3,15 @@
  * docs/porting/maps/3.3.md, "Egress, CSP and the sub-processor register";
  * ADR 0011 §6; owner decision 236):
  *
- *   1. One module talks to the providers. Every calendar sync file
+ *   1. Two modules talk to the providers. Every calendar sync file
  *      (`src/app-layer/integrations/providers/calendar/`, the calendar
  *      usecases, `src/lib/calendar-sync/`, the two callback routes) calls no
  *      fetch of any name, except `provider-http.ts`, which calls `fetch(` once,
- *      after the fixed-origin check (`providerUrlAllowed`). So no calendar code
- *      reaches a host a provider or a person chose; a server-supplied link
- *      (3.3c's Graph nextLink) must go through `safeFetch` and its sink row.
+ *      after the fixed-origin check (`providerUrlAllowed`), and
+ *      `provider-next-link.ts` (3.3c), which calls `safeFetch(` once, after
+ *      the pinned-origin check (`nextLinkAllowed`), for Graph's server-supplied
+ *      `@odata.nextLink` (its SSRF sink row is in `ssrf-egress-coverage`). So
+ *      no calendar code reaches a host a provider or a person chose.
  *   2. Islestone never calls Google's token revocation endpoint: with one app
  *      for sign-in and calendar, revoking a calendar token may withdraw the
  *      person's whole grant, sign-in included. No file under `src/` names it.
@@ -36,6 +38,7 @@ const CALENDAR_PATHS = [
     /^src\/app\/api\/t\/\[tenantSlug\]\/calendar-sync\//,
 ];
 const HTTP_MODULE = 'src/app-layer/integrations/providers/calendar/provider-http.ts';
+const NEXT_LINK_MODULE = 'src/app-layer/integrations/providers/calendar/provider-next-link.ts';
 const ANY_FETCH_CALL = /\w*fetch\s*\(/gi;
 const URL_LITERAL = /https?:\/\/[^\s'"`]+/g;
 const REVOKE_PATH = /^\/(?:o\/oauth2\/|oauth2\/v\d+\/)?revoke\/?$/;
@@ -74,6 +77,11 @@ export function calendarFetchSinks(root: string): string[] {
                 const ok = plain.length === 1 && found.length === 1 && code.indexOf('providerUrlAllowed(url)') > -1 && code.indexOf('providerUrlAllowed(url)') < code.indexOf('await fetch(');
                 return ok ? [] : [rel];
             }
+            if (rel === NEXT_LINK_MODULE) {
+                // Exactly one `safeFetch(`, and only after the pinned-origin check.
+                const ok = found.length === 1 && /^safeFetch\s*\(/.test(found[0]!) && code.indexOf('nextLinkAllowed(url)') > -1 && code.indexOf('nextLinkAllowed(url)') < code.indexOf('await safeFetch(');
+                return ok ? [] : [rel];
+            }
             return found.length > 0 ? [rel] : [];
         });
 }
@@ -89,10 +97,10 @@ export function calendarNextAuthImports(root: string): string[] {
 describe('calendar sync egress, in this repository', () => {
     it('the population is real: the provider module and the calendar usecases are found', () => {
         const rels = sources(REPO_ROOT).map((s) => s.rel).filter(isCalendar);
-        expect(rels).toEqual(expect.arrayContaining([HTTP_MODULE, 'src/app-layer/integrations/providers/calendar/token.ts', 'src/app-layer/usecases/calendar-sync-run.ts', 'src/app/api/integrations/calendar/callback/route.ts']));
+        expect(rels).toEqual(expect.arrayContaining([HTTP_MODULE, NEXT_LINK_MODULE, 'src/app-layer/integrations/providers/calendar/reader.ts', 'src/app-layer/integrations/providers/calendar/token.ts', 'src/app-layer/usecases/calendar-sync-run.ts', 'src/app/api/integrations/calendar/callback/route.ts']));
     });
 
-    it('only provider-http.ts calls fetch, once, after the fixed-origin check', () => {
+    it('only provider-http.ts calls fetch, once, after the fixed-origin check, and only provider-next-link.ts calls safeFetch, once, after the pinned-origin check', () => {
         expect(calendarFetchSinks(REPO_ROOT)).toEqual([]);
     });
 
@@ -113,6 +121,8 @@ describe('the detectors, against a planted repository', () => {
         execFileSync('git', ['init', '-q'], { cwd: root, env: gitEnvFor() });
         const plant: Record<string, string> = {
             [HTTP_MODULE]: "if (!providerUrlAllowed(url)) throw new Error('x');\nconst res = await fetch(url, init);\n",
+            [NEXT_LINK_MODULE]: "const res = await safeFetch(url, init);\nif (!nextLinkAllowed(url)) throw new Error('late');\n",
+            'src/app-layer/integrations/providers/calendar/reader.ts': "const r = await safeFetch(next);\n",
             'src/app-layer/integrations/providers/calendar/stray.ts': 'export const r = await fetch(nextLink);\n',
             'src/app-layer/usecases/calendar-sync-run.ts': 'const r = await resilientFetch(u);\n',
             'src/lib/calendar-sync/fine.ts': "// fetch(x) in a comment\nimport type { Session } from 'next-auth';\nexport const a = 1;\n",
@@ -130,8 +140,13 @@ describe('the detectors, against a planted repository', () => {
 
     afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
-    it('flags a calendar file with its own fetch of any name, never the provider module or a comment or a file outside calendar sync', () => {
-        expect(calendarFetchSinks(root).sort()).toEqual(['src/app-layer/integrations/providers/calendar/stray.ts', 'src/app-layer/usecases/calendar-sync-run.ts']);
+    it('flags a calendar file with its own fetch of any name (safeFetch too outside the next-link module, or the next-link module checking after it), never the provider module or a comment or a file outside calendar sync', () => {
+        expect(calendarFetchSinks(root).sort()).toEqual([
+            NEXT_LINK_MODULE,
+            'src/app-layer/integrations/providers/calendar/reader.ts',
+            'src/app-layer/integrations/providers/calendar/stray.ts',
+            'src/app-layer/usecases/calendar-sync-run.ts',
+        ]);
     });
 
     it('flags the revoke endpoint wherever it is named, and a value import of next-auth in a calendar file (not a type import)', () => {

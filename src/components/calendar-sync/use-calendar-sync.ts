@@ -15,7 +15,7 @@ import { useTranslations } from 'next-intl';
 import { useCallback } from 'react';
 
 import { useToast, useToastWithUndo } from '@/components/ui/hooks';
-import type { CalendarProviderName, CalendarSyncSettingsView, MyCalendarSyncView } from '@/lib/calendar-sync/types';
+import type { CalendarConnectionAction, CalendarProviderName, CalendarSyncSettingsView, MyCalendarSyncView } from '@/lib/calendar-sync/types';
 import { ApiClientError, apiSend } from '@/lib/data/api-client';
 import { useTenantSWR } from '@/lib/data/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
@@ -27,6 +27,7 @@ export const CALENDAR_SYNC_PATHS = {
     microsoftConsent: '/calendar-sync/microsoft-consent',
     connect: (provider: CalendarProviderName) => `/calendar-sync/connect?provider=${provider === 'GOOGLE' ? 'google' : 'microsoft'}`,
     connections: '/calendar-sync/connections',
+    /** One connection of the caller's: DELETE disconnects, POST `{ action }` resyncs or recreates. */
     disconnect: (provider: CalendarProviderName) => `/calendar-sync/connections?provider=${provider === 'GOOGLE' ? 'google' : 'microsoft'}`,
 } as const;
 
@@ -71,7 +72,22 @@ export function useMyCalendarSync() {
         [apiUrl, swr, tMember, toast, triggerUndo],
     );
 
-    return { ...swr, connect, disconnect };
+    // "Resync my calendar" and "Recreate" (3.3c, decision 232): sent at once (they put events back, they remove nothing).
+    const act = useCallback(
+        async (provider: CalendarProviderName, action: CalendarConnectionAction) => {
+            try {
+                await apiSend('POST', apiUrl(CALENDAR_SYNC_PATHS.disconnect(provider)), { action });
+                toast.success(action === 'resync' ? tMember('resyncQueued') : tMember('recreateQueued'));
+            } catch (err) {
+                toast.error(refusal(err, tMember('actFailed')));
+            } finally {
+                await swr.mutate();
+            }
+        },
+        [apiUrl, swr, tMember, toast],
+    );
+
+    return { ...swr, connect, disconnect, act };
 }
 
 export function useCalendarSyncSettings(enabled: boolean) {

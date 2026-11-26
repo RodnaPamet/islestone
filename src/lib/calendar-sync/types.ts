@@ -34,6 +34,10 @@ export interface CalendarSyncSettingsView {
 
 export type ProviderUnavailableReason = 'SYNC_OFF' | 'NOT_CONFIGURED' | 'MICROSOFT_NOT_AUTHORISED';
 
+/** What the member asks of a connection (3.3c, decision 232): put deleted events back, or a deleted Islestone calendar. */
+export const CALENDAR_CONNECTION_ACTIONS = ['resync', 'recreate'] as const;
+export type CalendarConnectionAction = (typeof CALENDAR_CONNECTION_ACTIONS)[number];
+
 /** The member's own section (decision 235). */
 export interface MyCalendarSyncView {
     syncEnabled: boolean;
@@ -46,6 +50,8 @@ export interface MyCalendarSyncView {
         connectedAt: string;
         lastSyncedAt: string | null;
         revokedReason: string | null;
+        /** Events the member deleted in the calendar, not pushed again until their date changes or "Resync" (3.3c, decision 232). */
+        removedInCalendar: number;
     }>;
     /** How many of the member's items are in the window (the read's count, never guessed), and the limit pushed. */
     items: { inWindow: number; limit: number };

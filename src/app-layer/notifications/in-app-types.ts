@@ -3,7 +3,7 @@
  * notification-settings API.
  *
  * A type is listed ONLY when its emitter asks `isInAppTypeEnabled` before it
- * writes (`assignment.ts`, `watcher.ts`, `work-item-due.ts`, `intake.ts`, `mention.ts`, `review.ts`), so the API never offers a mute that
+ * writes (`assignment.ts`, `watcher.ts`, `work-item-due.ts`, `intake.ts`, `mention.ts`, `review.ts`, `calendar-change.ts`), so the API never offers a mute that
  * changes nothing. A new in-app emitter must do both — check the mute list and
  * add its type here — or its type is not listed;
  * `tests/unit/notifications/in-app-types.test.ts` holds the two together.
@@ -27,6 +27,7 @@ import { WORK_ITEM_DUE_NOTIFICATION_TITLE, WORK_ITEM_DUE_NOTIFICATION_TYPE } fro
 import { INTAKE_NOTIFICATION_COPY, type IntakeNotificationType } from './intake';
 import { MENTION_NOTIFICATION_TITLE, MENTION_NOTIFICATION_TYPE } from './mention';
 import { REVIEW_NOTIFICATION_COPY, type ReviewNotificationType } from './review';
+import { CALENDAR_CHANGE_NOTIFICATION_TITLE, CALENDAR_CHANGE_NOTIFICATION_TYPE } from './calendar-change';
 
 export interface InAppNotificationTypeEntry {
     type: NotificationType;
@@ -51,5 +52,6 @@ export function listInAppNotificationTypes(): InAppNotificationTypeEntry[] {
             type,
             title: INTAKE_NOTIFICATION_COPY[type].title,
         })),
+        { type: CALENDAR_CHANGE_NOTIFICATION_TYPE, title: CALENDAR_CHANGE_NOTIFICATION_TITLE },
     ];
 }

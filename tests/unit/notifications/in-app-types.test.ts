@@ -29,6 +29,7 @@ import { WORK_ITEM_DUE_NOTIFICATION_TITLE, WORK_ITEM_DUE_NOTIFICATION_TYPE } fro
 import { INTAKE_NOTIFICATION_COPY } from '@/app-layer/notifications/intake';
 import { MENTION_NOTIFICATION_TITLE, MENTION_NOTIFICATION_TYPE } from '@/app-layer/notifications/mention';
 import { REVIEW_NOTIFICATION_COPY } from '@/app-layer/notifications/review';
+import { CALENDAR_CHANGE_NOTIFICATION_TITLE, CALENDAR_CHANGE_NOTIFICATION_TYPE } from '@/app-layer/notifications/calendar-change';
 
 import { codeOf } from '../../helpers/source-blocks';
 
@@ -54,6 +55,8 @@ describe('the in-app type catalogue', () => {
             ...Object.entries(REVIEW_NOTIFICATION_COPY).map(([type, copy]) => ({ type, title: copy.title })),
             // Sub-phase 2.6a: the two intake bells.
             ...Object.entries(INTAKE_NOTIFICATION_COPY).map(([type, copy]) => ({ type, title: copy.title })),
+            // Sub-phase 3.3c: a calendar change not applied.
+            { type: CALENDAR_CHANGE_NOTIFICATION_TYPE, title: CALENDAR_CHANGE_NOTIFICATION_TITLE },
         ]);
     });
 
@@ -72,6 +75,7 @@ describe('the in-app type catalogue', () => {
             'src/app-layer/notifications/intake.ts',
             'src/app-layer/notifications/mention.ts',
             'src/app-layer/notifications/review.ts',
+            'src/app-layer/notifications/calendar-change.ts',
         ]) {
             expect({ file, mutesFirst: checksMuteBeforeWrite(read(file)) }).toEqual({ file, mutesFirst: true });
         }

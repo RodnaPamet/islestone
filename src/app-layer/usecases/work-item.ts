@@ -1096,7 +1096,19 @@ export interface UpdateWorkItemInput {
  * item has moved on. The audit entry lists the changed field NAMES only,
  * never the description's text (ADR 0002 §11).
  */
-export async function updateWorkItem(ctx: RequestContext, id: string, input: UpdateWorkItemInput, expectedVersion?: number) {
+/**
+ * Where an edit came from, when not the item's own forms: the calendar
+ * read-back (3.3c, decision 225) applies a moved day as the member's own
+ * due-date edit through this function, refused on a closed item (409
+ * `ITEM_CLOSED`, decision 225's checks) and audited with `via` and the
+ * provider.
+ */
+export interface UpdateWorkItemVia {
+    via: 'calendar';
+    provider: 'GOOGLE' | 'MICROSOFT';
+}
+
+export async function updateWorkItem(ctx: RequestContext, id: string, input: UpdateWorkItemInput, expectedVersion?: number, origin?: UpdateWorkItemVia) {
     assertCanEditWorkItems(ctx);
     if ((input.title !== undefined || input.description !== undefined) && expectedVersion === undefined) {
         throw preconditionRequired();
@@ -1119,6 +1131,10 @@ export async function updateWorkItem(ctx: RequestContext, id: string, input: Upd
             if (!type) throw notFound('Work item type not found');
             if (type.archivedAt) throw badRequest(`The type ${type.name} is archived.`);
             patch.typeId = type.id;
+        }
+        // A change read back from a calendar never reaches a closed item (3.3c, decision 225).
+        if (origin && isClosedCategory(before.stateCategory)) {
+            throw new ConflictError('The work item is closed; its due date is not changed from a calendar.', { reason: 'ITEM_CLOSED' });
         }
         const changedFields = Object.keys(patch);
         if (changedFields.length === 0) return { item: before, changedFields, dueChanged: false, startChanged: false, mentioned: [] as string[] };
@@ -1150,9 +1166,17 @@ export async function updateWorkItem(ctx: RequestContext, id: string, input: Upd
             action: 'WORK_ITEM_UPDATED',
             entityType: 'WorkItem',
             entityId: id,
-            details: `Updated work item ${keyOf(before)}`,
-            detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'updated', changedFields },
-            metadata: { changedFields },
+            details: origin ? `Updated work item ${keyOf(before)} from a calendar` : `Updated work item ${keyOf(before)}`,
+            detailsJson: {
+                category: 'entity_lifecycle',
+                entityName: 'WorkItem',
+                operation: 'updated',
+                changedFields,
+                ...(origin ? { via: origin.via, provider: origin.provider } : {}),
+            },
+            metadata: origin
+                ? { changedFields, via: origin.via, provider: origin.provider, dueDate: { from: dateOnly(before.dueDate), to: dateOnly(patch.dueDate ?? null) } }
+                : { changedFields },
         });
         const dueChanged = input.dueDate !== undefined && (before.dueDate?.getTime() ?? null) !== (patch.dueDate?.getTime() ?? null);
         const startChanged = input.startDate !== undefined;

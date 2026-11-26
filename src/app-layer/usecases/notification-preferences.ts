@@ -13,8 +13,7 @@ import { badRequest } from '@/lib/errors/types';
 import type { PreferenceRowData, PreferencesData } from '@/lib/notifications/inbox';
 import {
     choiceRefusal,
-    EMAIL_DELIVERIES,
-    offersImmediateEmail,
+    emailChoicesFor,
     PREFERENCE_TYPES,
     resolveDelivery,
     type PreferenceCeiling,
@@ -50,7 +49,7 @@ function project(ceiling: PreferenceCeiling, rows: readonly NotificationPreferen
             effectiveEmail: r.email,
             inAppCap: r.inAppCap,
             emailCap: r.emailCap,
-            emailChoices: EMAIL_DELIVERIES.filter((d) => d !== 'IMMEDIATE' || offersImmediateEmail(type)),
+            emailChoices: emailChoicesFor(type),
         };
     });
     return { rows: out, workspace: { emailEnabled: ceiling.emailEnabled, mutedInAppTypes: [...ceiling.mutedInAppTypes] } };
@@ -67,9 +66,9 @@ export async function getMyNotificationPreferences(ctx: RequestContext): Promise
 /**
  * Change some types (a partial update): a choice is stored as the member's
  * row, `reset` deletes it so the type's default applies again. A choice the
- * type does not offer is a 400 naming why (`IMMEDIATE_NOT_OFFERED`,
- * `DAILY_NEEDS_IN_APP`); the migration's CHECK holds the first for every
- * writer. Audited `NOTIFICATION_PREFERENCES_UPDATED` with the changed types and
+ * type does not offer is a 400 naming why (`EMAIL_NOT_OFFERED`,
+ * `IMMEDIATE_NOT_OFFERED`, `DAILY_NEEDS_IN_APP`); the migrations' CHECKs
+ * hold the first two for every writer. Audited `NOTIFICATION_PREFERENCES_UPDATED` with the changed types and
  * their values, before and after (configuration, no personal data).
  */
 export async function updateMyNotificationPreferences(ctx: RequestContext, input: UpdatePreferencesInput): Promise<PreferencesData> {
@@ -81,12 +80,12 @@ export async function updateMyNotificationPreferences(ctx: RequestContext, input
         if ('reset' in row) continue;
         const refusal = choiceRefusal(row.type, { inApp: row.inApp, email: row.email });
         if (refusal) {
-            throw badRequest(
-                refusal === 'IMMEDIATE_NOT_OFFERED'
-                    ? `Immediate email is not offered for ${row.type}.`
-                    : `The daily digest lists ${row.type} notifications from the bell, so it needs the bell on.`,
-                { reason: refusal, type: row.type },
-            );
+            const text = {
+                EMAIL_NOT_OFFERED: `${row.type} notifications are shown in the bell only, never by email.`,
+                IMMEDIATE_NOT_OFFERED: `Immediate email is not offered for ${row.type}.`,
+                DAILY_NEEDS_IN_APP: `The daily digest lists ${row.type} notifications from the bell, so it needs the bell on.`,
+            }[refusal];
+            throw badRequest(text, { reason: refusal, type: row.type });
         }
     }
     return runInTenantContext(ctx, async (db) => {

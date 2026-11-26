@@ -7,8 +7,9 @@
  * configures a host, so a plain `fetch` with no redirects, a timeout and a
  * capped body read. The URL is checked against the list before the request,
  * so a path built from a provider's identifier can never point elsewhere.
- * No server-supplied URL is followed in 3.3b (Graph's `@odata.nextLink` is the
- * read-back's, 3.3c, through `safeFetch` with its origin pinned).
+ * No server-supplied URL is followed here: Graph's `@odata.nextLink` (the
+ * read-back's, 3.3c) goes through `provider-next-link.ts`, `safeFetch` with its
+ * origin pinned, and is read by the same `interpretProviderResponse`.
  *
  * Failures are classified here once: a token endpoint's `400` with a
  * credential code, and any 401 or 403, is `IntegrationAuthError` (terminal for
@@ -32,7 +33,7 @@ export const CALENDAR_PROVIDER_ORIGINS = [
     'https://graph.microsoft.com',
 ] as const;
 
-const TIMEOUT_MS = 15_000;
+export const PROVIDER_TIMEOUT_MS = 15_000;
 /** A calendar answer is small JSON; anything larger is refused. */
 export const PROVIDER_JSON_MAX_BYTES = 2 * 1024 * 1024;
 
@@ -66,8 +67,17 @@ export async function providerRequest(
         headers: { Accept: 'application/json', ...init.headers },
         body: init.body,
         redirect: 'error',
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
     });
+    return interpretProviderResponse(res, opts);
+}
+
+/**
+ * Read a provider's answer once: a capped body, parsed JSON, and the
+ * classification every calendar call shares (a refused credential, a
+ * throttle, a server error). Also the reader of a followed `nextLink`.
+ */
+export async function interpretProviderResponse(res: Response, opts: { tokenEndpoint?: boolean } = {}): Promise<ProviderResponse> {
     const text = res.status === 204 ? '' : await readCappedBody(res, PROVIDER_JSON_MAX_BYTES);
     let json: unknown = null;
     if (text) {

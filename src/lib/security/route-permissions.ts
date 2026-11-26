@@ -595,9 +595,9 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     },
     {
         path: new RegExp(`^${T}\\/calendar-sync\\/connections$`),
-        methods: ['GET', 'DELETE'],
+        methods: ['GET', 'POST', 'DELETE'],
         permission: 'work_items.view',
-        note: "The caller's own calendar connections and their disconnect (decision 235).",
+        note: "The caller's own calendar connections, their resync or recreate (3.3c, decision 232) and their disconnect (decision 235).",
     },
     // ── Default review steps per type (sub-phase 2.8c; owner decisions 149, 159, 160) ──
     {
