@@ -160,13 +160,27 @@ jobs:
   # from; a miss seeds it (about two minutes) and saves the dump, a hit
   # restores it. Either way it is verified before anything is measured. Then
   # the plan checks (tests/perf/plans.test.ts) and the statements per request
-  # (tests/perf/statements.test.ts, pg_stat_statements). Latency is H2b's.
+  # (tests/perf/statements.test.ts, pg_stat_statements). Then (H2b) the
+  # latency harness against the built app (scripts/perf/run.mjs): reported,
+  # not blocking on latency (decision 168), but a scenario that measured
+  # nothing fails the job. The budgets block only the nightly 100k run
+  # (.github/workflows/perf.yml).
   performance:
     name: Performance (10k)
+    needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     permissions:
       contents: read
+    services:
+      # The built app refuses to start without an authenticated Redis (1.6).
+      redis:
+        image: redis:7.4.12-alpine3.22
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       # The usecases go through PgBouncer as production does; the bulk writer,
       # the verification and the plan checks connect directly.
@@ -179,6 +193,12 @@ jobs:
       LOG_LEVEL: warn
       PERF_SHAPE: 10k
       PERF_REPORT_DIR: perf-report
+      # The seed wraps each workspace's data key and hashes its emails under
+      # this key, and the harness's server reads them with it, so it is one
+      # throwaway value, the same in perf.yml; the dump's cache key carries
+      # `k1` for it (change both together). Never a real key.
+      DATA_ENCRYPTION_KEY: ci-perf-data-encryption-key-not-a-real-secret-k1 # pragma: allowlist secret
+      REDIS_URL: redis://:islestone_ci@127.0.0.1:6379
     steps:
       - uses: actions/checkout@v7
         with:
@@ -195,7 +215,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: .perf-cache/seed-10k.dump
-          key: perf-seed-10k-${{ hashFiles('prisma/migrations/**', 'scripts/seed-scale/**', 'deploy/postgres/**') }}
+          key: perf-seed-10k-k1-${{ hashFiles('prisma/migrations/**', 'scripts/seed-scale/**', 'deploy/postgres/**') }}
       - name: Restore the dump
         if: steps.seed-cache.outputs.cache-hit == 'true'
         run: scripts/seed-scale/cache.sh restore islestone_perf .perf-cache/seed-10k.dump
@@ -219,6 +239,23 @@ jobs:
         run: docker exec islestone-ci-postgres psql -q -U islestone -d islestone_perf -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements'
       - name: Plan checks and statements per request (blocking)
         run: npm run test:perf -- --ci
+      - name: Download the build
+        uses: actions/download-artifact@v8
+        with:
+          name: next-build
+          path: .next
+      - name: Configure Redis (noeviction, password)
+        run: |
+          docker exec ${{ job.services.redis.id }} redis-cli CONFIG SET maxmemory-policy noeviction
+          docker exec ${{ job.services.redis.id }} redis-cli CONFIG SET requirepass islestone_ci
+      - name: Start the built app (scripts/perf/serve.sh)
+        run: scripts/perf/serve.sh start
+      # Latency at 10k, reported (decision 168); a run that measured nothing fails.
+      - name: Latency harness (reported; a run that measured nothing fails)
+        run: node scripts/perf/run.mjs --shape 10k
+      - name: Stop the app
+        if: always()
+        run: scripts/perf/serve.sh stop
       - name: Upload the performance report
         if: always()
         uses: actions/upload-artifact@v7
