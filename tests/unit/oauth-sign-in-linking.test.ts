@@ -136,3 +136,20 @@ describe('a provider that reports email_verified=false (#5306)', () => {
         }
     });
 });
+
+describe('a provider address holding a look-alike character (decision 252)', () => {
+    it('is refused before any account is read, linked or claimed', async () => {
+        const lookalike = '\u212Aai@example.com'; // the Kelvin sign hashes as "kai@example.com"
+        await expect(
+            signIn({
+                user: { id: 'new-oauth-user', email: lookalike },
+                account: { provider: 'google', type: 'oauth', providerAccountId: 'google-sub-1' },
+                profile: { email: lookalike, email_verified: true },
+            }),
+        ).resolves.toBe(false);
+        expect(p.user.findUnique).not.toHaveBeenCalled();
+        expect(p.account.create).not.toHaveBeenCalled();
+        expect(claimAccountForVerifiedEmail).not.toHaveBeenCalled();
+        expect(redeemPendingInvitesByEmail).not.toHaveBeenCalled();
+    });
+});

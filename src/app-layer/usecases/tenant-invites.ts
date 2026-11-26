@@ -28,6 +28,7 @@ import { runInTenantContext } from '@/lib/db-context';
 import { notFound, badRequest, forbidden, gone, internal, ConflictError } from '@/lib/errors/types';
 import { prisma } from '@/lib/prisma';
 import { hashForLookup } from '@/lib/security/encryption';
+import { hasAsciiLookalike, LOOKALIKE_EMAIL_MESSAGE } from '@/lib/email-lookalike';
 import {
     BUILT_IN_SCOPE_REFUSAL,
     builtInScopeRoleMessage,
@@ -100,6 +101,11 @@ export async function createInviteToken(
     }
 
     const normalizedEmail = input.email.toLowerCase().trim();
+    // Decision 252: a look-alike address would hash as the one it imitates.
+    // Asked of the raw input: lower-casing turns the Kelvin sign into "k".
+    if (hasAsciiLookalike(input.email)) {
+        throw badRequest(LOOKALIKE_EMAIL_MESSAGE, { reason: 'EMAIL_LOOKALIKE' });
+    }
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
 

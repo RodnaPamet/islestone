@@ -187,6 +187,11 @@ describe('createOrgInviteToken', () => {
         ).rejects.toThrow(/email is required/i);
     });
 
+    it('refuses a look-alike address with EMAIL_LOOKALIKE, before any read (decision 252)', async () => {
+        const err = await createOrgInviteToken(orgCtx, { email: '\u212Aai@example.com', role: 'ORG_READER' as any }).catch((e: unknown) => e);
+        expect((err as { details?: unknown }).details).toEqual({ reason: 'EMAIL_LOOKALIKE' });
+    });
+
     it('rejects an invalid role with badRequest naming the value', async () => {
         await expect(
             createOrgInviteToken(orgCtx, { email: 'x@y.z', role: 'OWNER' as any }),

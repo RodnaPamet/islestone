@@ -406,7 +406,8 @@
             "WORKSPACE_NAME_REQUIRED": "Enter a name for your workspace.",
             "INVITE_UNAVAILABLE": "Your invitation is no longer available. Ask your admin to send a new one.",
             "INVITE_EMAIL_MISMATCH": "Register with the email address your invitation was sent to.",
-            "PUBLIC_SIGNUP_CLOSED": "Sign-up is closed on this site. Ask a workspace administrator for an invitation."
+            "PUBLIC_SIGNUP_CLOSED": "Sign-up is closed on this site. Ask a workspace administrator for an invitation.",
+            "EMAIL_LOOKALIKE": "This email address contains a character that imitates another letter. Type the address with ordinary letters."
         }
     },
     "mfa": {

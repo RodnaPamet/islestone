@@ -27,6 +27,11 @@ export const REGISTER_REFUSALS = [
      * open.
      */
     'PUBLIC_SIGNUP_CLOSED',
+    /**
+     * An address holding a character that folds into ASCII, which would hash
+     * as the address it imitates (decision 252).
+     */
+    'EMAIL_LOOKALIKE',
 ] as const;
 
 export type RegisterRefusal = (typeof REGISTER_REFUSALS)[number];

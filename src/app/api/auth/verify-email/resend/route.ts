@@ -22,6 +22,7 @@ import prisma from '@/lib/prisma';
 import { checkCredentialsAttempt } from '@/lib/auth/credential-rate-limit';
 import { issueEmailVerification } from '@/lib/auth/email-verification';
 import { hashForLookup } from '@/lib/security/encryption';
+import { hasAsciiLookalike } from '@/lib/email-lookalike';
 import { logger } from '@/lib/observability/logger';
 
 interface ResendBody {
@@ -38,7 +39,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         { status: 200 },
     );
 
-    if (!email) return uniformOk;
+    // A look-alike address (decision 252) is answered as an unknown one is.
+    if (!email || hasAsciiLookalike(body.email ?? '')) return uniformOk;
 
     // Rate limit gate — intentionally shares the per-email bucket with
     // the login chokepoint. A user who hit the lockout by fat-fingering

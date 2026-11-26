@@ -74,6 +74,15 @@ describe('issuePasswordReset', () => {
         expect(recordPasswordResetRequested).not.toHaveBeenCalled();
     });
 
+    it('is a silent no-op for a look-alike address, without a lookup (decision 252)', async () => {
+        // The Kelvin sign lower-cases to "k": this would hash as "kai@example.com".
+        await expect(issuePasswordReset('\u212Aai@example.com')).resolves.toBeUndefined();
+
+        expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+        expect(mockPrisma.passwordResetToken.create).not.toHaveBeenCalled();
+        expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
     it('is a silent no-op for an OAuth-only account (no passwordHash)', async () => {
         mockPrisma.user.findUnique.mockResolvedValue({
             id: 'u1',

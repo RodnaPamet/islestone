@@ -163,6 +163,16 @@ describe('createInviteToken — RBAC + OWNER guard', () => {
         expect(fakeDb.tenantInvite.upsert).not.toHaveBeenCalled();
     });
 
+    it('refuses a look-alike address with EMAIL_LOOKALIKE, before any write (decision 252)', async () => {
+        // The Kelvin sign lower-cases to "k": the invite would hash as "kai@example.com".
+        const err = await createInviteToken(makeRequestContext('ADMIN'), {
+            email: '\u212Aai@example.com',
+            role: 'MEMBER',
+        }).catch((e: unknown) => e);
+        expect((err as { details?: unknown }).details).toEqual({ reason: 'EMAIL_LOOKALIKE' });
+        expect(mockRunInTx).not.toHaveBeenCalled();
+    });
+
     it('normalises email (trim + lowercase) before persistence', async () => {
         const fakeDb = txDb();
         mockRunInTx.mockImplementationOnce(async (_ctx, fn) => fn(fakeDb as never));

@@ -69,6 +69,7 @@ import {
     recordLoginSuccess,
 } from './security-events';
 import { hashForLookup } from '@/lib/security/encryption';
+import { hasAsciiLookalike } from '@/lib/email-lookalike';
 import {
     evaluateProgressiveRateLimit,
     recordProgressiveFailure,
@@ -208,7 +209,10 @@ export async function authenticateWithPassword(
 
     // Empty input — fast path that still burns bcrypt time so an attacker
     // can't distinguish empty-input early-return from real verify latency.
-    if (!email || !password) {
+    // A look-alike address (decision 252) is refused as a wrong password
+    // would be: it would hash as the account it imitates. Asked of the raw
+    // input, since lower-casing turns the Kelvin sign into an ASCII "k".
+    if (!email || !password || hasAsciiLookalike(input.email ?? '')) {
         await dummyVerify(password);
         return { ok: false, reason: 'credentials_invalid' };
     }

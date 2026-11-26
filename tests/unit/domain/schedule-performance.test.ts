@@ -4,8 +4,9 @@
  * relations in chains up to 40 long, sub-items three levels deep, dates on
  * 85% of items, two team calendars with holidays and the workspace's. The
  * budget is p95 50 ms in Node on the reference machine (H2's); a test runner
- * shares its machine, so this test fails only at four times the budget and
- * logs the measure. H2's nightly `perf` project holds the budget itself.
+ * shares its machine, so this test fails only at four times the budget, takes
+ * each sample as the smaller of wall-clock and processor time (#95), and logs
+ * the measure. H2's nightly `perf` project holds the budget itself.
  */
 import { computeSchedule } from '@/app-layer/domain/schedule/engine';
 import type { ScheduleEdge, ScheduleInput, ScheduleItem } from '@/app-layer/domain/schedule/types';
@@ -83,11 +84,19 @@ describe('computeSchedule at 5,000 items and 10,000 relations', () => {
         // Warm the JIT before measuring: a page load and a preview run the
         // engine on optimised code, not its first interpreted pass.
         for (let k = 0; k < 10; k += 1) computeSchedule(input);
+        // Each sample is the smaller of the wall-clock time and this process's
+        // processor time (issue #95): other test workers on a busy machine
+        // stretch the wall clock but not this process's processor time, while
+        // a slower engine makes both large. The same rule as H2f's
+        // `bestTimeMs` (tests/helpers/fuzz.ts).
         const times: number[] = [];
         for (let k = 0; k < 30; k += 1) {
+            const cpu0 = process.cpuUsage();
             const t0 = performance.now();
             computeSchedule(input);
-            times.push(performance.now() - t0);
+            const wall = performance.now() - t0;
+            const cpu = process.cpuUsage(cpu0);
+            times.push(Math.min(wall, (cpu.user + cpu.system) / 1000));
         }
         times.sort((a, b) => a - b);
         const p50 = times[Math.floor(times.length * 0.5)]!;

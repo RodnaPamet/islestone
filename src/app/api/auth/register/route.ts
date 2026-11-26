@@ -36,6 +36,7 @@ import { issueEmailVerification } from '@/lib/auth/email-verification';
 import { hashPassword, validatePasswordPolicy } from '@/lib/auth/passwords';
 import { checkPasswordAgainstHIBP } from '@/lib/security/password-check';
 import { lookupEmail } from '@/lib/auth/email-lookup';
+import { hasAsciiLookalike, LOOKALIKE_EMAIL_MESSAGE } from '@/lib/email-lookalike';
 import { hashForLookup } from '@/lib/security/encryption';
 import { sanitizePlainText } from '@/lib/security/sanitize';
 import { generateAndWrapDek } from '@/lib/security/tenant-keys';
@@ -114,6 +115,11 @@ async function handleRegister(body: { email: string; password: string; name: str
     const orgName = sanitizePlainText(body.orgName ?? '').trim() || null;
     if (!rawEmail || !password || !name) {
         return refuse('REGISTER_FIELDS_MISSING', 'Missing required fields');
+    }
+    // An address with a character that folds into ASCII would hash as the
+    // address it imitates (decision 252, `@/lib/email-lookalike`).
+    if (hasAsciiLookalike(rawEmail)) {
+        return refuse('EMAIL_LOOKALIKE', LOOKALIKE_EMAIL_MESSAGE);
     }
 
     // Enforce password policy at the set-password boundary. Login
