@@ -13,6 +13,8 @@ import type { CustomFieldType, WorkflowStateCategory, WorkItemPriority } from '@
 
 import type { ReviewOutcomeValue, ReviewRoundStatusValue, ReviewStepModeValue, ReviewSummary } from '@/app-layer/domain/review-steps';
 
+import type { ViewGoal, ViewInitiative } from '@/lib/goals/types';
+
 import type { CustomFieldValueData } from './custom-fields';
 import type { FieldSetEntry } from './field-sets';
 
@@ -42,6 +44,8 @@ export interface WorkItemRow {
     cycleId: string | null;
     /** The project's milestone the item is aimed at (2.5b). */
     milestoneId: string | null;
+    /** The goal the item names directly (3.2a, decision 211); never inherited. */
+    goalId?: string | null;
     /** The repeat this item is an occurrence of, and the occurrence's date (2.5d). */
     recurrenceId?: string | null;
     occurrenceOn?: string | null;
@@ -92,6 +96,8 @@ export interface ViewProject {
     archived: boolean;
     /** The project's due date, `YYYY-MM-DD` (roadmap 3.1, decision 188). */
     dueDate?: string | null;
+    /** The initiative the project serves (3.2a). */
+    initiativeId?: string | null;
 }
 
 export interface ViewState {
@@ -177,6 +183,10 @@ export interface WorkItemViewConfig {
      * them with `src/lib/work-items/field-sets.ts`, never by hand.
      */
     fieldSetEntries: FieldSetEntry[];
+    /** Live, unarchived goals (3.2a): the Goal picker and filter; empty without `goals.view`. */
+    goals?: ViewGoal[];
+    /** Live, unarchived initiatives (3.2a): the Initiative filter; empty without `goals.view`. */
+    initiatives?: ViewInitiative[];
 }
 
 /** What the views menu offers its viewer (2.4), asked on the server. */

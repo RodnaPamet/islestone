@@ -30,17 +30,29 @@ import { projectRecipientListsHref } from '@/components/recipient-lists/ProjectR
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import { Switch } from '@/components/ui/switch';
 import type { TemplateAffordances, WorkConfigAffordances } from '@/lib/work-items/types';
+import type { GoalAffordances } from '@/lib/goals/types';
+import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 
 import { ProjectCreateDialog } from './ProjectCreateDialog';
-import { refusalText, SETTINGS_PATHS, type SettingsProject, useProjects, useSettingsApi, useTeams } from './settings-data';
+import { refusalText, SETTINGS_PATHS, type SettingsProject, useInitiatives, useProjects, useSettingsApi, useTeams } from './settings-data';
 import { SettingsFormModal } from './SettingsFormModal';
 import { TypedConfirmModal } from './TypedConfirmModal';
 
 const projectPath = (id: string) => `/projects/${encodeURIComponent(id)}`;
 
 const NO_TEMPLATES: TemplateAffordances = { manageItemTemplates: false, useProjectTemplates: false, manageProjectTemplates: false };
+const NO_GOALS: GoalAffordances = { view: false, manage: false, setHealth: false, linkProject: false, setItemGoal: false };
 
-export function ProjectsSettings({ affordances, templates = NO_TEMPLATES }: { affordances: WorkConfigAffordances; templates?: TemplateAffordances }) {
+export function ProjectsSettings({
+    affordances,
+    templates = NO_TEMPLATES,
+    goals = NO_GOALS,
+}: {
+    affordances: WorkConfigAffordances;
+    templates?: TemplateAffordances;
+    /** A project's initiative (3.2a): shown with `view`, changed with `linkProject`, asked on the server. */
+    goals?: GoalAffordances;
+}) {
     const t = useTranslations('settings');
     const toast = useToast();
     const tenantHref = useTenantHref();
@@ -58,6 +70,10 @@ export function ProjectsSettings({ affordances, templates = NO_TEMPLATES }: { af
     const [templateName, setTemplateName] = useState('');
     const [includeItems, setIncludeItems] = useState(false);
     const teamName = useMemo(() => new Map((teams ?? []).map((x) => [x.id, x.name])), [teams]);
+    const { data: initiativeList } = useInitiatives(goals.view);
+    const initiativeName = useMemo(() => new Map((initiativeList?.initiatives ?? []).map((x) => [x.id, x.name])), [initiativeList]);
+    const [linking, setLinking] = useState<SettingsProject | null>(null);
+    const [initiativeId, setInitiativeId] = useState('');
 
     const columns = useMemo(() => {
         const unarchive = async (project: SettingsProject) => {
@@ -69,7 +85,7 @@ export function ProjectsSettings({ affordances, templates = NO_TEMPLATES }: { af
                 toast.error(refusalText(err, t('common.failed')));
             }
         };
-        const showActions = affordances.editProject || affordances.archiveProject || affordances.manageCustomFields || templates.manageProjectTemplates;
+        const showActions = affordances.editProject || affordances.archiveProject || affordances.manageCustomFields || templates.manageProjectTemplates || goals.linkProject;
         return createColumns<SettingsProject>([
             {
                 id: 'name',
@@ -84,6 +100,17 @@ export function ProjectsSettings({ affordances, templates = NO_TEMPLATES }: { af
             { id: 'team', header: t('projects.col.team'), cell: ({ row }) => teamName.get(row.original.teamId) ?? '' },
             { id: 'status', header: t('projects.col.status'), cell: ({ row }) => (row.original.archivedAt ? t('common.archived') : t('common.active')) },
             { id: 'dueDate', header: t('projects.col.dueDate'), cell: ({ row }) => <span className="tabular-nums">{row.original.dueDate ?? ''}</span> },
+            ...(goals.view
+                ? [
+                      {
+                          // The initiative the project serves (3.2a); a deleted or archived one is not listed by name.
+                          id: 'initiative',
+                          header: t('projects.col.initiative'),
+                          cell: ({ row }: { row: { original: SettingsProject } }) =>
+                              row.original.initiativeId ? (initiativeName.get(row.original.initiativeId) ?? t('projects.initiativeUnavailable')) : '',
+                      },
+                  ]
+                : []),
             {
                 // A project's recipient lists (2.7e): its own page, read by every member.
                 id: 'recipientLists',
@@ -128,6 +155,18 @@ export function ProjectsSettings({ affordances, templates = NO_TEMPLATES }: { af
                                               onClick={() => {
                                                   setDueDate(project.dueDate ?? null);
                                                   setDatingDue(project);
+                                              }}
+                                          />
+                                      )}
+                                      {goals.linkProject && (
+                                          <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              text={t('projects.changeInitiative')}
+                                              aria-label={t('projects.changeInitiativeNamed', { name: project.name })}
+                                              onClick={() => {
+                                                  setInitiativeId(project.initiativeId ?? '');
+                                                  setLinking(project);
                                               }}
                                           />
                                       )}
@@ -178,7 +217,24 @@ export function ProjectsSettings({ affordances, templates = NO_TEMPLATES }: { af
                   ]
                 : []),
         ]);
-    }, [t, tenantHref, teamName, affordances, templates, send, revalidate, toast]);
+    }, [t, tenantHref, teamName, initiativeName, affordances, templates, goals, send, revalidate, toast]);
+
+    const saveInitiative = async (): Promise<string | null> => {
+        const project = linking;
+        if (!project) return null;
+        try {
+            await send('PUT', `${projectPath(project.id)}/initiative`, { initiativeId: initiativeId || null });
+            await revalidate(SETTINGS_PATHS.projects);
+            toast.success(t('projects.initiativeSaved', { name: project.name }));
+            return null;
+        } catch (err) {
+            return refusalText(err, t('common.failed'));
+        }
+    };
+    const initiativeOptions: ComboboxOption[] = [
+        { value: '', label: t('projects.noInitiative') },
+        ...(initiativeList?.initiatives ?? []).map((x) => ({ value: x.id, label: x.name })),
+    ];
 
     const saveAsTemplate = async (): Promise<string | null> => {
         const project = savingAsTemplate;
@@ -266,6 +322,7 @@ export function ProjectsSettings({ affordances, templates = NO_TEMPLATES }: { af
             <ProjectCreateDialog
                 open={creating}
                 onOpenChange={setCreating}
+                offerInitiative={goals.view}
                 onCreated={async () => {
                     await revalidate(SETTINGS_PATHS.projects);
                 }}
@@ -279,6 +336,23 @@ export function ProjectsSettings({ affordances, templates = NO_TEMPLATES }: { af
             >
                 <FormField label={t('common.name')} required>
                     <Input id="project-name-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} autoFocus />
+                </FormField>
+            </SettingsFormModal>
+            <SettingsFormModal
+                open={linking !== null}
+                onOpenChange={(v) => !v && setLinking(null)}
+                title={t('projects.changeInitiativeTitle', { name: linking?.name ?? '' })}
+                submitLabel={t('common.save')}
+                onSubmit={saveInitiative}
+            >
+                <FormField label={t('projects.initiative')} description={t('projects.initiativeHint')}>
+                    <Combobox
+                        id="project-change-initiative-input"
+                        selected={initiativeOptions.find((o) => o.value === initiativeId) ?? null}
+                        setSelected={(o) => o && setInitiativeId(o.value)}
+                        options={initiativeOptions}
+                        caret
+                    />
                 </FormField>
             </SettingsFormModal>
             <SettingsFormModal

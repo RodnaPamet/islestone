@@ -35,6 +35,8 @@ jest.mock('@/app-layer/context', () => ({
 import { createProject } from '@/app-layer/usecases/project';
 import { createCycle } from '@/app-layer/usecases/cycle';
 import { createMilestone } from '@/app-layer/usecases/milestone';
+import { createGoal } from '@/app-layer/usecases/goal';
+import { createInitiative } from '@/app-layer/usecases/initiative';
 import { saveProjectAsTemplate } from '@/app-layer/usecases/project-template';
 import { createWorkItemTemplate } from '@/app-layer/usecases/work-item-template';
 import { createTeam } from '@/app-layer/usecases/team';
@@ -80,6 +82,8 @@ interface Ids {
     view: string;
     cycle: string;
     milestone: string;
+    goal: string;
+    initiative: string;
     itemTemplate: string;
     projectTemplate: string;
     workspaceList: string;
@@ -244,6 +248,10 @@ const CALLS: Call[] = [
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/type-fields/route.ts', method: 'PUT', path: (i) => `/projects/${i.project}/type-fields`, params: (i) => P(i, { projectId: i.project }), body: (i) => ({ typeId: i.type, customFieldId: i.field, requirement: 'OPTIONAL' }), write: true, key: 'projects.edit' },
     // Sub-phase 2.5b: milestones.
     { file: `${W}/[workItemId]/milestone/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/milestone`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ milestoneId: i.milestone }), write: true, key: 'work_items.edit' },
+    // Sub-phase 3.2a: an item's goal, its ancestry and a project's initiative.
+    { file: `${W}/[workItemId]/goal/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/goal`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ goalId: i.goal }), write: true, key: 'work_items.edit' },
+    { file: `${W}/[workItemId]/ancestry/route.ts`, method: 'GET', path: (i) => `/work-items/${i.item}/ancestry`, params: (i) => P(i, { workItemId: i.item }), write: false, key: 'work_items.view' },
+    { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/initiative/route.ts', method: 'PUT', path: (i) => `/projects/${i.project}/initiative`, params: (i) => P(i, { projectId: i.project }), body: (i) => ({ initiativeId: i.initiative }), write: true, key: 'projects.edit' },
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/milestones/route.ts', method: 'GET', path: (i) => `/projects/${i.project}/milestones`, params: (i) => P(i, { projectId: i.project }), write: false, key: 'projects.view' },
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/milestones/route.ts', method: 'POST', path: (i) => `/projects/${i.project}/milestones`, params: (i) => P(i, { projectId: i.project }), body: () => ({ name: `Milestone ${Math.random()}` }), write: true, key: 'projects.edit' },
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/milestones/[milestoneId]/route.ts', method: 'PATCH', path: (i) => `/projects/${i.project}/milestones/${i.milestone}`, params: (i) => P(i, { projectId: i.project, milestoneId: i.milestone }), body: () => ({ dueDate: '2040-03-01' }), write: true, key: 'projects.edit' },
@@ -329,6 +337,8 @@ describeFn('the work-item API', () => {
         const view = await createSavedView(ctxFor('MEMBER'), { name: 'Shared by a member', visibility: 'SHARED', layout: 'LIST', config: { filters: {}, sort: 'manual', laneBy: 'none' } });
         const cycle = await createCycle(owner, { teamId: team.id, startsOn: '2039-01-03', endsOn: '2039-01-16' });
         const milestone = await createMilestone(owner, project.id, { name: 'API milestone' });
+        const goal = await createGoal(owner, { title: 'API goal' });
+        const initiative = await createInitiative(owner, { name: 'API initiative', goalId: goal.id });
         const itemTemplate = await createWorkItemTemplate(owner, project.id, { name: 'API template', title: 'From a template' });
         const projectTemplate = await saveProjectAsTemplate(owner, { fromProjectId: project.id, name: 'API project template' });
         const workspaceList = await createRecipientList(owner, null, { name: 'API leads', userIds: [users.MEMBER!] });
@@ -340,6 +350,8 @@ describeFn('the work-item API', () => {
             projectTemplate: projectTemplate.id,
             cycle: cycle.id,
             milestone: milestone.id,
+            goal: goal.id,
+            initiative: initiative.id,
             field: field.id,
             option: field.options[0]!.id,
             view: view.id,

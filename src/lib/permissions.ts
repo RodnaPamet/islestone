@@ -31,6 +31,15 @@ export type PermissionSet = {
      * notify list). Accepting also needs `work_items.create`.
      */
     intake: { view: boolean; triage: boolean; manage: boolean };
+    /**
+     * Goals and initiatives (sub-phase 3.2, owner decision 213): read them,
+     * and create, change, archive, delete, restore them and set their health
+     * (a person only, decision 214). The key uses the UI word, "goals"; it
+     * covers initiatives too. A project's initiative is a project field
+     * (`projects.edit`) and an item's goal a work-item field
+     * (`work_items.edit`); naming one also asks `goals.view`.
+     */
+    goals: { view: boolean; manage: boolean };
     docs: { view: boolean; create: boolean; edit: boolean };
     canvas: { view: boolean; edit: boolean };
     automations: { view: boolean; manage: boolean };
@@ -68,6 +77,7 @@ export const PERMISSION_SCHEMA = {
     views: ['view', 'create', 'edit', 'share'],
     cycles: ['view', 'manage'],
     intake: ['view', 'triage', 'manage'],
+    goals: ['view', 'manage'],
     docs: ['view', 'create', 'edit'],
     canvas: ['view', 'edit'],
     automations: ['view', 'manage'],
@@ -111,10 +121,11 @@ const ALL_DOMAINS: Grants = Object.fromEntries(
  *           `admin.owner_management`, which are stated false explicitly.
  *   MEMBER  does the work: projects view/create/edit, work items
  *           view/create/edit/assign/comment, views view/create/edit/share,
- *           cycles, intake view/triage (decision 92), docs view/create/edit,
+ *           cycles, intake view/triage (decision 92), goals view/manage
+ *           (decision 213), docs view/create/edit,
  *           canvas view/edit, automations and
  *           integrations view, agents view/delegate, workspace view.
- *   VIEWER  reads every project (`view` on the work domains and agents) and
+ *   VIEWER  reads every project (`view` on the work domains, goals and agents) and
  *           saves personal views: `views.create` and `views.edit`, never
  *           `views.share`, so a shared view stays with the roles that hold it
  *           (owner decision 60, 2026-11-20).
@@ -154,6 +165,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 views: ['view', 'create', 'edit', 'share'],
                 cycles: ['view', 'manage'],
                 intake: ['view', 'triage'],
+                goals: ['view', 'manage'],
                 docs: ['view', 'create', 'edit'],
                 canvas: ['view', 'edit'],
                 automations: ['view'],
@@ -195,6 +207,7 @@ function viewerPermissions(): PermissionSet {
         work_items: ['view'],
         views: ['view', 'create', 'edit'],
         cycles: ['view'],
+        goals: ['view'],
         docs: ['view'],
         canvas: ['view'],
         agents: ['view'],

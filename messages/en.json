@@ -706,7 +706,8 @@
             "template": "Template",
             "repeat": "Repeat",
             "waitingOn": "Waiting on",
-            "startDate": "Start date"
+            "startDate": "Start date",
+            "goal": "Goal"
         },
         "fieldSet": {
             "required": "required",
@@ -722,7 +723,8 @@
                 "dueDate": "Due date",
                 "cycle": "Cycle",
                 "milestone": "Milestone",
-                "answer": "Answer"
+                "answer": "Answer",
+                "goal": "Goal"
             },
             "requirement": {
                 "REQUIRED": "Required",
@@ -759,7 +761,9 @@
             "noMilestone": "No milestone",
             "waitingOn": "Waiting on",
             "waitingOnNobody": "Waiting on nobody",
-            "reviewer": "Reviewer"
+            "reviewer": "Reviewer",
+            "goal": "Goal",
+            "initiative": "Initiative"
         },
         "bulk": {
             "setState": "Set state",
@@ -894,6 +898,7 @@
             "customFieldSet": "changed a field",
             "cycleChanged": "changed the cycle",
             "milestoneChanged": "changed the milestone",
+            "goalChanged": "changed the goal",
             "waitingOnChanged": "changed who the item waits on",
             "answerMarked": "marked an answer",
             "answerCleared": "cleared the answer",
@@ -1476,6 +1481,16 @@
                 "wrongType": "Draw a dependency from the end of one bar to the start of the next, between items you can change.",
                 "notHere": "This dependency cannot be removed here."
             }
+        },
+        "goal": {
+            "none": "No goal",
+            "unavailable": "A goal no longer offered (archived)"
+        },
+        "ancestry": {
+            "label": "Ancestry",
+            "archived": "archived",
+            "hidden": "{count, plural, one {# level hidden} other {# levels hidden}}",
+            "alsoServes": "Also serves:"
         }
     },
     "settings": {
@@ -1693,7 +1708,8 @@
                 "team": "Team",
                 "status": "Status",
                 "recipientLists": "Recipient lists",
-                "dueDate": "Due date"
+                "dueDate": "Due date",
+                "initiative": "Initiative"
             },
             "created": "Project {name} created",
             "archiveTitle": "Archive {name}?",
@@ -1725,7 +1741,15 @@
             "editDueDate": "Change due date",
             "editDueDateNamed": "Change the due date of {name}",
             "editDueDateTitle": "Due date of {name}",
-            "dueDateSaved": "Due date of {name} saved"
+            "dueDateSaved": "Due date of {name} saved",
+            "initiative": "Initiative",
+            "initiativeHint": "The initiative the project serves. Its items and milestones do not move.",
+            "noInitiative": "No initiative",
+            "initiativeUnavailable": "An initiative no longer offered",
+            "changeInitiative": "Change initiative",
+            "changeInitiativeNamed": "Change the initiative of {name}",
+            "changeInitiativeTitle": "Initiative of {name}",
+            "initiativeSaved": "Initiative of {name} saved"
         },
         "projectTemplates": {
             "title": "Project templates",
@@ -2275,7 +2299,8 @@
             "waitingOn": "Waiting on",
             "dueDate": "Due date",
             "startDate": "Start date",
-            "milestone": "Milestone"
+            "milestone": "Milestone",
+            "goal": "Goal"
         },
         "decline": {
             "title": "Decline the request",

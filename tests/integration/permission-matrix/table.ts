@@ -113,6 +113,12 @@ export type FixtureName =
     | 'deletedProject'
     | 'freshOption'
     | 'freshMilestone'
+    | 'freshGoal'
+    | 'finishedGoal'
+    | 'deletedGoal'
+    | 'freshInitiative'
+    | 'finishedInitiative'
+    | 'deletedInitiative'
     | 'freshItemTemplate'
     | 'freshProjectList'
     | 'archivedProjectList'
@@ -336,6 +342,9 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         { route: `${W}/recurrence/route.ts`, method: 'DELETE', key: 'work_items.edit', subject: "a fresh item's repeat", fixture: 'itemWithRecurrence', expect: ITEM_EDIT },
         { route: `${W}/answer/route.ts`, method: 'PUT', key: 'work_items.edit', subject: 'a fresh question and a comment on it', fixture: 'question', body: (s) => ({ commentId: s.commentId }), expect: ITEM_EDIT },
         { route: `${W}/answer/route.ts`, method: 'DELETE', key: 'work_items.edit', subject: 'a fresh answered question', fixture: 'answered', expect: ITEM_EDIT },
+        // Sub-phase 3.2a (decision 211): an item's goal is a work-item field; naming one also asks goals.view.
+        { route: `${W}/goal/route.ts`, method: 'PUT', key: 'work_items.edit', subject: 'a fresh item and a goal', fixture: 'item', body: (s) => ({ goalId: s.goalId }), expect: ITEM_EDIT },
+        { route: `${W}/ancestry/route.ts`, method: 'GET', key: 'work_items.view', subject: "an item's ancestry", expect: READ },
     ],
 
     reviews: [
@@ -427,9 +436,28 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         { route: `${PJ}/recipient-lists/[listId]/restore/route.ts`, method: 'POST', key: 'projects.edit', subject: "an archived project list", fixture: 'archivedProjectList', expect: MEMBER_WRITE },
         { route: `${PJ}/intake/route.ts`, method: 'PUT', key: 'intake.manage', subject: "a project's intake", body: () => ({ enabled: true }), expect: ADMIN },
         { route: `${PJ}/intake/email-address/route.ts`, method: 'POST', key: 'intake.manage', subject: "a project's intake address", expect: ADMIN },
+        // Sub-phase 3.2a: a project's initiative is a project field (projects.edit); naming one also asks goals.view,
+        // which every role holding projects.edit holds.
+        { route: `${PJ}/initiative/route.ts`, method: 'PUT', key: 'projects.edit', subject: "a project's initiative", body: (s) => ({ initiativeId: s.initiativeId }), expect: MEMBER_WRITE },
     ],
 
     configuration: [
+        // Sub-phase 3.2a (decision 213): goals.view for every workspace-wide role; goals.manage for Owners, Admins
+        // and Members (the narrowed member keeps it: only work_items.edit is off); a Guest nothing (decision 204).
+        { route: 'goals/route.ts', method: 'GET', key: 'goals.view', subject: 'the goals', reveals: (s) => s.goalId, expect: WS_READ },
+        { route: 'goals/route.ts', method: 'POST', key: 'goals.manage', subject: 'a new goal', body: (s) => ({ title: `Goal ${s.seq}` }), expect: MEMBER_WRITE },
+        { route: 'goals/[goalId]/route.ts', method: 'GET', key: 'goals.view', subject: 'a goal', expect: WS_READ },
+        { route: 'goals/[goalId]/route.ts', method: 'PATCH', key: 'goals.manage', subject: 'a goal', body: () => ({ dueDate: '2051-06-30' }), expect: MEMBER_WRITE },
+        { route: 'goals/[goalId]/route.ts', method: 'DELETE', key: 'goals.manage', subject: 'a fresh goal', fixture: 'freshGoal', expect: MEMBER_WRITE },
+        { route: 'goals/[goalId]/archive/route.ts', method: 'POST', key: 'goals.manage', subject: 'a fresh completed goal', fixture: 'finishedGoal', body: () => ({ archived: true }), expect: MEMBER_WRITE },
+        { route: 'goals/[goalId]/restore/route.ts', method: 'POST', key: 'goals.manage', subject: 'a fresh deleted goal', fixture: 'deletedGoal', expect: MEMBER_WRITE },
+        { route: 'initiatives/route.ts', method: 'GET', key: 'goals.view', subject: 'the initiatives', reveals: (s) => s.initiativeId, expect: WS_READ },
+        { route: 'initiatives/route.ts', method: 'POST', key: 'goals.manage', subject: 'a new initiative', body: (s) => ({ name: `Initiative ${s.seq}`, goalId: s.goalId }), expect: MEMBER_WRITE },
+        { route: 'initiatives/[initiativeId]/route.ts', method: 'GET', key: 'goals.view', subject: 'an initiative', expect: WS_READ },
+        { route: 'initiatives/[initiativeId]/route.ts', method: 'PATCH', key: 'goals.manage', subject: 'an initiative', body: () => ({ dueDate: '2051-05-31' }), expect: MEMBER_WRITE },
+        { route: 'initiatives/[initiativeId]/route.ts', method: 'DELETE', key: 'goals.manage', subject: 'a fresh initiative', fixture: 'freshInitiative', expect: MEMBER_WRITE },
+        { route: 'initiatives/[initiativeId]/archive/route.ts', method: 'POST', key: 'goals.manage', subject: 'a fresh cancelled initiative', fixture: 'finishedInitiative', body: () => ({ archived: true }), expect: MEMBER_WRITE },
+        { route: 'initiatives/[initiativeId]/restore/route.ts', method: 'POST', key: 'goals.manage', subject: 'a fresh deleted initiative', fixture: 'deletedInitiative', expect: MEMBER_WRITE },
         { route: 'teams/route.ts', method: 'GET', key: 'projects.view', subject: 'the teams', expect: WS_READ },
         { route: 'teams/route.ts', method: 'POST', key: 'admin.manage', subject: 'a new team', body: (s) => ({ name: `Team ${s.seq}` }), expect: ADMIN },
         { route: 'teams/[teamId]/route.ts', method: 'GET', key: 'projects.view', subject: 'a team', expect: WS_READ },

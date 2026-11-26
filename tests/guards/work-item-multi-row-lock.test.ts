@@ -228,7 +228,7 @@ describe('multi-item work-item writes lock in id order (decision 173)', () => {
 
     it('every lock method orders by id FOR UPDATE in one statement', () => {
         const locks = lockMethods(REPO_ROOT);
-        expect(Object.keys(locks).sort()).toEqual(['lockForWrite', 'lockInState', 'lockItemsOfPerson', 'lockPurgeBatch']);
+        expect(Object.keys(locks).sort()).toEqual(['lockForWrite', 'lockInState', 'lockItemsNamingGoals', 'lockItemsOfPerson', 'lockPurgeBatch']);
         expect(Object.values(locks).every(Boolean)).toBe(true);
     });
 

@@ -1,0 +1,121 @@
+/// Goals and initiatives (sub-phase 3.2; docs/porting/maps/3.2.md; ADR 0002
+/// §2 and §17; owner decisions 205 to 224). The chain is goal → initiative →
+/// project → work item → sub-item, each link single-parent and nullable; a
+/// work item may also name one goal directly (`WorkItem.goalId`, decision
+/// 211). Records above projects, never work items (principle 3).
+///
+/// What Prisma cannot declare lives in migrations
+/// `20261215120000_goals_and_initiatives` and
+/// `20261215120100_project_initiative_and_item_goal`: the length and
+/// lifecycle CHECKs, and the four column-scoped `ON DELETE SET NULL` keys
+/// (`Goal.parentId`, `Initiative.goalId`, `Project.initiativeId`,
+/// `WorkItem.goalId`), so only the purge (decision 219) deletes a row and the
+/// database clears every link to it.
+
+/// An outcome the workspace wants, with a due date and a health set by a
+/// person (ADR 0006 "Goal"). Goals nest at most three levels (ADR 0002 §2,
+/// decision 24), held by the usecases under the goal-tree lock.
+model Goal {
+  id                String     @id @default(cuid())
+  tenantId          String
+  /// The parent goal; `ON DELETE SET NULL ("parentId")` in SQL.
+  parentId          String?
+  /// Plaintext (breadcrumbs, the roadmap), sanitised; 1..200 characters (CHECK).
+  title             String
+  /// ENCRYPTED (manifest `src/lib/security/encrypted-fields.ts`) and
+  /// sanitised on write; at most 10,000 characters before encryption. Never
+  /// in an audit entry and never search-indexed (ADR 0008).
+  description       String?
+  status            GoalStatus @default(PLANNED)
+  /// "Due date", date-only; never "target". Not a scheduling-engine deadline
+  /// (decision 210, ADR 0010 §3 unchanged).
+  dueDate           DateTime?  @db.Date
+  /// The Lead (decision 209): an ACTIVE member when written, FK RESTRICT;
+  /// member removal clears it first. Never accountable for a work item.
+  leadUserId        String?
+  /// A person's judgement (decisions 205, 214); NULL is "No health set".
+  health            Health?
+  healthSetAt       DateTime?
+  /// An actor stamp, like an audit row's user id: a plain column, no FK.
+  healthSetByUserId String?
+  version           Int        @default(1)
+  /// Only while the status is COMPLETED or CANCELLED (CHECK, decision 218).
+  archivedAt        DateTime?
+  /// An actor stamp: a plain column, no FK.
+  archivedByUserId  String?
+  /// Soft delete (decision 218); purged after `GOAL_PURGE_DAYS` (decision 219).
+  deletedAt         DateTime?
+  /// An actor stamp: a plain column, no FK.
+  deletedByUserId   String?
+  /// Rows deleted together share it; both or neither with `deletedAt` (CHECK).
+  deletionId        String?
+  /// An actor stamp: a plain column, no FK.
+  createdByUserId   String
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent      Goal?             @relation("GoalTree", fields: [parentId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
+  children    Goal[]            @relation("GoalTree")
+  lead        TenantMembership? @relation("GoalLead", fields: [tenantId, leadUserId], references: [tenantId, userId], onDelete: Restrict)
+  initiatives Initiative[]
+  workItems   WorkItem[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, parentId])
+  @@index([tenantId, leadUserId])
+  /// The lists and pickers: live, unarchived, by status.
+  @@index([tenantId, deletedAt, archivedAt, status])
+  /// A restore finds its group.
+  @@index([tenantId, deletionId])
+}
+
+/// A set of projects that together serve a goal (ADR 0006 "Initiative"). The
+/// roadmap's "portfolio page" is an initiative's page (decision 221).
+model Initiative {
+  id                String           @id @default(cuid())
+  tenantId          String
+  /// The goal it serves; `ON DELETE SET NULL ("goalId")` in SQL.
+  goalId            String?
+  /// Plaintext, sanitised; 1..120 characters (CHECK).
+  name              String
+  /// ENCRYPTED (manifest) and sanitised on write; at most 10,000 characters
+  /// before encryption. Never audited, never search-indexed.
+  description       String?
+  status            InitiativeStatus @default(PLANNED)
+  /// "Due date", date-only; not a scheduling-engine deadline (decision 210).
+  dueDate           DateTime?        @db.Date
+  /// The Lead (decision 209): an ACTIVE member when written, FK RESTRICT.
+  leadUserId        String?
+  /// A person's judgement (decisions 205, 206, 214); NULL is "No health set".
+  health            Health?
+  healthSetAt       DateTime?
+  /// An actor stamp: a plain column, no FK.
+  healthSetByUserId String?
+  version           Int              @default(1)
+  /// Only while the status is COMPLETED or CANCELLED (CHECK).
+  archivedAt        DateTime?
+  /// An actor stamp: a plain column, no FK.
+  archivedByUserId  String?
+  /// Soft delete (decision 218), alone or with its goal's group.
+  deletedAt         DateTime?
+  /// An actor stamp: a plain column, no FK.
+  deletedByUserId   String?
+  /// Rows deleted together share it; both or neither with `deletedAt` (CHECK).
+  deletionId        String?
+  /// An actor stamp: a plain column, no FK.
+  createdByUserId   String
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  goal     Goal?             @relation(fields: [goalId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
+  lead     TenantMembership? @relation("InitiativeLead", fields: [tenantId, leadUserId], references: [tenantId, userId], onDelete: Restrict)
+  projects Project[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, goalId])
+  @@index([tenantId, leadUserId])
+  @@index([tenantId, deletedAt, archivedAt, status])
+  @@index([tenantId, deletionId])
+}

@@ -61,6 +61,7 @@ export function toRow(item: WorkItemRow): WorkItemRow {
         parentId: item.parentId,
         cycleId: item.cycleId ?? null,
         milestoneId: item.milestoneId ?? null,
+        goalId: item.goalId ?? null,
         recurrenceId: item.recurrenceId ?? null,
         occurrenceOn: item.occurrenceOn ?? null,
         repeats: item.repeats ?? false,
@@ -300,6 +301,18 @@ export function useWorkItemMutations() {
                 return write(item, { milestoneId }, (version) =>
                     apiSend<WorkItemDetailData>('PUT', url(`/work-items/${item.id}/milestone`), { milestoneId }, { ifMatch: version }),
                 );
+            },
+            /**
+             * Name the item's goal directly, or clear it (3.2a, decision 211;
+             * `If-Match`); the breadcrumb is read again.
+             */
+            setGoal(item: WorkItemRow, goalId: string | null) {
+                return write(item, { goalId }, (version) =>
+                    apiSend<WorkItemDetailData>('PUT', url(`/work-items/${item.id}/goal`), { goalId }, { ifMatch: version }),
+                ).then((saved) => {
+                    if (saved) void cache.revalidatePath(`/work-items/${item.id}/ancestry`);
+                    return saved;
+                });
             },
             /** Put the item in a cycle of its team, or take it out (2.5a; `If-Match`). */
             setCycle(item: WorkItemRow, cycleId: string | null) {

@@ -743,6 +743,50 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         note: "Aim an item at a milestone of its project, or clear it (the version increases).",
     },
 
+    // ── Goals and initiatives (sub-phase 3.2a; owner decisions 211, 213) ──
+    {
+        path: new RegExp(`^${T}\\/(goals|initiatives)(\\/[^\\/]+)?$`),
+        methods: ['GET'],
+        permission: 'goals.view',
+        note: 'Goals and initiatives, or one with its ancestors, children, initiatives or projects.',
+    },
+    {
+        path: new RegExp(`^${T}\\/(goals|initiatives)$`),
+        methods: ['POST'],
+        permission: 'goals.manage',
+        note: 'Create a goal or an initiative (decision 213: Owners, Admins and Members).',
+    },
+    {
+        path: new RegExp(`^${T}\\/(goals|initiatives)\\/[^\\/]+$`),
+        methods: ['PATCH', 'DELETE'],
+        permission: 'goals.manage',
+        note: 'Change a goal or an initiative, or delete it softly with its group (decision 218).',
+    },
+    {
+        path: new RegExp(`^${T}\\/(goals|initiatives)\\/[^\\/]+\\/(archive|restore)$`),
+        methods: ['POST'],
+        permission: 'goals.manage',
+        note: 'Archive or unarchive a finished goal or initiative; restore a deleted group.',
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/initiative$`),
+        methods: ['PUT'],
+        permission: 'projects.edit',
+        note: "Name a project's initiative, or clear it: a project field (naming one also asks goals.view).",
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/goal$`),
+        methods: ['PUT'],
+        permission: 'work_items.edit',
+        note: "Name an item's goal directly, or clear it (decision 211; naming one also asks goals.view).",
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/ancestry$`),
+        methods: ['GET'],
+        permission: 'work_items.view',
+        note: "An item's parents, project, initiative and goals in one statement (decision 220).",
+    },
+
     // ── Waiting on (sub-phase 2.4b; owner decision 104) ─────────────
     {
         path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/waiting-on$`),

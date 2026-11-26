@@ -208,6 +208,40 @@ export function MilestonePicker({
     );
 }
 
+/**
+ * The item's direct goal (3.2a, decision 211): the live, unarchived goals the
+ * caller may read, nested by their parents, and "No goal". A goal the item
+ * names that is no longer offered (archived) stays shown as it is.
+ */
+export function GoalPicker({
+    value,
+    onChange,
+    ...common
+}: PickerCommon & { value: string | null; onChange: (goalId: string | null) => void }) {
+    const tGoal = useTranslations('workItems');
+    const config = useWorkConfig();
+    const options = useMemo<ComboboxOption[]>(() => {
+        const goals = config.goals ?? [];
+        const byId = new Map(goals.map((g) => [g.id, g]));
+        const depthOf = (id: string | null, d = 0): number => (id && byId.has(id) && d < 3 ? depthOf(byId.get(id)!.parentId, d + 1) : d);
+        const out: ComboboxOption[] = [{ value: '', label: tGoal('goal.none') }];
+        for (const g of goals) out.push({ value: g.id, label: `${'· '.repeat(Math.max(0, depthOf(g.parentId)))}${g.title}` });
+        if (value && !byId.has(value)) out.push({ value, label: tGoal('goal.unavailable') });
+        return out;
+    }, [config, tGoal, value]);
+    return (
+        <Combobox
+            id={common.id}
+            disabled={common.disabled}
+            selected={options.find((o) => o.value === (value ?? '')) ?? null}
+            setSelected={(o) => o && (o.value || null) !== value && onChange(o.value || null)}
+            options={options}
+            caret
+            buttonProps={common.label ? { 'aria-label': common.label } : undefined}
+        />
+    );
+}
+
 /** Labels usable on an item of `teamId`: workspace labels and the team's. */
 export function LabelsPicker({
     teamId,

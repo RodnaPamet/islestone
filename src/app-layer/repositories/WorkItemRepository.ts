@@ -92,6 +92,23 @@ export interface WorkItemFilters {
     cycleId?: string;
     /** Milestone ids (comma-joinable), with `none` for items in no milestone (2.5b). */
     milestoneId?: string;
+    /**
+     * Goal ids (comma-joinable; 3.2a, decision 220). Never read here: the list
+     * usecase resolves it (`resolveListFiltersInTx`) into `goalScope`, and a
+     * where built with it unresolved is refused.
+     */
+    goalId?: string;
+    /** Initiative ids (comma-joinable; 3.2a). Resolved into `initiativeProjectIds` by the usecase, like `goalId`. */
+    initiativeId?: string;
+    /**
+     * INTERNAL, never from a request: the `goalId` filter resolved (3.2a,
+     * decisions 211 and 220): an item matches when its project is under one of
+     * the goals' live initiatives (`projectIds`) OR it names one of the goals'
+     * live subtree directly (`goalIds`).
+     */
+    goalScope?: { projectIds: readonly string[]; goalIds: readonly string[] };
+    /** INTERNAL, never from a request: the `initiativeId` filter resolved to the initiatives' projects. */
+    initiativeProjectIds?: readonly string[];
     /** `me`: the items the CALLER watches, read from the request context, never a user id from the client. */
     watching?: 'me';
     /**
@@ -223,6 +240,7 @@ export const workItemListSelect = {
     parentId: true,
     cycleId: true,
     milestoneId: true,
+    goalId: true,
     recurrenceId: true,
     occurrenceOn: true,
     recurrenceRule: { select: { id: true } },
@@ -303,6 +321,7 @@ export const workItemGateSelect = {
     parentId: true,
     cycleId: true,
     milestoneId: true,
+    goalId: true,
     sortKey: true,
     startedAt: true,
     startDate: true,
@@ -334,6 +353,7 @@ export type WorkItemPatch = Partial<{
     parentId: string | null;
     cycleId: string | null;
     milestoneId: string | null;
+    goalId: string | null;
 }>;
 
 /**
@@ -378,6 +398,24 @@ export function customFieldWhere(
     }
     return has({ textValue: condition.op === 'contains' ? { contains: condition.text, mode: 'insensitive' } : condition.text });
 }
+
+/** One row of `WorkItemRepository.ancestry`: a level of an item's ancestry. */
+export interface AncestryRow {
+    kind: 'item' | 'project' | 'initiative' | 'goal' | 'direct_goal';
+    id: string;
+    /** 0 for the item, its project, its initiative and the nearest goal of each chain; up from there. */
+    depth: number;
+    label: string;
+    /** An item's number. */
+    num: number | null;
+    /** A project's key prefix, or a goal's or an initiative's status. */
+    code: string | null;
+    archived: boolean;
+}
+
+/** ADR 0002 §2's caps: five levels of sub-items above the item, three of goals. */
+export const ANCESTRY_ITEM_DEPTH = 5;
+export const ANCESTRY_GOAL_DEPTH = 2;
 
 export class WorkItemRepository {
     /**
@@ -445,6 +483,14 @@ export class WorkItemRepository {
             if (none && ids.length > 0) and.push({ OR: [{ milestoneId: null }, { milestoneId: { in: ids } }] });
             else if (none) and.push({ milestoneId: null });
             else and.push({ milestoneId: { in: ids } });
+        }
+        // Goals and initiatives (3.2a): only their resolved forms are read.
+        if ((filters.goalId && !filters.goalScope) || (filters.initiativeId && !filters.initiativeProjectIds)) {
+            throw new Error('The goalId and initiativeId filters are resolved by the list usecase before the where is built.');
+        }
+        if (filters.initiativeProjectIds) and.push({ projectId: { in: [...filters.initiativeProjectIds] } });
+        if (filters.goalScope) {
+            and.push({ OR: [{ projectId: { in: [...filters.goalScope.projectIds] } }, { goalId: { in: [...filters.goalScope.goalIds] } }] });
         }
         if (filters.reviewerId) {
             const people = [
@@ -892,6 +938,7 @@ export class WorkItemRepository {
             parentId: string | null;
             cycleId?: string | null;
             milestoneId?: string | null;
+            goalId?: string | null;
             recurrenceId?: string | null;
             occurrenceOn?: Date | null;
             sortKey: string;
@@ -1057,6 +1104,91 @@ export class WorkItemRepository {
             )
             SELECT id, d::int AS d FROM anc ORDER BY d`;
         return rows.map((r) => r.id);
+    }
+
+    /**
+     * An item's ancestry in ONE statement (3.2a; docs/porting/maps/3.2.md,
+     * "The ancestry query"; decisions 211 and 220): up `parentId` (at most 5
+     * levels), the project, its live initiative and up that initiative's goal
+     * (at most 3), and from the item's OWN `goalId` up again (at most 3; a
+     * parent's direct goal is not the sub-item's). Each term is depth-capped
+     * and path-guarded (Paperclip's shape, pattern only), and carries
+     * `tenantId` and `deletedAt` (the item's, each parent's, each goal's and
+     * the initiative's) and the caller's project visibility in its own
+     * `WHERE`. Never a description. Empty when the item is missing, deleted or
+     * invisible.
+     */
+    static async ancestry(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, id: string): Promise<AncestryRow[]> {
+        const all = v.kind === 'ALL';
+        const granted = v.kind === 'GRANTED' ? [...v.projectIds] : [];
+        const t = ctx.tenantId;
+        const rows = await db.$queryRaw<AncestryRow[]>(Prisma.sql`
+            WITH RECURSIVE item_up AS (
+                SELECT w."id", w."parentId", w."projectId", w."goalId", w."number", w."title", 0 AS depth, ARRAY[w."id"] AS path
+                  FROM "WorkItem" w
+                  JOIN "Project" vp ON vp."id" = w."projectId" AND vp."tenantId" = ${t} AND vp."deletedAt" IS NULL
+                 WHERE w."tenantId" = ${t} AND w."id" = ${id} AND w."deletedAt" IS NULL
+                   AND (${all}::boolean OR w."projectId" = ANY(${granted}::text[]))
+                UNION ALL
+                SELECT p."id", p."parentId", p."projectId", p."goalId", p."number", p."title", u.depth + 1, u.path || p."id"
+                  FROM "WorkItem" p JOIN item_up u ON p."id" = u."parentId"
+                 WHERE p."tenantId" = ${t} AND p."deletedAt" IS NULL AND u.depth < ${ANCESTRY_ITEM_DEPTH} AND NOT p."id" = ANY(u.path)
+            ),
+            goal_up AS (
+                SELECT g."id", g."parentId", 0 AS depth, ARRAY[g."id"] AS path
+                  FROM item_up u
+                  JOIN "Project" pr ON pr."id" = u."projectId" AND pr."tenantId" = ${t} AND u.depth = 0
+                  JOIN "Initiative" i ON i."id" = pr."initiativeId" AND i."tenantId" = ${t} AND i."deletedAt" IS NULL
+                  JOIN "Goal" g ON g."id" = i."goalId" AND g."tenantId" = ${t} AND g."deletedAt" IS NULL
+                UNION ALL
+                SELECT g."id", g."parentId", gu.depth + 1, gu.path || g."id"
+                  FROM "Goal" g JOIN goal_up gu ON g."id" = gu."parentId"
+                 WHERE g."tenantId" = ${t} AND g."deletedAt" IS NULL AND gu.depth < ${ANCESTRY_GOAL_DEPTH} AND NOT g."id" = ANY(gu.path)
+            ),
+            direct_goal_up AS (
+                SELECT g."id", g."parentId", 0 AS depth, ARRAY[g."id"] AS path
+                  FROM item_up u
+                  JOIN "Goal" g ON g."id" = u."goalId" AND g."tenantId" = ${t} AND g."deletedAt" IS NULL AND u.depth = 0
+                UNION ALL
+                SELECT g."id", g."parentId", d.depth + 1, d.path || g."id"
+                  FROM "Goal" g JOIN direct_goal_up d ON g."id" = d."parentId"
+                 WHERE g."tenantId" = ${t} AND g."deletedAt" IS NULL AND d.depth < ${ANCESTRY_GOAL_DEPTH} AND NOT g."id" = ANY(d.path)
+            )
+            SELECT 'item' AS kind, u."id", u.depth, u."title" AS label, u."number" AS num, NULL::text AS code, false AS archived
+              FROM item_up u
+            UNION ALL
+            SELECT 'project', pr."id", 0, pr."name", NULL::int, pr."keyPrefix", pr."archivedAt" IS NOT NULL
+              FROM item_up u JOIN "Project" pr ON pr."id" = u."projectId" AND pr."tenantId" = ${t}
+             WHERE u.depth = 0
+            UNION ALL
+            SELECT 'initiative', i."id", 0, i."name", NULL::int, i."status"::text, i."archivedAt" IS NOT NULL
+              FROM item_up u
+              JOIN "Project" pr ON pr."id" = u."projectId" AND pr."tenantId" = ${t}
+              JOIN "Initiative" i ON i."id" = pr."initiativeId" AND i."tenantId" = ${t} AND i."deletedAt" IS NULL
+             WHERE u.depth = 0
+            UNION ALL
+            SELECT 'goal', g."id", gu.depth, g."title", NULL::int, g."status"::text, g."archivedAt" IS NOT NULL
+              FROM goal_up gu JOIN "Goal" g ON g."id" = gu."id" AND g."tenantId" = ${t}
+            UNION ALL
+            SELECT 'direct_goal', g."id", d.depth, g."title", NULL::int, g."status"::text, g."archivedAt" IS NOT NULL
+              FROM direct_goal_up d JOIN "Goal" g ON g."id" = d."id" AND g."tenantId" = ${t}`);
+        return rows.map((r) => ({ ...r, depth: Number(r.depth), num: r.num === null ? null : Number(r.num) }));
+    }
+
+    /**
+     * The items, deleted ones included, that name any of `goalIds` directly,
+     * locked in id order (decision 173) before a purge deletes the goals and
+     * the database clears their `goalId` (decision 219): what the purge
+     * unlinks, counted.
+     */
+    static async lockItemsNamingGoals(db: PrismaTx, ctx: RequestContext, goalIds: readonly string[]): Promise<LockedWorkItemIds> {
+        if (goalIds.length === 0) return mintLockedWorkItemIds([]);
+        const rows = await db.$queryRaw<Array<{ id: string }>>`
+            SELECT "id" FROM "WorkItem"
+             WHERE "tenantId" = ${ctx.tenantId} AND "goalId" = ANY(${[...goalIds]}::text[])
+             ORDER BY "id"
+             FOR UPDATE`;
+        return mintLockedWorkItemIds(rows.map((r) => r.id));
     }
 
     /** Soft-delete the given rows together under one `deletionId` (ADR 0002 §8). */

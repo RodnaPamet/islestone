@@ -20,6 +20,7 @@ export const projectSelect = {
     name: true,
     keyPrefix: true,
     dueDate: true,
+    initiativeId: true,
     version: true,
     archivedAt: true,
     deletedAt: true,
@@ -131,9 +132,9 @@ export class ProjectRepository {
         });
     }
 
-    static async create(db: PrismaTx, ctx: RequestContext, data: { teamId: string; name: string; keyPrefix: string; dueDate?: Date | null }) {
+    static async create(db: PrismaTx, ctx: RequestContext, data: { teamId: string; name: string; keyPrefix: string; dueDate?: Date | null; initiativeId?: string | null }) {
         const project = await db.project.create({
-            data: { tenantId: ctx.tenantId, teamId: data.teamId, name: data.name, keyPrefix: data.keyPrefix, dueDate: data.dueDate ?? null },
+            data: { tenantId: ctx.tenantId, teamId: data.teamId, name: data.name, keyPrefix: data.keyPrefix, dueDate: data.dueDate ?? null, initiativeId: data.initiativeId ?? null },
             select: projectSelect,
         });
         await db.projectKeyPrefix.create({
@@ -176,6 +177,47 @@ export class ProjectRepository {
      */
     static async setDueDateAtCreate(db: PrismaTx, ctx: RequestContext, id: string, dueDate: Date) {
         return db.project.updateMany({ where: { id, tenantId: ctx.tenantId, deletedAt: null }, data: { dueDate } });
+    }
+
+    /**
+     * Name the project's initiative, or clear it (3.2a): a versioned write of
+     * a live project; `expectedVersion` (from `If-Match`) must match when
+     * given. Returns the rows changed.
+     */
+    static async setInitiative(db: PrismaTx, ctx: RequestContext, id: string, expectedVersion: number | undefined, initiativeId: string | null): Promise<number> {
+        const r = await db.project.updateMany({
+            where: { id, tenantId: ctx.tenantId, deletedAt: null, ...(expectedVersion !== undefined ? { version: expectedVersion } : {}) },
+            data: { initiativeId, version: { increment: 1 } },
+        });
+        return r.count;
+    }
+
+    /** The live, visible projects of the given initiatives (the list's `initiativeId` and `goalId` filters, 3.2a). */
+    static async idsOfInitiatives(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, initiativeIds: readonly string[], take: number): Promise<string[]> {
+        if (initiativeIds.length === 0) return [];
+        const rows = await db.project.findMany({
+            where: { tenantId: ctx.tenantId, initiativeId: { in: [...initiativeIds] }, AND: [projectRowVisibilityWhere(v, { includeArchived: true })] },
+            orderBy: { id: 'asc' },
+            take,
+            select: { id: true },
+        });
+        return rows.map((r) => r.id);
+    }
+
+    /** An initiative's live, visible projects (archived ones included), by name. */
+    static async listOfInitiative(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, initiativeId: string) {
+        return db.project.findMany({
+            where: { tenantId: ctx.tenantId, initiativeId, AND: [projectRowVisibilityWhere(v, { includeArchived: true })] },
+            orderBy: [{ name: 'asc' }, { id: 'asc' }],
+            take: PROJECT_LIST_TAKE,
+            select: projectSelect,
+        });
+    }
+
+    /** How many projects (deleted ones included) name the given initiatives: what a purge unlinks. */
+    static async countNamingInitiatives(db: PrismaTx, ctx: RequestContext, initiativeIds: readonly string[]): Promise<number> {
+        if (initiativeIds.length === 0) return 0;
+        return db.project.count({ where: { tenantId: ctx.tenantId, initiativeId: { in: [...initiativeIds] } } });
     }
 
     static async setArchived(db: PrismaTx, ctx: RequestContext, id: string, archivedAt: Date | null) {

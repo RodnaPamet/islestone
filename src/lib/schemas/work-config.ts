@@ -43,7 +43,7 @@ export const DeleteWorkflowStateSchema = z.object({ moveToStateId: Id.optional()
 const ProjectDueDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'A date is YYYY-MM-DD.').nullable();
 
 export const CreateProjectSchema = z
-    .object({ teamId: Id, name: Name, keyPrefix: z.string().trim().min(2).max(10), templateId: Id.optional(), dueDate: ProjectDueDate.optional() })
+    .object({ teamId: Id, name: Name, keyPrefix: z.string().trim().min(2).max(10), templateId: Id.optional(), dueDate: ProjectDueDate.optional(), initiativeId: Id.nullish() })
     .strict();
 
 export const UpdateProjectSchema = z

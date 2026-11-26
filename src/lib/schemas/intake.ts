@@ -99,6 +99,8 @@ export const AcceptIntakeRequestSchema = z
         cycleId: Id.nullable().optional(),
         /** The fields a type's field set may require (2.4b-b). */
         milestoneId: Id.nullable().optional(),
+        /** A goal named directly (3.2a, decision 211). */
+        goalId: Id.nullable().optional(),
         waitingOnUserId: Id.nullable().optional(),
         startDate: DateOnly.nullable().optional(),
         dueDate: DateOnly.nullable().optional(),

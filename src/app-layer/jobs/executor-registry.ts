@@ -573,6 +573,21 @@ executorRegistry.register('work-item-purge', async (payload) => {
     });
 });
 
+executorRegistry.register('goal-purge', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processGoalPurge } = await import('./goal-purge');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId };
+    const r = await processGoalPurge(forwarded);
+    return makeResult('goal-purge', startedAt, startMs, r.goals + r.initiatives, r.goals + r.initiatives, 0, {
+        tenants: r.tenants,
+        goals: r.goals,
+        initiatives: r.initiatives,
+        projectsUnlinked: r.projectsUnlinked,
+        itemsUnlinked: r.itemsUnlinked,
+    });
+});
+
 executorRegistry.register('work-item-sortkey-rebalance', async (payload) => {
     const startedAt = new Date().toISOString();
     const startMs = performance.now();

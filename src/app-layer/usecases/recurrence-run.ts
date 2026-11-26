@@ -46,6 +46,8 @@ import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext } from '@/lib/db-context';
 import { logger } from '@/lib/observability/logger';
 import { TEMPLATE_LIMITS } from '@/lib/schemas/template';
+import { GoalRepository } from '../repositories/GoalRepository';
+import { mayNameGoals } from '../policies/goal.policies';
 
 export interface RecurrenceRunResult {
     rules: number;
@@ -75,6 +77,19 @@ async function holdRule(sys: RequestContext, rule: RecurrenceRow, reason: Recurr
 }
 
 /** As the owner, in one transaction: check the source, plan, claim, and make the copy. */
+/**
+ * The source's direct goal as the copy's owner finds it now (3.2a, decision
+ * 211): live, archived, unreadable to them, or (absent) deleted or purged.
+ * `templateToCreateInput` skips any but a live one, named.
+ */
+async function goalStatesFor(db: PrismaTx, owner: RequestContext, goalId: string | null): Promise<ReadonlyMap<string, 'live' | 'archived' | 'unreadable'>> {
+    if (!goalId) return new Map();
+    if (!mayNameGoals(owner)) return new Map([[goalId, 'unreadable']]);
+    const [goal] = await GoalRepository.getManyLite(db, owner, [goalId]);
+    if (!goal || goal.deletedAt) return new Map();
+    return new Map([[goalId, goal.archivedAt ? 'archived' : 'live']]);
+}
+
 async function makeOccurrenceInTx(db: PrismaTx, owner: RequestContext, rule: RecurrenceRow, today: Date): Promise<RuleOutcome> {
     const v = await visibleProjects(owner, db);
     const found = await WorkItemRepository.recurrenceSource(db, owner, v, rule.sourceWorkItemId);
@@ -111,11 +126,13 @@ async function makeOccurrenceInTx(db: PrismaTx, owner: RequestContext, rule: Rec
         assigneeId: source.assigneeId,
         dueInDays: null,
         milestoneId: source.milestoneId,
+        goalId: source.goalId ?? null,
         customFields: source.customFields,
         subItems: subRows.slice(0, TEMPLATE_LIMITS.subItems).map((s) => ({ title: s.title })),
     };
     const occurrenceOn = dayKey(plan.make.on);
-    const projected = templateToCreateInput(itemSource, { dueDate: occurrenceOn }, await templateUseContextInTx(db, owner, { id: found.projectId, teamId: found.teamId }, peopleNamedBy(itemSource)));
+    const useContext = await templateUseContextInTx(db, owner, { id: found.projectId, teamId: found.teamId }, peopleNamedBy(itemSource));
+    const projected = templateToCreateInput(itemSource, { dueDate: occurrenceOn }, { ...useContext, goalStates: await goalStatesFor(db, owner, itemSource.goalId) });
     // A start date keeps its distance from the due date. A source whose start
     // is after its due date (written before 3.1a) gives the copy no start, so
     // the copy is never refused as START_AFTER_DUE; it is named in `skipped`.
@@ -141,6 +158,7 @@ async function makeOccurrenceInTx(db: PrismaTx, owner: RequestContext, rule: Rec
             dueDate: projected.dueDate,
             startDate,
             milestoneId: projected.milestoneId,
+            goalId: projected.goalId,
             customFields: projected.customFields,
             waitingOnUserId: waitingActive ? waiting : null,
         },

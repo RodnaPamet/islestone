@@ -350,3 +350,32 @@ enum IntakeInboundStatus {
   DROPPED
   FAILED
 }
+
+/// A person's judgement of a goal's or an initiative's outcome (sub-phase
+/// 3.2; ADR 0002 §17, ADR 0006 "Health"; owner decisions 205 and 214). Never
+/// derived from the status, progress or "late", and never setting them; NULL
+/// on the row is "No health set".
+enum Health {
+  ON_TRACK
+  AT_RISK
+  OFF_TRACK
+  COMPLETED
+}
+
+/// A goal's lifecycle (sub-phase 3.2; ADR 0006 "Goal status"; owner decision
+/// 208): never "Active", which ADR 0006 reserves for agents.
+enum GoalStatus {
+  PLANNED
+  STARTED
+  COMPLETED
+  CANCELLED
+}
+
+/// An initiative's lifecycle (sub-phase 3.2; ADR 0006 "Initiative status";
+/// owner decision 208): the same four values as a goal's.
+enum InitiativeStatus {
+  PLANNED
+  STARTED
+  COMPLETED
+  CANCELLED
+}

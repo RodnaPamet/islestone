@@ -67,6 +67,23 @@ describe('templateToCreateInput', () => {
         expect(JSON.stringify(source)).toBe(before);
     });
 
+    it("a repeat source's goal (3.2a): kept while live, else skipped and named; a template names none", () => {
+        const goals = new Map([
+            ['g-live', 'live'],
+            ['g-archived', 'archived'],
+            ['g-blind', 'unreadable'],
+        ] as const);
+        const withGoal = (goalId: string) => templateToCreateInput({ ...source, goalId }, {}, { ...use, goalStates: goals });
+        expect(withGoal('g-live')).toMatchObject({ goalId: 'g-live' });
+        expect(withGoal('g-live').skipped).not.toContainEqual(expect.stringMatching(/^goal:/));
+        expect(withGoal('g-archived')).toMatchObject({ goalId: null });
+        expect(withGoal('g-archived').skipped).toContain('goal:archived');
+        expect(withGoal('g-blind').skipped).toContain('goal:unreadable');
+        expect(withGoal('g-gone').skipped).toContain('goal:deleted');
+        expect(templateToCreateInput(source, {}, use).goalId).toBeNull();
+        expect(templateToCreateInput({ ...source, goalId: 'g-gone' }, { goalId: 'g-live' }, use)).toMatchObject({ goalId: 'g-live' });
+    });
+
     it('a template with no due offset gives no due date, and day 0 is today', () => {
         expect(templateToCreateInput({ ...source, dueInDays: null }, {}, use).dueDate).toBeNull();
         expect(templateToCreateInput({ ...source, dueInDays: 0 }, {}, use).dueDate).toBe('2026-11-20');

@@ -291,6 +291,8 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             'CustomFieldValue',
             'Cycle',
             'CycleSchedule',
+            'Goal',
+            'Initiative',
             'IntakeBlockedSender',
             'IntakeFollowUp',
             'IntakeForm',

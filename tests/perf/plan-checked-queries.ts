@@ -85,6 +85,11 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'counts: list metrics (one project)', methods: ['WorkItemRepository.metrics'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx|WorkItem_tenantId_projectId_stateId_sortKey_idx|WorkItem_tenantId_projectId_dueDate_id_idx'], maxBuffers: 1400 },
     { name: 'counts: cycles', methods: ['WorkItemRepository.countsByCycle', 'WorkItemRepository.cycleIdsInUse'], indexes: ['WorkItem_tenantId_cycleId_stateCategory_idx'], maxBuffers: 1100 },
     { name: 'counts: milestones', methods: ['WorkItemRepository.countsByMilestone'], indexes: ['WorkItem_tenantId_milestoneId_stateCategory_idx'], maxBuffers: 250 },
+    // ── Goals and initiatives (3.2a, decisions 211 and 220) ───────────────
+    { name: 'list: goal filter (project path or own goal)', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_sortKey_id_idx|WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 1700 },
+    { name: 'list: initiative filter', methods: ['WorkItemRepository.list'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx|WorkItem_tenantId_sortKey_id_idx'], maxBuffers: 700 },
+    { name: 'detail: the ancestry (one statement)', methods: ['WorkItemRepository.ancestry'], indexes: ['WorkItem_pkey|WorkItem_id_tenantId_key|WorkItem_id_projectId_tenantId_key'], maxBuffers: 50 },
+    { name: "job: the goal purge's unlinked items", methods: ['WorkItemRepository.lockItemsNamingGoals'], indexes: ['WorkItem_tenantId_goalId_stateCategory_idx'], maxBuffers: 10 },
     { name: 'counts: items in a state', methods: ['TeamRepository.countItemsInState', 'ReviewRepository.itemsInStateRequiringReview', 'WorkItemRepository.lockInState'], indexes: ['WorkItem_tenantId_stateId_idx'], maxBuffers: 6500 },
     // ── Search: the palette's raw reads ────────────────────────────────────
     { name: 'search: titles (trigram and full text)', methods: ['WorkItemRepository.searchTitleIds'], indexes: ['WorkItem_search_title_fts', 'WorkItem_search_title_trgm'], maxBuffers: 1800, conditions: [{ index: 'WorkItem_search_title_trgm', operator: '~~*' }, { index: 'WorkItem_search_title_fts', operator: '@@' }] },

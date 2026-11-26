@@ -106,6 +106,11 @@ const RUNNERS: Record<string, Runner> = {
         return WorkItemRepository.cycleIdsInUse(db, ctx, [w.currentCycleId]);
     },
     'counts: milestones': (w, db, ctx, v) => WorkItemRepository.countsByMilestone(db, ctx, v, [w.milestoneId]),
+    // The seed holds no goals: the resolved scopes name its project and a goal id no item names.
+    'list: goal filter (project path or own goal)': (w, db, ctx, v) => list({ goalId: 'g', goalScope: { projectIds: [w.projectId], goalIds: ['no-such-goal'] } })(w, db, ctx, v),
+    'list: initiative filter': (w, db, ctx, v) => list({ initiativeId: 'i', initiativeProjectIds: [w.projectId] })(w, db, ctx, v),
+    'detail: the ancestry (one statement)': (w, db, ctx, v) => WorkItemRepository.ancestry(db, ctx, v, w.leafId),
+    "job: the goal purge's unlinked items": (w, db, ctx) => WorkItemRepository.lockItemsNamingGoals(db, ctx, ['no-such-goal']),
     'counts: items in a state': async (w, db, ctx) => {
         await TeamRepository.countItemsInState(db, ctx, w.stateId);
         await ReviewRepository.itemsInStateRequiringReview(db, ctx, w.stateId);

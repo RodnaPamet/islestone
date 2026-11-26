@@ -96,6 +96,9 @@ model Tenant {
   // Roadmap 3.1a: working calendars (ADR 0010).
   workingCalendars                WorkingCalendar[]
   workingCalendarHolidays         WorkingCalendarHoliday[]
+  // Sub-phase 3.2: goals and initiatives (ADR 0002 §17).
+  goals                           Goal[]
+  initiatives                     Initiative[]
 
   teams                  Team[]
   workflowStates         WorkflowState[]
@@ -173,6 +176,9 @@ model TenantMembership {
   recipientLists    RecipientListMember[]            @relation("RecipientListMembership")
   /// The default review steps of types that name this member (2.8c, decision 159).
   typeReviewSteps   WorkItemTypeReviewStepReviewer[] @relation("TypeReviewStepMember")
+  /// Goals and initiatives this member leads (3.2, decision 209; RESTRICT).
+  ledGoals          Goal[]                           @relation("GoalLead")
+  ledInitiatives    Initiative[]                     @relation("InitiativeLead")
 
   @@unique([tenantId, userId])
   /// The composite an FK from a tenant-scoped child references. `id` alone is

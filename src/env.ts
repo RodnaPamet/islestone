@@ -392,6 +392,12 @@ export const env = createEnv({
          * 2026-11-19).
          */
         WORK_ITEM_PURGE_DAYS: z.coerce.number().int().min(1).default(30),
+        /**
+         * Days a soft-deleted goal or initiative stays restorable before
+         * `goal-purge` hard-deletes it and the database clears every link to
+         * it (sub-phase 3.2a, owner decision 219: 30).
+         */
+        GOAL_PURGE_DAYS: z.coerce.number().int().min(1).default(30),
         /** SMTP user; with SMTP_PASS, the relay's credentials. Both or neither. */
         SMTP_USER: z.string().min(1).optional(),
         /** SMTP password. A secret: never logged. */
@@ -478,6 +484,7 @@ export const env = createEnv({
         SMTP_PORT: process.env.SMTP_PORT,
         NOTIFICATIONS_TZ: process.env.NOTIFICATIONS_TZ,
         WORK_ITEM_PURGE_DAYS: process.env.WORK_ITEM_PURGE_DAYS,
+        GOAL_PURGE_DAYS: process.env.GOAL_PURGE_DAYS,
         SMTP_USER: process.env.SMTP_USER,
         SMTP_PASS: process.env.SMTP_PASS,
         SMTP_FROM: process.env.SMTP_FROM,

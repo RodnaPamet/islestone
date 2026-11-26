@@ -51,6 +51,8 @@ import {
 } from './custom-roles';
 import { lockTenantOwners } from './tenant-owner-lock';
 import { clearPersonValuesInTx } from './custom-field';
+import { GoalRepository } from '../repositories/GoalRepository';
+import { InitiativeRepository } from '../repositories/InitiativeRepository';
 import { WorkItemTemplateRepository } from '../repositories/TemplateRepository';
 import { withdrawReviewerRowsOfUser } from './review-engine';
 import { emitReviewNotices } from './work-item-shared';
@@ -627,6 +629,34 @@ export async function removeTenantMember(
                 details: `Cleared the assignee of ${clearedTemplates} item template(s) before removing a member`,
                 detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItemTemplate', operation: 'updated', changedFields: ['assigneeId'] },
                 metadata: { clearedCount: clearedTemplates },
+            });
+        }
+
+        // Sub-phase 3.2a (decision 209): goals and initiatives they lead lose
+        // their Lead (the member FK is RESTRICT), deleted ones included, each
+        // audited and its version increased.
+        const ledGoals = await GoalRepository.clearLead(db, ctx, membership.userId);
+        for (const g of ledGoals) {
+            // guardrail-allow: n+1 — one audit entry per goal they led (bounded by GOALS_LIST_TAKE).
+            await logEvent(db, ctx, {
+                action: 'GOAL_UPDATED',
+                entityType: 'Goal',
+                entityId: g.id,
+                details: `Cleared the lead of goal ${g.title} before removing a member`,
+                detailsJson: { category: 'entity_lifecycle', entityName: 'Goal', operation: 'updated', changedFields: ['leadUserId'] },
+                metadata: { reason: 'member_removed', fromLeadUserId: membership.userId, toLeadUserId: null },
+            });
+        }
+        const ledInitiatives = await InitiativeRepository.clearLead(db, ctx, membership.userId);
+        for (const i of ledInitiatives) {
+            // guardrail-allow: n+1 — one audit entry per initiative they led (bounded by INITIATIVES_LIST_TAKE).
+            await logEvent(db, ctx, {
+                action: 'INITIATIVE_UPDATED',
+                entityType: 'Initiative',
+                entityId: i.id,
+                details: `Cleared the lead of initiative ${i.name} before removing a member`,
+                detailsJson: { category: 'entity_lifecycle', entityName: 'Initiative', operation: 'updated', changedFields: ['leadUserId'] },
+                metadata: { reason: 'member_removed', fromLeadUserId: membership.userId, toLeadUserId: null },
             });
         }
 

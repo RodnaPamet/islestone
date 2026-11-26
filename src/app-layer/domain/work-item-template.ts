@@ -29,6 +29,8 @@ export interface TemplateItemSource {
     assigneeId: string | null;
     dueInDays: number | null;
     milestoneId?: string | null;
+    /** The goal a repeat's source names directly (3.2a, decision 211); item and project templates carry none. */
+    goalId?: string | null;
     customFields: Readonly<Record<string, unknown>>;
     subItems: ReadonlyArray<{ title: string }>;
 }
@@ -43,6 +45,7 @@ export interface TemplateOverrides {
     assigneeId?: string | null;
     dueDate?: string | null;
     milestoneId?: string | null;
+    goalId?: string | null;
     customFields?: Readonly<Record<string, unknown>>;
 }
 
@@ -56,6 +59,12 @@ export interface TemplateUseContext {
     activeMemberIds: ReadonlySet<string>;
     /** The project's live (not archived) fields, with their live options. */
     liveFields: ReadonlyMap<string, { type: CustomFieldType; liveOptionIds: ReadonlySet<string> }>;
+    /**
+     * The source's goal as it is now (3.2a): `live`, `archived`, or
+     * `unreadable` (the person the copy is made as may not read goals); a goal
+     * not in the map is deleted or gone. Only a repeat's source names a goal.
+     */
+    goalStates?: ReadonlyMap<string, 'live' | 'archived' | 'unreadable'>;
 }
 
 export interface TemplateProjection {
@@ -67,6 +76,7 @@ export interface TemplateProjection {
     assigneeId: string | null;
     dueDate: string | null;
     milestoneId: string | null;
+    goalId: string | null;
     customFields: Record<string, unknown>;
     subItems: Array<{ title: string }>;
     /** What the template held that the project no longer takes (`label:<id>`, `assignee:<id>`, `field:<id>`). */
@@ -118,6 +128,19 @@ export function templateToCreateInput(source: TemplateItemSource, body: Template
     }
     Object.assign(customFields, body.customFields ?? {});
 
+    // A goal no longer linkable is skipped and named, never a refusal (3.2a):
+    // `goal:deleted`, `goal:archived`, `goal:unreadable`.
+    let goalId: string | null;
+    if (body.goalId !== undefined) goalId = body.goalId;
+    else if (source.goalId) {
+        const state = use.goalStates?.get(source.goalId);
+        if (state === 'live') goalId = source.goalId;
+        else {
+            skipped.push(`goal:${state ?? 'deleted'}`);
+            goalId = null;
+        }
+    } else goalId = null;
+
     const dueDate =
         body.dueDate !== undefined ? body.dueDate : source.dueInDays !== null ? dayKey(addDays(use.today, source.dueInDays)) : null;
 
@@ -130,6 +153,7 @@ export function templateToCreateInput(source: TemplateItemSource, body: Template
         assigneeId,
         dueDate,
         milestoneId: body.milestoneId !== undefined ? body.milestoneId : (source.milestoneId ?? null),
+        goalId,
         customFields,
         subItems: source.subItems.map((s) => ({ title: s.title })),
         skipped,

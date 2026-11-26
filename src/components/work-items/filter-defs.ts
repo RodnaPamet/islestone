@@ -14,7 +14,7 @@
  * loaded rows are a subset, and an option list built from them would shrink
  * as pages load (the map's risk 5).
  */
-import { CalendarDays, CircleDotted, Cube, Flag, FlagWavy, Folder, BulletList, Tag, UserCheck } from '@inflect/ui/components/ui/icons/nucleo';
+import { CalendarDays, CircleDotted, Cube, Flag, FlagWavy, Folder, BulletList, MarketingTarget, StackY3, Tag, UserCheck } from '@inflect/ui/components/ui/icons/nucleo';
 import { createFilterDefs, type FilterDefInput } from '@/components/ui/filter';
 import { WORKFLOW_STATE_CATEGORIES } from '@/app-layer/domain/workflow-state';
 import { PRIORITY_ORDER } from '@/lib/work-items/presentation';
@@ -24,7 +24,7 @@ import type { Member } from '@/lib/work-items/types';
 import type { WorkConfigIndex } from './data/use-work-config';
 
 /** Every key the list reads from the URL (3.6's next-best-action reads `due=overdue`). */
-export const WORK_ITEM_FILTER_KEYS = ['stateCategory', 'stateId', 'priority', 'typeId', 'labelId', 'assigneeId', 'projectId', 'cycleId', 'milestoneId', 'waitingOnId', 'reviewerId', 'due'] as const;
+export const WORK_ITEM_FILTER_KEYS = ['stateCategory', 'stateId', 'priority', 'typeId', 'labelId', 'assigneeId', 'projectId', 'cycleId', 'milestoneId', 'waitingOnId', 'reviewerId', 'goalId', 'initiativeId', 'due'] as const;
 export type WorkItemFilterKey = (typeof WORK_ITEM_FILTER_KEYS)[number];
 
 type Translate = (key: string, values?: Record<string, string | number>) => string;
@@ -152,6 +152,17 @@ export function workItemFilterDefsInput(config: WorkConfigIndex, members: readon
                 })),
             ],
         };
+    }
+    // Sub-phase 3.2a (decision 220): a goal (its live subtree, through a
+    // project's initiative or the item's own goal) and an initiative (its
+    // projects), each from the view configuration (none without goals.view).
+    const goals = config.goals ?? [];
+    if (goals.length > 0) {
+        defs.goalId = { label: t('filters.goal'), icon: MarketingTarget, multiple: true, options: goals.map((g) => ({ value: g.id, label: g.title })) };
+    }
+    const initiatives = config.initiatives ?? [];
+    if (initiatives.length > 0) {
+        defs.initiativeId = { label: t('filters.initiative'), icon: StackY3, multiple: true, options: initiatives.map((i) => ({ value: i.id, label: i.name })) };
     }
     defs.due = {
         label: t('filters.due'),

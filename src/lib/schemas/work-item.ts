@@ -62,6 +62,8 @@ export const CreateWorkItemSchema = z
         cycleId: Id.nullish(),
         /** A milestone of the project (2.5b). */
         milestoneId: Id.nullish(),
+        /** A live, unarchived goal named directly (3.2a, decision 211). */
+        goalId: Id.nullish(),
         /** The active member the item waits on (2.4b); refused into a closed state. */
         waitingOnUserId: Id.nullish(),
         /** An item template of the project (2.5c). */
@@ -186,6 +188,10 @@ export const WorkItemQuerySchema = z.object({
     milestoneId: z.string().max(2000).optional(),
     /** Member user ids an item waits on (comma-joinable), or `none` (2.4b). */
     waitingOnId: z.string().max(2000).optional(),
+    /** Goal ids (comma-joinable): items under each goal's live subtree, through a project's initiative or their own goal (3.2a, decision 220). */
+    goalId: z.string().max(2000).optional(),
+    /** Initiative ids (comma-joinable): items of the initiatives' projects (3.2a, decision 220). */
+    initiativeId: z.string().max(2000).optional(),
     /** Only `me`: the caller's watched items, resolved from the request context. */
     watching: z.enum(['me']).optional(),
     /** Member user ids (comma-joinable) or `me`: items whose open review step still asks them (2.8a). */

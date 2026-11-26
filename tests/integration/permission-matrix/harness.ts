@@ -31,6 +31,8 @@ import type { RequestContext } from '@/app-layer/types';
 import { createCustomRole, assignCustomRole } from '@/app-layer/usecases/custom-roles';
 import { createCustomField, addCustomFieldOption } from '@/app-layer/usecases/custom-field';
 import { createCycle } from '@/app-layer/usecases/cycle';
+import { createGoal, deleteGoal } from '@/app-layer/usecases/goal';
+import { createInitiative, deleteInitiative } from '@/app-layer/usecases/initiative';
 import { blockSender } from '@/app-layer/usecases/intake-blocked-senders';
 import { createIntakeForm } from '@/app-layer/usecases/intake-form';
 import { declineIntakeRequest, sendIntakeRequest } from '@/app-layer/usecases/intake-request';
@@ -168,6 +170,8 @@ export function setUpMatrixWorld(tag: string): { world: () => World; prisma: () 
         const form = await createIntakeForm(owner, { projectId: project.id, name: 'Matrix form', definition: { fields: [] }, published: true });
         const request = await sendIntakeRequest(ctxAs(w, 'ANN'), form.id, { title: 'seeded', answers: {} });
         const question = await addQuestionType(owner, { name: 'Matrix question' });
+        const goal = await createGoal(owner, { title: 'Matrix goal' });
+        const initiative = await createInitiative(owner, { name: 'Matrix initiative', goalId: goal.id });
 
         Object.assign(w, {
             subject: {
@@ -190,6 +194,8 @@ export function setUpMatrixWorld(tag: string): { world: () => World; prisma: () 
                 viewId: view.id,
                 cycleId: cycle.id,
                 milestoneId: milestone.id,
+                goalId: goal.id,
+                initiativeId: initiative.id,
                 templateId: itemTemplate.id,
                 projectTemplateId: projectTemplate.id,
                 workspaceListId: workspaceList.id,
@@ -329,6 +335,20 @@ async function buildFixture(name: FixtureName, w: World, prisma: PrismaClient, c
         }
         case 'freshMilestone':
             return { milestoneId: (await createMilestone(owner, s.projectId!, { name: `M ${nextSeq()}` })).id };
+        case 'freshGoal':
+        case 'finishedGoal':
+        case 'deletedGoal': {
+            const g = await createGoal(owner, { title: `G ${nextSeq()}`, status: name === 'finishedGoal' ? 'COMPLETED' : 'PLANNED' });
+            if (name === 'deletedGoal') await deleteGoal(owner, g.id);
+            return { goalId: g.id };
+        }
+        case 'freshInitiative':
+        case 'finishedInitiative':
+        case 'deletedInitiative': {
+            const i = await createInitiative(owner, { name: `I ${nextSeq()}`, status: name === 'finishedInitiative' ? 'CANCELLED' : 'PLANNED' });
+            if (name === 'deletedInitiative') await deleteInitiative(owner, i.id);
+            return { initiativeId: i.id };
+        }
         case 'freshItemTemplate':
             return { templateId: (await createWorkItemTemplate(owner, s.projectId!, { name: `T ${nextSeq()}`, title: 'fresh' })).id };
         case 'freshProjectList':

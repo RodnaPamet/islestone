@@ -59,6 +59,9 @@ export interface SettingsProject {
     keyPrefix: string;
     /** `YYYY-MM-DD` or null (roadmap 3.1, decision 188). */
     dueDate?: string | null;
+    /** The initiative the project serves (3.2a). */
+    initiativeId?: string | null;
+    version?: number;
     archivedAt: string | null;
 }
 
@@ -76,6 +79,8 @@ export const SETTINGS_PATHS = {
     /** The workspace's working calendar and which teams have their own (3.1a). */
     workingCalendars: '/working-calendar',
     teamWorkingCalendar: (teamId: string) => `/teams/${encodeURIComponent(teamId)}/working-calendar`,
+    /** The live initiatives (3.2a; `goals.view`): the project dialog's and Settings → Projects' initiative. */
+    initiatives: '/initiatives',
 } as const;
 
 export const useTeams = () => useTenantSWR<SettingsTeam[]>(SETTINGS_PATHS.teams);
@@ -89,6 +94,10 @@ export const useTypeFields = (typeId: string) =>
 export const useProjects = () => useTenantSWR<SettingsProject[]>(SETTINGS_PATHS.projects);
 export const useProjectTemplates = (enabled = true) => useTenantSWR<ProjectTemplateSummary[]>(enabled ? SETTINGS_PATHS.projectTemplates : null);
 export const useAllProjectTemplates = () => useTenantSWR<ProjectTemplateSummary[]>(SETTINGS_PATHS.projectTemplatesAll);
+
+/** The live, unarchived initiatives, read only where the page offers them (`goals.view`, 3.2a). */
+export const useInitiatives = (enabled: boolean) =>
+    useTenantSWR<{ initiatives: Array<{ id: string; name: string; archived: boolean }> }>(enabled ? SETTINGS_PATHS.initiatives : null);
 
 export const useWorkingCalendars = () => useTenantSWR<WorkingCalendarsOverview>(SETTINGS_PATHS.workingCalendars);
 export const useTeamWorkingCalendar = (teamId: string) => useTenantSWR<TeamWorkingCalendarData>(SETTINGS_PATHS.teamWorkingCalendar(teamId));

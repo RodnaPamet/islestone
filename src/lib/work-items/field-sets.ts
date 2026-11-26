@@ -29,6 +29,8 @@ export const CONFIGURABLE_BUILT_IN_FIELDS = [
     'cycle',
     'milestone',
     'answer',
+    // The item's direct goal (3.2a, owner decision 211).
+    'goal',
 ] as const;
 export type BuiltInField = (typeof CONFIGURABLE_BUILT_IN_FIELDS)[number];
 
@@ -67,6 +69,8 @@ export interface FieldValues {
     cycleId?: string | null;
     milestoneId?: string | null;
     answerCommentId?: string | null;
+    /** The goal the item names directly (3.2a). */
+    goalId?: string | null;
     /** Field id → value; empty is absent, null, '', [] or false. */
     customFields?: Readonly<Record<string, unknown>>;
 }
@@ -82,6 +86,7 @@ const VALUE_OF: Record<BuiltInField, keyof FieldValues> = {
     cycle: 'cycleId',
     milestone: 'milestoneId',
     answer: 'answerCommentId',
+    goal: 'goalId',
 };
 
 export function isBuiltInField(value: string): value is BuiltInField {
@@ -189,6 +194,7 @@ export const BUILT_IN_FIELD_LABELS: Record<BuiltInField, string> = {
     cycle: 'Cycle',
     milestone: 'Milestone',
     answer: 'Answer',
+    goal: 'Goal',
 };
 
 export function fieldLabel(key: FieldKey, customFieldNames?: ReadonlyMap<string, string>): string {

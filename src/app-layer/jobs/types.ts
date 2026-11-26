@@ -206,6 +206,15 @@ export interface WorkItemPurgePayload {
 }
 
 /**
+ * Nightly goal purge (sub-phase 3.2a, owner decision 219): goals and
+ * initiatives deleted more than `GOAL_PURGE_DAYS` ago. No `tenantId` sweeps
+ * every live workspace.
+ */
+export interface GoalPurgePayload {
+    tenantId?: string;
+}
+
+/**
  * Daily cycle rollover (sub-phase 2.5a): close ended cycles, move their
  * unfinished items on, keep the schedules filled. No `tenantId` sweeps every
  * workspace with cycles; a `tenantId` re-runs one.
@@ -316,6 +325,7 @@ export interface JobPayloadMap {
     'tenant-dek-rotation': TenantDekRotationPayload;
     'work-item-due-notification': WorkItemDueNotificationPayload;
     'work-item-purge': WorkItemPurgePayload;
+    'goal-purge': GoalPurgePayload;
     'work-item-sortkey-rebalance': WorkItemSortKeyRebalancePayload;
     'cycle-rollover': CycleRolloverPayload;
     'intake-snooze-wake': IntakeSnoozeWakePayload;
@@ -418,6 +428,14 @@ export const JOB_DEFAULTS: Record<JobName, {
     },
     'work-item-purge': {
         // One attempt: the next daily run is the retry, and every batch it
+        // finished is already committed.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 60_000 },
+        removeOnComplete: 30,
+        removeOnFail: 100,
+    },
+    'goal-purge': {
+        // One attempt: the next nightly run is the retry, and every page it
         // finished is already committed.
         attempts: 1,
         backoff: { type: 'fixed', delay: 60_000 },

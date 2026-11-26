@@ -157,6 +157,13 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'goal-purge',
+        pattern: '35 2 * * *',    // 02:35 UTC
+        // After the 02:30 work-item purge, off the hour (decision 219).
+        description: 'Hard-delete goals and initiatives soft-deleted more than GOAL_PURGE_DAYS (30) ago; the database clears every link to them. Counts-only audit entry per workspace.',
+        defaultPayload: {},
+    },
+    {
         name: 'work-item-sortkey-rebalance',
         pattern: '45 3 * * *',    // 03:45 UTC
         description: 'Rewrite the sort keys of projects whose keys passed 64 characters, keeping their order.',
