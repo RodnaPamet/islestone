@@ -121,12 +121,15 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'calendar: workspace, a month grid', methods: ['WorkItemRepository.listForCalendar', 'WorkItemRepository.countForCalendar', 'WorkItemRepository.countWithoutDueDate'], indexes: ['WorkItem_tenantId_dueDate_id_idx|WorkItem_tenantId_projectId_dueDate_id_idx'], maxBuffers: 5200, maxBuffers100k: 40000 },
     { name: 'calendar: project, a month grid', methods: ['WorkItemRepository.listForCalendar', 'WorkItemRepository.countWithoutDueDate'], indexes: ['WorkItem_tenantId_projectId_dueDate_id_idx'], maxBuffers: 1000, maxBuffers100k: 10000 },
     // ── Calendar sync (3.3b): a member's open assigned items in the push window, their count, their projects ──
+    // 10k: 3,718 buffers measured for the heavy member (the window's items on the assignee index, the
+    // count, and every open assigned item grouped by project). 100k: NOT MEASURED (no disk for the seed
+    // here): about ten times, budgeted as such; replace with about twice the nightly's first measurement.
     {
         name: "calendar sync: a member's items and projects",
         methods: ['WorkItemRepository.listAssignedForCalendarSync', 'WorkItemRepository.countAssignedForCalendarSync', 'WorkItemRepository.projectsWithOpenAssigned'],
         indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx'],
-        maxBuffers: 4000,
-        maxBuffers100k: 40000,
+        maxBuffers: 7500,
+        maxBuffers100k: 75000,
     },
     {
         name: 'timeline: working calendars',
