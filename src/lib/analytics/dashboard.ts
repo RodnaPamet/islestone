@@ -7,6 +7,10 @@
  */
 import type { WorkItemListFilters } from '@/components/work-items/data/list-filters';
 
+import { ANALYTICS_SET_ASIDE_FILTERS } from './types';
+
+const SET_ASIDE: readonly string[] = ANALYTICS_SET_ASIDE_FILTERS;
+
 /** The bounds a dashboard holds (the map's: 24 widgets, 50 dashboards a person). */
 export const DASHBOARD_LIMITS = {
     /** Widgets on one dashboard (400 `DASHBOARD_TOO_LARGE` above). */
@@ -123,13 +127,14 @@ export function scopeAsListFilters(scope: WidgetScope): WorkItemListFilters {
 /**
  * A saved view's filters as a widget scope (decision 328: "Start from a
  * view" copies them once): the built-in facets and the search; custom-field
- * conditions are left out and named.
+ * conditions and the status filters every analytics read sets aside are left
+ * out and named.
  */
 export function scopeFromView(config: { filters: Record<string, string[]>; q?: string }): { scope: WidgetScope; leftOut: string[] } {
     const filters: Record<string, string[]> = {};
     const leftOut: string[] = [];
     for (const [key, values] of Object.entries(config.filters)) {
-        if (key.startsWith('cf.')) {
+        if (key.startsWith('cf.') || SET_ASIDE.includes(key)) {
             leftOut.push(key);
             continue;
         }

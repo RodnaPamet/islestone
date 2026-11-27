@@ -127,6 +127,8 @@ export const SUBPAGES: readonly string[] = [
     '/settings/time-tracking',
     // Sub-phase 3.5a: the default capacity, members' capacity and time off.
     '/settings/workload',
+    // Sub-phase 3.6d: one dashboard (decision 326).
+    '/analytics/dashboards/[dashboardId]',
 ] as const;
 
 /**

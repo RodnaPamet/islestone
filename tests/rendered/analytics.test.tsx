@@ -1,12 +1,13 @@
 /** @jest-environment jsdom */
 
 /**
- * The Analytics page in the browser (sub-phase 3.6a; owner decisions 324 and
- * 329; docs/porting/maps/3.6.md, "Where analytics appear"): the counts, the
- * five fixed charts each with its table (the accessible fallback), the
- * window and the set-aside status filters named, a chart over its bound
- * saying so with the count (never a cut chart) while the others draw, each
- * read its own request with the window, and no axe violations; time waiting
+ * The Analytics page in the browser (sub-phases 3.6a and 3.6d; owner
+ * decisions 324, 326 and 329; docs/porting/maps/3.6.md, "Where analytics
+ * appear"): the default dashboard's widgets, the counts and the five charts
+ * each with its table (the accessible fallback), each widget's window and
+ * scope named, a chart over its bound saying so with the count (never a cut
+ * chart) while the others draw, each read its own request with the window,
+ * and no axe violations; time waiting
  * (3.6b) with every party's rows and the totals when the server gives them,
  * the reader's own row alone and no totals otherwise (decision 335), and a
  * chart over its review bound. visx's
@@ -24,12 +25,12 @@ jest.mock('next/navigation', () => ({
     useParams: () => ({ tenantSlug: 'acme' }),
 }));
 
-import { AnalyticsView } from '@/components/analytics/AnalyticsView';
+import { DashboardView } from '@/components/analytics/dashboard/DashboardView';
 import type { CountsResponse, DurationsResponse, FlowResponse, ThroughputResponse, WaitingPartyRow, WaitingResponse } from '@/lib/analytics/types';
 
 import { installFetch, renderWorkspace } from '../helpers/work-items-harness';
 
-const ALL = { view: true, share: true, people: true };
+const PAGE = { createPersonal: true, createShared: true };
 const frame = { from: '2026-09-07', to: '2026-11-29', asOf: '2026-11-27', timeZone: 'Europe/Sofia', calendarTeamId: null, setAside: [] as Array<'stateId' | 'stateCategory' | 'due'> };
 
 const counts: CountsResponse = { ...frame, open: 12, started: 4, doneInWindow: 30, createdInWindow: 25 };
@@ -76,7 +77,7 @@ const waitingAll: WaitingResponse = { ...frame, totals, self: anaRow, people: [a
 // Without analytics.people: one's own row, no totals (decision 335).
 const waitingOwn: WaitingResponse = { ...frame, self: anaRow, waitingNowCut: false, items: 9 };
 
-describe('the Analytics page', () => {
+describe('the Analytics page: the default dashboard', () => {
     it('shows the counts and every chart with its table, names the set-aside filters, and has no axe violations', async () => {
         const fetch = installFetch({
             'GET /analytics/counts': { body: counts },
@@ -93,7 +94,7 @@ describe('the Analytics page', () => {
                 } satisfies FlowResponse,
             }),
         });
-        const { container } = renderWorkspace(<AnalyticsView affordances={ALL} today="2026-11-27" />);
+        const { container } = renderWorkspace(<DashboardView dashboard={null} affordances={PAGE} today="2026-11-27" />);
         expect(await screen.findByTestId('analytics-count-open')).toHaveTextContent('12');
         expect(screen.getByTestId('analytics-count-done')).toHaveTextContent('30');
 
@@ -116,7 +117,8 @@ describe('the Analytics page', () => {
         expect(within(flow).getByText(/16 items followed/)).toBeInTheDocument();
         expect(await screen.findByRole('region', { name: 'Burn-up' })).toBeInTheDocument();
 
-        expect(screen.getByTestId('analytics-frame')).toHaveTextContent('Set aside: Category');
+        // Each widget names its window and scope.
+        expect(within(throughputSection).getByText('Last 12 weeks, all the work you can see')).toBeInTheDocument();
 
         // Each read is its own request, over the twelve weeks ending today.
         const reads = fetch.calls.filter((c) => c.path.startsWith('/analytics/'));
@@ -132,23 +134,15 @@ describe('the Analytics page', () => {
             'GET /analytics/durations': { body: durations },
             'GET /analytics/flow': { status: 422, body: { error: { code: 'ANALYTICS_TOO_LARGE', message: 'Too many', details: { reason: 'ANALYTICS_TOO_LARGE', what: 'items', count: 20001, limit: 20000 } } } },
         });
-        renderWorkspace(<AnalyticsView affordances={ALL} today="2026-11-27" />);
+        renderWorkspace(<DashboardView dashboard={null} affordances={PAGE} today="2026-11-27" />);
         const flow = await screen.findByRole('region', { name: 'Cumulative flow' });
         expect(await within(flow).findByText('This scope follows more than 20000 items (20001). Narrow the filter or the window.')).toBeInTheDocument();
         expect(await screen.findByText('10 done; a median week of 7.')).toBeInTheDocument();
     });
 
-    it('reads another window when one is chosen', async () => {
-        const fetch = installFetch({ 'GET /analytics/counts': { body: counts }, 'GET /analytics/throughput': { body: throughput }, 'GET /analytics/durations': { body: durations } });
-        renderWorkspace(<AnalyticsView affordances={ALL} today="2026-11-27" />);
-        fireEvent.click(await screen.findByRole('radio', { name: '4 weeks' }));
-        await screen.findByTestId('analytics-count-open');
-        expect(fetch.calls.some((c) => c.path === '/analytics/throughput' && c.search.get('from') === '2026-10-31')).toBe(true);
-    });
-
     it("shows time waiting per party when the server gives every row: a deactivated member marked, removed members as one row, what waits now", async () => {
         installFetch({ 'GET /analytics/counts': { body: counts }, 'GET /analytics/waiting': { body: waitingAll } });
-        renderWorkspace(<AnalyticsView affordances={ALL} today="2026-11-27" />);
+        renderWorkspace(<DashboardView dashboard={null} affordances={PAGE} today="2026-11-27" />);
         const section = await screen.findByRole('region', { name: 'Time waiting' });
         expect(await within(section).findByText(/Open items spent 25% of their open time waiting on someone \(4.5 of 18 working days\)/)).toBeInTheDocument();
         expect(within(section).getByText(/3 waits ended: a median of 1 days, 85% within 2.5/)).toBeInTheDocument();
@@ -166,7 +160,7 @@ describe('the Analytics page', () => {
 
     it("shows the reader's own row alone and no totals, and says so, when the server gives no one else's", async () => {
         installFetch({ 'GET /analytics/counts': { body: counts }, 'GET /analytics/waiting': { body: waitingOwn } });
-        renderWorkspace(<AnalyticsView affordances={{ ...ALL, people: false }} today="2026-11-27" />);
+        renderWorkspace(<DashboardView dashboard={null} affordances={PAGE} today="2026-11-27" />);
         const section = await screen.findByRole('region', { name: 'Time waiting' });
         expect(await within(section).findByText(/You see your own row; other people's figures and the totals are shown to those allowed to see them/)).toBeInTheDocument();
         expect(within(section).queryByText(/of their open time waiting/)).not.toBeInTheDocument();
@@ -179,7 +173,7 @@ describe('the Analytics page', () => {
             'GET /analytics/counts': { body: counts },
             'GET /analytics/waiting': { status: 422, body: { error: { code: 'ANALYTICS_TOO_LARGE', message: 'Too many', details: { reason: 'ANALYTICS_TOO_LARGE', what: 'reviews', count: 50001, limit: 50000 } } } },
         });
-        renderWorkspace(<AnalyticsView affordances={ALL} today="2026-11-27" />);
+        renderWorkspace(<DashboardView dashboard={null} affordances={PAGE} today="2026-11-27" />);
         const section = await screen.findByRole('region', { name: 'Time waiting' });
         expect(await within(section).findByText('More than 50000 reviewers were asked in this scope and window (50001). Narrow the filter or the window.')).toBeInTheDocument();
     });

@@ -13,12 +13,12 @@ import { Bars, TimeSeriesChart, XAxis, YAxis, type TimeSeriesDatum } from '@infl
 import type { ThroughputResponse } from '@/lib/analytics/types';
 
 import type { AnalyticsRead } from '../data/use-analytics';
-import { ChartSection, FiguresTable } from './ChartSection';
+import { ChartSection, FiguresTable, type SectionOverrides } from './ChartSection';
 
 type Datum = TimeSeriesDatum<{ count: number }>;
 const BAR_CLASS = 'text-content-info';
 
-export function ThroughputChart({ read }: { read: AnalyticsRead<ThroughputResponse> }) {
+export function ThroughputChart({ read, section }: { read: AnalyticsRead<ThroughputResponse>; section?: SectionOverrides }) {
     const t = useTranslations('analytics.throughput');
     const data = read.data;
     const points = useMemo<Datum[]>(() => (data?.bins ?? []).map((b) => ({ date: new Date(`${b.start}T00:00:00.000Z`), values: { count: b.count } })), [data]);
@@ -31,6 +31,7 @@ export function ThroughputChart({ read }: { read: AnalyticsRead<ThroughputRespon
             legend={[{ label: t(`legend.${unit}`), className: BAR_CLASS }]}
             summary={data ? t(`summary.${unit}`, { total: data.total, median: data.median ?? 0 }) : undefined}
             loading={read.isLoading && !data}
+            {...section}
             failed={!!read.error}
             tooLarge={read.tooLarge}
             empty={!!data && data.bins.length === 0}

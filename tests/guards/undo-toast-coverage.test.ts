@@ -8,7 +8,8 @@
  *      (`src/components/milestones/**`, 2.5b), the recipient-list pages
  *      (`src/components/recipient-lists/**`, 2.7e) and the Roadmap pages
  *      (`src/components/goals/**`, 3.2b) and the Time pages
- *      (`src/components/time/**`, 3.4b), every
+ *      (`src/components/time/**`, 3.4b) and the Analytics page's dashboards
+ *      (`src/components/analytics/**`, 3.6d), every
  *      DELETE request and every bulk delete is sent from inside a
  *      `triggerUndo(…)` or `removeWithUndo(…)` call, so nothing leaves the
  *      server until the undo window closes.
@@ -48,6 +49,7 @@ const SITE_CONTRACTS: Record<string, string> = {
     'src/components/recipient-lists/use-recipient-lists.ts': 'removing a person from a recipient list (Settings → Recipient lists and a project\'s lists, 2.7e)',
     'src/components/work-items/data/use-review.ts': 'removing a reviewer and removing a review step not yet opened (the detail\'s review section, 2.8b)',
     'src/components/settings/use-type-review-steps.ts': 'removing a default review step of a type (Settings → a type → Review steps, 2.8c)',
+    'src/components/analytics/data/use-dashboards.ts': "a dashboard's delete and a widget's removal (the Analytics page's dashboards, 3.6d)",
     'src/components/goals/use-goals.ts': 'goal and initiative delete, and taking a project off an initiative (the Goals and Initiatives pages and their pages, 3.2b)',
     'src/components/calendar-sync/use-calendar-sync.ts': "disconnecting a member's own calendar and withdrawing Microsoft 365's consent, both removing synced events (the member's Calendar sync section and Settings → Calendar sync, 3.3b)",
     'src/components/time/data/use-time.ts': "deleting one's own time entry and discarding a running timer (My time and an item's Time panel, 3.4b, decision 277)",
@@ -62,7 +64,7 @@ const UNDO_CALLEES = new Set(['triggerUndo', 'removeWithUndo']);
 /** A DELETE through `apiSend`, or through the Settings pages' `send` wrapper, or a bulk delete. */
 const DESTRUCTIVE = /(?:apiSend|(?<![\w.$])send)\s*(?:<[^>]*>)?\s*\(\s*'DELETE'|\/bulk\/delete|\/time-off\/days\/remove/g;
 /** The folders whose deletes must leave through the undo toast. */
-const UNDO_ROOTS = ['src/components/work-items/', 'src/components/settings/', 'src/components/cycles/', 'src/components/milestones/', 'src/components/recipient-lists/', 'src/components/goals/', 'src/components/calendar-sync/', 'src/components/time/', 'src/components/workload/'];
+const UNDO_ROOTS = ['src/components/work-items/', 'src/components/settings/', 'src/components/cycles/', 'src/components/milestones/', 'src/components/recipient-lists/', 'src/components/goals/', 'src/components/calendar-sync/', 'src/components/time/', 'src/components/workload/', 'src/components/analytics/'];
 
 function ownSources(root: string): Array<{ rel: string; code: string }> {
     const mirrorFile = path.join(root, 'ui-mirror.json');

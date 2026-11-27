@@ -15,7 +15,7 @@
  * Islestone-owned, outside the mirrored roots.
  */
 import { useTranslations } from 'next-intl';
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useState, type ReactNode } from 'react';
 
 import { Button } from '@inflect/ui/components/ui/button';
 import { Areas, TimeSeriesChart, XAxis, YAxis, type TimeSeriesDatum } from '@inflect/ui/components/ui/charts';
@@ -41,9 +41,15 @@ export interface BurnUpChartProps {
     onMeasure?: (measure: BurnUpMeasure) => void;
     /** The chosen measure was refused (the team stopped estimating in it). */
     unavailable?: boolean;
+    /** A dashboard widget's title (3.6d), in place of "Burn-up". */
+    heading?: string;
+    /** A dashboard widget's own buttons (3.6d), at the end of the header. */
+    actions?: ReactNode;
+    /** Fill the parent's height (a dashboard widget's place on the grid, 3.6d). */
+    fill?: boolean;
 }
 
-export function BurnUpChart({ points, truncated, loading, measure = 'items', selected, measures = ['items'], onMeasure, unavailable }: BurnUpChartProps) {
+export function BurnUpChart({ points, truncated, loading, measure = 'items', selected, measures = ['items'], onMeasure, unavailable, heading, actions, fill = false }: BurnUpChartProps) {
     const t = useTranslations('cycles.burnUp');
     const [asTable, setAsTable] = useState(false);
     const tableId = useId();
@@ -64,10 +70,10 @@ export function BurnUpChart({ points, truncated, loading, measure = 'items', sel
     const last = points.at(-1);
 
     return (
-        <section aria-labelledby={`${tableId}-title`} className="space-y-tight" data-testid="burn-up">
+        <section aria-labelledby={`${tableId}-title`} className={fill ? 'flex h-full min-h-0 flex-col gap-tight' : 'space-y-tight'} data-testid="burn-up">
             <div className="flex flex-wrap items-center justify-between gap-tight">
                 <h2 id={`${tableId}-title`} className="text-sm font-semibold text-content-emphasis">
-                    {t('title')}
+                    {heading ?? t('title')}
                 </h2>
                 <div className="flex items-center gap-default text-xs text-content-muted">
                     {measures.length > 1 && onMeasure && (
@@ -96,6 +102,7 @@ export function BurnUpChart({ points, truncated, loading, measure = 'items', sel
                             onClick={() => setAsTable((v) => !v)}
                         />
                     )}
+                    {actions}
                 </div>
             </div>
             {truncated && <p className="text-xs text-content-muted">{t('truncated')}</p>}
@@ -113,7 +120,7 @@ export function BurnUpChart({ points, truncated, loading, measure = 'items', sel
                 <>
                     {!asTable && (
                         <div
-                            className="relative h-48 w-full"
+                            className={fill ? 'relative min-h-0 w-full flex-1' : 'relative h-48 w-full'}
                             role="img"
                             aria-label={t(`measure.aria.${measure}`, { scope: show(last?.scope ?? 0), completed: show(last?.completed ?? 0) })}
                         >
@@ -140,7 +147,7 @@ export function BurnUpChart({ points, truncated, loading, measure = 'items', sel
                             </TimeSeriesChart>
                         </div>
                     )}
-                    <div id={`${tableId}-table`} className={asTable ? '' : 'sr-only'}>
+                    <div id={`${tableId}-table`} className={asTable ? (fill ? 'min-h-0 flex-1 overflow-auto' : '') : 'sr-only'}>
                         <table className="w-full text-sm">
                             <caption className="sr-only">{t('caption')}</caption>
                             <thead>
