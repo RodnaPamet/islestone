@@ -122,6 +122,13 @@ async function heavyMemberSubmittedWeeks(direct: PrismaClient, w: PerfWorld): Pr
     }
 }
 
+/** The Monday of next week (3.5b): a workload cell's week, never before the current week in the workspace's zone. */
+function nextMonday(): string {
+    const now = new Date();
+    const back = (now.getUTCDay() + 6) % 7;
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - back + 7)).toISOString().slice(0, 10);
+}
+
 /** A month of time off around today (3.5a): the window "My capacity and time off" reads. */
 function monthWindow(): string {
     const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
@@ -163,11 +170,16 @@ const SCENARIOS: Scenario[] = [
     // with its people's names, its sums in one statement; the deciders' names when a row was decided).
     { name: "timesheets: a week's status", file: `${ROUTES}/timesheets/week/route.ts`, method: 'GET', path: (w) => `/timesheets/week?week=${w.timeWeek}`, budget: 4 },
     { name: 'timesheets: the waiting weeks', file: `${ROUTES}/timesheets/route.ts`, method: 'GET', as: 'approver', setup: heavyMemberSubmittedWeeks, path: () => '/timesheets?status=SUBMITTED', budget: 4 },
-    // Capacity and time off (3.5a), as measured on the 10k seed (which writes no capacity or time off before 3.5b's
-    // seed): the context's statement, today's calendar, the people (and their names), the settings, the capacity rows,
-    // the time-off dates and the calendars the rows name; a time-off month the person, its dates, today's calendar and
-    // the person's calendar. None is per person.
-    { name: 'workload: capacity of every member, twelve weeks', file: `${ROUTES}/workload/route.ts`, method: 'GET', path: () => '/workload?weeks=12', budget: 8 },
+    // Capacity and time off (3.5a) and allocation (3.5b), as measured on the 10k seed (capacity, time off and
+    // estimates seeded since 3.5b): the context's statement, the calendars (and their holidays), the people (and their
+    // names), the teams' estimate units, the counts of unplaced work, the settings, the capacity rows, the time-off
+    // dates, the counted items and the time recorded on them; a cell reads one person (and their name) in place of
+    // the people and the counts, and the listed items' projects. 3.5a's capacity-only view was 8; allocation adds the
+    // teams, the counts, the items and their time. A time-off month: the person, its dates, today's calendar and the
+    // person's calendar. None is per person or per item.
+    { name: 'workload: every member, twelve weeks', file: `${ROUTES}/workload/route.ts`, method: 'GET', path: () => '/workload?weeks=12', budget: 12 },
+    { name: "workload: My Work's line, the caller's two weeks", file: `${ROUTES}/workload/route.ts`, method: 'GET', path: () => '/workload?userId=me&weeks=2', budget: 12 },
+    { name: "workload: the heavy member's next week, its items", file: `${ROUTES}/workload/cell/route.ts`, method: 'GET', path: () => `/workload/cell?userId=me&week=${nextMonday()}`, budget: 12 },
     { name: "time off: the caller's month", file: `${ROUTES}/time-off/route.ts`, method: 'GET', path: () => `/time-off?${monthWindow()}`, budget: 6 },
     // Time totals and the export (3.4d), as measured on the 10k seed: the totals of a quarter by project, as the
     // heavy member (no money: the tenant binding, the aggregate, the projects' names: 3) and as the owner (also the
