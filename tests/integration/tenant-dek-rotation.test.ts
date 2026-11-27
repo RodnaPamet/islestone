@@ -258,6 +258,8 @@ describeFn('rotateTenantDek and the sweep (integration — real DB)', () => {
             'IntakeRequest.internalRemark',
             'ProjectTemplate.contentJson',
             'TenantSecuritySettings.auditStreamSecretEncrypted',
+            // Sub-phase 3.4b: a time entry's description.
+            'TimeEntry.description',
             'WorkItem.description',
             // Sub-phase 2.8a: a reviewer's response text (its trigger admits the re-wrap).
             'WorkItemReviewer.responseText',

@@ -36,10 +36,8 @@
  *
  * Written fresh for Islestone.
  */
-import type { Prisma } from '@prisma/client';
-
 import { logEvent } from '../events/audit';
-import { TimeEntryRepository, WEEK_ENTRIES_TAKE, ITEM_TIME_ORDER, type TimeEntryRow } from '../repositories/TimeEntryRepository';
+import { TimeEntryRepository, WEEK_ENTRIES_TAKE, ITEM_TIME_ORDER, type TimeEntryPatch, type TimeEntryRow } from '../repositories/TimeEntryRepository';
 import { WorkItemRepository, type WorkItemGateRow } from '../repositories/WorkItemRepository';
 import { NOT_A_PERSON } from '../policies/person-only.policies';
 import { visibleProjects, type ProjectVisibility } from '../policies/project-visibility';
@@ -310,7 +308,7 @@ export async function updateTimeEntry(ctx: RequestContext, id: string, input: Up
         const item = await loadTrackableItem(db, ctx, v, targetItemId);
         const minutes = input.minutes ?? before.minutes;
         if (input.minutes !== undefined || input.workDate !== undefined) await assertDayHolds(db, ctx, ctx.userId, toDate, minutes, before.id);
-        const patch: Prisma.TimeEntryUncheckedUpdateInput & Record<string, unknown> = {};
+        const patch: TimeEntryPatch = {};
         const changed: string[] = [];
         if (input.workItemId !== undefined && input.workItemId !== before.workItemId) {
             patch.workItemId = item.id;
@@ -339,7 +337,7 @@ export async function updateTimeEntry(ctx: RequestContext, id: string, input: Up
             if (expectedVersion !== undefined && expectedVersion !== before.version) throw versionConflict(before);
             return toEntryData(before);
         }
-        const count = await TimeEntryRepository.updateVersioned(db, ctx, id, ctx.userId, expectedVersion, patch as Parameters<typeof TimeEntryRepository.updateVersioned>[5]);
+        const count = await TimeEntryRepository.updateVersioned(db, ctx, id, ctx.userId, expectedVersion, patch);
         if (count === 0) {
             const current = await TimeEntryRepository.get(db, ctx, id);
             if (!current || current.userId !== ctx.userId) entryNotFound();
@@ -438,11 +436,12 @@ export async function startTimer(ctx: RequestContext, input: { workItemId: strin
         await lockTimer(db, ctx, ctx.userId);
         const item = await loadTrackableItem(db, ctx, v, input.workItemId);
         const running = await TimeEntryRepository.running(db, ctx, ctx.userId);
+        // Both weeks (the running timer's and today's) in date order before either is touched.
+        await lockWeeks(db, ctx, ctx.userId, running ? [dateKeyOf(running.workDate), today] : [today]);
         if (running) {
             await stopRunningInTx(db, ctx, running, { now, reason: 'replaced' });
             replaced = true;
         }
-        await lockWeeks(db, ctx, ctx.userId, [today]);
         let created: TimeEntryRow;
         try {
             created = await TimeEntryRepository.create(db, ctx, {
