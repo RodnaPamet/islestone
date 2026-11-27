@@ -43,6 +43,8 @@ describeFn('the scale seeder (mini shape)', () => {
             expect(w.auditEntries).toBeGreaterThan(0);
             // Sub-phase 3.4b: time entries on about 60 % of the live items.
             expect(w.timeEntries).toBeGreaterThan(w.liveItems * 2);
+            // Sub-phase 3.4d: approved weeks with their rates stamped (the seed's own checks hold the rest).
+            expect(w.approvedWeeks).toBeGreaterThan(20);
         }
 
         const second = await seedScale({ shape: SHAPES.mini, bulkUrl: getTestDirectDatabaseUrl() });

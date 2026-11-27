@@ -383,10 +383,11 @@ async function decide(ctx: RequestContext, id: string, decision: Decision, expec
         const weekStart = dateKeyOf(after.weekStart);
         const weekEnd = dateOnlyValue(addDays(weekStart, 6));
         // The rates (3.4d, decision 273): an approval freezes each billable entry's rate; a reopening clears them.
-        let rates: Record<string, number> = {};
-        if (decision.verb === 'approve') rates = { frozenRates: await stampWeekRates(db, ctx, after.userId, after.weekStart, weekEnd) };
-        if (decision.verb === 'reopen') rates = { clearedRates: await TimeEntryRepository.clearFrozenRates(db, ctx, after.userId, after.weekStart, weekEnd) };
         const sums = await TimeEntryRepository.weekSums(db, ctx, after.userId, after.weekStart, weekEnd);
+        // A week with no billable time has no rate to freeze (and a reopened one none to clear): no more reads.
+        let rates: Record<string, number> = {};
+        if (decision.verb === 'approve') rates = { frozenRates: sums.billableMinutes > 0 ? await stampWeekRates(db, ctx, after.userId, after.weekStart, weekEnd) : 0 };
+        if (decision.verb === 'reopen') rates = { clearedRates: sums.billableMinutes > 0 ? await TimeEntryRepository.clearFrozenRates(db, ctx, after.userId, after.weekStart, weekEnd) : 0 };
         await auditDecision(db, ctx, rule.action, after, rule.from, rule.to, `${rule.said} the timesheet for the week of ${weekStart}`, {
             minutes: sums.minutes,
             billableMinutes: sums.billableMinutes,

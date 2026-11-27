@@ -43,6 +43,12 @@ import { directClient, loadPerfWorld, type PerfWorld } from './perf-world';
 type Runner = (w: PerfWorld, db: PrismaTx, ctx: RequestContext, v: ProjectVisibility) => Promise<unknown>;
 
 const DAY = 86_400_000;
+
+/** The 91 days that end with the Sunday of the week starting `monday`: Time totals' quarter (3.4d). */
+function quarterTo(monday: string): { from: Date; to: Date } {
+    const to = new Date(`${monday}T00:00:00Z`).getTime() + 6 * DAY;
+    return { from: new Date(to - 90 * DAY), to: new Date(to) };
+}
 const today = () => {
     const now = new Date();
     return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -186,6 +192,18 @@ const RUNNERS: Record<string, Runner> = {
         // The heavy member's last 50 weeks: as many weeks as a page shows, each with entries.
         const from = new Date(`${w.timeWeek}T00:00:00Z`).getTime();
         return TimeEntryRepository.sumsForWeeks(db, ctx, Array.from({ length: 50 }, (_, i) => ({ userId: w.heavyUserId, weekStart: new Date(from - i * 7 * DAY) })));
+    },
+    // Sub-phase 3.4d: a quarter ending with the heavy member's full week, as Time totals asks for it.
+    'time totals: a quarter by person and by project': async (w, db, ctx) => {
+        const window = quarterTo(w.timeWeek);
+        await TimeEntryRepository.totals(db, ctx, window, 'person', 2_001);
+        await TimeEntryRepository.countTotalsGroups(db, ctx, window, 'project');
+        return TimeEntryRepository.totals(db, ctx, window, 'project', 2_001);
+    },
+    "time totals: a quarter's priced lines": (w, db, ctx) => TimeEntryRepository.amountLines(db, ctx, quarterTo(w.timeWeek), 'project'),
+    "time export: a month's entries": (w, db, ctx) => {
+        const to = new Date(`${w.timeWeek}T00:00:00Z`).getTime() + 6 * DAY;
+        return TimeEntryRepository.forExport(db, ctx, { from: new Date(to - 29 * DAY), to: new Date(to) }, 50_001);
     },
     'timeline: working calendars': async (w, db, ctx) => {
         await resolveWorkingCalendars(db, ctx, [w.teamId]);

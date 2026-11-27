@@ -160,6 +160,32 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     // member's last 50 weeks); the 100k budgets extrapolated (a week holds as many entries at either shape).
     { name: "timesheets: a week's sums", methods: ['TimeEntryRepository.weekSums'], indexes: ['TimeEntry_tenantId_userId_workDate_idx'], maxBuffers: 250, maxBuffers100k: 750 },
     { name: "timesheets: a page of weeks' sums", methods: ['TimeEntryRepository.sumsForWeeks'], indexes: ['TimeEntry_tenantId_userId_workDate_idx'], maxBuffers: 6000, maxBuffers100k: 9000 },
+    // Sub-phase 3.4d: Time totals over a quarter (by person and by project, and the group count a refusal names:
+    // three statements), the quarter's priced lines for a rates holder, and the export's month of entries, each on
+    // the project index with the window as its range. 10k measured: 2,937 buffers (about 980 a statement: the
+    // workspace's entries are read through the index, their heap pages spread by date), 979 and 976. 100k: NOT
+    // MEASURED (issue #93's extrapolation): the window's entries grow with the workspace, ten times.
+    {
+        name: 'time totals: a quarter by person and by project',
+        methods: ['TimeEntryRepository.totals', 'TimeEntryRepository.countTotalsGroups'],
+        indexes: ['TimeEntry_tenantId_projectId_workDate_idx|TimeEntry_tenantId_userId_workDate_idx|TimeEntry_tenantId_workItemId_workDate_idx'],
+        maxBuffers: 3700,
+        maxBuffers100k: 37000,
+    },
+    {
+        name: "time totals: a quarter's priced lines",
+        methods: ['TimeEntryRepository.amountLines'],
+        indexes: ['TimeEntry_tenantId_projectId_workDate_idx|TimeEntry_tenantId_userId_workDate_idx|TimeEntry_tenantId_workItemId_workDate_idx'],
+        maxBuffers: 1250,
+        maxBuffers100k: 12500,
+    },
+    {
+        name: "time export: a month's entries",
+        methods: ['TimeEntryRepository.forExport'],
+        indexes: ['TimeEntry_tenantId_projectId_workDate_idx|TimeEntry_tenantId_userId_workDate_idx|TimeEntry_tenantId_workItemId_workDate_idx'],
+        maxBuffers: 1250,
+        maxBuffers100k: 12500,
+    },
     // ── Writes' reads: placement, moves, a member's removal ────────────────
     { name: 'placement: sort keys around a position', methods: ['WorkItemRepository.lastSortKey', 'WorkItemRepository.nextSortKeyAfter', 'WorkItemRepository.prevSortKeyBefore', 'WorkItemRepository.liveSortKeysAmong'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 100, maxBuffers100k: 100 },
     { name: 'removal: a member\'s items', methods: ['WorkItemRepository.lockItemsOfPerson'], indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx|WorkItem_tenantId_assigneeId_sortKey_id_idx', 'WorkItem_tenantId_waitingOnUserId_stateCategory_dueDate_idx', 'CustomFieldValue_tenantId_userId_idx|CustomFieldValue_tenantId_fieldId_userId_idx'], maxBuffers: 7500, maxBuffers100k: 88000 },
