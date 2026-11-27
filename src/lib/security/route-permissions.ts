@@ -906,6 +906,7 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         methods: ['GET'],
         permission: 'time.approve',
         note: "A member's submitted or decided week with its entries, read-only (decision 266).",
+    },
     // ── Capacity and time off (sub-phase 3.5a; owner decisions 284 to 300) ──
     // None under /admin/, which the edge refuses to non-admins. The members
     // table's path sits above the view's, which matches only `/workload`.
