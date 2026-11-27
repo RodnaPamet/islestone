@@ -1,8 +1,8 @@
 # Time tracking
 
-Sub-phase 3.4b: time entries and timers. The decisions are owner decisions 255 to 279 (`docs/HANDOFF.md`), recorded in [ADR 0012](adr/0012-time-tracking.md) and the porting map [`docs/porting/maps/3.4.md`](porting/maps/3.4.md), whose "Rules no decision names (3.4b, as built)" lists the choices the build made. Estimates (3.4a) are in [`docs/work-items.md`](work-items.md), "Estimates (3.4a)". Timesheets and their approval (3.4c), billable rates, Time totals and the export (3.4d) are not built yet.
+Sub-phases 3.4b and 3.4c: time entries and timers, then timesheets and their weekly approval. The decisions are owner decisions 255 to 279 and 281 (`docs/HANDOFF.md`), recorded in [ADR 0012](adr/0012-time-tracking.md) and the porting map [`docs/porting/maps/3.4.md`](porting/maps/3.4.md), whose "Rules no decision names (3.4b, as built)" and "(3.4c, as built)" list the choices the builds made. Estimates (3.4a) are in [`docs/work-items.md`](work-items.md), "Estimates (3.4a)". Billable rates, Time totals and the export (3.4d) are not built yet.
 
-The words are ADR 0006's: Time entry, Timer, Time spent, Billable; "Add time", "Start timer", "Stop timer", "Timer on". Never Log, Worklog, Logged time or Running.
+The words are ADR 0006's: Time entry, Timer, Time spent, Billable, Timesheet, Time tracking settings; "Add time", "Start timer", "Stop timer", "Timer on"; Submit, Approve, Return (decision 256), and "Take back" and "Reopen" for the person's and an approver's undoing. Never Log, Worklog, Logged time, Running, Draft or Approver.
 
 ## What a time entry is
 
@@ -57,19 +57,43 @@ The usecases are `src/app-layer/usecases/time-entry.ts`, the only writer of `Tim
 
 ## Deletes and keeping time
 
-Time is kept for the workspace's life (decision 277). An entry its person deletes is removed for good, and the audit trail keeps its date and minutes (`TIME_ENTRY_DELETED`). A purged item leaves its entries (the link clears its own column, `ON DELETE SET NULL ("workItemId")`), which then read "Deleted item". A deleted project that time was recorded in is held from the purge, items and all, while its entries remain, because an entry keeps its project and `projectId` is NOT NULL (`WorkItemRepository.purgeableProjectIds`); the owner may decide otherwise (see `docs/HANDOFF.md`).
+Time is kept for the workspace's life (decision 277). An entry its person deletes is removed for good, and the audit trail keeps its date and minutes (`TIME_ENTRY_DELETED`). A purged item leaves its entries (the link clears its own column, `ON DELETE SET NULL ("workItemId")`), which then read "Deleted item". A deleted project that time was recorded in leaves a tombstone when it is purged (issue #117, owner decision 281; `docs/work-items.md`, "The purge"): its items and everything it holds go, and a minimal row with its key, name, team and deletion stays, marked `purgedAt`, so its entries keep their project, the week's and (3.4d) the totals' sums stay what they were, and the key is never reused. Only time reads a tombstone.
 
 The foreign key to `User` restricts: users are not deleted before roadmap 8.3, whose user deletion must handle time entries. There is no key to the membership, so removing a member keeps their time.
 
+## Timesheets (3.4c)
+
+A timesheet (`Timesheet`, migration `20261222120500_timesheets`) is one person's week, Monday to Sunday by each entry's date (decision 268), once they submit it: no row is a week not submitted. Its statuses are `SUBMITTED`, `APPROVED`, `RETURNED` (with an explanation) and `WITHDRAWN` (taken back).
+
+- **Off by default** (decision 268). An Owner or Admin (`admin.manage`) turns on "Timesheets need approval" in Settings → Time tracking (`TenantTimeSettings`, no row the defaults). Turning it off leaves submitted weeks to be decided and taken back; no week is submitted while it is off (409 `APPROVAL_OFF`).
+- **Submit** (`time.track`, a person). One's own week, once it has begun (today in `NOTIFICATIONS_TZ`; 400 `WEEK_IN_FUTURE`), while no timer counts on one of its days (409 `TIMER_ON_IN_WEEK`), from no row, `RETURNED` or `WITHDRAWN` (409 `TIMESHEET_SUBMITTED` / `TIMESHEET_APPROVED` otherwise). An empty week is allowed; My time asks first. **Take back** a submitted week until it is decided (`WITHDRAWN`).
+- **Approve, Return, Reopen** (`time.approve`, a person, decision 269): anyone holding it decides a member's whole week, never their own (an audited 403 `OWN_TIMESHEET`; the CHECK `Timesheet_not_own_decision` holds it). Return asks for an explanation (1 to 2,000 characters, sanitised, encrypted, `returnExplanation`); Reopen moves an approved week back to `RETURNED` with an explanation (decision 270). Resubmitting clears the explanation.
+- **The freeze** (decision 270). The trigger `time_entry_week_frozen` refuses every insert, change or delete of a time entry in a `SUBMITTED` or `APPROVED` week, for every writer, answered 409 `TIMESHEET_FROZEN`. It admits the key rotations' re-wrap of the description, the purge's clearing of the item link and the workspace's own deletion; 3.4d admits the approval's frozen rates. A week returned or taken back is open again.
+- **Locks.** Every act takes the week's advisory lock (`timeWeekLockKey`, the key the entry writes take), then the row `FOR UPDATE`, and claims it with one conditional update naming its starting status and version (`If-Match` optional; 409 `VERSION_CONFLICT`).
+- **Notifications** (decision 276): `TIMESHEET_SUBMITTED` to whoever approves (the settings' workspace recipient list resolved now, its members who hold `time.approve`; with none, every ACTIVE holder of `time.approve`, at most 50, the most senior first; never the person), `TIMESHEET_RETURNED` to the person with an immediate email (also for a reopening, titled "Timesheet reopened"), `TIMESHEET_APPROVED` to the person, and the Monday reminder `TIMESHEET_REMINDER` (the `timesheet-reminder` job, Mondays 09:20 in `NOTIFICATIONS_TZ`, while approval is on, to every ACTIVE member holding `time.track` who recorded time last week and has not submitted it). Each under the person's preferences; none ever carries the explanation's text.
+- **Pages.** My time's status line (Submit or Take back, the explanation of a returned week, a frozen week's cells read-only); the Timesheets page (`/time/timesheets`, for `time.approve`): the weeks waiting for a decision, oldest first, and those decided in the last 12 weeks, a week opening read-only in a sheet with Approve, Return or Reopen; Settings → Time tracking.
+
+| Route | Key | What |
+|---|---|---|
+| `GET`/`PUT /time-settings` | `time.view` / `admin.manage` | "Timesheets need approval" and the recipient list (a live workspace list, 400 `RECIPIENT_LIST_UNKNOWN`). |
+| `POST /timesheets { week }` | `time.track` | Submit one's own week. |
+| `GET /timesheets?status=SUBMITTED\|DECIDED&cursor=` | `time.approve` | 50 weeks a page with their sums (minutes, billable, entries) and who decided. |
+| `GET /timesheets/week?week=[&userId=]` | `time.track` (another member's also `time.approve`) | A week's status line: the switch, the row, the sums, `timerOn`, `viewer` (`submit`, `withdraw`, `edit`). |
+| `GET /timesheets/:id` | `time.approve` | A member's week with its entries, read-only, and `viewer` (`approve`, `return`, `reopen`). |
+| `POST /timesheets/:id/withdraw` | `time.track` | Take one's own submitted week back; another person's is a 404. |
+| `POST /timesheets/:id/approve`, `/return { explanation }`, `/reopen { explanation }` | `time.approve` | Decide a member's week. |
+
+The usecases are `src/app-layer/usecases/timesheet.ts` (the only writer of `Timesheet` and `TenantTimeSettings`) and `timesheet-reminder.ts`; the client's are `src/components/time/data/use-timesheets.ts` (every act on a week sends its version).
+
 ## Audit, privacy and logs
 
-- Audited `TIME_ENTRY_CREATED`, `TIME_ENTRY_UPDATED` (the changed fields; a stopped timer names `minutes` and the minutes it counted) and `TIME_ENTRY_DELETED`, each with the item, project, date, minutes, billable flag and whether it was timed: numbers, dates and ids, never the description.
+- Audited `TIME_ENTRY_CREATED`, `TIME_ENTRY_UPDATED` (the changed fields; a stopped timer names `minutes` and the minutes it counted) and `TIME_ENTRY_DELETED`, each with the item, project, date, minutes, billable flag and whether it was timed: numbers, dates and ids, never the description. Timesheets: `TIMESHEET_SUBMITTED`, `_WITHDRAWN`, `_APPROVED`, `_RETURNED`, `_REOPENED` (a status change, with the person, the week, its minutes, billable minutes and entries, never the explanation) and `TIME_SETTINGS_SET` (the changed fields).
 - An entry is a person's own statement, never inferred from activity: no screenshots, idle detection or location; the timer records only when it started and stopped.
-- Logs carry ids and counts, never a description. Metric `time.entries.recorded` (`manual`, `timer`), no workspace or person attribute.
+- Logs carry ids and counts, never a description or an explanation. Metrics `time.entries.recorded` (`manual`, `timer`) and `time.timesheets.decided` (`approved`, `returned`, `reopened`), no workspace or person attribute.
 
 ## The pages
 
-- **The Time entry** in the sidebar (`NAV_PATHS.time`, `/time`) for a holder of `time.track` or `time.approve`, current on every page under `/time`. 3.4c adds Timesheets, 3.4d Time totals.
+- **The Time entry** in the sidebar (`NAV_PATHS.time`, `/time`) for a holder of `time.track` or `time.approve`, current on every page under `/time`, with the tabs My time and (for `time.approve`) Timesheets; 3.4d adds Time totals.
 - **My time** (`/time?week=`): the person's week as a `role=grid` with a roving tabindex (arrow keys, Home and End; Enter or Space opens a cell), one row per item recorded that week, seven day cells and a total, the day totals beneath. An empty cell adds time on that item and day, a cell with one entry changes it, a cell with several lists them in a sheet. "Add time" picks an item through the work-item typeahead. It opens on the week of today in `NOTIFICATIONS_TZ` (the clock seam).
 - **The item's Time panel** on the detail's Overview (page and sheet): "Time spent" (or "Your time") beside an hours team's estimate, "Add time", "Start timer" or "Timer on" with "Stop timer", the entries newest first with "Load more"; one's own entries changed or deleted through the undo toast. Every button follows the read's `viewer`.
 - **The top chrome's timer**: "ISL-12 · 0:42" linking to the item, with "Stop timer", read again on window focus; counted on the server's clock. The palette offers "Go to My time", "Stop timer" while one is on, and "Start timer on ISL-12" while an item's Time panel offers one.
@@ -77,4 +101,4 @@ The foreign key to `User` restricts: users are not deleted before roadmap 8.3, w
 
 ## Performance
 
-`TimeEntry` is a guarded table of the plan checks (`tests/perf/plan-capture.ts`, `tests/guards/plan-checked-queries-coverage.test.ts`): a person's week on `TimeEntry_tenantId_userId_workDate_idx`, a day's total and the running timer on it and `TimeEntry_one_timer_per_person`, and an item's total and first page on `TimeEntry_tenantId_workItemId_workDate_idx`. The scale seed writes about 29,000 entries a workspace at 10k (`scripts/seed-scale/time.ts`). Statements per request: the week 5, an item's time 6, adding time 12. See [`docs/performance.md`](performance.md).
+`TimeEntry` is a guarded table of the plan checks (`tests/perf/plan-capture.ts`, `tests/guards/plan-checked-queries-coverage.test.ts`): a person's week on `TimeEntry_tenantId_userId_workDate_idx`, a day's total and the running timer on it and `TimeEntry_one_timer_per_person`, and an item's total and first page on `TimeEntry_tenantId_workItemId_workDate_idx`. The scale seed writes about 29,000 entries a workspace at 10k (`scripts/seed-scale/time.ts`). Statements per request: the week 5, an item's time 6, adding time 12 (unchanged by 3.4c: an entry write reads no timesheet, the trigger refuses a frozen week). 3.4c adds three plan checks on the person's index (10k measured: a week's sums 119 buffers, a page of 50 weeks' sums 2,973, a lateral read per week, and the reminder's members who recorded time 162, a probe per member) and statements per request (a week's status 4, the waiting weeks 4, a submit 24, an approval 23). See [`docs/performance.md`](performance.md).
