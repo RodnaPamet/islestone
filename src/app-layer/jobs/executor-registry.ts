@@ -570,6 +570,7 @@ executorRegistry.register('work-item-purge', async (payload) => {
         tenants: r.tenants,
         items: r.items,
         projects: r.projects,
+        tombstones: r.tombstones,
     });
 });
 

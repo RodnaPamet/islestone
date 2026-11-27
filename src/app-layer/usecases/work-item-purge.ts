@@ -7,11 +7,15 @@
  *   - Items go in batches of 500, each in a transaction of its own, so one
  *     statement never cascades a whole workspace. Relations, labels,
  *     comments, watchers and links cascade from `WorkItem`.
- *   - A purged project's items go first, in batches, then the project row.
- *     A project time was recorded in is held, items and all, while its time
- *     entries remain (3.4b; decisions 261 and 277): an entry keeps its
- *     project. An item purged on its own leaves its entries, which then name
- *     no item ("Deleted item").
+ *   - A purged project's items go first, in batches, then the project row
+ *     and everything it holds (fields, milestones, templates, intake, saved
+ *     views, recipient lists: their cascades). A project time entries name
+ *     leaves a tombstone instead (issue #117, owner decision 281): the same
+ *     row, emptied of its children, keeping its key, name, team and deletion,
+ *     marked `purgedAt` (`WorkItemRepository.tombstoneProject`), so an entry
+ *     keeps its project (decisions 261 and 277) and the key is never reused.
+ *     An item purged on its own leaves its entries, which then name no item
+ *     ("Deleted item").
  *   - `ProjectKeySequence`, `ProjectKeyPrefix` and `WorkItemKeyAlias` have no
  *     foreign key to what is purged and survive: numbers and prefixes are
  *     never reused.
@@ -21,6 +25,7 @@
  * Written fresh for Islestone.
  */
 import { logEvent } from '../events/audit';
+import { TimeEntryRepository } from '../repositories/TimeEntryRepository';
 import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import type { RequestContext } from '../types';
 import { runInTenantContext } from '@/lib/db-context';
@@ -29,12 +34,16 @@ export const PURGE_BATCH = 500;
 
 export interface PurgeOutcome {
     items: number;
+    /** Projects deleted outright or left as tombstones. */
     projects: number;
+    /** Of `projects`, those left as tombstones because time entries name them. */
+    tombstones: number;
 }
 
 export async function purgeWorkspaceWorkItems(ctx: RequestContext, before: Date, windowDays: number): Promise<PurgeOutcome> {
     let items = 0;
     let projects = 0;
+    let tombstones = 0;
     for (;;) {
         // guardrail-allow: n+1 — a batched drain: each pass is one bounded read and one delete, in its own transaction.
         const deleted = await runInTenantContext(ctx, async (db) => {
@@ -60,7 +69,13 @@ export async function purgeWorkspaceWorkItems(ctx: RequestContext, before: Date,
             items += deleted;
             if (deleted < PURGE_BATCH) break;
         }
-        projects += await runInTenantContext(ctx, (db) => WorkItemRepository.hardDeleteProject(db, ctx, projectId));
+        const done = await runInTenantContext(ctx, async (db) => {
+            // Time entries name it: a tombstone, so they keep their project (issue #117).
+            if (await TimeEntryRepository.anyInProject(db, ctx, projectId)) return { removed: await WorkItemRepository.tombstoneProject(db, ctx, projectId, new Date()), tombstone: true };
+            return { removed: await WorkItemRepository.hardDeleteProject(db, ctx, projectId), tombstone: false };
+        });
+        projects += done.removed;
+        if (done.tombstone) tombstones += done.removed;
     }
     if (items > 0 || projects > 0) {
         await runInTenantContext(ctx, (db) =>
@@ -68,7 +83,7 @@ export async function purgeWorkspaceWorkItems(ctx: RequestContext, before: Date,
                 action: 'WORK_ITEM_PURGED',
                 entityType: 'Tenant',
                 entityId: ctx.tenantId,
-                details: `Purged ${items} work item(s) and ${projects} project(s) deleted more than ${windowDays} days ago`,
+                details: `Purged ${items} work item(s) and ${projects} project(s) (${tombstones} kept as tombstones for their time entries) deleted more than ${windowDays} days ago`,
                 detailsJson: {
                     category: 'data_lifecycle',
                     operation: 'purged',
@@ -77,9 +92,9 @@ export async function purgeWorkspaceWorkItems(ctx: RequestContext, before: Date,
                     reason: 'soft-delete window elapsed',
                     graceDays: windowDays,
                 },
-                metadata: { items, projects, windowDays },
+                metadata: { items, projects, tombstones, windowDays },
             }),
         );
     }
-    return { items, projects };
+    return { items, projects, tombstones };
 }

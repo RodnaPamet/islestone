@@ -141,7 +141,8 @@ export class ProjectRepository {
 
     /** Any project row of the workspace, deleted included (restore, purge). */
     static async getAny(db: PrismaTx, ctx: RequestContext, id: string) {
-        return db.project.findFirst({ where: { id, tenantId: ctx.tenantId }, select: projectSelect });
+        // Never a tombstone (issue #117): only time totals read one.
+        return db.project.findFirst({ where: { id, tenantId: ctx.tenantId, purgedAt: null }, select: projectSelect });
     }
 
     /** Lock the project row for the rest of the transaction. */
@@ -319,7 +320,7 @@ export class ProjectRepository {
 
     static async restore(db: PrismaTx, ctx: RequestContext, id: string) {
         return db.project.updateMany({
-            where: { id, tenantId: ctx.tenantId, deletedAt: { not: null } },
+            where: { id, tenantId: ctx.tenantId, deletedAt: { not: null }, purgedAt: null },
             data: { deletedAt: null, deletedByUserId: null, version: { increment: 1 } },
         });
     }

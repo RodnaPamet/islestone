@@ -2061,15 +2061,13 @@ export class WorkItemRepository {
     }
 
     /**
-     * Projects of the workspace deleted before `before`, a batch at a time.
-     * A project time was recorded in is held, with its items, while its time
-     * entries remain (3.4b): entries are kept for the workspace's life and stay
-     * with the project they were recorded in (decisions 261 and 277), and
-     * `TimeEntry.projectId` is NOT NULL.
+     * Projects of the workspace deleted before `before` and not yet purged, a
+     * batch at a time. A tombstone (`purgedAt`, issue #117) is never picked
+     * again: it is what the purge leaves of a project time entries name.
      */
     static async purgeableProjectIds(db: PrismaTx, ctx: RequestContext, before: Date, take: number) {
         const rows = await db.project.findMany({
-            where: { tenantId: ctx.tenantId, deletedAt: { lt: before }, timeEntries: { none: {} } },
+            where: { tenantId: ctx.tenantId, deletedAt: { lt: before }, purgedAt: null },
             orderBy: { id: 'asc' },
             take,
             select: { id: true },
@@ -2079,8 +2077,33 @@ export class WorkItemRepository {
 
     /** Hard-delete a project whose items are gone (key bookkeeping survives: no FK). */
     static async hardDeleteProject(db: PrismaTx, ctx: RequestContext, projectId: string) {
-        const result = await db.project.deleteMany({ where: { id: projectId, tenantId: ctx.tenantId } });
+        const result = await db.project.deleteMany({ where: { id: projectId, tenantId: ctx.tenantId, purgedAt: null } });
         return result.count;
+    }
+
+    /**
+     * Leave a tombstone of a deleted project whose items are gone but which
+     * time entries name (issue #117, owner decision 281). In the caller's
+     * transaction: the time entries' link is deferred, the row is deleted, so
+     * every child goes by the cascades the database declares (as for a project
+     * with no time), and the row is inserted again under the same id with
+     * only its key, name, team and deletion kept, marked `purgedAt`; at the
+     * commit the deferred check finds it. Raw SQL: the purge's one
+     * counts-only audit entry records it, not a per-row create.
+     */
+    static async tombstoneProject(db: PrismaTx, ctx: RequestContext, projectId: string, now: Date): Promise<number> {
+        await db.$executeRawUnsafe(`SET CONSTRAINTS "TimeEntry_projectId_tenantId_fkey" DEFERRED`);
+        const kept = await db.$queryRaw<
+            Array<{ id: string; teamId: string; name: string; keyPrefix: string; version: number; archivedAt: Date | null; deletedAt: Date; deletedByUserId: string | null; createdAt: Date }>
+        >`DELETE FROM "Project"
+           WHERE "id" = ${projectId} AND "tenantId" = ${ctx.tenantId} AND "deletedAt" IS NOT NULL AND "purgedAt" IS NULL
+          RETURNING "id", "teamId", "name", "keyPrefix", "version", "archivedAt", "deletedAt", "deletedByUserId", "createdAt"`;
+        const row = kept[0];
+        if (!row) return 0;
+        await db.$executeRaw`
+            INSERT INTO "Project" ("id", "tenantId", "teamId", "name", "keyPrefix", "version", "archivedAt", "deletedAt", "deletedByUserId", "purgedAt", "createdAt", "updatedAt")
+            VALUES (${row.id}, ${ctx.tenantId}, ${row.teamId}, ${row.name}, ${row.keyPrefix}, ${row.version + 1}, ${row.archivedAt}, ${row.deletedAt}, ${row.deletedByUserId}, ${now}, ${row.createdAt}, ${now})`;
+        return 1;
     }
 
     /** Rewrite one item's `sortKey` (rebalance; no version bump), one row of a page the job locked. */

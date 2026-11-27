@@ -16,7 +16,8 @@
  *     starts racing leaving one timer, the day it counts on in the zone;
  *   - the week and an item's time, and who sees what (decision 266);
  *   - entries staying with their project on a move, kept on a purge (the
- *     item reads "Deleted item"), a project with time held from the purge;
+ *     item reads "Deleted item"), a project with time kept as a tombstone
+ *     (issue #117; project-tombstone.test.ts);
  *   - member removal stopping the timer;
  *   - two-tenant isolation (ISOLATION_TESTED: TimeEntry).
  */
@@ -345,7 +346,7 @@ describeFn('time entries and timers (3.4b)', () => {
             expect(purged).toMatchObject({ workItemId: null, projectId, minutes: 10 });
         });
 
-        it('holds a deleted project time was recorded in from the purge, and purges one without time', async () => {
+        it('keeps a tombstone of a deleted project time was recorded in, and purges one without time (issue #117)', async () => {
             const kept = (await createProject(owner, { teamId, name: 'Held', keyPrefix: 'TMH' })).id;
             const id = await item('held', kept);
             await addTimeEntry(member, { workItemId: id, workDate: day(41), minutes: 10 });
@@ -353,7 +354,8 @@ describeFn('time entries and timers (3.4b)', () => {
             await deleteProject(owner, kept);
             await deleteProject(owner, plain);
             await purgeWorkspaceWorkItems({ ...owner, actorType: 'JOB' }, new Date(Date.now() + 86_400_000), 0);
-            expect(await prisma.project.count({ where: { id: kept } })).toBe(1);
+            expect(await prisma.project.findUniqueOrThrow({ where: { id: kept }, select: { purgedAt: true } })).toEqual({ purgedAt: expect.any(Date) });
+            expect(await prisma.workItem.count({ where: { projectId: kept } })).toBe(0);
             expect(await prisma.project.count({ where: { id: plain } })).toBe(0);
         });
 

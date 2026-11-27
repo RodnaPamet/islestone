@@ -185,6 +185,12 @@ export class TimeEntryRepository {
         return rows.map((r) => r.userId);
     }
 
+    /** Whether any entry names the project (the purge's choice between a tombstone and a delete, issue #117). */
+    static async anyInProject(db: PrismaTx, ctx: Ctx, projectId: string): Promise<boolean> {
+        const row = await db.timeEntry.findFirst({ where: { tenantId: ctx.tenantId, projectId }, select: { id: true } });
+        return row !== null;
+    }
+
     static async create(db: PrismaTx, ctx: Ctx, data: TimeEntryInsert): Promise<TimeEntryRow> {
         return db.timeEntry.create({
             data: { tenantId: ctx.tenantId, createdByUserId: data.userId, ...data },

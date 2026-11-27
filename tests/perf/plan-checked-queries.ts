@@ -205,6 +205,7 @@ export const PLAN_CHECK_EXEMPT: Readonly<Record<string, string>> = {
     'SearchVectorRepository.descriptionTexts': 'one rebuild page of ids by primary key',
     'SearchVectorRepository.commentTexts': 'one rebuild page of ids by primary key',
     'TimeEntryRepository.get': 'one time entry by primary key (the write gate of a change or a delete, 3.4b)',
+    'TimeEntryRepository.anyInProject': "an existence probe, one row, on TimeEntry_tenantId_projectId_workDate_idx (the purge's choice of a tombstone, issue #117)",
 };
 
 /** A query's buffer budget at a shape: 10k and 100k are judged, any other shape is reported only (`null`). */
