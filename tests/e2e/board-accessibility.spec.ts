@@ -136,8 +136,12 @@ async function press(page: Page, ...keys: string[]) {
     for (const key of keys) await page.keyboard.press(key);
 }
 
-/** Tab (or Shift+Tab) until `target` has focus (keyboard only), at most `limit` presses. */
-async function tabTo(page: Page, target: Locator, limit = 60, key: 'Tab' | 'Shift+Tab' = 'Tab') {
+/**
+ * Tab (or Shift+Tab) until `target` has focus (keyboard only), at most `limit` presses. A walk forward to an
+ * earlier column wraps through the whole page (the chrome, the sidebar's rows, the toolbar), so the limit grows
+ * with the shell: 80 since the sidebar's Time entry (3.4b) took the walk past 60.
+ */
+async function tabTo(page: Page, target: Locator, limit = 80, key: 'Tab' | 'Shift+Tab' = 'Tab') {
     for (let i = 0; i < limit; i++) {
         if (await target.evaluate((el) => el === document.activeElement).catch(() => false)) return;
         await page.keyboard.press(key);
