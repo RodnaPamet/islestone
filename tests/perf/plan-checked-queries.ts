@@ -267,6 +267,19 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'forecast: the open items per project', methods: ['WorkItemRepository.openCountsByProject'], indexes: ['WorkItem_tenantId_projectId_number_key'], maxBuffers: 350, maxBuffers100k: 7000 },
     { name: "forecast: the record's completions of a project", methods: ['WorkItemTransitionRepository.completionSpanRows'], indexes: ['WorkItemTransition_completions', 'WorkItemTransition_tenantId_workItemId_at_idx'], maxBuffers: 5000, maxBuffers100k: 100000 },
     // ── end of the 3.6c forecasting block ──
+    // ── Dashboards (3.6d): a person's list, the caller's own and every shared one ──
+    // A small table outside the guarded ones, listed for its read (the map's "dashboards: a person's list"). The
+    // seed writes no dashboards, so the planner reads the few pages whole, as it should at any realistic size (a
+    // person keeps at most 50); the budget holds the read small.
+    {
+        name: "dashboards: a person's list",
+        // `DashboardRepository.list` reads no guarded table, so the coverage guard does not list it here; its runner calls it.
+        methods: [],
+        indexes: [],
+        noIndexBecause: "a workspace's dashboards are a few pages (at most 50 a person, DASHBOARD_LIMITS.perPerson; the seed writes a handful): a sequential scan is the cheapest plan, and Dashboard is not a guarded table; the budget holds it small",
+        maxBuffers: 50,
+        maxBuffers100k: 50,
+    },
 ];
 
 /**

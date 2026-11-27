@@ -23,7 +23,7 @@ import type { WorkItemListFilters } from '@/components/work-items/data/list-filt
 import type { ForecastChoices } from '../data/use-forecast';
 import { ForecastPanel } from './ForecastPanel';
 
-function ForecastSheet({ open, onClose, filters, choices, onChoices }: { open: boolean; onClose: () => void; filters: WorkItemListFilters; choices: ForecastChoices; onChoices: (c: ForecastChoices) => void }) {
+export function ForecastSheet({ open, onClose, filters, choices, onChoices }: { open: boolean; onClose: () => void; filters: WorkItemListFilters; choices: ForecastChoices; onChoices: (c: ForecastChoices) => void }) {
     const tSheet = useTranslations('forecast');
     return (
         <Sheet

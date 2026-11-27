@@ -38,15 +38,28 @@ export interface ChartSectionProps {
     table: () => ReactNode;
     /** Controls beside the legend (a measure switch). */
     controls?: ReactNode;
+    /** A dashboard widget's own buttons (its settings and removal, 3.6d), at the end of the header. */
+    actions?: ReactNode;
+    /** Fill the parent's height (a dashboard widget's place on the grid, 3.6d) rather than a fixed chart height. */
+    fill?: boolean;
+    /** A line under the heading saying what the chart is over (a dashboard widget's window and scope, 3.6d). */
+    frame?: ReactNode;
 }
 
-export function ChartSection({ title, testId, legend = [], summary, loading, failed, tooLarge, empty, chart, table, controls }: ChartSectionProps) {
+/** What a dashboard widget changes about a chart's section (3.6d): its title, its buttons, its height and its test id. */
+export type SectionOverrides = Partial<Pick<ChartSectionProps, 'title' | 'testId' | 'actions' | 'fill' | 'frame'>>;
+
+export function ChartSection({ title, testId, legend = [], summary, loading, failed, tooLarge, empty, chart, table, controls, actions, fill = false, frame }: ChartSectionProps) {
     const t = useTranslations('analytics.chart');
     const [asTable, setAsTable] = useState(false);
     const id = useId();
     const ready = !loading && !failed && !tooLarge && !empty;
     return (
-        <section aria-labelledby={`${id}-title`} className="space-y-tight rounded-lg border border-border-default p-4" data-testid={testId}>
+        <section
+            aria-labelledby={`${id}-title`}
+            className={fill ? 'flex h-full min-h-0 flex-col gap-tight overflow-hidden rounded-lg border border-border-default bg-bg-default p-4' : 'space-y-tight rounded-lg border border-border-default p-4'}
+            data-testid={testId}
+        >
             <div className="flex flex-wrap items-center justify-between gap-tight">
                 <h2 id={`${id}-title`} className="text-sm font-semibold text-content-emphasis">
                     {title}
@@ -69,8 +82,10 @@ export function ChartSection({ title, testId, legend = [], summary, loading, fai
                             onClick={() => setAsTable((v) => !v)}
                         />
                     )}
+                    {actions}
                 </div>
             </div>
+            {frame && <p className="text-xs text-content-muted">{frame}</p>}
             {summary && ready && <p className="text-xs text-content-muted">{summary}</p>}
             {loading ? (
                 <p className="text-sm text-content-muted">{t('loading')}</p>
@@ -86,8 +101,8 @@ export function ChartSection({ title, testId, legend = [], summary, loading, fai
                 <p className="text-sm text-content-muted">{t('empty')}</p>
             ) : (
                 <>
-                    {!asTable && <div className="relative h-56 w-full">{chart()}</div>}
-                    <div id={`${id}-table`} className={asTable ? 'max-h-80 overflow-auto' : 'sr-only'}>
+                    {!asTable && <div className={fill ? 'relative min-h-0 w-full flex-1' : 'relative h-56 w-full'}>{chart()}</div>}
+                    <div id={`${id}-table`} className={asTable ? (fill ? 'min-h-0 flex-1 overflow-auto' : 'max-h-80 overflow-auto') : 'sr-only'}>
                         {table()}
                     </div>
                 </>

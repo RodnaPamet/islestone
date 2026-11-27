@@ -53,6 +53,7 @@ import { lockTenantOwners } from './tenant-owner-lock';
 import { clearPersonValuesInTx } from './custom-field';
 import { GoalRepository } from '../repositories/GoalRepository';
 import { InitiativeRepository } from '../repositories/InitiativeRepository';
+import { deletePersonalDashboardsOfRemovedMember } from './dashboard';
 import { stopTimerOfRemovedMemberInTx } from './time-entry';
 import { WorkItemTemplateRepository } from '../repositories/TemplateRepository';
 import { withdrawReviewerRowsOfUser, type ReviewNoticeOut } from './review-engine';
@@ -729,6 +730,11 @@ export async function removeTenantMember(
         // waits for this transaction and finds the person gone, a 400.
         await MembershipRepository.lockForDelete(db, ctx, membership.id);
         const second = await clearRowsNamingMember(db, ctx, membership.id, membership.userId, 2);
+
+        // Sub-phase 3.6d: their personal dashboards go; shared ones keep their stamp
+        // ("Created by a former member"). After the membership's lock, so a dashboard a
+        // create was writing as the lock was taken is deleted too.
+        await deletePersonalDashboardsOfRemovedMember(db, ctx, membership.id, membership.userId);
 
         // Sub-phase 3.4b: their running timer stops and is recorded (the map's rule); their
         // entries stay, kept for the workspace's life (decision 277), audited in time-entry.ts.

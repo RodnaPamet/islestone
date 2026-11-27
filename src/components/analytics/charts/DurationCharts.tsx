@@ -27,7 +27,7 @@ import { Bar, Line } from '@visx/shape';
 import type { DurationsResponse, PercentileSummary } from '@/lib/analytics/types';
 
 import type { AnalyticsRead } from '../data/use-analytics';
-import { ChartSection, FiguresTable } from './ChartSection';
+import { ChartSection, FiguresTable, type SectionOverrides } from './ChartSection';
 
 const MARGIN = { top: 8, right: 12, bottom: 28, left: 40 };
 const DOT_CLASS = 'text-content-info';
@@ -105,7 +105,7 @@ function percentileText(t: (key: string, values?: Record<string, string | number
     return s.count === 0 ? t('noneDone') : t('percentiles', { count: s.count, p50: s.p50 ?? 0, p85: s.p85 ?? 0, p95: s.p95 ?? 0 });
 }
 
-export function CycleTimeChart({ read }: { read: AnalyticsRead<DurationsResponse> }) {
+export function CycleTimeChart({ read, section }: { read: AnalyticsRead<DurationsResponse>; section?: SectionOverrides }) {
     const tCycle = useTranslations('analytics.durations');
     const data = read.data;
     const summary = data ? (
@@ -125,6 +125,7 @@ export function CycleTimeChart({ read }: { read: AnalyticsRead<DurationsResponse
             ]}
             summary={summary}
             loading={read.isLoading && !data}
+            {...section}
             failed={!!read.error}
             tooLarge={read.tooLarge}
             empty={!!data && data.points.length === 0 && data.age.length === 0}
@@ -153,7 +154,7 @@ export function CycleTimeChart({ read }: { read: AnalyticsRead<DurationsResponse
     );
 }
 
-export function LeadTimeChart({ read }: { read: AnalyticsRead<DurationsResponse> }) {
+export function LeadTimeChart({ read, section }: { read: AnalyticsRead<DurationsResponse>; section?: SectionOverrides }) {
     const tLead = useTranslations('analytics.durations');
     const data = read.data;
     const buckets = useMemo(() => leadTimeBuckets(data?.points ?? []), [data]);
@@ -164,6 +165,7 @@ export function LeadTimeChart({ read }: { read: AnalyticsRead<DurationsResponse>
             legend={[{ label: tLead('legend.items'), className: DOT_CLASS }]}
             summary={data ? <>{percentileText(tLead, data.leadTime)} {data.pointsNewestOnly && tLead('newestOnly', { count: data.points.length })}</> : undefined}
             loading={read.isLoading && !data}
+            {...section}
             failed={!!read.error}
             tooLarge={read.tooLarge}
             empty={!!data && data.points.length === 0}

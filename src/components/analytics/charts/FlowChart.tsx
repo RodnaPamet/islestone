@@ -14,7 +14,7 @@ import { Areas, TimeSeriesChart, XAxis, YAxis, type TimeSeriesDatum } from '@inf
 import type { FlowResponse } from '@/lib/analytics/types';
 
 import type { AnalyticsRead } from '../data/use-analytics';
-import { ChartSection, FiguresTable } from './ChartSection';
+import { ChartSection, FiguresTable, type SectionOverrides } from './ChartSection';
 
 type Bands = { backlog: number; unstarted: number; started: number; done: number };
 type Datum = TimeSeriesDatum<Bands>;
@@ -26,7 +26,7 @@ const BANDS = [
     { id: 'done', className: 'text-content-success' },
 ] as const;
 
-export function FlowChart({ read }: { read: AnalyticsRead<FlowResponse> }) {
+export function FlowChart({ read, section }: { read: AnalyticsRead<FlowResponse>; section?: SectionOverrides }) {
     const t = useTranslations('analytics.flow');
     const data = read.data;
     // Cumulative from the bottom (Done) up, so each band's top is its series.
@@ -47,6 +47,7 @@ export function FlowChart({ read }: { read: AnalyticsRead<FlowResponse> }) {
             legend={BANDS.map((b) => ({ label: t(`band.${b.id}`), className: b.className }))}
             summary={last ? t('summary', { items: data!.items, ...last }) : undefined}
             loading={read.isLoading && !data}
+            {...section}
             failed={!!read.error}
             tooLarge={read.tooLarge}
             empty={!!data && data.days.length === 0}

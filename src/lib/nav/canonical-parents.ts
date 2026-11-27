@@ -80,6 +80,8 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/settings/time-tracking': { href: '/settings', label: 'Settings' },
     '/settings/workload': { href: '/settings', label: 'Settings' },
     '/settings/working-calendars/[teamId]': { href: '/settings/working-calendars', label: 'Working calendars' },
+    // Sub-phase 3.6d: a dashboard falls back to the Analytics page.
+    '/analytics/dashboards/[dashboardId]': { href: '/analytics', label: 'Analytics' },
 };
 
 /**

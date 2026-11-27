@@ -32,7 +32,7 @@ import { Bar } from '@visx/shape';
 import type { WaitingPartyRow, WaitingResponse } from '@/lib/analytics/types';
 
 import type { AnalyticsRead } from '../data/use-analytics';
-import { ChartSection, FiguresTable } from './ChartSection';
+import { ChartSection, FiguresTable, type SectionOverrides } from './ChartSection';
 
 const MARGIN = { top: 4, right: 12, bottom: 24, left: 120 };
 const FIELD_CLASS = 'text-content-info';
@@ -72,7 +72,7 @@ function Bars({ rows, names, width, height }: { rows: readonly WaitingPartyRow[]
     );
 }
 
-export function TimeWaitingChart({ read }: { read: AnalyticsRead<WaitingResponse> }) {
+export function TimeWaitingChart({ read, section }: { read: AnalyticsRead<WaitingResponse>; section?: SectionOverrides }) {
     const tWait = useTranslations('analytics.waiting');
     const data = read.data;
     const rows = data ? (data.people ?? (data.self ? [data.self] : [])) : [];
@@ -104,6 +104,7 @@ export function TimeWaitingChart({ read }: { read: AnalyticsRead<WaitingResponse
             ]}
             summary={summary}
             loading={read.isLoading && !data}
+            {...section}
             failed={!!read.error}
             tooLarge={read.tooLarge}
             empty={nothing}

@@ -20,6 +20,7 @@ import type { RequestContext } from '../types';
 import { forbidden } from '@/lib/errors/types';
 import { isTenantSystemUserId } from '@/lib/tenant-system-user';
 import type { AnalyticsAffordances } from '@/lib/analytics/types';
+import type { DashboardPageAffordances, DashboardViewerAffordances, DashboardVisibilityName } from '@/lib/analytics/dashboard';
 
 export type AnalyticsViewer = Pick<RequestContext, 'permissions' | 'appPermissions'>;
 
@@ -61,4 +62,52 @@ export function analyticsAffordances(ctx: AnalyticsViewer): AnalyticsAffordances
 
 export function assertCanViewAnalytics(ctx: RequestContext): void {
     if (!mayViewAnalytics(ctx)) throw forbidden('You do not have permission to see analytics.');
+}
+
+// ─── Dashboards (3.6d; owner decisions 326 and 329) ─────────────────
+
+export type DashboardViewer = AnalyticsViewer & Pick<RequestContext, 'userId'>;
+
+export interface DashboardOwnership {
+    createdByUserId: string;
+    visibility: DashboardVisibilityName;
+}
+
+/** An Owner or Admin, who may delete someone else's shared dashboard (decision 326, `DASHBOARD_MODERATED`), never change it. */
+function isWorkspaceAdmin(ctx: AnalyticsViewer): boolean {
+    if (!ctx.permissions.canAdmin) return false;
+    return !ctx.appPermissions || ctx.appPermissions.admin?.manage === true;
+}
+
+/**
+ * Save a dashboard: a personal one with `analytics.view` (Viewers included,
+ * decision 60's widening applied the same way), a shared one with
+ * `analytics.share`.
+ */
+export function maySaveDashboard(ctx: AnalyticsViewer, visibility: DashboardVisibilityName): boolean {
+    return mayViewAnalytics(ctx) && (visibility === 'PERSONAL' || mayShareAnalytics(ctx));
+}
+
+/** Rename, re-share, unshare or change the widgets: the creator only (decision 59's rule), holding `analytics.share` for a shared one. */
+export function mayChangeDashboard(ctx: DashboardViewer, d: DashboardOwnership, nextVisibility?: DashboardVisibilityName): boolean {
+    if (!mayViewAnalytics(ctx) || d.createdByUserId !== ctx.userId) return false;
+    const touchesShared = d.visibility === 'SHARED' || nextVisibility === 'SHARED';
+    return !touchesShared || mayShareAnalytics(ctx);
+}
+
+/** Why a delete is allowed: the creator's own, or an Owner or Admin moderating a shared one; `null` when not. */
+export function dashboardDeleteBasis(ctx: DashboardViewer, d: DashboardOwnership): 'creator' | 'moderation' | null {
+    if (mayChangeDashboard(ctx, d)) return 'creator';
+    if (d.visibility === 'SHARED' && d.createdByUserId !== ctx.userId && mayViewAnalytics(ctx) && isWorkspaceAdmin(ctx)) return 'moderation';
+    return null;
+}
+
+/** What one dashboard offers its viewer (asked on the server; never in a component). */
+export function dashboardAffordances(ctx: DashboardViewer, d: DashboardOwnership): DashboardViewerAffordances {
+    return { change: mayChangeDashboard(ctx, d), delete: dashboardDeleteBasis(ctx, d) !== null, share: mayShareAnalytics(ctx) };
+}
+
+/** What the Analytics page offers about dashboards (asked on the server). */
+export function dashboardPageAffordances(ctx: AnalyticsViewer): DashboardPageAffordances {
+    return { createPersonal: maySaveDashboard(ctx, 'PERSONAL'), createShared: maySaveDashboard(ctx, 'SHARED') };
 }

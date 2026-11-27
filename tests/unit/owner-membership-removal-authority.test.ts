@@ -65,6 +65,8 @@ function membershipDb(membership: { role: string; status?: string }, owners = 2)
         timeEntry: { findFirst: jest.fn().mockResolvedValue(null) },
         // Roadmap 3.3b: the member's calendar connections move to DISCONNECTING.
         calendarConnection: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        // Sub-phase 3.6d: the removed member's personal dashboards.
+        dashboard: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
         // Sub-phase 2.8a: the member's reviewer rows still asked are withdrawn first.
         workItemReviewer: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
         tenantMembership: {

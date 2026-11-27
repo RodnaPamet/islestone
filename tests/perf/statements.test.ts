@@ -47,6 +47,8 @@ interface Scenario {
     path: (w: PerfWorld, run: number) => string;
     params?: (w: PerfWorld, run: number) => Record<string, string>;
     body?: (w: PerfWorld, run: number) => unknown;
+    /** Request headers (a layout write's `If-Match`, 3.6d). */
+    headers?: (w: PerfWorld, run: number) => Record<string, string>;
     /** Who calls: the heavy member (the default), or the workspace's owner, who approves weeks (3.4c). */
     as?: 'approver';
     /** Rows a write needs, written on the direct connection before the scenario is warmed (never measured). */
@@ -175,6 +177,39 @@ function timeOffDay(run: number): string {
     return new Date(TIME_OFF_BASE + (run + 1) * 86_400_000).toISOString().slice(0, 10);
 }
 
+// ── Dashboards (3.6d) ──
+const PERF_DASHBOARD_ID = 'perf-dashboard-list';
+const PERF_LAYOUT_DASHBOARD_ID = 'perf-dashboard-layout';
+const PERF_WIDGETS = [
+    { type: 'COUNTS', config: { scope: { filters: {} }, window: { kind: 'weeks', weeks: 12 } }, position: { x: 0, y: 0 }, size: { w: 12, h: 3 } },
+    { type: 'THROUGHPUT', config: { scope: { filters: {} }, window: { kind: 'weeks', weeks: 12 }, bin: 'week' }, position: { x: 0, y: 3 }, size: { w: 6, h: 6 } },
+    { type: 'CUMULATIVE_FLOW', config: { scope: { filters: {} }, window: { kind: 'weeks', weeks: 12 } }, position: { x: 6, y: 3 }, size: { w: 6, h: 6 } },
+];
+
+/** The heavy member's personal dashboard with three widgets, and a shared one by the workspace's owner (written once). */
+async function perfDashboards(direct: PrismaClient, w: PerfWorld): Promise<void> {
+    await direct.dashboard.upsert({
+        where: { id: PERF_DASHBOARD_ID },
+        create: { id: PERF_DASHBOARD_ID, tenantId: w.tenantId, name: 'Perf dashboard', visibility: 'SHARED', createdByUserId: w.heavyUserId },
+        update: {},
+    });
+    await direct.dashboard.upsert({
+        where: { id: `${PERF_DASHBOARD_ID}-owner` },
+        create: { id: `${PERF_DASHBOARD_ID}-owner`, tenantId: w.tenantId, name: 'Perf shared dashboard', visibility: 'SHARED', createdByUserId: w.approverCtx.userId },
+        update: {},
+    });
+    await direct.dashboardWidget.deleteMany({ where: { dashboardId: PERF_DASHBOARD_ID } });
+    await direct.dashboardWidget.createMany({
+        data: PERF_WIDGETS.map((x) => ({ tenantId: w.tenantId, dashboardId: PERF_DASHBOARD_ID, type: x.type as 'COUNTS', configJson: x.config, x: x.position.x, y: x.position.y, w: x.size.w, h: x.size.h })),
+    });
+}
+
+/** The heavy member's dashboard the layout write changes, at version 1 before the warm-up. */
+async function perfLayoutDashboard(direct: PrismaClient, w: PerfWorld): Promise<void> {
+    await direct.dashboard.deleteMany({ where: { id: PERF_LAYOUT_DASHBOARD_ID } });
+    await direct.dashboard.create({ data: { id: PERF_LAYOUT_DASHBOARD_ID, tenantId: w.tenantId, name: 'Perf layout', visibility: 'PERSONAL', createdByUserId: w.heavyUserId } });
+}
+
 const SCENARIOS: Scenario[] = [
     { name: 'list: one project, first page', file: `${ROUTES}/work-items/route.ts`, method: 'GET', path: (w) => `/work-items?projectId=${w.projectId}&limit=50`, budget: 8 },
     { name: 'board: one column of the large project', file: `${ROUTES}/work-items/route.ts`, method: 'GET', path: (w) => `/work-items?projectId=${w.bigProjectId}&stateId=${w.stateId}&limit=50`, budget: 8 },
@@ -267,6 +302,22 @@ const SCENARIOS: Scenario[] = [
     { name: 'forecast: the workspace', file: `${ROUTES}/analytics/forecast/route.ts`, method: 'GET', path: () => '/analytics/forecast?basedOn=workspace', budget: 8 },
     { name: 'forecast: the current cycle, from its team', file: `${ROUTES}/analytics/forecast/route.ts`, method: 'GET', path: (w) => `/analytics/forecast?teamId=${w.teamId}&cycleId=${w.currentCycleId}`, budget: 9 },
     // ── end of the 3.6c forecasting block ──
+    // Dashboards (3.6d; the map's budget: a dashboard's list at most 4): the tenant binding, the heavy member's own and
+    // every shared dashboard, and the memberships of the shared ones' creators (3 measured on a fresh 10k seed); one
+    // dashboard read with its widgets and its creator's membership (4); and a layout write (the dashboard and its
+    // widgets read, its version claimed, the widgets deleted and inserted as returned, the audit entry and its chain:
+    // 15 measured, answered as written with no read back). The setup writes the heavy member's dashboards on the direct connection; each run's If-Match is the
+    // version the run before left (the warm-up is run -1).
+    { name: 'dashboards: the list', file: `${ROUTES}/dashboards/route.ts`, method: 'GET', setup: perfDashboards, path: () => '/dashboards', budget: 4, answers: (b) => b.includes(`"id":"${PERF_DASHBOARD_ID}"`) },
+    {
+        name: 'dashboards: one dashboard and its widgets',
+        file: `${ROUTES}/dashboards/[dashboardId]/route.ts`,
+        method: 'GET',
+        setup: perfDashboards,
+        path: () => `/dashboards/${PERF_DASHBOARD_ID}`,
+        params: () => ({ dashboardId: PERF_DASHBOARD_ID }),
+        budget: 4,
+    },
     {
         name: 'create: one item with a description',
         file: `${ROUTES}/work-items/route.ts`,
@@ -308,6 +359,17 @@ const SCENARIOS: Scenario[] = [
         params: (_w, run) => ({ timesheetId: submittedSheets.get(run)! }),
         budget: 23,
     },
+    {
+        name: "dashboards: a layout write (the whole widget list)",
+        file: `${ROUTES}/dashboards/[dashboardId]/widgets/route.ts`,
+        method: 'PUT',
+        setup: perfLayoutDashboard,
+        path: () => `/dashboards/${PERF_LAYOUT_DASHBOARD_ID}/widgets`,
+        params: () => ({ dashboardId: PERF_LAYOUT_DASHBOARD_ID }),
+        headers: (_w, run) => ({ 'if-match': `"${run + 2}"` }),
+        body: () => ({ widgets: PERF_WIDGETS }),
+        budget: 15,
+    },
     // Time off (3.5a): one's own date recorded, a write of its own (the person's lock, the membership FOR KEY SHARE,
     // the dates it names, the insert and two hash-chained audit entries). Each run a date of its own.
     {
@@ -320,10 +382,10 @@ const SCENARIOS: Scenario[] = [
     },
 ];
 
-function request(w: PerfWorld, method: string, path: string, body?: unknown): NextRequest {
+function request(w: PerfWorld, method: string, path: string, body?: unknown, headers: Record<string, string> = {}): NextRequest {
     return new NextRequest(`http://localhost/api/t/${w.slug}${path}`, {
         method,
-        headers: { 'content-type': 'application/json', 'x-forwarded-for': '10.0.0.9' },
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': '10.0.0.9', ...headers },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
 }
@@ -399,11 +461,11 @@ describe(`statements per request on the seeded database (PERF_SHAPE=${process.en
             const ctx = s.as === 'approver' ? world.approverCtx : world.ctx;
             getTenantCtxMock.mockImplementation(async () => ({ ...ctx, requestId: `perf-${Math.random()}` }));
             const perRequest = await statementsPer((run) =>
-                handler(request(world, s.method, s.path(world, run), s.body?.(world, run)), { params: Promise.resolve({ tenantSlug: world.slug, ...(s.params?.(world, run) ?? {}) }) }),
+                handler(request(world, s.method, s.path(world, run), s.body?.(world, run), s.headers?.(world, run)), { params: Promise.resolve({ tenantSlug: world.slug, ...(s.params?.(world, run) ?? {}) }) }),
             );
             measured.push({ name: s.name, perRequest, budget: s.budget });
             if (s.answers) {
-                const res = await handler(request(world, s.method, s.path(world, 0), s.body?.(world, 0)), { params: Promise.resolve({ tenantSlug: world.slug, ...(s.params?.(world, 0) ?? {}) }) });
+                const res = await handler(request(world, s.method, s.path(world, 0), s.body?.(world, 0), s.headers?.(world, 0)), { params: Promise.resolve({ tenantSlug: world.slug, ...(s.params?.(world, 0) ?? {}) }) });
                 expect({ name: s.name, answers: s.answers(await res.text()) }).toEqual({ name: s.name, answers: true });
             }
             getTenantCtxMock.mockImplementation(async () => ({ ...world.ctx, requestId: `perf-${Math.random()}` }));
