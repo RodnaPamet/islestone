@@ -15,6 +15,8 @@ export const ANALYTICS_COMPLETION_LIMIT = 50_000;
 export const ANALYTICS_FLOW_ITEM_LIMIT = 20_000;
 /** The most items a filter on current values (labels, type, assignee …) may select (422 above). */
 export const ANALYTICS_FILTER_ITEM_LIMIT = 50_000;
+/** The most reviewers' spans asked on open steps a time-waiting read takes in its window (422 above). */
+export const ANALYTICS_REVIEW_SPAN_LIMIT = 50_000;
 /** The newest completions drawn as points on the cycle-time and lead-time charts. */
 export const ANALYTICS_POINT_LIMIT = 2_000;
 /** The oldest open, started items drawn as "Age". */
@@ -58,8 +60,8 @@ export interface AnalyticsFrame {
 
 export interface AnalyticsTooLargeDetails {
     reason: typeof ANALYTICS_TOO_LARGE;
-    /** What was over its bound: completions, items in the flow (or in time waiting), or items a filter selects. */
-    what: 'completions' | 'items' | 'filter';
+    /** What was over its bound: completions, items in the flow (or in time waiting), items a filter selects, or reviewers' spans (time waiting). */
+    what: 'completions' | 'items' | 'filter' | 'reviews';
     count: number;
     limit: number;
 }

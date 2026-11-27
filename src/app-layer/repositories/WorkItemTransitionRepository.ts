@@ -24,7 +24,7 @@ import { Prisma, type WorkflowStateCategory } from '@prisma/client';
 import type { PrismaTx } from '@/lib/db-context';
 import type { EpochDay } from '../domain/schedule/calendar';
 import type { FlowBucket, FlowDelta } from '../domain/analytics/flow';
-import type { ReviewSpan, WaitSegment } from '../domain/analytics/waiting';
+import type { WaitSegment } from '../domain/analytics/waiting';
 import type { ProjectVisibility } from '../policies/project-visibility';
 import type { RequestContext } from '../types';
 
@@ -310,37 +310,26 @@ export class WorkItemTransitionRepository {
     /**
      * Time waiting (3.6b; decisions 317 and 331), in ONE statement: the items
      * the read follows (every item with a row in scope at or before `asOf`,
-     * at most `itemLimit`; the count alone when there are more), then, of
-     * those items:
-     *
-     *   - the segments `domain/analytics/waiting.ts` needs
-     *     (`relevantSegments`): each row up to `asOf` whose item is live and
-     *     in scope, to its next row or to `asOf`, with its position among
-     *     the item's rows, when it names someone in waiting on, is open and
-     *     reaches into the window, or belongs to an item with a review span;
-     *   - the review spans: each reviewer of a step that opened, from the
-     *     opening (or their being added, when later) to their latest
-     *     response, their withdrawal or the step's end (NULL while none),
-     *     leaving out spans that ended before the window.
-     *
-     * The scope's predicate is COALESCEd (a NULL recorded cycle or milestone
-     * against an id filter is out of scope). Reads `WorkItemReviewer` and
-     * `WorkItemReviewStep` by the item and the step's key; never a response's
-     * text.
+     * at most `itemLimit`; the count alone when there are more), and of them
+     * the segments `domain/analytics/waiting.ts` needs (`relevantSegments`):
+     * each row up to `asOf` whose item is live and in scope, to its next row
+     * or to `asOf`, with its position among the item's rows, when it names
+     * someone in waiting on, is open and reaches into the window, or belongs
+     * to an item with a review span (`reviewItemIds`, from
+     * `ReviewRepository.reviewSpans`). The scope's predicate is COALESCEd (a
+     * NULL recorded cycle or milestone against an id filter is out of scope).
      */
     static async waitSpans(
         db: PrismaTx,
         ctx: Ctx,
         s: RecordScope,
-        window: { start: Date; asOf: Date; itemLimit: number },
-    ): Promise<{ items: number; segments: WaitSegment[]; spans: ReviewSpan[] }> {
+        window: { start: Date; asOf: Date; itemLimit: number; reviewItemIds: readonly string[] },
+    ): Promise<{ items: number; segments: WaitSegment[] }> {
         const t = ctx.tenantId;
         const R = ts(window.asOf);
         const start = ts(window.start);
-        const ended = Prisma.sql`LEAST(rv."respondedAt", rv."withdrawnAt", st."endedAt")`;
-        const begun = Prisma.sql`GREATEST(st."openedAt", rv."createdAt")`;
         const rows = await db.$queryRaw<
-            Array<{ kind: 'n' | 's' | 'r'; workItemId: string | null; teamId: string | null; start: Date | null; end: Date | null; last: boolean | null; ord: bigint | number | null; open: boolean | null; userId: string | null; n: number | null }>
+            Array<{ kind: 'n' | 's'; workItemId: string | null; teamId: string | null; start: Date | null; end: Date | null; last: boolean | null; ord: bigint | number | null; open: boolean | null; userId: string | null; n: number | null }>
         >(Prisma.sql`
             WITH items AS (
                 SELECT DISTINCT t."workItemId"
@@ -351,15 +340,6 @@ export class WorkItemTransitionRepository {
                  LIMIT ${window.itemLimit + 1}
             ), counted AS (
                 SELECT count(*)::int AS "n" FROM items
-            ), spans AS (
-                SELECT rv."workItemId", rv."userId", ${begun} AS "start", ${ended} AS "end"
-                  FROM "WorkItemReviewer" rv
-                  JOIN "WorkItemReviewStep" st ON st."id" = rv."stepId" AND st."tenantId" = ${t}
-                 WHERE rv."tenantId" = ${t}
-                   AND rv."workItemId" IN (SELECT i."workItemId" FROM items i)
-                   AND (SELECT c."n" FROM counted c) <= ${window.itemLimit}
-                   AND st."openedAt" IS NOT NULL AND ${begun} <= ${R}
-                   AND (${ended} IS NULL OR ${ended} >= ${start})
             ), r AS (
                 SELECT t."workItemId", t."teamId", t."at", t."stateCategory", t."waitingOnUserId",
                        (NOT t."deleted" AND COALESCE((${scopeSql(ctx, 't', s)}), false)) AS "live",
@@ -381,16 +361,12 @@ export class WorkItemTransitionRepository {
              WHERE r."live"
                AND (r."waitingOnUserId" IS NOT NULL
                     OR (r."stateCategory" IN ('BACKLOG', 'UNSTARTED', 'STARTED') AND COALESCE(r."nextAt", ${R}) > ${start})
-                    OR r."workItemId" IN (SELECT sp."workItemId" FROM spans sp))
-            UNION ALL
-            SELECT 'r', sp."workItemId", NULL, sp."start", sp."end", NULL, NULL, NULL, sp."userId", NULL
-              FROM spans sp`);
+                    OR r."workItemId" = ANY(${[...window.reviewItemIds]}::text[]))`);
         let items = 0;
         const segments: WaitSegment[] = [];
-        const spans: ReviewSpan[] = [];
         for (const row of rows) {
             if (row.kind === 'n') items = Number(row.n);
-            else if (row.kind === 's')
+            else
                 segments.push({
                     workItemId: row.workItemId!,
                     ord: Number(row.ord),
@@ -401,9 +377,8 @@ export class WorkItemTransitionRepository {
                     open: row.open === true,
                     waitingOnUserId: row.userId,
                 });
-            else spans.push({ workItemId: row.workItemId!, userId: row.userId!, start: row.start!.getTime(), end: row.end ? row.end.getTime() : null });
         }
-        return { items, segments, spans };
+        return { items, segments };
     }
 
     /**

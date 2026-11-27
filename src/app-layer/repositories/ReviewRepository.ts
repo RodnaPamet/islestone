@@ -18,9 +18,10 @@
  * conditional `updateMany` on the row still being what was read), pattern
  * only, no code copied.
  */
-import type { Prisma, ReviewOutcome, ReviewStepMode } from '@prisma/client';
+import { Prisma, type ReviewOutcome, type ReviewStepMode } from '@prisma/client';
 
 import type { PrismaTx } from '@/lib/db-context';
+import type { ReviewSpan } from '../domain/analytics/waiting';
 import { REVIEW_LIMITS } from '../domain/review-steps';
 import type { RequestContext } from '../types';
 
@@ -449,6 +450,39 @@ export class ReviewRepository {
      * on the row id. The person's membership is read so the job reminds only
      * an ACTIVE member whose role sees the project.
      */
+    /**
+     * Time waiting's review spans (3.6b; owner decision 317): each reviewer
+     * of a step that opened at or before `asOf`, from the opening (or their
+     * being added, when later) to their latest response, their withdrawal or
+     * the step's end (NULL while none of those), leaving out spans that ended
+     * before `start`. The steps are found as open ones or ones that ended at
+     * or after `start` (`WorkItemReviewStep_tenantId_status_dueOn_idx`,
+     * `WorkItemReviewStep_tenantId_endedAt_idx`); their reviewers by step.
+     * Of the items `itemIds` names when given (a filter on current values);
+     * the record decides which of the rest are in scope at each instant. At
+     * most `take`; the caller reads one past its bound. Never a response's
+     * text or outcome.
+     */
+    static async reviewSpans(db: PrismaTx, ctx: Ctx, window: { start: Date; asOf: Date; itemIds: readonly string[] | null; take: number }): Promise<ReviewSpan[]> {
+        const t = ctx.tenantId;
+        const at = (d: Date) => Prisma.sql`(${d.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
+        const begun = Prisma.sql`GREATEST(st."openedAt", rv."createdAt")`;
+        const ended = Prisma.sql`LEAST(rv."respondedAt", rv."withdrawnAt", st."endedAt")`;
+        const items = window.itemIds ? Prisma.sql`AND rv."workItemId" = ANY(${[...window.itemIds]}::text[])` : Prisma.empty;
+        const rows = await db.$queryRaw<Array<{ workItemId: string; userId: string; start: Date; end: Date | null }>>(Prisma.sql`
+            SELECT rv."workItemId", rv."userId", ${begun} AS "start", ${ended} AS "end"
+              FROM "WorkItemReviewStep" st
+              JOIN "WorkItemReviewer" rv ON rv."tenantId" = ${t} AND rv."stepId" = st."id"
+             WHERE st."tenantId" = ${t} AND st."openedAt" IS NOT NULL AND st."openedAt" <= ${at(window.asOf)}
+               AND (st."status" = 'OPEN' OR st."endedAt" >= ${at(window.start)})
+               AND ${begun} <= ${at(window.asOf)}
+               AND (${ended} IS NULL OR ${ended} >= ${at(window.start)})
+               ${items}
+             ORDER BY rv."workItemId", rv."userId", 3
+             LIMIT ${window.take}`);
+        return rows.map((r) => ({ workItemId: r.workItemId, userId: r.userId, start: r.start.getTime(), end: r.end ? r.end.getTime() : null }));
+    }
+
     static async dueReviewCandidates(db: PrismaTx, tenantId: string, dueOnOrBefore: Date, afterId: string | null, take: number) {
         return db.workItemReviewer.findMany({
             where: {

@@ -312,15 +312,17 @@ describeFn('time waiting (3.6b)', () => {
                         const scope: RecordScope = { visibility: sc.visibility, projectIds: sc.projectIds, teamIds: null, cycle: null, milestone: null, itemIds };
                         const inScope = (r: WaitFact) => (sc.visibility.kind === 'ALL' || sc.visibility.projectIds.includes(r.projectId)) && (!sc.projectIds || sc.projectIds.includes(r.projectId));
                         const items = [...byItem(facts).values()].filter((list) => list.some((r) => r.at.getTime() <= R && inScope(r)));
+                        // Some items have a review span: every live, in-scope segment of theirs is read.
+                        const reviewItemIds = itemIds.filter((_, i) => i % 3 === 0);
                         const expected = relevantSegments(
                             items.flatMap((list) => segmentsOf(list, inScope, R)),
                             start.getTime(),
-                            new Set(),
+                            new Set(reviewItemIds),
                         );
-                        const got = await runInTenantContext(owner, (db) => WorkItemTransitionRepository.waitSpans(db, owner, scope, { start, asOf, itemLimit: 1000 }));
+                        const got = await runInTenantContext(owner, (db) => WorkItemTransitionRepository.waitSpans(db, owner, scope, { start, asOf, itemLimit: 1000, reviewItemIds }));
                         const key = (s: { workItemId: string; ord: number }) => `${s.workItemId}#${String(s.ord).padStart(3, '0')}`;
                         const sort = <T extends { workItemId: string; ord: number }>(xs: T[]) => [...xs].sort((a, b) => (key(a) < key(b) ? -1 : 1));
-                        expect({ sc, items: got.items, segments: sort(got.segments), spans: got.spans }).toEqual({ sc, items: items.length, segments: sort(expected), spans: [] });
+                        expect({ sc, items: got.items, segments: sort(got.segments) }).toEqual({ sc, items: items.length, segments: sort(expected) });
                     }
                 }),
                 { numRuns: 40 },

@@ -13,7 +13,8 @@
  *   - **The scope** is every other analytics read's (`resolveScope`: the
  *     list's filters through `resolveListFiltersInTx`, status filters set
  *     aside, the scope's calendar zone for its days), bounded by the flow's
- *     item limit (20,000; 422 `ANALYTICS_TOO_LARGE`, never cut).
+ *     item limit (20,000) and 50,000 review spans in the window (422
+ *     `ANALYTICS_TOO_LARGE`, never cut).
  *   - **Who sees which rows** (decision 329): every holder of
  *     `analytics.view` reads the totals and their own row; every party's row
  *     (and the one anonymous row of removed members) only with
@@ -31,6 +32,7 @@ import { fieldWaits, reviewWaits, waitingFigures, type PartyWaits } from '../dom
 import { formatKey } from '../domain/work-item-key';
 import { assertCanViewAnalytics, mayReadAnalyticsPeople, readsWaitingAsPerson } from '../policies/analytics.policies';
 import { MembershipRepository } from '../repositories/MembershipRepository';
+import { ReviewRepository } from '../repositories/ReviewRepository';
 import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import { WorkItemTransitionRepository } from '../repositories/WorkItemTransitionRepository';
 import type { RequestContext } from '../types';
@@ -38,6 +40,7 @@ import { resolveScope, tooLarge, type AnalyticsQuery } from './analytics';
 import { runInTenantContext } from '@/lib/db-context';
 import {
     ANALYTICS_FLOW_ITEM_LIMIT,
+    ANALYTICS_REVIEW_SPAN_LIMIT,
     WAITING_NOW_LISTED,
     WAITING_NOW_LISTED_TOTAL,
     type WaitingParty,
@@ -58,9 +61,18 @@ export async function getTimeWaiting(ctx: RequestContext, query: AnalyticsQuery,
     return runInTenantContext(ctx, async (db) => {
         const s = await resolveScope(db, ctx, query, now, { allCalendars: true });
         const empty = s.toDay < s.fromDay;
+        // The review spans first (the review rows have one seam, ReviewRepository), then the record's segments of
+        // the items in scope, those with a review span among them.
+        const spans = empty ? [] : await ReviewRepository.reviewSpans(db, ctx, { start: s.start, asOf: s.asOf, itemIds: s.record.itemIds, take: ANALYTICS_REVIEW_SPAN_LIMIT + 1 });
+        if (spans.length > ANALYTICS_REVIEW_SPAN_LIMIT) throw tooLarge('reviews', spans.length, ANALYTICS_REVIEW_SPAN_LIMIT);
         const read = empty
-            ? { items: 0, segments: [], spans: [] }
-            : await WorkItemTransitionRepository.waitSpans(db, ctx, s.record, { start: s.start, asOf: s.asOf, itemLimit: ANALYTICS_FLOW_ITEM_LIMIT });
+            ? { items: 0, segments: [] }
+            : await WorkItemTransitionRepository.waitSpans(db, ctx, s.record, {
+                  start: s.start,
+                  asOf: s.asOf,
+                  itemLimit: ANALYTICS_FLOW_ITEM_LIMIT,
+                  reviewItemIds: [...new Set(spans.map((sp) => sp.workItemId))],
+              });
         if (read.items > ANALYTICS_FLOW_ITEM_LIMIT) throw tooLarge('items', read.items, ANALYTICS_FLOW_ITEM_LIMIT);
 
         const meters = new Map<string, WorkingTimeMeter>();
@@ -74,7 +86,7 @@ export async function getTimeWaiting(ctx: RequestContext, query: AnalyticsQuery,
             return m;
         };
         const R = s.asOf.getTime();
-        const waits = [...fieldWaits(read.segments), ...reviewWaits(read.spans, read.segments, R)];
+        const waits = [...fieldWaits(read.segments), ...reviewWaits(spans, read.segments, R)];
 
         // The parties: members by id (any status), every removed member as one row.
         const waitedOn = [...new Set(waits.map((w) => w.userId))];

@@ -86,7 +86,7 @@ export type AnalyticsQuery = Omit<ListWorkItemsQuery, 'order' | 'dir' | 'cursor'
 const CURRENT_VALUE_FILTERS = ['typeId', 'priority', 'labelId', 'parentId', 'assigneeId', 'createdById', 'waitingOnId', 'goalScope', 'reviewerId', 'watching', 'q'] as const;
 
 export function tooLarge(what: AnalyticsTooLargeDetails['what'], count: number, limit: number): AppError {
-    const noun = what === 'completions' ? 'completed items' : what === 'filter' ? 'items matching this filter' : 'items';
+    const noun = what === 'completions' ? 'completed items' : what === 'filter' ? 'items matching this filter' : what === 'reviews' ? "reviewers' times asked" : 'items';
     const details: AnalyticsTooLargeDetails = { reason: ANALYTICS_TOO_LARGE, what, count, limit };
     return new AppError(`This chart would read ${count >= limit ? `more than ${limit}` : count} ${noun}; it reads at most ${limit}. Narrow the filter or the window.`, ANALYTICS_TOO_LARGE, 422, true, details);
 }
