@@ -66,12 +66,14 @@ export class TeamRepository {
     /** The estimate unit of a project's team (3.4a): the field set's estimate rule depends on it. */
     static async estimateUnitOfProject(db: PrismaTx, ctx: RequestContext, projectId: string): Promise<EstimateUnit | null | undefined> {
         const row = await db.project.findFirst({ where: { id: projectId, tenantId: ctx.tenantId }, select: { team: { select: { estimateUnit: true } } } });
-        return row ? row.team.estimateUnit : undefined;
+        // A tombstone has no team (issue #120); it takes no estimate.
+        return row ? (row.team?.estimateUnit ?? null) : undefined;
     }
 
     static async countProjects(db: PrismaTx, ctx: RequestContext, teamId: string) {
         // Every project, deleted ones included: a deleted project is restorable
-        // until the purge, and its items still name the team's states.
+        // until the purge, and its items still name the team's states. A
+        // tombstone names no team (issue #120, decision 305), so it never holds one.
         return db.project.count({ where: { tenantId: ctx.tenantId, teamId } });
     }
 

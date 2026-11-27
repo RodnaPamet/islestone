@@ -84,7 +84,10 @@ model WorkflowState {
 model Project {
   id              String    @id @default(cuid())
   tenantId        String
-  teamId          String
+  /// The project's team. NULL only on a tombstone (issue #120, owner decision
+  /// 305): the purge clears it, so the team can be deleted (CHECK
+  /// `Project_team_unless_tombstone`). A live or deleted project always has one.
+  teamId          String?
   name            String
   /// The current prefix of the project's keys (`ISL` in `ISL-123`). Every
   /// prefix it has had is in `ProjectKeyPrefix`; no prefix is ever reused.
@@ -104,14 +107,14 @@ model Project {
   deletedByUserId String?
   /// Set only on a tombstone (issue #117, owner decision 281): a deleted
   /// project the purge emptied but kept because time entries name it. It
-  /// names no due date or initiative and is never restored (CHECK
-  /// `Project_purged_is_tombstone`); only time totals read it.
+  /// names no due date, initiative or team and is never restored (CHECK
+  /// `Project_purged_is_tombstone`); only time reads it.
   purgedAt        DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  team                 Team                  @relation(fields: [teamId, tenantId], references: [id, tenantId])
+  team                 Team?                 @relation(fields: [teamId, tenantId], references: [id, tenantId], onDelete: Restrict)
   initiative           Initiative?           @relation(fields: [initiativeId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
   workItems            WorkItem[]
   customFields         CustomField[]

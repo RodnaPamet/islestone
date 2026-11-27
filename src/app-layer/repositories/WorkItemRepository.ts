@@ -2087,22 +2087,23 @@ export class WorkItemRepository {
      * transaction: the time entries' link is deferred, the row is deleted, so
      * every child goes by the cascades the database declares (as for a project
      * with no time), and the row is inserted again under the same id with
-     * only its key, name, team and deletion kept, marked `purgedAt`; at the
-     * commit the deferred check finds it. Raw SQL: the purge's one
+     * only its key, name and deletion kept, marked `purgedAt`; at the commit
+     * the deferred check finds it. Its team is cleared (issue #120, owner
+     * decision 305), so the team can be deleted. Raw SQL: the purge's one
      * counts-only audit entry records it, not a per-row create.
      */
     static async tombstoneProject(db: PrismaTx, ctx: RequestContext, projectId: string, now: Date): Promise<number> {
         await db.$executeRawUnsafe(`SET CONSTRAINTS "TimeEntry_projectId_tenantId_fkey" DEFERRED`);
         const kept = await db.$queryRaw<
-            Array<{ id: string; teamId: string; name: string; keyPrefix: string; version: number; archivedAt: Date | null; deletedAt: Date; deletedByUserId: string | null; createdAt: Date }>
+            Array<{ id: string; name: string; keyPrefix: string; version: number; archivedAt: Date | null; deletedAt: Date; deletedByUserId: string | null; createdAt: Date }>
         >`DELETE FROM "Project"
            WHERE "id" = ${projectId} AND "tenantId" = ${ctx.tenantId} AND "deletedAt" IS NOT NULL AND "purgedAt" IS NULL
-          RETURNING "id", "teamId", "name", "keyPrefix", "version", "archivedAt", "deletedAt", "deletedByUserId", "createdAt"`;
+          RETURNING "id", "name", "keyPrefix", "version", "archivedAt", "deletedAt", "deletedByUserId", "createdAt"`;
         const row = kept[0];
         if (!row) return 0;
         await db.$executeRaw`
             INSERT INTO "Project" ("id", "tenantId", "teamId", "name", "keyPrefix", "version", "archivedAt", "deletedAt", "deletedByUserId", "purgedAt", "createdAt", "updatedAt")
-            VALUES (${row.id}, ${ctx.tenantId}, ${row.teamId}, ${row.name}, ${row.keyPrefix}, ${row.version + 1}, ${row.archivedAt}, ${row.deletedAt}, ${row.deletedByUserId}, ${now}, ${row.createdAt}, ${now})`;
+            VALUES (${row.id}, ${ctx.tenantId}, NULL, ${row.name}, ${row.keyPrefix}, ${row.version + 1}, ${row.archivedAt}, ${row.deletedAt}, ${row.deletedByUserId}, ${now}, ${row.createdAt}, ${now})`;
         return 1;
     }
 

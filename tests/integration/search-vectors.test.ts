@@ -334,7 +334,7 @@ describeFn('search over descriptions and comments (2.7f)', () => {
             // holding every row, reading the whole table is the cheaper plan.
             const fill = async (prefix: string, tenant: string, inProject: string, ofType: string, by: string) => {
                 const project = await prisma.project.findUniqueOrThrow({ where: { id: inProject }, select: { teamId: true } });
-                const state = await prisma.workflowState.findFirstOrThrow({ where: { teamId: project.teamId }, select: { id: true, category: true } });
+                const state = await prisma.workflowState.findFirstOrThrow({ where: { teamId: project.teamId! }, select: { id: true, category: true } });
                 await prisma.$executeRawUnsafe(
                     `INSERT INTO "WorkItem" ("id", "tenantId", "teamId", "projectId", "number", "typeId", "title", "stateId", "stateCategory", "createdByUserId", "sortKey", "updatedAt")
                      SELECT $1 || g, $2, $3, $4, 100000 + g, $5, 'Пълнеж ' || md5(g::text) || ' widget ' || g, $6, $7::"WorkflowStateCategory", $8, 'f' || lpad(g::text, 6, '0'), now()
