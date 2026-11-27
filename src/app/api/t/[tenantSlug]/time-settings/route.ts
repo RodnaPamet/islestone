@@ -5,7 +5,8 @@
  *   - GET: "Timesheets need approval" and the recipient list told of
  *     submitted weeks (`time.view`).
  *   - PUT: change them (`admin.manage`: an Owner or Admin, or a custom role
- *     granting it); `If-Match` optional. Audited `TIME_SETTINGS_SET`.
+ *     granting it); the currency (3.4d) also asks `time.rates` in the usecase.
+ *     `If-Match` optional. Audited `TIME_SETTINGS_SET`.
  *
  * Written fresh for Islestone.
  */

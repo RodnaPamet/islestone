@@ -464,3 +464,12 @@ enum TimesheetStatus {
   RETURNED
   WITHDRAWN
 }
+
+/// The level a billable rate is set at (sub-phase 3.4d; ADR 0012 §6; owner
+/// decisions 272 and 273): an entry's rate is its project's, else its
+/// person's, else the workspace's, each the one in force on its date.
+enum BillableRateLevel {
+  WORKSPACE
+  PROJECT
+  MEMBER
+}

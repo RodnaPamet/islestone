@@ -55,7 +55,7 @@ export class TimesheetRepository {
     static async settings(db: PrismaTx, ctx: Ctx) {
         return db.tenantTimeSettings.findUnique({
             where: { tenantId: ctx.tenantId },
-            select: { approvalRequired: true, approvalRecipientListId: true, version: true },
+            select: { approvalRequired: true, approvalRecipientListId: true, currency: true, version: true },
         });
     }
 
@@ -63,7 +63,7 @@ export class TimesheetRepository {
     static async writeSettings(
         db: PrismaTx,
         ctx: Ctx,
-        data: { approvalRequired: boolean; approvalRecipientListId: string | null },
+        data: { approvalRequired: boolean; approvalRecipientListId: string | null; currency: string | null },
         expectedVersion: number | undefined,
         exists: boolean,
     ): Promise<number> {
@@ -153,6 +153,19 @@ export class TimesheetRepository {
             orderBy: keysetOrderBy(order),
             take: page.limit + 1,
             select: { ...timesheetSelect, user: { select: { name: true } } },
+        });
+    }
+
+    /**
+     * The APPROVED weeks starting in `[from, to]` (3.4d: their entries' rates
+     * are frozen, decision 273), of one person or everyone; at most `take`.
+     */
+    static async approvedWeeksIn(db: PrismaTx, ctx: Ctx, from: Date, to: Date, userId: string | undefined, take: number): Promise<Array<{ userId: string; weekStart: Date }>> {
+        return db.timesheet.findMany({
+            where: { tenantId: ctx.tenantId, status: 'APPROVED', weekStart: { gte: from, lte: to }, ...(userId ? { userId } : {}) },
+            orderBy: [{ weekStart: 'asc' }, { userId: 'asc' }],
+            take,
+            select: { userId: true, weekStart: true },
         });
     }
 

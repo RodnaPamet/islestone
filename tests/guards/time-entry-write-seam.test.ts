@@ -7,8 +7,9 @@
  *      `TimeEntry` table: no other file under `src/` names it in SQL or uses
  *      its Prisma delegate.
  *   2. The repository's writing methods (those that create, update or delete
- *      through the delegate) are called only from the writing usecases,
- *      `WRITERS` (3.4c's `timesheet.ts` joins them).
+ *      through the delegate, or in raw SQL) are called only from the writing
+ *      usecases, `WRITERS` (3.4d's `timesheet.ts` joins them: an approval
+ *      stamps the frozen rates, a reopening clears them).
  *   3. Every exported write of `time-entry.ts` asks `assertRecordsTime` (the
  *      `time.track` key and a person: never an API key, an agent, a job or the
  *      system user), except the member-removal stop, which only
@@ -28,8 +29,8 @@ import ts from 'typescript';
 import { gitEnvFor, gitFiles, REPO_ROOT } from '../helpers/git-files';
 
 const SEAM = 'src/app-layer/repositories/TimeEntryRepository.ts';
-const WRITERS = ['src/app-layer/usecases/time-entry.ts'];
-const WRITE_CALL = /\.timeEntry\s*\.\s*(create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(/;
+const WRITERS = ['src/app-layer/usecases/time-entry.ts', 'src/app-layer/usecases/timesheet.ts'];
+const WRITE_CALL = /\.timeEntry\s*\.\s*(create|createMany|update|updateMany|upsert|delete|deleteMany)\s*\(|\b(?:UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+"TimeEntry"/;
 
 function sources(root: string): string[] {
     return gitFiles(root).filter((rel) => rel.startsWith('src/') && /\.tsx?$/.test(rel));
@@ -118,7 +119,7 @@ describe('time entries — one seam, a person only', () => {
     });
 
     it('finds the writing methods (the population is real)', () => {
-        expect(writingMethods(REPO_ROOT)).toEqual(['create', 'delete', 'finishTimer', 'updateVersioned']);
+        expect(writingMethods(REPO_ROOT)).toEqual(['clearFrozenRates', 'create', 'delete', 'finishTimer', 'stampFrozenRates', 'updateVersioned']);
     });
 
     it('only the writing usecases call them', () => {
@@ -135,6 +136,12 @@ describe('time entries — one seam, a person only', () => {
             stopTimerOfRemovedMemberInTx: false,
         });
         expect(callersOf(REPO_ROOT, /\bstopTimerOfRemovedMemberInTx$/, WRITERS)).toEqual(['src/app-layer/usecases/tenant-admin.ts#removeTenantMember']);
+        // The frozen rates (3.4d) are written by the approval and cleared by the reopening, both a person's
+        // decision under `time.approve` (decision 278), and by nothing else.
+        expect(callersOf(REPO_ROOT, /\bTimeEntryRepository\.(stampFrozenRates|clearFrozenRates)$/, [SEAM])).toEqual([
+            'src/app-layer/usecases/timesheet.ts#decide',
+            'src/app-layer/usecases/timesheet.ts#stampWeekRates',
+        ]);
     });
 
     it('no job imports a writing usecase', () => {
@@ -159,6 +166,7 @@ describe('the detectors, against a planted repository', () => {
                 '    static async get(db, ctx, id) { return db.timeEntry.findFirst({ where: { id } }); }',
                 '    static async create(db, ctx, data) { return db.timeEntry.create({ data }); }',
                 '    static async wipe(db, ctx) { return db.timeEntry.deleteMany({ where: {} }); }',
+                '    static async stamp(db, ctx) { return db.$executeRaw`UPDATE "TimeEntry" SET "billable" = true`; }',
                 '}',
             ].join('\n'),
         );
@@ -174,7 +182,7 @@ describe('the detectors, against a planted repository', () => {
     });
 
     it('flags a writing method called outside the writing usecases, and passes a read', () => {
-        expect(writingMethods(root)).toEqual(['create', 'wipe']);
+        expect(writingMethods(root)).toEqual(['create', 'stamp', 'wipe']);
         expect(strayWrites(root)).toEqual(['src/app-layer/jobs/robot.ts#nightly']);
     });
 

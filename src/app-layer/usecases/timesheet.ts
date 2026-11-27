@@ -32,19 +32,22 @@
  * Written fresh for Islestone.
  */
 import { logEvent } from '../events/audit';
+import { resolveRate } from '../domain/billable-rate';
 import { enqueueEmail } from '../notifications/enqueue';
 import { resolveListRecipients } from '../notifications/recipient-list';
 import { memberDeliveries } from '../notifications/settings';
 import { createTimesheetNotifications, weekLabel, type TimesheetNotice } from '../notifications/timesheet';
 import { visibleProjects } from '../policies/project-visibility';
-import { mayApproveTime, mayTrackTime, mayViewTime, recordsTimeAsPerson } from '../policies/time.policies';
+import { mayApproveTime, mayManageRates, mayTrackTime, mayViewTime, recordsTimeAsPerson } from '../policies/time.policies';
 import { mayManageWorkConfig } from '../policies/work-config.policies';
+import { BillableRateRepository } from '../repositories/BillableRateRepository';
 import { MembershipRepository } from '../repositories/MembershipRepository';
 import { TimeEntryRepository, WEEK_ENTRIES_TAKE } from '../repositories/TimeEntryRepository';
 import { DECIDED_TIMESHEET_ORDER, PENDING_TIMESHEET_ORDER, TimesheetRepository, type TimesheetRow } from '../repositories/TimesheetRepository';
 import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import type { RequestContext } from '../types';
 import { dayKeyInTz } from '../notifications/work-item-due';
+import { loadWeekRateBookInTx } from './billable-rate';
 import { assertRecordsTime, itemFor, itemOf, refuseNotAPerson, refuseOthersWeek, timeWeekLockKey, toEntryData } from './time-entry';
 import { notificationsTz } from './work-item-shared';
 import type { PrismaTx } from '@/lib/db-context';
@@ -57,6 +60,7 @@ import { recordTimesheetDecided } from '@/lib/observability/business-metrics';
 import { computeKeysetPage, decodeCursor, InvalidCursorError } from '@/lib/pagination';
 import { permissionsForMembership } from '@/lib/permissions';
 import { sanitizePlainText } from '@/lib/security/sanitize';
+import { isCurrencyCode } from '@/lib/time/money';
 import type { TimeEntryItem } from '@/lib/time/entries';
 import {
     TIMESHEET_LIMITS,
@@ -167,33 +171,45 @@ async function auditDecision(
 /** The workspace's time tracking settings (read under `time.view`, or by whoever may change them). */
 export async function getTimeSettings(ctx: RequestContext): Promise<TimeSettingsData> {
     const manage = mayManageWorkConfig(ctx);
-    if (!mayViewTime(ctx) && !manage) throw forbidden('You do not have permission to see the time tracking settings.');
-    return runInTenantContext(ctx, async (db) => {
-        const row = await TimesheetRepository.settings(db, ctx);
-        return {
-            approvalRequired: row?.approvalRequired ?? false,
-            approvalRecipientListId: row?.approvalRecipientListId ?? null,
-            version: row?.version ?? 0,
-            viewer: { manage },
-        };
-    });
+    if (!mayViewTime(ctx) && !manage && !mayManageRates(ctx)) throw forbidden('You do not have permission to see the time tracking settings.');
+    return runInTenantContext(ctx, async (db) => settingsData(ctx, await TimesheetRepository.settings(db, ctx)));
+}
+
+function settingsData(
+    ctx: RequestContext,
+    row: { approvalRequired: boolean; approvalRecipientListId: string | null; currency: string | null; version: number } | null,
+): TimeSettingsData {
+    const manage = mayManageWorkConfig(ctx);
+    return {
+        approvalRequired: row?.approvalRequired ?? false,
+        approvalRecipientListId: row?.approvalRecipientListId ?? null,
+        currency: row?.currency ?? null,
+        version: row?.version ?? 0,
+        viewer: { manage, currency: manage && mayManageRates(ctx) },
+    };
 }
 
 /**
  * Change the settings (`admin.manage`; decision 268: an Owner or Admin turns
  * approval on). `If-Match` optional; a list must be a live list of the
- * workspace itself. Audited `TIME_SETTINGS_SET` naming the fields.
+ * workspace itself. The currency (3.4d, decision 273) also asks `time.rates`,
+ * must be an ISO 4217 code, and is not changed while any rate exists (409
+ * `CURRENCY_IN_USE`). Audited `TIME_SETTINGS_SET` naming the fields.
  */
 export async function setTimeSettings(
     ctx: RequestContext,
-    input: { approvalRequired?: boolean; approvalRecipientListId?: string | null },
+    input: { approvalRequired?: boolean; approvalRecipientListId?: string | null; currency?: string | null },
     expectedVersion?: number,
 ): Promise<TimeSettingsData> {
     if (!mayManageWorkConfig(ctx)) throw forbidden('You do not have permission to change the time tracking settings.');
     return runInTenantContext(ctx, async (db) => {
         await TimesheetRepository.lockSettings(db, ctx);
         const before = await TimesheetRepository.settings(db, ctx);
-        const current = { approvalRequired: before?.approvalRequired ?? false, approvalRecipientListId: before?.approvalRecipientListId ?? null };
+        const current = {
+            approvalRequired: before?.approvalRequired ?? false,
+            approvalRecipientListId: before?.approvalRecipientListId ?? null,
+            currency: before?.currency ?? null,
+        };
         const currentVersion = before?.version ?? 0;
         if (expectedVersion !== undefined && expectedVersion !== currentVersion) {
             throw new ConflictError('The settings changed since you read them.', { reason: 'VERSION_CONFLICT', version: currentVersion });
@@ -201,10 +217,19 @@ export async function setTimeSettings(
         const next = {
             approvalRequired: input.approvalRequired ?? current.approvalRequired,
             approvalRecipientListId: input.approvalRecipientListId === undefined ? current.approvalRecipientListId : input.approvalRecipientListId,
+            currency: input.currency === undefined ? current.currency : input.currency,
         };
         if (next.approvalRecipientListId && next.approvalRecipientListId !== current.approvalRecipientListId) {
             if (!(await TimesheetRepository.isLiveWorkspaceList(db, ctx, next.approvalRecipientListId))) {
                 throw badRequest('Name a live recipient list of the workspace.', { reason: 'RECIPIENT_LIST_UNKNOWN' });
+            }
+        }
+        if (next.currency !== current.currency) {
+            // Money is the rate holders' (decision 274), and one currency per workspace (decision 273).
+            if (!mayManageRates(ctx)) throw forbidden('You do not have permission to set the currency.', { reason: 'TIME_RATES_REQUIRED' });
+            if (next.currency !== null && !isCurrencyCode(next.currency)) throw badRequest('Name an ISO 4217 currency, such as EUR.', { reason: 'CURRENCY_UNKNOWN' });
+            if (await BillableRateRepository.any(db, ctx)) {
+                throw new ConflictError('The currency is not changed while rates exist in it.', { reason: 'CURRENCY_IN_USE' });
             }
         }
         const changed = (Object.keys(next) as Array<keyof typeof next>).filter((k) => next[k] !== current[k]);
@@ -217,16 +242,10 @@ export async function setTimeSettings(
                 entityId: ctx.tenantId,
                 details: `Changed the time tracking settings (${changed.join(', ')})`,
                 detailsJson: { category: 'entity_lifecycle', entityName: 'TenantTimeSettings', operation: 'updated', changedFields: changed },
-                metadata: { approvalRequired: next.approvalRequired, approvalRecipientListId: next.approvalRecipientListId },
+                metadata: { approvalRequired: next.approvalRequired, approvalRecipientListId: next.approvalRecipientListId, currency: next.currency },
             });
         }
-        const after = await TimesheetRepository.settings(db, ctx);
-        return {
-            approvalRequired: after?.approvalRequired ?? false,
-            approvalRecipientListId: after?.approvalRecipientListId ?? null,
-            version: after?.version ?? 0,
-            viewer: { manage: true },
-        };
+        return settingsData(ctx, await TimesheetRepository.settings(db, ctx));
     });
 }
 
@@ -310,6 +329,23 @@ export async function withdrawTimesheet(ctx: RequestContext, id: string, expecte
 
 // ─── The approver's acts ────────────────────────────────────────────
 
+/**
+ * Freeze the rates of a week being approved (3.4d, decision 273): each
+ * billable finished entry takes the rate the cascade resolves on its date
+ * now, stamped on it; an entry with no rate stays unstamped, and reads "No
+ * rate" for as long as the week stays approved. Returns how many were stamped.
+ */
+async function stampWeekRates(db: PrismaTx, ctx: RequestContext, userId: string, from: Date, to: Date): Promise<number> {
+    const entries = (await TimeEntryRepository.listForPerson(db, ctx, userId, from, to)).filter((e) => e.billable && e.minutes !== null);
+    if (entries.length === 0) return 0;
+    const book = await loadWeekRateBookInTx(db, ctx, userId, [...new Set(entries.map((e) => e.projectId))], to);
+    const stamps = entries.flatMap((e) => {
+        const rate = resolveRate(book, { projectId: e.projectId, userId, workDate: dateKeyOf(e.workDate) });
+        return rate ? [{ id: e.id, hourlyRateMinor: rate.hourlyRateMinor, level: rate.level }] : [];
+    });
+    return TimeEntryRepository.stampFrozenRates(db, ctx, userId, from, to, stamps);
+}
+
 type Decision = { verb: 'approve' } | { verb: 'return'; explanation: string } | { verb: 'reopen'; explanation: string };
 
 const DECISION_RULES = {
@@ -345,11 +381,17 @@ async function decide(ctx: RequestContext, id: string, decision: Decision, expec
         if (count === 0) throw versionConflict((await TimesheetRepository.get(db, ctx, id))!);
         const after = (await TimesheetRepository.get(db, ctx, id))!;
         const weekStart = dateKeyOf(after.weekStart);
-        const sums = await TimeEntryRepository.weekSums(db, ctx, after.userId, after.weekStart, dateOnlyValue(addDays(weekStart, 6)));
+        const weekEnd = dateOnlyValue(addDays(weekStart, 6));
+        // The rates (3.4d, decision 273): an approval freezes each billable entry's rate; a reopening clears them.
+        let rates: Record<string, number> = {};
+        if (decision.verb === 'approve') rates = { frozenRates: await stampWeekRates(db, ctx, after.userId, after.weekStart, weekEnd) };
+        if (decision.verb === 'reopen') rates = { clearedRates: await TimeEntryRepository.clearFrozenRates(db, ctx, after.userId, after.weekStart, weekEnd) };
+        const sums = await TimeEntryRepository.weekSums(db, ctx, after.userId, after.weekStart, weekEnd);
         await auditDecision(db, ctx, rule.action, after, rule.from, rule.to, `${rule.said} the timesheet for the week of ${weekStart}`, {
             minutes: sums.minutes,
             billableMinutes: sums.billableMinutes,
             entries: sums.entries,
+            ...rates,
         });
         return { own: false as const, decided: after };
     });

@@ -57,7 +57,16 @@ export function isValidEntryMinutes(minutes: number): boolean {
 
 /** The item an entry names, as a reader may see it. */
 export type TimeEntryItem =
-    | { kind: 'visible'; id: string; key: string; title: string; projectId: string; closed: boolean }
+    | {
+          kind: 'visible';
+          id: string;
+          key: string;
+          title: string;
+          projectId: string;
+          closed: boolean;
+          /** New time on its project is billable unless unticked (3.4d, decision 271). Optional: absent, the server decides. */
+          billableByDefault?: boolean;
+      }
     /** Purged, or soft-deleted: "Deleted item" (decision 261). */
     | { kind: 'deleted' }
     /** In a project the reader cannot see: "Item you cannot see". */
@@ -114,6 +123,8 @@ export interface WorkItemTimeData {
     ownMinutes: number;
     entries: Array<TimeEntryData & { personName: string | null }>;
     pageInfo: { hasNextPage: boolean; nextCursor?: string };
+    /** New time on the item's project is billable unless unticked (3.4d, decision 271). */
+    billableByDefault: boolean;
     viewer: {
         /** May add time and start a timer here (`time.track`, a person, a writable project). */
         track: boolean;

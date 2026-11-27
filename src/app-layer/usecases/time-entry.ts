@@ -199,6 +199,7 @@ export function itemOf(row: Pick<WorkItemGateRow, 'id' | 'number' | 'title' | 'p
         title: row.title,
         projectId: row.projectId,
         closed: row.stateCategory === 'DONE' || row.stateCategory === 'CANCELLED',
+        billableByDefault: row.project.timeBillableByDefault,
     };
 }
 
@@ -294,8 +295,8 @@ export async function addTimeEntry(ctx: RequestContext, input: AddTimeEntryInput
             minutes: input.minutes,
             timerStartedAt: null,
             source: 'MANUAL',
-            // 3.4d adds the project's default (decision 271); until then, unticked.
-            billable: input.billable ?? false,
+            // The project's default (3.4d, decision 271) unless the person says otherwise.
+            billable: input.billable ?? item.project.timeBillableByDefault,
             description,
         });
         await auditEntry(db, ctx, 'TIME_ENTRY_CREATED', created, `Added ${formatDuration(input.minutes)} on ${keyOf(item)} for ${input.workDate}`);
@@ -476,7 +477,8 @@ export async function startTimer(ctx: RequestContext, input: { workItemId: strin
                 minutes: null,
                 timerStartedAt: now,
                 source: 'TIMER',
-                billable: false,
+                // The project's default (3.4d, decision 271); changed on the entry once it is stopped.
+                billable: item.project.timeBillableByDefault,
                 description: null,
             });
         } catch (err) {
@@ -631,6 +633,7 @@ export async function getWorkItemTime(ctx: RequestContext, workItemId: string, i
             ownMinutes: totals.own,
             entries: page.items.map((r) => ({ ...toEntryData(r), personName: r.user.name })),
             pageInfo: page.pageInfo,
+            billableByDefault: item.project.timeBillableByDefault,
             viewer: { track: track && recordsTimeAsPerson(ctx) && !item.project.archivedAt, viewAll },
         };
     });

@@ -112,6 +112,8 @@ model Tenant {
   workloadSettings                TenantWorkloadSettings?
   memberCapacities                MemberCapacity[]
   timeOff                         TimeOff[]
+  // Sub-phase 3.4d: billable rates (ADR 0012 §6).
+  billableRates                   BillableRate[]
 
   teams                  Team[]
   workflowStates         WorkflowState[]
@@ -270,4 +272,6 @@ model User {
   timeEntries TimeEntry[] @relation("TimeEntryPerson")
   // Sub-phase 3.4c: the person's own weeks (ADR 0012 §5).
   timesheets  Timesheet[] @relation("TimesheetPerson")
+  // Sub-phase 3.4d: the person's member-level billable rates (ADR 0012 §6).
+  billableRates BillableRate[] @relation("BillableRateMember")
 }

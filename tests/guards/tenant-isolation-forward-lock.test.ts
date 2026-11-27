@@ -65,6 +65,8 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     TenantWorkloadSettings: 'tests/integration/workload.test.ts',
     MemberCapacity: 'tests/integration/workload.test.ts',
     TimeOff: 'tests/integration/workload.test.ts',
+    // Sub-phase 3.4d.
+    BillableRate: 'tests/integration/billable-rates.test.ts',
     // Sub-phase 3.2a.
     Goal: 'tests/integration/goals.test.ts',
     Initiative: 'tests/integration/goals.test.ts',

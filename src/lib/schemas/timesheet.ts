@@ -47,6 +47,8 @@ export const TimeSettingsSchema = z
         approvalRequired: z.boolean().optional(),
         /** A live workspace recipient list, or null for every holder of `time.approve` (decision 269). */
         approvalRecipientListId: Id.nullable().optional(),
+        /** The workspace's ISO 4217 currency (3.4d, decision 273); also asks `time.rates`. */
+        currency: z.string().regex(/^[A-Z]{3}$/, 'Three upper-case letters, such as EUR.').nullable().optional(),
     })
     .strict()
     .refine((v) => Object.keys(v).length > 0, { message: 'Name at least one setting to change.' });

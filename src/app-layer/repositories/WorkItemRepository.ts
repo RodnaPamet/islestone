@@ -358,7 +358,7 @@ export const workItemGateSelect = {
     version: true,
     deletedAt: true,
     deletionId: true,
-    project: { select: { keyPrefix: true, archivedAt: true, deletedAt: true } },
+    project: { select: { keyPrefix: true, archivedAt: true, deletedAt: true, timeBillableByDefault: true } },
 } satisfies Prisma.WorkItemSelect;
 
 export type WorkItemGateRow = Prisma.WorkItemGetPayload<{ select: typeof workItemGateSelect }>;
@@ -2089,11 +2089,17 @@ export class WorkItemRepository {
      * with no time), and the row is inserted again under the same id with
      * only its key, name and deletion kept, marked `purgedAt`; at the commit
      * the deferred check finds it. Its team is cleared (issue #120, owner
-     * decision 305), so the team can be deleted. Raw SQL: the purge's one
-     * counts-only audit entry records it, not a per-row create.
+     * decision 305), so the team can be deleted. Its billable rates (3.4d) are
+     * written back under their own ids: its entries' amounts do not change
+     * because the project was purged. Raw SQL: the purge's one counts-only
+     * audit entry records it, not a per-row create.
      */
     static async tombstoneProject(db: PrismaTx, ctx: RequestContext, projectId: string, now: Date): Promise<number> {
         await db.$executeRawUnsafe(`SET CONSTRAINTS "TimeEntry_projectId_tenantId_fkey" DEFERRED`);
+        const rates = await db.$queryRaw<Array<{ id: string; hourlyRateMinor: number | null; effectiveFrom: Date; createdByUserId: string; createdAt: Date }>>`
+            SELECT "id", "hourlyRateMinor", "effectiveFrom", "createdByUserId", "createdAt"
+              FROM "BillableRate"
+             WHERE "tenantId" = ${ctx.tenantId} AND "projectId" = ${projectId}`;
         const kept = await db.$queryRaw<
             Array<{ id: string; name: string; keyPrefix: string; version: number; archivedAt: Date | null; deletedAt: Date; deletedByUserId: string | null; createdAt: Date }>
         >`DELETE FROM "Project"
@@ -2104,6 +2110,14 @@ export class WorkItemRepository {
         await db.$executeRaw`
             INSERT INTO "Project" ("id", "tenantId", "teamId", "name", "keyPrefix", "version", "archivedAt", "deletedAt", "deletedByUserId", "purgedAt", "createdAt", "updatedAt")
             VALUES (${row.id}, ${ctx.tenantId}, NULL, ${row.name}, ${row.keyPrefix}, ${row.version + 1}, ${row.archivedAt}, ${row.deletedAt}, ${row.deletedByUserId}, ${now}, ${row.createdAt}, ${now})`;
+        if (rates.length > 0) {
+            await db.$executeRaw`
+                INSERT INTO "BillableRate" ("id", "tenantId", "level", "projectId", "userId", "hourlyRateMinor", "effectiveFrom", "createdByUserId", "createdAt")
+                SELECT r.id, ${ctx.tenantId}, 'PROJECT'::"BillableRateLevel", ${row.id}, NULL, r.rate, r.day, r.author, r.at
+                  FROM unnest(${rates.map((r) => r.id)}::text[], ${rates.map((r) => r.hourlyRateMinor)}::int[],
+                              ${rates.map((r) => r.effectiveFrom)}::date[], ${rates.map((r) => r.createdByUserId)}::text[],
+                              ${rates.map((r) => r.createdAt)}::timestamp(3)[]) AS r(id, rate, day, author, at)`;
+        }
         return 1;
     }
 

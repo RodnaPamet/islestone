@@ -55,6 +55,11 @@ export interface ApiWrapperOptions {
     rateLimit?: false | {
         config?: RateLimitConfig;
         scope?: string;
+        /**
+         * Charge every method, GETs included, to this budget: a read that
+         * costs what a write does (the time export decrypts and audits, 3.4d).
+         */
+        everyMethod?: boolean;
         getUserId?: (
             req: NextRequest,
         ) => string | null | undefined | Promise<string | null | undefined>;
@@ -66,7 +71,7 @@ async function resolveRateLimitScope(
     options: ApiWrapperOptions['rateLimit'],
 ): Promise<RateLimitScope | null> {
     if (options === false) return null;
-    if (!MUTATION_METHODS.has(req.method)) return null;
+    if (!MUTATION_METHODS.has(req.method) && !(options && options.everyMethod)) return null;
     if (isRateLimitBypassed()) return null;
 
     const config = options?.config ?? API_MUTATION_LIMIT;

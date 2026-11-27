@@ -7,7 +7,7 @@
  *   - a purge without time entries deletes the project as before;
  *   - a purge with time entries keeps a minimal row (key, name, deletion,
  *     `purgedAt`; its team cleared, issue #120, decision 305), removes its
- *     items and everything it holds,
+ *     items and everything it holds, keeps its billable rates (3.4d),
  *     keeps every entry with its project (an approved week's too), and the
  *     week's totals stay what they were;
  *   - the tombstone is read by nothing but time: not restorable, not in the
@@ -29,6 +29,7 @@ import { createRecipientList } from '@/app-layer/usecases/recipient-list';
 import { createSavedView } from '@/app-layer/usecases/saved-view';
 import { createTeam, deleteTeam } from '@/app-layer/usecases/team';
 import { addTimeEntry, deleteTimeEntry, getTimeWeek } from '@/app-layer/usecases/time-entry';
+import { setProjectRate } from '@/app-layer/usecases/billable-rate';
 import { approveTimesheet, setTimeSettings, submitTimesheet } from '@/app-layer/usecases/timesheet';
 import { purgeWorkspaceWorkItems } from '@/app-layer/usecases/work-item-purge';
 import { createWorkItemTemplate } from '@/app-layer/usecases/work-item-template';
@@ -137,6 +138,9 @@ describeFn('project tombstones (issue #117, decision 281)', () => {
         await createIntakeForm(owner, { projectId: w.projectId, name: 'Form', definition: { fields: [] }, published: true });
         await createSavedView(member, { name: 'Ours', visibility: 'SHARED', projectId: w.projectId, layout: 'LIST', config: { filters: {}, sort: 'manual', laneBy: 'none' } });
         const a = await addTimeEntry(member, { workItemId: w.itemId, workDate: day(1), minutes: 90, billable: true, description: 'kept text' });
+        // A project rate (3.4d): kept by the tombstone, so its entries' amounts do not move.
+        await setTimeSettings(owner, { currency: 'EUR' });
+        const rate = await setProjectRate(owner, w.projectId, { effectiveFrom: day(0), hourlyRateMinor: 12_000 });
         const b = await addTimeEntry(member, { workItemId: w.itemId, workDate: day(2), minutes: 30 });
         // One week approved (frozen) before the purge: the purge still passes it.
         await setTimeSettings(owner, { approvalRequired: true });
@@ -151,6 +155,7 @@ describeFn('project tombstones (issue #117, decision 281)', () => {
         const row = await prisma.project.findUniqueOrThrow({ where: { id: w.projectId } });
         // Issue #120 (decision 305): the tombstone names no team.
         expect(row).toMatchObject({ name: 'Project TBT', keyPrefix: 'TBT', teamId: null, dueDate: null, initiativeId: null });
+        expect(await prisma.billableRate.findMany({ where: { projectId: w.projectId }, select: { id: true, hourlyRateMinor: true } })).toEqual([{ id: rate.id, hourlyRateMinor: 12_000 }]);
         expect(row.purgedAt).toBeInstanceOf(Date);
         expect(row.deletedAt).toBeInstanceOf(Date);
         for (const [model, count] of [

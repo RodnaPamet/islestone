@@ -292,6 +292,7 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
         expect([...TENANT_SCOPED_MODELS].sort()).toEqual([
             'AuditLog',
             'AuditOutbox',
+            'BillableRate',
             'CalendarConnection',
             'CalendarSyncedEvent',
             'Comment',

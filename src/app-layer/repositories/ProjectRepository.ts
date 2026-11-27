@@ -21,6 +21,8 @@ export const projectSelect = {
     keyPrefix: true,
     dueDate: true,
     initiativeId: true,
+    /** New time entries billable unless unticked (3.4d, decision 271): a flag, not money, so every reader sees it. */
+    timeBillableByDefault: true,
     version: true,
     archivedAt: true,
     deletedAt: true,
@@ -160,6 +162,21 @@ export class ProjectRepository {
         return row ? withTeam(row) : null;
     }
 
+    /**
+     * The projects time totals and the export name (3.4d): any row of the
+     * workspace among `ids`, deleted ones and tombstones included (time is kept
+     * with the project it was recorded in, decisions 261 and 281). A
+     * tombstone's team is NULL (issue #120).
+     */
+    static async labelsForTime(db: PrismaTx, ctx: RequestContext, ids: readonly string[]) {
+        if (ids.length === 0) return [];
+        return db.project.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: [...ids] } },
+            take: ids.length,
+            select: { id: true, name: true, keyPrefix: true, teamId: true, deletedAt: true, purgedAt: true },
+        });
+    }
+
     /** Lock the project row for the rest of the transaction. */
     static async lock(db: PrismaTx, ctx: RequestContext, id: string): Promise<boolean> {
         const rows = await db.$queryRaw<{ id: string }[]>`
@@ -220,6 +237,19 @@ export class ProjectRepository {
             await db.projectKeyPrefix.create({ data: { tenantId: ctx.tenantId, prefix: data.keyPrefix, projectId: id } });
         }
         return result;
+    }
+
+    /**
+     * Whether new time entries on the project are billable by default (3.4d,
+     * decision 271): a versioned write; 0 rows when the version moved or the
+     * project is deleted.
+     */
+    static async setTimeBillableByDefault(db: PrismaTx, ctx: RequestContext, id: string, expectedVersion: number | undefined, value: boolean): Promise<number> {
+        const result = await db.project.updateMany({
+            where: { id, tenantId: ctx.tenantId, deletedAt: null, ...(expectedVersion !== undefined ? { version: expectedVersion } : {}) },
+            data: { timeBillableByDefault: value, version: { increment: 1 } },
+        });
+        return result.count;
     }
 
     /**

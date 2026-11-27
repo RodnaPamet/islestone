@@ -117,7 +117,9 @@ export interface TimesheetDetailData {
 export interface TimeSettingsData {
     approvalRequired: boolean;
     approvalRecipientListId: string | null;
+    /** The workspace's ISO 4217 currency (3.4d, decision 273); null until set. */
+    currency: string | null;
     version: number;
-    /** May change them (`admin.manage`), asked on the server. */
-    viewer: { manage: boolean };
+    /** May change them (`admin.manage`), and the currency too (also `time.rates`), asked on the server. */
+    viewer: { manage: boolean; currency: boolean };
 }

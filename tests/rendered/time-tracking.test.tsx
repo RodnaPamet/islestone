@@ -30,7 +30,7 @@ import type { TimeAffordances } from '@/lib/time/types';
 
 import { installFetch, renderWorkspace } from '../helpers/work-items-harness';
 
-const RECORDER: TimeAffordances = { view: true, track: true, approve: false, record: true };
+const RECORDER: TimeAffordances = { view: true, track: true, approve: false, rates: false, record: true };
 
 function entry(over: Partial<TimeEntryData> = {}): TimeEntryData {
     return {
@@ -60,6 +60,7 @@ function itemTime(over: Partial<WorkItemTimeData> = {}): WorkItemTimeData {
             { ...entry(), personName: 'Ada' },
         ],
         pageInfo: { hasNextPage: false },
+        billableByDefault: false,
         viewer: { track: true, viewAll: true },
         ...over,
     };
@@ -241,7 +242,7 @@ describe('My time', () => {
 
     it('offers no writes to a caller who approves weeks but records none', async () => {
         installFetch({ 'GET /time-entries/timer': { body: { timer: null } } });
-        renderWorkspace(<MyTimeView affordances={{ view: true, track: false, approve: true, record: false }} today="2026-11-27" weekStart="2026-11-23" />, { role: 'ADMIN' });
+        renderWorkspace(<MyTimeView affordances={{ view: true, track: false, approve: true, rates: false, record: false }} today="2026-11-27" weekStart="2026-11-23" />, { role: 'ADMIN' });
         expect(await screen.findByText(/approve weeks but record no time/)).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Add time' })).toBeNull();
     });

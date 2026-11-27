@@ -4,7 +4,7 @@
  */
 import type { Role } from '@prisma/client';
 
-import { mayApproveTime, mayTrackTime, mayViewTime, recordsTimeAsPerson, timeAffordances } from '@/app-layer/policies/time.policies';
+import { mayApproveTime, mayManageRates, mayTrackTime, mayViewTime, recordsTimeAsPerson, timeAffordances } from '@/app-layer/policies/time.policies';
 import { getPermissionsForRole } from '@/lib/permissions';
 
 import { makeRequestContext } from '../../helpers/make-context';
@@ -13,11 +13,11 @@ const ctxOf = (role: Role) => makeRequestContext(role, { tenantId: 't1', userId:
 
 describe('time.policies', () => {
     it.each([
-        ['OWNER', { view: true, track: true, approve: true, record: true }],
-        ['ADMIN', { view: true, track: true, approve: true, record: true }],
-        ['MEMBER', { view: true, track: true, approve: false, record: true }],
-        ['VIEWER', { view: true, track: false, approve: false, record: false }],
-        ['GUEST', { view: false, track: false, approve: false, record: false }],
+        ['OWNER', { view: true, track: true, approve: true, rates: true, record: true }],
+        ['ADMIN', { view: true, track: true, approve: true, rates: true, record: true }],
+        ['MEMBER', { view: true, track: true, approve: false, rates: false, record: true }],
+        ['VIEWER', { view: true, track: false, approve: false, rates: false, record: false }],
+        ['GUEST', { view: false, track: false, approve: false, rates: false, record: false }],
     ] as const)('%s', (role, expected) => {
         expect(timeAffordances(ctxOf(role))).toEqual(expected);
     });
@@ -33,6 +33,18 @@ describe('time.policies', () => {
         expect(mayViewTime(narrowed)).toBe(false);
         expect(mayTrackTime(narrowed)).toBe(true);
         expect(mayApproveTime(narrowed)).toBe(false);
+    });
+
+    it("lets a custom role grant money alone, and takes it from an Admin's custom role (decisions 265 and 274)", () => {
+        const widened = ctxOf('MEMBER');
+        widened.appPermissions = getPermissionsForRole('MEMBER');
+        widened.appPermissions.time.rates = true;
+        expect(mayManageRates(widened)).toBe(true);
+        const narrowed = ctxOf('ADMIN');
+        narrowed.appPermissions = getPermissionsForRole('ADMIN');
+        narrowed.appPermissions.time.rates = false;
+        expect(mayManageRates(narrowed)).toBe(false);
+        expect(mayApproveTime(narrowed)).toBe(true);
     });
 
     it('refuses an API key, a job and the system user as a recorder (decision 278)', () => {
