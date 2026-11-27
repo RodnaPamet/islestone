@@ -16,7 +16,7 @@
 import type { Role } from '@prisma/client';
 import { useTranslations } from 'next-intl';
 
-import { Bell, CalendarRefresh, Gauge6, Timer2, EnvelopeArrowRight, Folder, GridLayoutRows, InputField, MarketingTarget, UserCheck, Views } from '@inflect/ui/components/ui/icons/nucleo';
+import { Bell, CalendarRefresh, ChartArea2, Gauge6, Timer2, EnvelopeArrowRight, Folder, GridLayoutRows, InputField, MarketingTarget, UserCheck, Views } from '@inflect/ui/components/ui/icons/nucleo';
 import { membershipOpensAdminConsole } from '@/lib/auth/edge-admin-roles';
 import type { PermissionSet } from '@/lib/permissions';
 import { usePendingIntakeCount } from '@/components/intake/data/intake-data';
@@ -46,6 +46,8 @@ export const NAV_PATHS = {
     initiatives: '/roadmap/initiatives',
     // Sub-phase 3.5a (decision 297): the Workload page, people by weeks.
     workload: '/workload',
+    // Sub-phase 3.6a (decision 324): the Analytics page; from 3.6d its dashboards.
+    analytics: '/analytics',
     settings: '/settings',
 } as const;
 
@@ -54,6 +56,9 @@ export const TIME_AREA = '/time';
 
 /** The Roadmap entry's area: every page under it (decision 222). */
 export const ROADMAP_AREA = '/roadmap';
+
+/** The Analytics entry's area: every page under it (3.6a; 3.6d's dashboards join it). */
+export const ANALYTICS_AREA = '/analytics';
 
 export type NavRouteKey = keyof typeof NAV_PATHS;
 
@@ -92,7 +97,7 @@ export interface NavSectionDef {
  * The sidebar's sections.
  *
  *   (untitled)   My Work, Inbox, Time (3.4b) — the member's own work, notifications and time
- *   Workspace    Work items, Projects, Cycles (2.5a), Roadmap (3.2b), Workload (3.5a), Intake and Forms (2.6a), Views
+ *   Workspace    Work items, Projects, Cycles (2.5a), Roadmap (3.2b), Workload (3.5a), Analytics (3.6a), Intake and Forms (2.6a), Views
  *
  * Settings is the footer gear, not a row. Work items (the workspace-wide
  * list and board) and Projects arrived with 2.3; the Inbox unread badge
@@ -145,6 +150,15 @@ export function useNavSections(): NavSectionDef[] {
                 },
                 // Sub-phase 3.5a (decisions 297 and 298: `workload.view`): people by weeks.
                 { key: 'workload', href: tenantHref(NAV_PATHS.workload), label: t('workload'), icon: Gauge6, visible: perms.workload?.view === true },
+                // Sub-phase 3.6a (decisions 324 and 329: `analytics.view`): counts and the fixed charts.
+                {
+                    key: 'analytics',
+                    href: tenantHref(NAV_PATHS.analytics),
+                    label: t('analytics'),
+                    icon: ChartArea2,
+                    visible: perms.analytics?.view === true,
+                    activePrefix: tenantHref(ANALYTICS_AREA),
+                },
                 {
                     key: 'intake',
                     href: tenantHref(NAV_PATHS.intake),

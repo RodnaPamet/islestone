@@ -61,6 +61,8 @@ export const MAIN_PAGES: readonly string[] = [
     // Sub-phase 3.5a: the Workload page (decision 297).
     '/workload',
     '/time/totals',
+    // Sub-phase 3.6a: the Analytics page (decision 324).
+    '/analytics',
     '/work-items',
     '/views',
     '/projects',

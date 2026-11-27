@@ -78,9 +78,11 @@ import {
 /** An analytics read's query: the list's filters (its order, cursor and page size do not apply) and the window. */
 export type AnalyticsQuery = Omit<ListWorkItemsQuery, 'order' | 'dir' | 'cursor' | 'limit'> & { from: string; to: string };
 
-/** The list's filters on a recorded field: judged on each row as recorded (decision 315). */
-const RECORDED_FILTERS = ['projectId', 'teamId', 'cycleId', 'milestoneId', 'initiativeId', 'initiativeProjectIds'] as const;
-/** The list's filters on current values (decision 315). */
+/**
+ * The list's filters on current values (decision 315). The others are on
+ * recorded fields (project, team, initiative through its projects, cycle,
+ * milestone; judged on each row as recorded) or on status (set aside).
+ */
 const CURRENT_VALUE_FILTERS = ['typeId', 'priority', 'labelId', 'parentId', 'assigneeId', 'createdById', 'waitingOnId', 'goalScope', 'reviewerId', 'watching', 'q'] as const;
 
 function tooLarge(what: AnalyticsTooLargeDetails['what'], count: number, limit: number): AppError {
@@ -407,3 +409,12 @@ export async function getFlow(
     });
 }
 
+
+/** Today in the workspace calendar's zone (the page's default window ends on it). */
+export async function getAnalyticsToday(ctx: RequestContext, now: Date = new Date()): Promise<string> {
+    assertCanViewAnalytics(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const tz = (await resolveWorkingCalendars(db, ctx, [])).workspace.timeZone;
+        return fromEpochDay(todayIn(tz, todayClock(tz, now)));
+    });
+}

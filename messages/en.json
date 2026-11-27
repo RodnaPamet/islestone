@@ -176,7 +176,8 @@
             "goals": "Goals",
             "initiatives": "Initiatives",
             "time": "Time",
-            "workload": "Workload"
+            "workload": "Workload",
+            "analytics": "Analytics"
         }
     },
     "ui": {
@@ -521,7 +522,8 @@
         "intakeBadge": "{count, plural, one {# new request} other {# new requests}}",
         "roadmap": "Roadmap",
         "time": "Time",
-        "workload": "Workload"
+        "workload": "Workload",
+        "analytics": "Analytics"
     },
     "commandPalette": {
         "title": "Command palette",
@@ -3536,6 +3538,102 @@
             "nextWeek": "next week {allocated} of {capacity}",
             "nextWeekOver": "next week over by {over}",
             "open": "Open Workload"
+        }
+    },
+    "analytics": {
+        "title": "Analytics",
+        "description": "Throughput, cycle time, lead time, cumulative flow and the burn-up of the work you can see, computed from each item's recorded changes.",
+        "searchPlaceholder": "Search work items…",
+        "window": {
+            "label": "Window",
+            "weeks": "{weeks} weeks"
+        },
+        "frame": "From {from} to {to}; days end at midnight in {zone}.",
+        "frameLoading": "Reading the record…",
+        "setAside": "Set aside: {filters} (each chart counts states itself).",
+        "setAsideNames": {
+            "stateId": "State",
+            "stateCategory": "Category",
+            "due": "Due"
+        },
+        "currentValues": "Projects, teams, cycles and milestones are judged as they were on each day; labels, type, assignee and the other filters by each item's values now. Durations are working time on each item's own working calendar.",
+        "counts": {
+            "open": "Open now",
+            "started": "Started now",
+            "done": "Done in the window",
+            "created": "Created in the window"
+        },
+        "chart": {
+            "showTable": "Show table",
+            "showChart": "Show chart",
+            "loading": "Loading…",
+            "failed": "This chart could not be loaded.",
+            "empty": "Nothing to show for this scope and window.",
+            "tooLarge": {
+                "completions": "More than {limit} items were done in this scope and window ({count}). Narrow the filter or the window.",
+                "items": "This scope follows more than {limit} items ({count}). Narrow the filter or the window.",
+                "filter": "This filter selects more than {limit} items ({count}). Narrow it."
+            }
+        },
+        "throughput": {
+            "title": "Throughput",
+            "legend": {
+                "week": "Done per week",
+                "day": "Done per day"
+            },
+            "summary": {
+                "week": "{total} done; a median week of {median}.",
+                "day": "{total} done; a median day of {median}."
+            },
+            "aria": "Throughput: {total} done, a median of {median}.",
+            "tooltip": "{count} done",
+            "caption": "Items done per period",
+            "from": "From",
+            "to": "To",
+            "done": "Done"
+        },
+        "flow": {
+            "title": "Cumulative flow",
+            "band": {
+                "backlog": "Backlog",
+                "unstarted": "Unstarted",
+                "started": "Started",
+                "done": "Done in the window"
+            },
+            "summary": "{items} items followed. On the last day: {backlog} in backlog, {unstarted} unstarted, {started} started, {done} done in the window.",
+            "aria": "Cumulative flow on the last day: {backlog} in backlog, {unstarted} unstarted, {started} started, {done} done.",
+            "tooltip": "{backlog} backlog, {unstarted} unstarted, {started} started, {done} done",
+            "caption": "Items per state category at the end of each day",
+            "date": "Date"
+        },
+        "durations": {
+            "cycleTitle": "Cycle time",
+            "leadTitle": "Lead time",
+            "legend": {
+                "done": "Done",
+                "age": "Age of open, started items",
+                "percentiles": "50th, 85th and 95th percentiles",
+                "items": "Items"
+            },
+            "percentiles": "{count} done: 50% within {p50} days, 85% within {p85}, 95% within {p95} (working days).",
+            "noneDone": "Nothing was done in this window.",
+            "doneWithoutStarting": "{count, plural, one {# item was} other {# items were}} done without starting.",
+            "ageSummary": "{count, plural, one {# open item has} other {# open items have}} started; the oldest {shown} are shown.",
+            "newestOnly": "The newest {count} are drawn.",
+            "cycleCaption": "Cycle time of the newest items done",
+            "ageCaption": "Age of open, started items, the oldest first",
+            "leadCaption": "Lead times in working days",
+            "item": "Item",
+            "title": "Title",
+            "completedOn": "Done on",
+            "cycleTime": "Cycle time",
+            "notStarted": "Done without starting",
+            "days": "{days} days",
+            "startedOn": "Started on",
+            "age": "Age",
+            "leadDays": "Lead time",
+            "items": "Items",
+            "daysRange": "{from} to {to} days"
         }
     }
 }

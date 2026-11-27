@@ -136,6 +136,7 @@ describe('the application shell', () => {
             // Decision 222: one Roadmap entry, opening the Roadmap page (3.2c).
             ['Roadmap', '/t/acme/roadmap'],
             ['Workload', '/t/acme/workload'],
+            ['Analytics', '/t/acme/analytics'],
             // Sub-phase 2.6a: Intake (an OWNER reads intake) and Forms.
             ['Intake', '/t/acme/intake'],
             ['Forms', '/t/acme/forms'],

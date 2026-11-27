@@ -120,3 +120,12 @@ describe('the Workload entry (3.5a, decisions 297 and 298)', () => {
         expect(navKeys('GUEST')).not.toContain('nav-workload');
     });
 });
+
+describe('the Analytics entry (3.6a, decisions 324 and 329)', () => {
+    it('shows to every holder of analytics.view, a Viewer too, and never to a guest', () => {
+        expect(navKeys('MEMBER')).toContain('nav-analytics');
+        expect(navKeys('VIEWER')).toContain('nav-analytics');
+        expect(navKeys('OWNER')).toContain('nav-analytics');
+        expect(navKeys('GUEST')).not.toContain('nav-analytics');
+    });
+});
