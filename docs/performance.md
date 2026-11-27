@@ -199,7 +199,7 @@ Locally, beside another run, under other container names and ports:
 CI_PG_PREFIX=islestone-perf PG_PORT=55432 PGBOUNCER_PORT=56432 scripts/ci-postgres.sh islestone_perf --pgbouncer --pg-stat-statements
 export DATABASE_URL=postgresql://islestone:islestone_ci@127.0.0.1:56432/islestone_perf
 export DIRECT_DATABASE_URL=postgresql://islestone:islestone_ci@127.0.0.1:55432/islestone_perf
-export AUTH_SECRET=local-throwaway NEXT_PUBLIC_APP_URL=http://127.0.0.1:3100 LOG_LEVEL=warn   # pragma: allowlist secret
+export AUTH_SECRET=local-throwaway-secret-0123 NEXT_PUBLIC_APP_URL=http://127.0.0.1:3100 LOG_LEVEL=warn   # pragma: allowlist secret
 export DATA_ENCRYPTION_KEY=local-perf-data-encryption-key-not-a-secret   # pragma: allowlist secret
 npm run migrate:deploy && npm run seed:scale -- --shape 10k
 docker exec islestone-perf-postgres psql -U islestone -d islestone_perf -c 'CREATE EXTENSION pg_stat_statements'
