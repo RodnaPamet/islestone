@@ -17,8 +17,13 @@ import { BUILT_IN_LANES, isListOrder } from '@/lib/work-items/list-sorts';
 const Id = z.string().min(1).max(64);
 const Name = z.string().trim().min(1).max(64);
 
-/** A filter key the list reads: a built-in facet or `cf.<fieldId>`. */
-const FilterKey = z.string().regex(/^(stateCategory|stateId|priority|typeId|labelId|assigneeId|projectId|cycleId|milestoneId|waitingOnId|reviewerId|goalId|initiativeId|due|cf\.[A-Za-z0-9_-]{1,64})$/, 'Unknown filter.');
+/** A filter key the list reads: a built-in facet or `cf.<fieldId>` (3.6d's widget scopes read it too). */
+export const FilterKey = z.string().regex(/^(stateCategory|stateId|priority|typeId|labelId|assigneeId|projectId|cycleId|milestoneId|waitingOnId|reviewerId|goalId|initiativeId|due|cf\.[A-Za-z0-9_-]{1,64})$/, 'Unknown filter.');
+
+/** The filter system's state: key → selected values (a saved view's, and since 3.6d a dashboard widget's scope). */
+export const SavedViewFiltersSchema = z
+    .record(FilterKey, z.array(z.string().min(1).max(64)).max(100))
+    .refine((r) => Object.keys(r).length <= 30, 'At most 30 filters.');
 
 /** Timeline zoom levels (3.1b). */
 export const TIMELINE_ZOOMS = ['day', 'week', 'month', 'quarter'] as const;
@@ -41,10 +46,7 @@ export const CalendarConfigSchema = z
 export const SavedViewConfigSchema = z
     .object({
         /** The filter system's state: key → selected values. */
-        filters: z
-            .record(FilterKey, z.array(z.string().min(1).max(64)).max(100))
-            .refine((r) => Object.keys(r).length <= 30, 'At most 30 filters.')
-            .default({}),
+        filters: SavedViewFiltersSchema.default({}),
         /** The search text. */
         q: z.string().max(200).optional(),
         sort: z

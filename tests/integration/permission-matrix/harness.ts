@@ -45,6 +45,7 @@ import { saveProjectAsTemplate } from '@/app-layer/usecases/project-template';
 import { archiveRecipientList, createRecipientList } from '@/app-layer/usecases/recipient-list';
 import { setWorkItemRecurrence } from '@/app-layer/usecases/recurrence';
 import { getWorkItemReview, sendWorkItemReview, setWorkItemReviewSteps } from '@/app-layer/usecases/review';
+import { createDashboard } from '@/app-layer/usecases/dashboard';
 import { createSavedView } from '@/app-layer/usecases/saved-view';
 import { createTeam, updateTeam } from '@/app-layer/usecases/team';
 import { createInviteToken } from '@/app-layer/usecases/tenant-invites';
@@ -165,6 +166,7 @@ export function setUpMatrixWorld(tag: string): { world: () => World; prisma: () 
         const label = await createLabel(owner, { name: 'matrix label' });
         const field = await createCustomField(owner, project.id, { name: 'Stage gate', type: 'SELECT', options: [{ name: 'Alpha' }, { name: 'Beta' }] });
         const view = await createSavedView(ctxAs(w, 'ANN'), { name: 'Shared by Ann', visibility: 'SHARED', layout: 'LIST', config: { filters: {}, sort: 'manual', laneBy: 'none' } });
+        const dashboard = await createDashboard(ctxAs(w, 'ANN'), { name: 'Shared dashboard by Ann', visibility: 'SHARED' });
         const cycle = await createCycle(owner, { teamId: team.id, startsOn: '2049-01-04', endsOn: '2049-01-17' });
         const milestone = await createMilestone(owner, project.id, { name: 'Matrix milestone' });
         const itemTemplate = await createWorkItemTemplate(owner, project.id, { name: 'Matrix template', title: 'From a template' });
@@ -198,6 +200,7 @@ export function setUpMatrixWorld(tag: string): { world: () => World; prisma: () 
                 fieldId: field.id,
                 optionId: field.options[0]!.id,
                 viewId: view.id,
+                dashboardId: dashboard.id,
                 cycleId: cycle.id,
                 milestoneId: milestone.id,
                 goalId: goal.id,
@@ -475,6 +478,14 @@ async function buildFixture(name: FixtureName, w: World, prisma: PrismaClient, c
         case 'ownView': {
             const v = await createSavedView(ctxAs(w, caller, 'MEMBER'), { name: `Mine ${nextSeq()}`, visibility: 'PERSONAL', layout: 'LIST', config: { filters: {}, sort: 'manual', laneBy: 'none' } });
             return { viewId: v.id };
+        }
+        case 'ownDashboard': {
+            const d = await createDashboard(ctxAs(w, caller, 'MEMBER'), { name: `Mine ${nextSeq()}`, visibility: 'PERSONAL' });
+            return { dashboardId: d.id, version: String(d.version) };
+        }
+        case 'freshSharedDashboard': {
+            const d = await createDashboard(ctxAs(w, 'ANN'), { name: `Ann's ${nextSeq()}`, visibility: 'SHARED' });
+            return { dashboardId: d.id, version: String(d.version) };
         }
         case 'freshSharedView': {
             const v = await createSavedView(ctxAs(w, 'ANN'), { name: `Ann's ${nextSeq()}`, visibility: 'SHARED', layout: 'LIST', config: { filters: {}, sort: 'manual', laneBy: 'none' } });

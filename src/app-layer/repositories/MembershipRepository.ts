@@ -25,6 +25,21 @@ export class MembershipRepository {
         return rows.map((r) => ({ userId: r.userId, name: r.user.name, active: r.status === 'ACTIVE' }));
     }
 
+    /**
+     * The user ids among `userIds` that hold a membership in the workspace,
+     * any status (3.6d: a shared dashboard whose creator has none is "Created
+     * by a former member").
+     */
+    static async memberUserIds(db: PrismaTx, ctx: RequestContext, userIds: readonly string[]): Promise<Set<string>> {
+        if (userIds.length === 0) return new Set();
+        const rows = await db.tenantMembership.findMany({
+            where: { tenantId: ctx.tenantId, userId: { in: [...userIds] } },
+            take: userIds.length,
+            select: { userId: true },
+        });
+        return new Set(rows.map((r) => r.userId));
+    }
+
     /** The user ids among `userIds` that hold an ACTIVE membership in the workspace. */
     static async listActiveUserIds(db: PrismaTx, ctx: RequestContext, userIds: readonly string[]): Promise<Set<string>> {
         if (userIds.length === 0) return new Set();

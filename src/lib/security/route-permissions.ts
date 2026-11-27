@@ -1041,6 +1041,27 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'analytics.view',
         note: 'The 50, 85 and 95 percent likely dates of a scope\'s open items, the chance by its due date and its own record (decisions 318 to 325).',
     },
+    // ── Dashboards (sub-phase 3.6d; owner decisions 326 to 329) ──────
+    // analytics.view on every route; the usecase asks analytics.share for a shared
+    // dashboard and admits only its creator to change one (audited when refused).
+    {
+        path: new RegExp(`^${T}\\/dashboards$`),
+        methods: ['GET', 'POST'],
+        permission: 'analytics.view',
+        note: "The caller's own dashboards and every shared one, and save one; a shared one also needs analytics.share (asked in the usecase).",
+    },
+    {
+        path: new RegExp(`^${T}\\/dashboards\\/[^\\/]+$`),
+        methods: ['GET', 'PATCH', 'DELETE'],
+        permission: 'analytics.view',
+        note: 'One dashboard: read, rename or share (its creator), delete (its creator, or an Owner or Admin for a shared one, DASHBOARD_MODERATED).',
+    },
+    {
+        path: new RegExp(`^${T}\\/dashboards\\/[^\\/]+\\/widgets$`),
+        methods: ['PUT'],
+        permission: 'analytics.view',
+        note: "A dashboard's widgets replaced as a whole on its version (If-Match): its creator only, analytics.share for a shared one.",
+    },
     // ── Estimates (sub-phase 3.4a; owner decision 257) ───────────────
     {
         path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/estimate$`),

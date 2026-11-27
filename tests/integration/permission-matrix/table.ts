@@ -134,6 +134,8 @@ export type FixtureName =
     | 'freshProjectTemplate'
     | 'ownView'
     | 'freshSharedView'
+    | 'ownDashboard'
+    | 'freshSharedDashboard'
     | 'freshRequest'
     | 'declinedRequest'
     | 'freshBlocked'
@@ -265,6 +267,20 @@ const ANALYTICS = c('ok', 'ok', 'ok', 'ok', g('denied'), 'ok', 'ok');
  * both keys absent (`empty`), both custom roles included (their bases, MEMBER and VIEWER, do not hold it).
  */
 const ANALYTICS_PEOPLE = c('ok', 'ok', 'empty', 'empty', g('denied'), 'empty', 'empty');
+
+/**
+ * A shared dashboard saved (decisions 326 and 329): the route admits every `analytics.view` holder, and the
+ * usecase refuses all but `analytics.share` holders (OWNER, ADMIN, MEMBER and the narrowed member) with an
+ * audited 403; a VIEWER and the widened viewer keep personal dashboards only.
+ */
+const ANALYTICS_SHARE = c('ok', 'ok', 'ok', 'refused', g('denied'), 'ok', 'refused');
+/** Another member's shared dashboard changed (decision 326): only its creator changes one; every other reader is refused, audited. */
+const DASHBOARD_CREATOR_ONLY = c('refused', 'refused', 'refused', 'refused', g('denied'), 'refused', 'refused');
+/** Another member's shared dashboard deleted (decision 326): an Owner or Admin moderating (`DASHBOARD_MODERATED`); every other reader refused. */
+const DASHBOARD_MODERATE = c('ok', 'ok', 'refused', 'refused', g('denied'), 'refused', 'refused');
+
+/** One widget, as a layout write sends it. */
+const ONE_WIDGET = { type: 'COUNTS', config: { scope: { filters: {} }, window: { kind: 'weeks', weeks: 12 } }, position: { x: 0, y: 0 }, size: { w: 12, h: 3 } };
 
 /** A write into an archived project by a caller the key admits. */
 const ARCHIVED_ITEM_EDIT = c('archived', 'archived', 'archived', 'denied', g('denied'), 'denied', 'denied');
@@ -902,6 +918,37 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
             route: 'analytics/forecast/route.ts', method: 'GET', key: 'analytics.view', subject: 'a forecast of open items',
             query: () => ({ historyWeeks: '12', share: '100' }), expect: ANALYTICS,
         },
+        // Sub-phase 3.6d (decisions 326 to 329): dashboards, every route under analytics.view; analytics.share for a
+        // shared one and the creator alone to change one, both decided (and audited) by the usecase.
+        { route: 'dashboards/route.ts', method: 'GET', key: 'analytics.view', subject: "the caller's dashboards and every shared one", reveals: (s) => s.dashboardId, expect: ANALYTICS },
+        { route: 'dashboards/route.ts', method: 'POST', key: 'analytics.view', subject: 'a personal dashboard', body: () => ({ name: 'My dashboard', visibility: 'PERSONAL' }), expect: ANALYTICS },
+        {
+            route: 'dashboards/route.ts', method: 'POST', key: 'analytics.view', subject: 'a shared dashboard (decision 329: analytics.share)',
+            body: () => ({ name: 'Team dashboard', visibility: 'SHARED', widgets: [ONE_WIDGET] }), expect: ANALYTICS_SHARE,
+        },
+        { route: 'dashboards/[dashboardId]/route.ts', method: 'GET', key: 'analytics.view', subject: "another member's shared dashboard", expect: ANALYTICS },
+        { route: 'dashboards/[dashboardId]/route.ts', method: 'GET', key: 'analytics.view', subject: "the caller's own personal dashboard", fixture: 'ownDashboard', expect: ANALYTICS },
+        {
+            route: 'dashboards/[dashboardId]/route.ts', method: 'PATCH', key: 'analytics.view', subject: "another member's shared dashboard (decision 326: its creator only)",
+            body: () => ({ name: 'Renamed' }), expect: DASHBOARD_CREATOR_ONLY,
+        },
+        {
+            route: 'dashboards/[dashboardId]/route.ts', method: 'PATCH', key: 'analytics.view', subject: "the caller's own personal dashboard", fixture: 'ownDashboard',
+            body: () => ({ name: 'Mine, renamed' }), ifMatch: (s) => s.version!, expect: ANALYTICS,
+        },
+        {
+            route: 'dashboards/[dashboardId]/widgets/route.ts', method: 'PUT', key: 'analytics.view', subject: "the caller's own personal dashboard's widgets", fixture: 'ownDashboard',
+            body: () => ({ widgets: [ONE_WIDGET] }), ifMatch: (s) => s.version!, expect: ANALYTICS,
+        },
+        {
+            route: 'dashboards/[dashboardId]/widgets/route.ts', method: 'PUT', key: 'analytics.view', subject: "another member's shared dashboard's widgets (decision 326: its creator only)", fixture: 'freshSharedDashboard',
+            body: () => ({ widgets: [ONE_WIDGET] }), ifMatch: (s) => s.version!, expect: DASHBOARD_CREATOR_ONLY,
+        },
+        {
+            route: 'dashboards/[dashboardId]/route.ts', method: 'DELETE', key: 'analytics.view', subject: "another member's fresh shared dashboard (decision 326: an Owner or Admin moderates)", fixture: 'freshSharedDashboard',
+            expect: DASHBOARD_MODERATE,
+        },
+        { route: 'dashboards/[dashboardId]/route.ts', method: 'DELETE', key: 'analytics.view', subject: "the caller's own personal dashboard", fixture: 'ownDashboard', expect: ANALYTICS },
     ],
 };
 
