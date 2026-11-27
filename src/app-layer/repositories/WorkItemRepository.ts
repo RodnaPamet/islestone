@@ -1019,6 +1019,23 @@ export class WorkItemRepository {
         return last?.sortKey ?? null;
     }
 
+    /**
+     * Of `sortKeys`, the ones a live item of the project holds (issue #110: a
+     * restored row whose kept key a placement minted again while it was
+     * deleted). Read under the project's sequence row.
+     */
+    static async liveSortKeysAmong(db: PrismaTx, ctx: RequestContext, projectId: string, sortKeys: readonly string[]): Promise<Set<string>> {
+        const keys = [...new Set(sortKeys)];
+        if (keys.length === 0) return new Set();
+        const rows = await db.workItem.findMany({
+            where: { tenantId: ctx.tenantId, projectId, deletedAt: null, sortKey: { in: keys } },
+            distinct: ['sortKey'],
+            take: keys.length,
+            select: { sortKey: true },
+        });
+        return new Set(rows.map((r) => r.sortKey));
+    }
+
     /** The sort keys of the given live items of one project (reorder neighbours). */
     static async sortKeysOf(db: PrismaTx, ctx: RequestContext, projectId: string, ids: readonly string[]) {
         return db.workItem.findMany({
@@ -1351,13 +1368,13 @@ export class WorkItemRepository {
         return result.count;
     }
 
-    /** Rows deleted together with `deletionId`. */
+    /** Rows deleted together with `deletionId`, with the project and key each kept (a restore places them again). */
     static async idsOfDeletion(db: PrismaTx, ctx: RequestContext, deletionId: string) {
         return db.workItem.findMany({
             where: { tenantId: ctx.tenantId, deletionId, deletedAt: { not: null } },
             // A deletion is one subtree; the cap is far beyond any real one.
             take: 10_000,
-            select: { id: true, parentId: true },
+            select: { id: true, parentId: true, projectId: true, sortKey: true },
         });
     }
 
@@ -2152,7 +2169,11 @@ export class WorkItemRepository {
 
     // ── Rebalance ────────────────────────────────────────────────────
 
-    /** Projects whose items carry a key past the bound. */
+    /**
+     * Projects whose items carry a key past the bound, deleted items included:
+     * the rebalance rewrites those too, so a project is selected until one run
+     * has rewritten it (issue #110).
+     */
     static async projectsNeedingRebalance(db: PrismaTx, ctx: RequestContext, bound: number) {
         const rows = await db.$queryRaw<Array<{ projectId: string }>>`
             SELECT DISTINCT "projectId" FROM "WorkItem"
@@ -2161,14 +2182,17 @@ export class WorkItemRepository {
         return rows.map((r) => r.projectId);
     }
 
-    /** Every live item of a project in order, a page at a time. */
-    static async orderedPage(db: PrismaTx, ctx: RequestContext, projectId: string, after: CursorPayload | undefined, take: number) {
+    /**
+     * Every item of a project in order, deleted ones included, a page at a
+     * time (the rebalance rewrites deleted rows too, so a restored item comes
+     * back in its place among the rewritten keys; issue #110).
+     */
+    static async orderedPageIncludingDeleted(db: PrismaTx, ctx: RequestContext, projectId: string, after: CursorPayload | undefined, take: number) {
         const order = LIST_ORDERS.manual;
         return db.workItem.findMany({
             where: {
                 tenantId: ctx.tenantId,
                 projectId,
-                deletedAt: null,
                 ...(after ? (buildKeysetWhere(order, after) as Prisma.WorkItemWhereInput) : {}),
             },
             orderBy: keysetOrderBy(order) as Prisma.WorkItemOrderByWithRelationInput[],

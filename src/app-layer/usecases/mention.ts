@@ -98,7 +98,13 @@ export async function recordMentionsInTx(db: PrismaTx, ctx: RequestContext, sour
     const recorded = await MentionRepository.listForSource(db, ctx, ref);
     if (named.length === 0 && recorded.size === 0) return { notify: [], recorded: [] };
     const candidates = named.filter((id) => !recorded.has(id));
-    const allowed = candidates.length > 0 ? await mentionableAmong(db, ctx, source.projectId, candidates) : new Set<string>();
+    // The candidates' memberships are read FOR KEY SHARE before the rows that
+    // name them are written, so a member's removal in flight is waited for
+    // and its person dropped like any non-member, never met by the rows'
+    // foreign key (Hardening H2, issue #109). The caller already holds the
+    // item (a write of it or of a row naming it), the removal's first lock.
+    const present = candidates.length > 0 ? await MembershipRepository.lockActiveUserIds(db, ctx, candidates) : new Set<string>();
+    const allowed = present.size > 0 ? await mentionableAmong(db, ctx, source.projectId, [...present]) : new Set<string>();
     const change = planMentionChange(recorded, named, allowed);
     const where = source.commentId ? 'a comment' : 'the description';
 

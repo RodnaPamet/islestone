@@ -157,6 +157,12 @@ export async function editComment(ctx: RequestContext, workItemId: string, comme
     assertCanCommentOnWorkItems(ctx);
     const body = cleanBody(input.body);
     const outcome = await runInTenantContext(ctx, async (db) => {
+        // The item first: its mentions lock the people's memberships, and a
+        // member's removal locks the items it writes before it deletes the
+        // membership. Unlike adding a comment (whose insert holds the item),
+        // an edit touches no item row, so without this it met the removal
+        // in the opposite order and deadlocked (Hardening H2, issue #109).
+        await WorkItemRepository.lockForWrite(db, ctx, [workItemId]);
         const item = await loadWritableItem(db, ctx, await visibleProjects(ctx, db), workItemId);
         const comment = await CommentRepository.get(db, ctx, workItemId, commentId);
         if (!comment) throw notFound('Comment not found');
@@ -232,9 +238,14 @@ export async function listWatchers(ctx: RequestContext, workItemId: string) {
 async function changeWatcher(ctx: RequestContext, workItemId: string, userId: string, add: boolean) {
     const self = userId === ctx.userId;
     return runInTenantContext(ctx, async (db) => {
+        // Adding: the item, then the person's membership FOR KEY SHARE, in a
+        // member's removal's own order (its items, then the membership), so a
+        // removal in flight is waited for and refused as naming a non-member,
+        // never met by the watcher row's foreign key (Hardening H2, issue #109).
+        if (add) await WorkItemRepository.lockForWrite(db, ctx, [workItemId]);
         const item = await loadVisibleItem(db, ctx, await visibleProjects(ctx, db), workItemId);
         if (add) {
-            const active = await MembershipRepository.listActiveUserIds(db, ctx, [userId]);
+            const active = await MembershipRepository.lockActiveUserIds(db, ctx, [userId]);
             if (!active.has(userId)) throw badRequest('A watcher must be an active member of this workspace.');
             await WorkItemWatcherRepository.add(db, ctx, workItemId, userId);
         } else {

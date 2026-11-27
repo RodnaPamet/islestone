@@ -104,7 +104,10 @@ jest.mock('@/app-layer/repositories/ProjectRepository', () => ({
 jest.mock('@/app-layer/repositories/TeamRepository', () => ({ TeamRepository: { getState: jest.fn() } }));
 jest.mock('@/app-layer/repositories/CustomFieldRepository', () => ({ CustomFieldRepository: { listFields: jest.fn(async () => []) } }));
 jest.mock('@/app-layer/repositories/MembershipRepository', () => ({
-    MembershipRepository: { listActiveUserIds: jest.fn(async (_db: unknown, _ctx: unknown, ids: string[]) => new Set(ids)) },
+    MembershipRepository: {
+        listActiveUserIds: jest.fn(async (_db: unknown, _ctx: unknown, ids: string[]) => new Set(ids)),
+        lockActiveUserIds: jest.fn(async (_db: unknown, _ctx: unknown, ids: string[]) => new Set(ids)),
+    },
 }));
 jest.mock('@/app-layer/repositories/WorkItemRepository', () => ({
     WorkItemRepository: { listByIds: jest.fn(async () => []) },

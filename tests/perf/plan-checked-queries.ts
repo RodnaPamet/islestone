@@ -139,7 +139,7 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
         maxBuffers: 100, maxBuffers100k: 100,
     },
     // ── Writes' reads: placement, moves, a member's removal ────────────────
-    { name: 'placement: sort keys around a position', methods: ['WorkItemRepository.lastSortKey', 'WorkItemRepository.nextSortKeyAfter', 'WorkItemRepository.prevSortKeyBefore'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 100, maxBuffers100k: 100 },
+    { name: 'placement: sort keys around a position', methods: ['WorkItemRepository.lastSortKey', 'WorkItemRepository.nextSortKeyAfter', 'WorkItemRepository.prevSortKeyBefore', 'WorkItemRepository.liveSortKeysAmong'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 100, maxBuffers100k: 100 },
     { name: 'removal: a member\'s items', methods: ['WorkItemRepository.lockItemsOfPerson'], indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx|WorkItem_tenantId_assigneeId_sortKey_id_idx', 'WorkItem_tenantId_waitingOnUserId_stateCategory_dueDate_idx', 'CustomFieldValue_tenantId_userId_idx|CustomFieldValue_tenantId_fieldId_userId_idx'], maxBuffers: 7500, maxBuffers100k: 88000 },
     { name: 'deletion: a deletion group', methods: ['WorkItemRepository.idsOfDeletion'], indexes: ['WorkItem_tenantId_deletionId_idx'], maxBuffers: 100, maxBuffers100k: 100 },
     { name: 'cycle and milestone deletes: their items', methods: ['WorkItemRepository.idsInCycleIncludingDeleted', 'WorkItemRepository.idsInMilestoneIncludingDeleted', 'WorkItemRepository.rolloverCandidates'], indexes: ['WorkItem_tenantId_cycleId_stateCategory_idx', 'WorkItem_tenantId_milestoneId_stateCategory_idx'], maxBuffers: 2400, maxBuffers100k: 4400 },
@@ -149,7 +149,7 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'job: the daily digest', methods: ['WorkItemRepository.digestDueItems'], indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx|WorkItem_tenantId_dueDate_id_idx'], maxBuffers: 1100, maxBuffers100k: 5400 },
     { name: 'job: the purge sweep', methods: ['WorkItemRepository.purgeableIds'], indexes: ['WorkItem_deletedAt_idx'], maxBuffers: 150, maxBuffers100k: 1500 },
     { name: 'job: a purged project', methods: ['WorkItemRepository.countLiveInProject', 'WorkItemRepository.projectItemIds'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx|WorkItem_tenantId_projectId_number_key|WorkItem_tenantId_projectId_createdAt_id_idx'], maxBuffers: 400, maxBuffers100k: 1600 },
-    { name: 'job: the sort-key rebalance', methods: ['WorkItemRepository.projectsNeedingRebalance', 'WorkItemRepository.orderedPage'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 500, maxBuffers100k: 3100 },
+    { name: 'job: the sort-key rebalance', methods: ['WorkItemRepository.projectsNeedingRebalance', 'WorkItemRepository.orderedPageIncludingDeleted'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 500, maxBuffers100k: 3100 },
     { name: 'job: the search-index rebuild', methods: ['SearchVectorRepository.staleDescriptionPage', 'SearchVectorRepository.staleCommentPage'], indexes: ['SearchVector_one_per_description', 'SearchVector_one_per_comment', 'Comment_search_live_ids'], maxBuffers: 10000, maxBuffers100k: 10000 },
 ];
 

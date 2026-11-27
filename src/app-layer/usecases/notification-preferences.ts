@@ -9,7 +9,7 @@
 import type { NotificationPreference } from '@prisma/client';
 
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
-import { badRequest } from '@/lib/errors/types';
+import { badRequest, forbidden } from '@/lib/errors/types';
 import type { PreferenceRowData, PreferencesData } from '@/lib/notifications/inbox';
 import {
     choiceRefusal,
@@ -23,6 +23,7 @@ import type { UpdatePreferencesInput } from '@/lib/schemas/notifications';
 import { logEvent } from '../events/audit';
 import { getTenantNotificationSettings } from '../notifications/settings';
 import { assertCanRead } from '../policies/common';
+import { MembershipRepository } from '../repositories/MembershipRepository';
 import type { RequestContext } from '../types';
 
 async function readState(db: PrismaTx, ctx: RequestContext): Promise<{ ceiling: PreferenceCeiling; rows: NotificationPreference[] }> {
@@ -89,6 +90,13 @@ export async function updateMyNotificationPreferences(ctx: RequestContext, input
         }
     }
     return runInTenantContext(ctx, async (db) => {
+        // The member's own membership FOR KEY SHARE before the rows that name
+        // it: a removal in flight is waited for, and the change refused as
+        // the member's next request would be (403), never met by the rows'
+        // foreign key (Hardening H2, issue #109).
+        if (!(await MembershipRepository.lockActiveUserIds(db, ctx, [ctx.userId])).has(ctx.userId)) {
+            throw forbidden('You are no longer a member of this workspace.');
+        }
         const before = await readState(db, ctx);
         const beforeView = project(before.ceiling, before.rows);
         for (const row of input.rows) {
