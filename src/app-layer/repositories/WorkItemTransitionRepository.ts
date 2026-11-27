@@ -314,7 +314,7 @@ export class WorkItemTransitionRepository {
      * the segments `domain/analytics/waiting.ts` needs (`relevantSegments`):
      * each row up to `asOf` whose item is live and in scope, to its next row
      * or to `asOf`, with its position among the item's rows, when it names
-     * someone in waiting on, is open and reaches into the window, or belongs
+     * someone in waiting on, is open (Unstarted or Started, decision 336) and reaches into the window, or belongs
      * to an item with a review span (`reviewItemIds`, from
      * `ReviewRepository.reviewSpans`). The scope's predicate is COALESCEd (a
      * NULL recorded cycle or milestone against an id filter is out of scope).
@@ -379,7 +379,7 @@ export class WorkItemTransitionRepository {
               FROM counted c
             UNION ALL
             SELECT 's', r."workItemId", r."teamId", r."at", COALESCE(r."nextAt", ${R}), r."nextAt" IS NULL, r."ord",
-                   r."stateCategory" IN ('BACKLOG', 'UNSTARTED', 'STARTED'), r."waitingOnUserId", NULL,
+                   r."stateCategory" IN ('UNSTARTED', 'STARTED'), r."waitingOnUserId", NULL,
                    w."number", w."title", p."keyPrefix"
               FROM r
               LEFT JOIN "WorkItem" w
@@ -390,7 +390,7 @@ export class WorkItemTransitionRepository {
               LEFT JOIN "Project" p ON p."tenantId" = ${t} AND p."id" = w."projectId" AND p."deletedAt" IS NULL
              WHERE r."live"
                AND (r."waitingOnUserId" IS NOT NULL
-                    OR (r."stateCategory" IN ('BACKLOG', 'UNSTARTED', 'STARTED') AND COALESCE(r."nextAt", ${R}) > ${start})
+                    OR (r."stateCategory" IN ('UNSTARTED', 'STARTED') AND COALESCE(r."nextAt", ${R}) > ${start})
                     OR r."workItemId" = ANY(${[...window.reviewItemIds]}::text[]))`);
         let items = 0;
         const segments: WaitSegment[] = [];

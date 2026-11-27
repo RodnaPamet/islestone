@@ -260,9 +260,9 @@ const RATES = c('ok', 'ok', 'denied', 'denied', g('denied'), 'denied', 'denied')
 const ANALYTICS = c('ok', 'ok', 'ok', 'ok', g('denied'), 'ok', 'ok');
 
 /**
- * Other people's time-waiting rows (decision 329): the response carries `"people"` only for a holder of
- * `analytics.people`, OWNER and ADMIN; every other reader gets the totals and its own row with the key absent
- * (`empty`), both custom roles included (their bases, MEMBER and VIEWER, do not hold it).
+ * Other people's time-waiting rows and the totals (decisions 329 and 335): the response carries `"people"` and
+ * `"totals"` only for a holder of `analytics.people`, OWNER and ADMIN; every other reader gets its own row with
+ * both keys absent (`empty`), both custom roles included (their bases, MEMBER and VIEWER, do not hold it).
  */
 const ANALYTICS_PEOPLE = c('ok', 'ok', 'empty', 'empty', g('denied'), 'empty', 'empty');
 
@@ -883,15 +883,19 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
             route: 'analytics/flow/route.ts', method: 'GET', key: 'analytics.view', subject: 'cumulative flow and the burn-up',
             query: () => ({ from: '2026-01-05', to: '2026-03-01', burnUp: '1' }), expect: ANALYTICS,
         },
-        // Sub-phase 3.6b (decisions 317, 329 and 332): time waiting. Every reader gets the totals and its own row;
-        // other people's rows only with analytics.people.
+        // Sub-phase 3.6b (decisions 317, 329, 332 and 335): time waiting. Every reader gets its own row; other
+        // people's rows and the totals only with analytics.people.
         {
-            route: 'analytics/waiting/route.ts', method: 'GET', key: 'analytics.view', subject: "time waiting: the totals and the caller's own row",
+            route: 'analytics/waiting/route.ts', method: 'GET', key: 'analytics.view', subject: "time waiting: the caller's own row",
             query: () => ({ from: '2026-01-05', to: '2026-03-01' }), reveals: () => '"self":', expect: ANALYTICS,
         },
         {
             route: 'analytics/waiting/route.ts', method: 'GET', key: 'analytics.view', subject: "time waiting: other people's rows (decision 329: analytics.people)",
             query: () => ({ from: '2026-01-05', to: '2026-03-01' }), reveals: () => '"people":', expect: ANALYTICS_PEOPLE,
+        },
+        {
+            route: 'analytics/waiting/route.ts', method: 'GET', key: 'analytics.view', subject: 'time waiting: the totals (decision 335: analytics.people, in any scope)',
+            query: () => ({ from: '2026-01-05', to: '2026-03-01' }), reveals: () => '"totals":', expect: ANALYTICS_PEOPLE,
         },
     ],
 };

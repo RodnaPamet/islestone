@@ -15,11 +15,14 @@
  *     aside, the scope's calendar zone for its days), bounded by the flow's
  *     item limit (20,000) and 50,000 review spans in the window (422
  *     `ANALYTICS_TOO_LARGE`, never cut).
- *   - **Who sees which rows** (decision 329): every holder of
- *     `analytics.view` reads the totals and their own row; every party's row
- *     (and the one anonymous row of removed members) only with
- *     `analytics.people`, absent otherwise. A caller who is not a person (an
- *     API key, later an agent) reads the totals alone (decision 332).
+ *   - **Who sees what** (decisions 329 and 335): every holder of
+ *     `analytics.view` reads their own row; every party's row (and the one
+ *     anonymous row of removed members) and the totals only with
+ *     `analytics.people`, absent otherwise, in any scope (the totals less
+ *     one's own row would be another person's in a small scope). A caller
+ *     who is not a person (an API key, the system user, later an agent)
+ *     reads nothing of time waiting but the frame: no row and no totals
+ *     (decisions 332 and 335).
  *   - **No figure per assignee** (decision 330): waits are grouped by whom an
  *     item waited on, never by its assignee.
  *
@@ -52,13 +55,15 @@ const FORMER = '\u0000former';
 
 const ZERO: PartyWaits = { waited: 0, asReviewer: 0, items: 0, ended: { count: 0, p50: null, p85: null }, waitingNow: 0, now: [] };
 
-/** Time waiting over the scope and window: the totals, the caller's row, and every party's row for `analytics.people`. */
+/** Time waiting over the scope and window: the caller's row, and the totals and every party's row for `analytics.people`. */
 export async function getTimeWaiting(ctx: RequestContext, query: AnalyticsQuery, now: Date = new Date()): Promise<WaitingResponse> {
     assertCanViewAnalytics(ctx);
     const asPerson = readsWaitingAsPerson(ctx);
     const everyone = asPerson && mayReadAnalyticsPeople(ctx);
     return runInTenantContext(ctx, async (db) => {
         const s = await resolveScope(db, ctx, query, now, { allCalendars: true });
+        // Not a person: nothing per person and no totals (decisions 332 and 335), so nothing is read.
+        if (!asPerson) return { ...s.frame, waitingNowCut: false };
         const empty = s.toDay < s.fromDay;
         // The review spans first (the review rows have one seam, ReviewRepository), then the record's segments of
         // the items in scope, those with a review span among them.
@@ -135,7 +140,8 @@ export async function getTimeWaiting(ctx: RequestContext, query: AnalyticsQuery,
         const self = asPerson ? rowOf(ctx.userId, figures.parties.get(ctx.userId) ?? ZERO) : undefined;
         return {
             ...s.frame,
-            totals: figures.totals,
+            // The totals only with the people key (decision 335).
+            ...(everyone ? { totals: figures.totals } : {}),
             ...(self ? { self } : {}),
             ...(everyone ? { people: shown.map(([k, p]) => rowOf(k, p)).sort((a, b) => b.waited - a.waited || byName(a, b)) } : {}),
             waitingNowCut: cut,

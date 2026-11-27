@@ -7,8 +7,9 @@
  * window and the set-aside status filters named, a chart over its bound
  * saying so with the count (never a cut chart) while the others draw, each
  * read its own request with the window, and no axe violations; time waiting
- * (3.6b) with every party's rows when the server gives them, the reader's own
- * row alone otherwise, and a chart over its review bound. visx's
+ * (3.6b) with every party's rows and the totals when the server gives them,
+ * the reader's own row alone and no totals otherwise (decision 335), and a
+ * chart over its review bound. visx's
  * `ParentSize` measures nothing in jsdom, so the tables are what is read.
  *
  * Written fresh for Islestone.
@@ -72,7 +73,8 @@ const debRow: WaitingPartyRow = { party: { kind: 'member', userId: 'u-deb', name
 const formerRow: WaitingPartyRow = { party: { kind: 'former' }, waited: 0.5, asReviewer: 0, items: 1, ended: ZERO_ENDED, waitingNow: 0, waitingNowItems: [] };
 const totals: WaitingResponse['totals'] = { waited: 5, asReviewer: 2, itemTimeWaiting: 4.5, openItemTime: 18, share: 0.25, items: 4, ended: { count: 3, p50: 1, p85: 2.5 }, waitingNow: 1 };
 const waitingAll: WaitingResponse = { ...frame, totals, self: anaRow, people: [anaRow, debRow, formerRow], waitingNowCut: false, items: 9 };
-const waitingOwn: WaitingResponse = { ...frame, totals, self: anaRow, waitingNowCut: false, items: 9 };
+// Without analytics.people: one's own row, no totals (decision 335).
+const waitingOwn: WaitingResponse = { ...frame, self: anaRow, waitingNowCut: false, items: 9 };
 
 describe('the Analytics page', () => {
     it('shows the counts and every chart with its table, names the set-aside filters, and has no axe violations', async () => {
@@ -162,11 +164,12 @@ describe('the Analytics page', () => {
         expect(within(section).getByRole('img', { name: /Waited on Ana 3.5 days, 2 of them as a reviewer/ })).toBeInTheDocument();
     });
 
-    it("shows the reader's own row alone, and says so, when the server gives no one else's", async () => {
+    it("shows the reader's own row alone and no totals, and says so, when the server gives no one else's", async () => {
         installFetch({ 'GET /analytics/counts': { body: counts }, 'GET /analytics/waiting': { body: waitingOwn } });
         renderWorkspace(<AnalyticsView affordances={{ ...ALL, people: false }} today="2026-11-27" />);
         const section = await screen.findByRole('region', { name: 'Time waiting' });
-        expect(await within(section).findByText(/You see your own row; other people's rows are shown to those allowed to see them/)).toBeInTheDocument();
+        expect(await within(section).findByText(/You see your own row; other people's figures and the totals are shown to those allowed to see them/)).toBeInTheDocument();
+        expect(within(section).queryByText(/of their open time waiting/)).not.toBeInTheDocument();
         const table = within(section).getByRole('table', { name: 'Time waited per person in the window, in working days' });
         expect(within(table).getAllByRole('rowheader').map((h) => h.textContent)).toEqual(['Ana']);
     });

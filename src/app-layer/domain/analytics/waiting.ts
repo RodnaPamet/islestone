@@ -27,7 +27,8 @@
  * their median and 85th percentile length, and what waits on them at `R`.
  * Totals across everyone: the time open items spent waiting on someone (each
  * instant of an item once, whoever it waited on) as a share of open item
- * time in the window. Which rows a caller sees is the usecase's (decision
+ * time in the window, open meaning Unstarted or Started (decision 336:
+ * Backlog time is out of both). Which rows a caller sees is the usecase's (decision
  * 329), never this module's.
  *
  * Pure: no database, no clock, no zone but the calendars'. Every instant is
@@ -39,7 +40,8 @@ import { toTenthsOfDays, type WorkingTimeMeter } from './elapsed';
 import { nearestRank } from './percentiles';
 import { compareFacts, type RecordFact } from './record';
 
-const OPEN: ReadonlySet<WorkflowStateCategory> = new Set(['BACKLOG', 'UNSTARTED', 'STARTED']);
+/** Open time for time waiting's share (decision 336): Unstarted and Started; Backlog time is out. */
+const OPEN: ReadonlySet<WorkflowStateCategory> = new Set(['UNSTARTED', 'STARTED']);
 
 /** A row of the record as time waiting reads it: the picture, and whom it names in waiting on. */
 export interface WaitFact extends RecordFact {
@@ -61,7 +63,7 @@ export interface WaitSegment {
     end: number;
     /** No later row at or before `R`. */
     last: boolean;
-    /** Backlog, Unstarted or Started. */
+    /** Unstarted or Started (decision 336: Backlog is not open time here). */
     open: boolean;
     waitingOnUserId: string | null;
 }
@@ -289,7 +291,7 @@ export interface WaitTotals {
     asReviewer: number;
     /** The time open items spent waiting on someone in the window (each instant of an item once). */
     itemTimeWaiting: number;
-    /** Open item time in the window (live, in scope, Backlog, Unstarted or Started). */
+    /** Open item time in the window (live, in scope, Unstarted or Started; decision 336). */
     openItemTime: number;
     /** `itemTimeWaiting / openItemTime`, to three decimals; null with no open item time. */
     share: number | null;

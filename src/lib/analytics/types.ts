@@ -213,7 +213,7 @@ export interface WaitingTotals {
     asReviewer: number;
     /** The time open items spent waiting on someone (each instant of an item once). */
     itemTimeWaiting: number;
-    /** Open item time in the window. */
+    /** Open item time in the window: Unstarted and Started time, never Backlog (decision 336). */
     openItemTime: number;
     /** `itemTimeWaiting / openItemTime`; null with no open item time. */
     share: number | null;
@@ -224,11 +224,15 @@ export interface WaitingTotals {
 }
 
 export interface WaitingResponse extends AnalyticsFrame {
-    totals: WaitingTotals;
+    /**
+     * The totals across everyone: only for a holder of `analytics.people` who
+     * is a person (decision 335). Absent otherwise, in any scope.
+     */
+    totals?: WaitingTotals;
     /**
      * The caller's own row (decision 329), zeros when nobody waited on them.
      * Absent for a caller who is not a person (an API key or an agent;
-     * decision 332).
+     * decisions 332 and 335).
      */
     self?: WaitingPartyRow;
     /**
@@ -239,8 +243,8 @@ export interface WaitingResponse extends AnalyticsFrame {
     people?: WaitingPartyRow[];
     /** The waiting-now lists were cut at `WAITING_NOW_LISTED_TOTAL` across the rows shown. */
     waitingNowCut: boolean;
-    /** Items followed (ever in scope up to the moment of reading). */
-    items: number;
+    /** Items followed (ever in scope up to the moment of reading); absent for a caller who is not a person (nothing is read). */
+    items?: number;
 }
 
 /** What the Analytics page offers (asked on the server). */

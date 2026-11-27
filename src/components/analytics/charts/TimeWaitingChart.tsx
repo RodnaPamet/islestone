@@ -5,9 +5,12 @@
  * docs/porting/maps/3.6.md, "Time waiting"; ADR 0006 "Time waiting", never
  * "Idle time", "Blocked time" or "Response time").
  *
- *   - **The totals**, for every reader: the share of open item time spent
- *     waiting on someone, the waits that ended with their median and 85th
- *     percentile, and how many items wait now.
+ *   - **The totals**, when the server gives them (a holder of
+ *     `analytics.people`, decision 335): the share of open item time spent
+ *     waiting on someone (open: Unstarted or Started, decision 336), the
+ *     waits that ended with their median and 85th percentile, and how many
+ *     items wait now. Without them, a sentence saying other people's figures
+ *     and the totals are shown to those allowed to see them.
  *   - **Per party**, the rows the server gave: every party's for a holder of
  *     `analytics.people`, else the reader's own (decision 329). Each a bar of
  *     the time waited in the window, split into waiting on and as a
@@ -82,11 +85,15 @@ export function TimeWaitingChart({ read }: { read: AnalyticsRead<WaitingResponse
                 ? tWait('summary.noOpenTime')
                 : tWait('summary.share', { share: Math.round(totals.share * 100), waiting: totals.itemTimeWaiting, open: totals.openItemTime })}{' '}
             {totals.ended.count > 0 && tWait('summary.ended', { count: totals.ended.count, p50: totals.ended.p50 ?? 0, p85: totals.ended.p85 ?? 0 })}{' '}
-            {tWait('summary.now', { count: totals.waitingNow })} {!data?.people && tWait('summary.ownRow')}
+            {tWait('summary.now', { count: totals.waitingNow })}
         </>
+    ) : data ? (
+        // Without analytics.people: one's own row, no totals (decision 335).
+        tWait('summary.ownRow')
     ) : undefined;
     const now = rows.flatMap((r, i) => r.waitingNowItems.map((w) => [names[i]!, w.key, w.title, tWait('days', { days: w.age }), w.asReviewer ? tWait('kind.review') : tWait('kind.waitingOn')] as const));
-    const nothing = !!data && data.totals.items === 0 && data.totals.waitingNow === 0;
+    // With the totals, nothing waited is an empty chart; one's own row alone is always shown, zeros included.
+    const nothing = !!data?.totals && data.totals.items === 0 && data.totals.waitingNow === 0;
     return (
         <ChartSection
             title={tWait('title')}

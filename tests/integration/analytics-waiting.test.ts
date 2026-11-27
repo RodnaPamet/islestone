@@ -8,16 +8,17 @@
  *     and review waits from the review rows, made through the review
  *     usecases (a reviewer who signed off, one still asked), by hand, in
  *     working days on a Monday-to-Friday calendar;
- *   - the totals: time waited, of it as a reviewer, open item time and the
- *     share spent waiting (two reviewers at once count the item once), the
+ *   - the totals: time waited, of it as a reviewer, open item time
+ *     (Unstarted and Started, never Backlog: decision 336) and the share
+ *     spent waiting (two reviewers at once count the item once), the
  *     items, the ended waits' median and 85th percentile, what waits now;
  *   - a deactivated member by name, every removed member as one anonymous
  *     row;
- *   - who sees which rows (decision 329): Owners and Admins every party,
- *     every other role its own row only (`people` absent, never empty), a
- *     custom grant or removal of `analytics.people` followed, a guest
- *     refused; a caller that is not a person reads the totals alone
- *     (decision 332);
+ *   - who sees what (decisions 329 and 335): Owners and Admins every party
+ *     and the totals, every other role its own row only (`people` and
+ *     `totals` absent, never empty), a custom grant or removal of
+ *     `analytics.people` followed, a guest refused; a caller that is not a
+ *     person reads no row and no totals (decisions 332 and 335);
  *   - the SQL read equals the pure rule (`segmentsOf`, `relevantSegments`)
  *     on random planted histories in several zones and scopes;
  *   - nothing is audited.
@@ -68,12 +69,13 @@ describeFn('time waiting (3.6b)', () => {
     let teamId = '';
     let p = '';
     let q = '';
+    let bk = '';
     let typeId = '';
     const states = {} as Record<WorkflowStateCategory, string>;
     const ids: Record<string, string> = {};
     const savedTz = process.env.NOTIFICATIONS_TZ;
 
-    async function history(item: string, rows: Array<{ at: Date; category: WorkflowStateCategory; waiting?: string | null }>) {
+    async function history(item: string, rows: Array<{ at: Date; category: WorkflowStateCategory; waiting?: string | null }>, projectId?: string) {
         await prisma.workItemTransition.deleteMany({ where: { workItemId: ids[item]! } });
         let previous: WorkflowStateCategory | null = null;
         for (const r of rows) {
@@ -81,7 +83,7 @@ describeFn('time waiting (3.6b)', () => {
                 data: {
                     tenantId,
                     workItemId: ids[item]!,
-                    projectId: p,
+                    projectId: projectId ?? p,
                     teamId,
                     stateId: states[r.category],
                     stateCategory: r.category,
@@ -130,7 +132,9 @@ describeFn('time waiting (3.6b)', () => {
         typeId = (await listWorkItemTypes(owner))[0]!.id;
         p = (await createProject(owner, { teamId, name: 'Platform', keyPrefix: 'PLT' })).id;
         q = (await createProject(owner, { teamId, name: 'Mobile', keyPrefix: 'MOB' })).id;
+        bk = (await createProject(owner, { teamId, name: 'Backlog', keyPrefix: 'BKL' })).id;
         for (const key of ['r1', 'w1', 'w2', 'w3']) ids[key] = (await createWorkItem(owner, { projectId: p, typeId, title: key })).id;
+        ids.b1 = (await createWorkItem(owner, { projectId: bk, typeId, title: 'b1' })).id;
 
         // r1: sent for review Wednesday 5 09:00 to Ana and Ben; Ana signs off Thursday 6 09:00; Ben is still asked.
         await setWorkItemReviewSteps(owner, ids.r1!, { steps: [{ name: 'Review', mode: 'ALL', dueInWorkingDays: 3, memberIds: [users.Ana!, users.Ben!], recipientListIds: [] }] });
@@ -162,6 +166,16 @@ describeFn('time waiting (3.6b)', () => {
             { at: at('03-17T09:00'), category: 'UNSTARTED', waiting: users.OWNER },
             { at: at('03-18T09:00'), category: 'UNSTARTED' },
         ]);
+        // b1 (its own project): waits on Ana Monday 10 to Wednesday 12 while in the backlog, then is Unstarted to now.
+        await history(
+            'b1',
+            [
+                { at: at('03-03T09:00'), category: 'BACKLOG' },
+                { at: at('03-10T09:00'), category: 'BACKLOG', waiting: users.Ana },
+                { at: at('03-12T09:00'), category: 'UNSTARTED' },
+            ],
+            bk,
+        );
     });
 
     afterAll(async () => {
@@ -219,27 +233,42 @@ describeFn('time waiting (3.6b)', () => {
             const out = await getTimeWaiting(ctxs[role], { ...WINDOW, projectId: p }, NOW);
             expect('people' in out).toBe(false);
             expect(out.self).toMatchObject({ party: { kind: 'member', name: role }, waited: 0 });
-            expect(out.totals.waited).toBe(26.3);
+            // No totals without the people key, in any scope (decision 335).
+            expect('totals' in out).toBe(false);
             // Nobody else's id reaches the answer.
             for (const other of [users.Ben, users.Deb, users.Former, users.OWNER]) expect(JSON.stringify(out)).not.toContain(other);
         }
         const mine = await getTimeWaiting(ana, { ...WINDOW, projectId: p }, NOW);
         expect('people' in mine).toBe(false);
+        expect('totals' in mine).toBe(false);
         expect(mine.self).toMatchObject({ party: { userId: users.Ana, name: 'Ana' }, waited: 3, asReviewer: 1 });
         await expect(getTimeWaiting(ctxs.GUEST, { ...WINDOW, projectId: p }, NOW)).rejects.toMatchObject({ status: 403 });
     });
 
     it('follows a custom grant or removal of analytics.people', async () => {
         const grant = (c: RequestContext, people: boolean): RequestContext => ({ ...c, appPermissions: { ...c.appPermissions, analytics: { ...c.appPermissions.analytics, people } } });
-        expect((await getTimeWaiting(grant(ctxs.MEMBER, true), { ...WINDOW, projectId: p }, NOW)).people).toHaveLength(6);
-        expect('people' in (await getTimeWaiting(grant(ctxs.ADMIN, false), { ...WINDOW, projectId: p }, NOW))).toBe(false);
+        const granted = await getTimeWaiting(grant(ctxs.MEMBER, true), { ...WINDOW, projectId: p }, NOW);
+        expect(granted.people).toHaveLength(6);
+        expect(granted.totals!.waited).toBe(26.3);
+        const removed = await getTimeWaiting(grant(ctxs.ADMIN, false), { ...WINDOW, projectId: p }, NOW);
+        expect('people' in removed).toBe(false);
+        expect('totals' in removed).toBe(false);
     });
 
-    it('gives a caller that is not a person the totals alone (decision 332)', async () => {
+    it('gives a caller that is not a person no row and no totals (decisions 332 and 335)', async () => {
         const out = await getTimeWaiting({ ...owner, apiKeyId: 'key_1' }, { ...WINDOW, projectId: p }, NOW);
         expect('people' in out).toBe(false);
         expect('self' in out).toBe(false);
-        expect(out.totals.waited).toBe(26.3);
+        expect('totals' in out).toBe(false);
+        expect('items' in out).toBe(false);
+        expect(out.from).toBe(WINDOW.from);
+    });
+
+    it('leaves Backlog time out of open time and the share, and counts the wait itself (decision 336)', async () => {
+        const out = await getTimeWaiting(owner, { ...WINDOW, projectId: bk }, NOW);
+        // Unstarted from Wednesday 12 09:00 to Friday 21 12:00, the weekend removed: 7.125 days; the wait was in the backlog.
+        expect(out.totals).toMatchObject({ waited: 2, openItemTime: 7.1, itemTimeWaiting: 0, share: 0, items: 1 });
+        expect(out.people!.find((r) => row(r) === 'Ana')).toMatchObject({ waited: 2, ended: { count: 1, p50: 2, p85: 2 } });
     });
 
     it("judges the scope as recorded: another project's waits are not this one's", async () => {

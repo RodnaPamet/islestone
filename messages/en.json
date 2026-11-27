@@ -3674,7 +3674,7 @@
                 "noOpenTime": "No item was open in this scope and window.",
                 "ended": "{count, plural, one {# wait ended} other {# waits ended}}: a median of {p50} days, 85% within {p85}.",
                 "now": "{count, plural, =0 {Nothing waits on anyone now.} one {# item waits on someone now.} other {# items wait on someone now.}}",
-                "ownRow": "You see your own row; other people's rows are shown to those allowed to see them."
+                "ownRow": "You see your own row; other people's figures and the totals are shown to those allowed to see them."
             },
             "aria": "Waited on {name} {days} days, {review} of them as a reviewer.",
             "caption": "Time waited per person in the window, in working days",

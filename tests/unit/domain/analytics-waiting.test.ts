@@ -14,7 +14,8 @@
  *     wait removed even when a row falls in it;
  *   - the window's overlap, ended waits' median and 85th percentile, what
  *     waits at the moment of reading, removed members as one party, and the
- *     share of open item time spent waiting (each instant once);
+ *     share of open item time spent waiting (each instant once; open time is
+ *     Unstarted and Started, never Backlog, decision 336);
  *   - properties: waits never overlap per item and person, the relevant
  *     segments (what the SQL read returns) give the same figures as every
  *     segment, the window's time never exceeds the whole, the share stays in
@@ -163,6 +164,24 @@ describe('figures', () => {
         // Open time: a 10 days, b 4 days; waiting: a 3 days (2 field, 1 review once), b 4.
         expect(fig.totals).toMatchObject({ waited: 8, asReviewer: 2, itemTimeWaiting: 7, openItemTime: 14, share: 0.5, items: 2, waitingNow: 0 });
         expect(fig.totals.ended).toEqual({ count: 4, p50: 1, p85: 4 });
+    });
+
+    it('leaves Backlog time out of open time and of the share, while the wait itself counts (decision 336)', () => {
+        const R = ms('2031-03-11T00:00:00Z');
+        const facts = [
+            f('k', '2031-03-01T00:00:00Z', 'BACKLOG', 'ana'),
+            f('k', '2031-03-03T00:00:00Z', 'BACKLOG', null),
+            f('k', '2031-03-06T00:00:00Z', 'STARTED', 'ana'),
+            f('k', '2031-03-07T00:00:00Z', 'STARTED', null),
+        ];
+        const all = segs(facts, R);
+        expect(all.map((x) => x.open)).toEqual([false, false, true, true]);
+        const fig = waitingFigures(fieldWaits(all), all, { start: ms('2031-03-01T00:00:00Z'), asOf: R }, meters(everyDay), (u) => u);
+        // Ana waited 2 days in the backlog and 1 started: 3 in her row; open time is the 5 Started days, 1 of them waiting.
+        expect(fig.parties.get('ana')).toMatchObject({ waited: 3, ended: { count: 2 } });
+        expect(fig.totals).toMatchObject({ openItemTime: 5, itemTimeWaiting: 1, share: 0.2 });
+        // Relevant segments drop a Backlog segment that names no one.
+        expect(relevantSegments(all, ms('2031-03-01T00:00:00Z'), new Set()).map((x) => x.ord)).toEqual([1, 3, 4]);
     });
 
     it('answers no share for no open item time', () => {
