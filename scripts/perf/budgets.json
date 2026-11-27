@@ -295,6 +295,14 @@
         }
       }
     }
+,
+    "dashboard-widgets-set": {
+      "write": true,
+      "label": "Write: a dashboard's whole widget list (PUT /dashboards/:id/widgets, If-Match)",
+      "budgets": { "10k": { "p95": 400 }, "100k": { "p95": 400 } },
+      "enforced": false,
+      "reportedBecause": "3.6d's write (docs/porting/maps/3.6.md, 'Performance'), at the other writes' 400 ms: reported and not enforced until the nightly 100k run has measured it, as 3.6's analytics scenarios"
+    }
   },
   "ratios": [
     {

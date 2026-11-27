@@ -1,10 +1,12 @@
 /**
- * The Analytics page end to end (sub-phase 3.6a; owner decisions 311, 324
- * and 329), on an isolated workspace: a project with two items, one of them
- * moved to Done through the API; the Analytics entry in the sidebar; the
- * counts (one open, one done in the window); throughput naming the
- * completion and its table; cumulative flow and the burn-up drawn; another
- * window read; and the reads answering the same numbers on the server. Time
+ * The Analytics page end to end (sub-phases 3.6a and 3.6d; owner decisions
+ * 311, 324, 326 and 329), on an isolated workspace: a project with two
+ * items, one of them moved to Done through the API; the Analytics entry in
+ * the sidebar; the default dashboard's widgets: the counts (one open, one
+ * done in the window); throughput naming the completion and its table;
+ * cumulative flow and the burn-up drawn; and the reads answering the same
+ * numbers on the server (another window is a widget's setting, in
+ * dashboards.spec.ts). Time
  * waiting (3.6b): the open item made to wait on the owner, the section's
  * totals and the owner's row (an Owner holds `analytics.people`), what waits
  * now, and the server's answer.
@@ -38,7 +40,7 @@ async function seed(api: APIRequestContext, slug: string) {
 }
 
 test.describe('analytics', () => {
-    test('counts, throughput with its table, flow, the burn-up and time waiting over the last twelve weeks, and another window', async ({ authedPage: page, isolatedTenant }) => {
+    test('the default dashboard: counts, throughput with its table, flow, the burn-up and time waiting over the last twelve weeks', async ({ authedPage: page, isolatedTenant }) => {
         const slug = isolatedTenant.tenantSlug;
         const { projectId, planned } = await seed(page.request, slug);
         // The open item waits on the owner (3.6b).
@@ -71,12 +73,6 @@ test.describe('analytics', () => {
         const perPerson = waitingSection.getByRole('table', { name: 'Time waited per person in the window, in working days' });
         await expect(perPerson.getByRole('rowheader', { name: isolatedTenant.ownerName })).toBeVisible();
         await expect(waitingSection.getByRole('table', { name: 'What waits now, the oldest first' }).getByRole('cell', { name: 'FLW-2' })).toBeVisible();
-
-        // Another window: four weeks ending today.
-        const read = page.waitForResponse((r) => new URL(r.url()).pathname === `/api/t/${slug}/analytics/throughput` && new URL(r.url()).searchParams.get('from') === e2eDay(-27));
-        await main.getByRole('radio', { name: '4 weeks' }).click();
-        expect((await read).status()).toBe(200);
-        await expect(main.getByTestId('analytics-count-done')).toHaveText('1');
 
         // The server's answer for the project, as the page reads it.
         const flow = (await (await page.request.get(`/api/t/${slug}/analytics/flow?projectId=${projectId}&from=${e2eDay(-6)}&to=${e2eToday()}&burnUp=1`)).json()) as {

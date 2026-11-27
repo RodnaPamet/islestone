@@ -229,7 +229,8 @@ export async function createDashboard(ctx: RequestContext, input: CreateDashboar
         if ((await DashboardRepository.countCreatedBy(db, ctx, ctx.userId)) >= DASHBOARD_LIMITS.perPerson) {
             throw new AppError(`A person keeps at most ${DASHBOARD_LIMITS.perPerson} dashboards.`, DASHBOARD_LIMIT, 409, true, { reason: DASHBOARD_LIMIT, limit: DASHBOARD_LIMITS.perPerson });
         }
-        const id = await DashboardRepository.create(db, ctx, { name, visibility: input.visibility }, widgets);
+        const created = await DashboardRepository.create(db, ctx, { name, visibility: input.visibility }, widgets);
+        const id = created.id;
         await logEvent(db, ctx, {
             action: 'DASHBOARD_CREATED',
             entityType: 'Dashboard',
@@ -238,7 +239,8 @@ export async function createDashboard(ctx: RequestContext, input: CreateDashboar
             detailsJson: { category: 'entity_lifecycle', entityName: 'Dashboard', operation: 'created' },
             metadata: { visibility: input.visibility, ...widgetCounts(widgets) },
         });
-        return readDashboard(db, ctx, id);
+        // Its creator is the caller, an active member: answered as written, no read back.
+        return toDashboardData(created, ctx, new Set([ctx.userId]));
     });
 }
 
@@ -315,7 +317,7 @@ export async function setDashboardWidgets(ctx: RequestContext, id: string, widge
         if (new Set(ids).size !== ids.length) throw badRequest('A widget appears twice.');
         // The version claims the row: a concurrent layout write waits, then finds it moved.
         if (!(await DashboardRepository.updateVersioned(db, ctx, row.id, expectedVersion, {}))) await throwConflict(db, ctx, row.id);
-        await DashboardRepository.replaceWidgets(db, ctx, row.id, writes);
+        const written = await DashboardRepository.replaceWidgets(db, ctx, row.id, writes);
         await logEvent(db, ctx, {
             action: 'DASHBOARD_WIDGETS_SET',
             entityType: 'Dashboard',
@@ -324,7 +326,8 @@ export async function setDashboardWidgets(ctx: RequestContext, id: string, widge
             detailsJson: { category: 'entity_lifecycle', entityName: 'DashboardWidget', operation: 'updated' },
             metadata: { visibility: row.visibility, ...widgetCounts(writes), previousWidgetCount: row.widgets.length },
         });
-        return readDashboard(db, ctx, row.id);
+        // Only its creator changes it, so the caller, a member: answered as written, the version the claim left.
+        return toDashboardData({ ...row, version: row.version + 1, updatedAt: new Date(), widgets: written }, ctx, new Set([ctx.userId]));
     });
 }
 

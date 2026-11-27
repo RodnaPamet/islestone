@@ -303,9 +303,10 @@ const SCENARIOS: Scenario[] = [
     { name: 'forecast: the current cycle, from its team', file: `${ROUTES}/analytics/forecast/route.ts`, method: 'GET', path: (w) => `/analytics/forecast?teamId=${w.teamId}&cycleId=${w.currentCycleId}`, budget: 9 },
     // ── end of the 3.6c forecasting block ──
     // Dashboards (3.6d; the map's budget: a dashboard's list at most 4): the tenant binding, the heavy member's own and
-    // every shared dashboard, and the memberships of the shared ones' creators; one dashboard read with its widgets; and
-    // a layout write (the dashboard, its version claimed, the widgets replaced, the audit entry, the dashboard read
-    // back). The setup writes the heavy member's dashboards on the direct connection; each run's If-Match is the
+    // every shared dashboard, and the memberships of the shared ones' creators (3 measured on a fresh 10k seed); one
+    // dashboard read with its widgets and its creator's membership (4); and a layout write (the dashboard and its
+    // widgets read, its version claimed, the widgets deleted and inserted as returned, the audit entry and its chain:
+    // 15 measured, answered as written with no read back). The setup writes the heavy member's dashboards on the direct connection; each run's If-Match is the
     // version the run before left (the warm-up is run -1).
     { name: 'dashboards: the list', file: `${ROUTES}/dashboards/route.ts`, method: 'GET', setup: perfDashboards, path: () => '/dashboards', budget: 4, answers: (b) => b.includes(`"id":"${PERF_DASHBOARD_ID}"`) },
     {
@@ -367,7 +368,7 @@ const SCENARIOS: Scenario[] = [
         params: () => ({ dashboardId: PERF_LAYOUT_DASHBOARD_ID }),
         headers: (_w, run) => ({ 'if-match': `"${run + 2}"` }),
         body: () => ({ widgets: PERF_WIDGETS }),
-        budget: 14,
+        budget: 15,
     },
     // Time off (3.5a): one's own date recorded, a write of its own (the person's lock, the membership FOR KEY SHARE,
     // the dates it names, the insert and two hash-chained audit entries). Each run a date of its own.

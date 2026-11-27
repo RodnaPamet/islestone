@@ -87,12 +87,17 @@ export class DashboardRepository {
         return db.dashboard.count({ where: { tenantId: ctx.tenantId, createdByUserId: userId } });
     }
 
-    static async create(db: PrismaTx, ctx: RequestContext, data: { name: string; visibility: DashboardVisibility }, widgets: readonly DashboardWidgetWrite[]): Promise<string> {
-        const row = await db.dashboard.create({ data: { tenantId: ctx.tenantId, createdByUserId: ctx.userId, ...data }, select: { id: true } });
-        if (widgets.length > 0) {
-            await db.dashboardWidget.createMany({ data: widgets.map((w) => ({ ...w, id: undefined, tenantId: ctx.tenantId, dashboardId: row.id })) });
-        }
-        return row.id;
+    /** A new dashboard and its widgets, answered as written (no read back). */
+    static async create(db: PrismaTx, ctx: RequestContext, data: { name: string; visibility: DashboardVisibility }, widgets: readonly DashboardWidgetWrite[]): Promise<DashboardRow> {
+        const row = await db.dashboard.create({ data: { tenantId: ctx.tenantId, createdByUserId: ctx.userId, ...data }, select: dashboardSummarySelect });
+        return { ...row, widgets: await DashboardRepository.insertWidgets(db, ctx, row.id, widgets) };
+    }
+
+    /** Insert widgets and answer them as written, in reading order. */
+    private static async insertWidgets(db: PrismaTx, ctx: RequestContext, dashboardId: string, widgets: readonly DashboardWidgetWrite[]): Promise<DashboardWidgetRow[]> {
+        if (widgets.length === 0) return [];
+        const rows = await db.dashboardWidget.createManyAndReturn({ data: widgets.map((w) => ({ ...w, tenantId: ctx.tenantId, dashboardId })), select: dashboardWidgetSelect });
+        return rows.sort((a, b) => a.y - b.y || a.x - b.x || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     }
 
     /**
@@ -114,12 +119,10 @@ export class DashboardRepository {
         return result.count === 1;
     }
 
-    /** Replace the widgets of a dashboard whose row this transaction has just updated (and so holds). */
-    static async replaceWidgets(db: PrismaTx, ctx: RequestContext, dashboardId: string, widgets: readonly DashboardWidgetWrite[]): Promise<void> {
+    /** Replace the widgets of a dashboard whose row this transaction has just updated (and so holds); answered as written. */
+    static async replaceWidgets(db: PrismaTx, ctx: RequestContext, dashboardId: string, widgets: readonly DashboardWidgetWrite[]): Promise<DashboardWidgetRow[]> {
         await db.dashboardWidget.deleteMany({ where: { tenantId: ctx.tenantId, dashboardId } });
-        if (widgets.length > 0) {
-            await db.dashboardWidget.createMany({ data: widgets.map((w) => ({ ...w, tenantId: ctx.tenantId, dashboardId })) });
-        }
+        return DashboardRepository.insertWidgets(db, ctx, dashboardId, widgets);
     }
 
     /** Delete one dashboard; its widgets go by their cascade. */

@@ -224,7 +224,15 @@ async function discover(userId) {
     const week = await getJson(`/time-entries?week=${timeWeek}`);
     const timeItem = week.entries.find((e) => e.item?.kind === 'visible' && e.minutes !== null)?.item;
     if (!timeItem) usage(`the heavy member has no time on a visible item in the week of ${timeWeek}`);
-    return { userId, projects: sized, project, big, bigStates, todo, selectField, item, open, backlog, unstarted, started, typeId: types[0].id, timeline, columns, timeWeek, timeItem };
+    // Dashboards (3.6d's write scenario): the heavy member's own "Perf harness" dashboard, made once and kept.
+    const dashboards = await getJson('/dashboards');
+    let dashboard = dashboards.dashboards.find((d) => d.mine && d.name === 'Perf harness');
+    if (!dashboard) {
+        const made = await call('POST', api('/dashboards'), { body: { name: 'Perf harness', visibility: 'PERSONAL' } });
+        if (made.status !== 201) usage(`could not make the harness's dashboard: ${made.status}`);
+        dashboard = bodyOf(made);
+    }
+    return { userId, projects: sized, project, big, bigStates, todo, selectField, item, open, backlog, unstarted, started, typeId: types[0].id, timeline, columns, timeWeek, timeItem, dashboard };
 }
 
 // ── Scenarios ──────────────────────────────────────────────────────────
@@ -283,6 +291,13 @@ function scenarioRunners(w) {
     const columns = () => w.bigStates.map((s) => listQ(`projectId=${w.big.id}&stateId=${s.id}&order=manual&limit=50`));
     let timelineExtra = null;
     let roadmapExtra = null;
+    let dashboardVersion = w.dashboard.version;
+    // The default composition's first three widgets, sent whole by every layout write (3.6d).
+    const dashboardWidgets = [
+        { type: 'COUNTS', config: { scope: { filters: {} }, window: { kind: 'weeks', weeks: 12 } }, position: { x: 0, y: 0 }, size: { w: 12, h: 3 } },
+        { type: 'THROUGHPUT', config: { scope: { filters: {} }, window: { kind: 'weeks', weeks: 12 }, bin: 'week' }, position: { x: 0, y: 3 }, size: { w: 6, h: 6 } },
+        { type: 'CYCLE_TIME', config: { scope: { filters: {} }, window: { kind: 'weeks', weeks: 12 } }, position: { x: 6, y: 3 }, size: { w: 6, h: 6 } },
+    ];
     return {
         'list-project': single('GET', listQ(`projectId=${p}&order=manual&limit=50`), listCheck),
         'list-workspace-due': single('GET', listQ(`stateCategory=${OPEN_CATEGORIES}&priority=HIGH,URGENT&order=due&limit=50`), listCheck),
@@ -348,6 +363,13 @@ function scenarioRunners(w) {
         'bulk-state': single('POST', (run) => ({ path: api('/work-items/bulk/state'), body: { workItemIds: bulkIds, stateId: run % 2 === 0 ? w.unstarted.id : w.backlog.id } }), null),
         // Adding time (3.4d's write scenario): one minute on a day of its own far ahead, so no day fills across runs.
         'time-add': single('POST', (run) => ({ path: api('/time-entries'), body: { workItemId: w.timeItem.id, workDate: dayOf(Date.UTC(2099, 0, 1) + (Math.abs(run) % 1000) * DAY_MS), minutes: 1 } }), null),
+        // Dashboards (3.6d), run last: the heavy member's dashboard's whole widget list, on the version the last write left.
+        'dashboard-widgets-set': single(
+            'PUT',
+            (run) => ({ path: api(`/dashboards/${w.dashboard.id}/widgets`), body: { widgets: dashboardWidgets.map((x, i) => (i === 0 ? { ...x, size: { w: 12, h: 3 + (run % 2) } } : x)) }, headers: { 'if-match': `"${dashboardVersion}"` } }),
+            null,
+            { after: (b) => (dashboardVersion = b.version) },
+        ),
         _timelineExtra: () => timelineExtra,
         _roadmapExtra: () => roadmapExtra,
     };

@@ -22,6 +22,7 @@ import type { PrismaClient } from '@prisma/client';
 
 import { SORT_KEY_REBALANCE_LENGTH } from '@/app-layer/domain/fractional-index';
 import { visibleProjects, type ProjectVisibility } from '@/app-layer/policies/project-visibility';
+import { DashboardRepository } from '@/app-layer/repositories/DashboardRepository';
 import { ProjectRepository } from '@/app-layer/repositories/ProjectRepository';
 import { ReviewRepository } from '@/app-layer/repositories/ReviewRepository';
 import { SearchVectorRepository } from '@/app-layer/repositories/SearchVectorRepository';
@@ -317,6 +318,8 @@ const RUNNERS: Record<string, Runner> = {
     'forecast: the open items per project': (w, db, ctx, v) => WorkItemRepository.openCountsByProject(db, ctx, v, { projectId: w.bigProjectId }, null, today()),
     "forecast: the record's completions of a project": (w, db, ctx, v) =>
         WorkItemTransitionRepository.completionSpanRows(db, ctx, recordScope(v, { projectIds: [w.bigProjectId] }), { from: new Date(Date.now() - 64 * 7 * DAY), asOf: new Date() }, 20_001),
+    // Dashboards (3.6d): the heavy member's list.
+    "dashboards: a person's list": (w, db, ctx) => DashboardRepository.list(db, ctx),
     'job: the search-index rebuild': async (w, db, ctx) => {
         // One page of each kind, through the keyset (after 'c', which sorts before every cuid): a page
         // reads its own rows only, so its cost does not grow with the workspace (issue #79).

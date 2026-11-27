@@ -27,7 +27,8 @@ const runSource = fs.readFileSync(path.join(ROOT, 'scripts/perf/run.mjs'), 'utf8
  * load's, adding time at a write's), and for the workload read and the
  * time-off write 3.5's (docs/porting/maps/3.5.md, "Performance"; the write
  * at the other writes' 400 ms), and for analytics 3.6a's
- * (docs/porting/maps/3.6.md, "Performance"): the ceiling of every budget. A
+ * (docs/porting/maps/3.6.md, "Performance"; and 3.6d's layout write at
+ * the writes' 400 ms): the ceiling of every budget. A
  * budget may go down; it never goes above these.
  */
 const DECIDED: Record<string, Record<'10k' | '100k', { p50?: number; p95: number }>> = {
@@ -61,6 +62,8 @@ const DECIDED: Record<string, Record<'10k' | '100k', { p50?: number; p95: number
     'time-item': { '10k': { p50: 80, p95: 200 }, '100k': { p50: 80, p95: 200 } },
     'time-totals': { '10k': { p50: 250, p95: 500 }, '100k': { p50: 300, p95: 700 } },
     'time-add': { '10k': { p95: 400 }, '100k': { p95: 400 } },
+    // 3.6d's: a dashboard's layout write, at the other writes' 400 ms.
+    'dashboard-widgets-set': { '10k': { p95: 400 }, '100k': { p95: 400 } },
 };
 const DECIDED_BROWSER: Record<string, number> = { list: 1300, board: 2000, detail: 600, timeline: 2000 };
 
@@ -118,7 +121,7 @@ describe('budgets.json', () => {
     });
 
     it('marks the writes, which run after every read so their rows and vacuum never sit under a read', () => {
-        expect(Object.entries(budgets.scenarios).filter(([, b]) => b.write).map(([id]) => id).sort()).toEqual(['bulk-state', 'create', 'edit', 'move', 'reorder', 'time-add', 'time-off-set']);
+        expect(Object.entries(budgets.scenarios).filter(([, b]) => b.write).map(([id]) => id).sort()).toEqual(['bulk-state', 'create', 'dashboard-widgets-set', 'edit', 'move', 'reorder', 'time-add', 'time-off-set']);
         const main = runSource.slice(runSource.indexOf('// ── Main'));
         expect(main.indexOf('await runApi(world, false)')).toBeGreaterThan(0);
         expect(main.indexOf('await runApi(world, false)')).toBeLessThan(main.indexOf('await runBrowser('));
