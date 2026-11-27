@@ -28,11 +28,12 @@ Roadmap 3.1 asks for a timeline view on SVAR React Gantt's MIT core and an in-ho
 - One bulk route changes dates for a chain. Its reach is bounded by the graph (`NOT_DOWNSTREAM`), its direction by `PUSH_NOT_LATER`, its size by 100 items; it is the only multi-item date write besides the bulk due-date action.
 - The browser bundle carries SVAR's code without its notice (decision 199).
 - A scope over 5,000 items is refused, never truncated; the engine's own limit (20,000) protects 7.5 and other server callers.
+- A person's capacity (roadmap 3.5, ADR 0013, decision 285) counts on a working calendar too: the workspace's, or a team's named on their capacity. Time off lowers that capacity only; it moves no item's working days (decision 290), so this decision is unchanged by it.
 
 ## What would change this decision
 
 - Customers need start-to-start or finish-to-finish dependencies, or lag (a new relation shape and an ADR 0002 amendment).
-- Personal time off must shape schedules (roadmap 3.5), or automatic levelling or rescheduling is wanted beyond agent proposals.
+- Personal time off must shape schedules (roadmap 3.5 decided it does not: decision 290, ADR 0013), or automatic levelling or rescheduling is wanted beyond agent proposals.
 - SVAR PRO is bought (an ADR 0007 exemption and a new pin), or the core changes its licence.
 - The engine cannot meet the 5,000-item budget.
 - The owner revisits decision 199 (a generated notices file, or a `NOTICE` section).
