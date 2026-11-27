@@ -1,6 +1,6 @@
 # 0005 — Data sync strategy
 
-Status: Accepted (owner decisions, 2026-11-19)
+Status: Accepted (owner decisions, 2026-11-19; amended for roadmap 4.1 by owner decisions 340, 345, 348, 359, 360 and 362, 2026-11-27, ADR 0015: HTML rendered at use (§6.4), versions as content JSON (§6.9), one collaboration instance (§6.1), the `access` and `page` notices published from 4.1 (§4), the caps' values (open question 10), and rich-text descriptions still row fields (§6.13))
 
 ## Context
 
@@ -187,6 +187,8 @@ type ChangeNotice =
 - inflect-compliance's stream authenticates only at connect. Islestone adds the re-check because H1 requires that revocation signs a person out, and H4 that a person who loses access is disconnected.
 - Open streams are capped per person and per workspace. Values are set at H4. Over the cap is a 429. **Decision:** the caps as written, Owner decision, 2026-11-19 (open question 10).
 
+**Amendment for roadmap 4.1 (owner decision 360, 2026-11-27; ADR 0015 §9).** The `access` notice and a new `page` notice (`{ kind: 'page'; op: 'delete' | 'move' | 'scope'; pageId }`, content-free) are published from 4.1, not 4.3: after their commits, the usecases that take access away (member removal, a role or custom-role change, session revocation and "revoke all", a page's delete and move, a project's archive, delete and restore) publish through the one guarded publish function on the per-workspace Redis channel, and the collaboration server closes or downgrades the affected connections at once. 4.3 builds the SSE stream and every other notice kind on the same function and channel. The token refresh stays the backstop.
+
 ### 5. Presence
 
 - **Pages and canvases:** Yjs awareness, over the same connection as the content.
@@ -200,6 +202,8 @@ type ChangeNotice =
 ### 6. Pages and canvases: Yjs and Hocuspocus
 
 **6.1 The collaboration server.** Hocuspocus 4.x runs as its own Node process, as the BullMQ worker does (roadmap 1.6). This ADR does not rely on Next.js accepting WebSocket upgrades. Several instances share documents through the Redis extension.
+
+- **Amendment for roadmap 4.1 (owner decisions 357 to 359, 2026-11-27; ADR 0015 §9).** 4.1 runs **one** instance, a `collab` service from the worker image, with documents in its memory and no Redis extension, so no page update crosses Redis; the extension's dependency `@sesamecare-oss/redlock` 1.4.0 declares `UNLICENSED`. Several instances are deferred to a later decision with its own measurement and licence question. Browsers reach it on the app's own origin under `/collab/`, routed by Caddy.
 
 **6.2 Every connection is authorised, and stays authorised.**
 
@@ -222,6 +226,7 @@ type ChangeNotice =
 - The encoded state is stored in a workspace table (working name `PageContent`), written by `onStoreDocument`.
 - On each store, the collaboration server also writes derived projections: plain text (for search, under ADR 0002 section 11's search decision: S1 for now, so the stored page text is not searched; ADR 0008 (2026-11-20) indexes work-item descriptions and comments only, and pages need an amendment to it before their text is searched), sanitised HTML (for export and email), and the list of mentioned work items (for backlinks).
 - Projections are derived only from the Yjs state, through the editor's schema. Nothing else writes them.
+- **Amendment for roadmap 4.1 (owner decision 345, 2026-11-27; ADR 0015 §2).** Sanitised HTML is **not stored**: the stored projections are the content JSON and the plain text (with the mention rows); HTML is rendered from the content JSON at each export or email and passed through `sanitizeRichTextHtml`, so the sanitiser's current rules apply at the point of use. Page text is searched since decision 347 (ADR 0008, amended).
 
 **6.5 Canvas content: C1.**
 
@@ -247,6 +252,8 @@ type ChangeNotice =
 
 **6.9 Version history (roadmap 4.1).** Full encoded snapshots at intervals and on an explicit save, kept for the period the retention table sets (8.3). A restore is a server-side write through section 6.6.
 
+- **Amendment for roadmap 4.1 (owner decisions 348 and 349, 2026-11-27; ADR 0015 §4).** A page version holds the page's **content JSON**, encrypted, not an encoded Yjs state: a document with garbage collection on records no usable history, and viewing, comparing and restoring all need the content. Versions are made when editing goes quiet for 10 minutes and at most hourly, on "Save version" and before every restore; automatic ones are thinned, saved ones kept until the retention table (8.3) says otherwise. A restore is still a forward change through section 6.6.
+
 **6.10 Comments on pages are `Comment` rows** (ADR 0006), anchored by an encoded Yjs relative position stored on the comment row. Their text never enters the Yjs document, so comments keep their sanitisation, permissions and audit.
 
 **6.11 Audit.** Keystrokes are not audited. A store writes one audit entry per contributing person per page in a 10-minute window, saying "edited the page" without the text. This follows ADR 0002 section 11 for encrypted fields. **Decision:** 10 minutes, Owner decision, 2026-11-19 (open question 7); the owner chose "Accept all".
@@ -254,6 +261,8 @@ type ChangeNotice =
 **6.12 Agents and the assistant never connect to the collaboration server.** Their read tools read the projections. Their writes are proposals, applied through section 6.6 when approved.
 
 **6.13 Work-item descriptions stay row fields** with `If-Match` and 409 (ADR 0002 section 9), not Yjs. ADR 0002 names Yjs descriptions as the way out if conflicts become common. That is a measured decision, not a default.
+
+- **Read for roadmap 4.1 (owner decision 340, 2026-11-27; ADR 0015 §8).** Descriptions and comments become **rich text** in 4.1g: a document of the editor's item-text nodes, edited without collaboration and stored as an encrypted column beside its plain-text projection. This section still holds: a description is a row field written whole with `If-Match`, never a Yjs document, and comments are form writes with one author; only the field's format changes.
 
 **6.14 The canvas library (ADR 0001, D3).**
 
@@ -315,7 +324,7 @@ Questions 1 to 7, 10 and 11 were answered on 2026-11-19 in the working session; 
 7. Answered: one audit entry per person per page per 10 minutes (section 6.11).
 8. Open, not blocking. Does the hosting target (roadmap open decision 5) keep long-lived SSE and WebSocket connections? A serverless-only host would change sections 4 and 6. It belongs to roadmap open decision 5.
 9. Open, not blocking. Does 8.5's PWA quick capture need to work offline? If yes, condition 1 fires. It belongs to sub-phase 8.5.
-10. Answered: a 60-second token lifetime, a 60-second stream re-check, and the connection and update caps as written (sections 4 and 6.2); H4 sets the cap values.
+10. Answered: a 60-second token lifetime, a 60-second stream re-check, and the connection and update caps as written (sections 4 and 6.2); H4 sets the cap values. For the collaboration server the values are owner decision 362 (2026-11-27), recorded in ADR 0015 §9; H4 sets the final ones.
 11. Answered: the new words "change notice", "collaboration server", "collaboration token", "page content" (`PageContent`, a working name) and "projection" are confirmed. ADR 0006 lists them as decided rows.
 
 ## Consequences
