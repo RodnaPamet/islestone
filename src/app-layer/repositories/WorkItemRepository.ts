@@ -2060,10 +2060,16 @@ export class WorkItemRepository {
         return result.count;
     }
 
-    /** Projects of the workspace deleted before `before`, a batch at a time. */
+    /**
+     * Projects of the workspace deleted before `before`, a batch at a time.
+     * A project time was recorded in is held, with its items, while its time
+     * entries remain (3.4b): entries are kept for the workspace's life and stay
+     * with the project they were recorded in (decisions 261 and 277), and
+     * `TimeEntry.projectId` is NOT NULL.
+     */
     static async purgeableProjectIds(db: PrismaTx, ctx: RequestContext, before: Date, take: number) {
         const rows = await db.project.findMany({
-            where: { tenantId: ctx.tenantId, deletedAt: { lt: before } },
+            where: { tenantId: ctx.tenantId, deletedAt: { lt: before }, timeEntries: { none: {} } },
             orderBy: { id: 'asc' },
             take,
             select: { id: true },

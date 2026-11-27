@@ -7,7 +7,8 @@
  *      cycle pages (`src/components/cycles/**`, 2.5a), the milestone pages
  *      (`src/components/milestones/**`, 2.5b), the recipient-list pages
  *      (`src/components/recipient-lists/**`, 2.7e) and the Roadmap pages
- *      (`src/components/goals/**`, 3.2b), every
+ *      (`src/components/goals/**`, 3.2b) and the Time pages
+ *      (`src/components/time/**`, 3.4b), every
  *      DELETE request and every bulk delete is sent from inside a
  *      `triggerUndo(…)` or `removeWithUndo(…)` call, so nothing leaves the
  *      server until the undo window closes.
@@ -49,6 +50,7 @@ const SITE_CONTRACTS: Record<string, string> = {
     'src/components/settings/use-type-review-steps.ts': 'removing a default review step of a type (Settings → a type → Review steps, 2.8c)',
     'src/components/goals/use-goals.ts': 'goal and initiative delete, and taking a project off an initiative (the Goals and Initiatives pages and their pages, 3.2b)',
     'src/components/calendar-sync/use-calendar-sync.ts': "disconnecting a member's own calendar and withdrawing Microsoft 365's consent, both removing synced events (the member's Calendar sync section and Settings → Calendar sync, 3.3b)",
+    'src/components/time/data/use-time.ts': "deleting one's own time entry and discarding a running timer (My time and an item's Time panel, 3.4b, decision 277)",
     'src/components/work-items/data/use-timeline-writes.ts': 'a change of dates with the items it pushes later, held before it is sent, and removing a dependency (the timeline, 3.1c, decision 194)',
 };
 
@@ -57,7 +59,7 @@ const UNDO_CALLEES = new Set(['triggerUndo', 'removeWithUndo']);
 /** A DELETE through `apiSend`, or through the Settings pages' `send` wrapper, or a bulk delete. */
 const DESTRUCTIVE = /(?:apiSend|(?<![\w.$])send)\s*(?:<[^>]*>)?\s*\(\s*'DELETE'|\/bulk\/delete/g;
 /** The folders whose deletes must leave through the undo toast. */
-const UNDO_ROOTS = ['src/components/work-items/', 'src/components/settings/', 'src/components/cycles/', 'src/components/milestones/', 'src/components/recipient-lists/', 'src/components/goals/', 'src/components/calendar-sync/'];
+const UNDO_ROOTS = ['src/components/work-items/', 'src/components/settings/', 'src/components/cycles/', 'src/components/milestones/', 'src/components/recipient-lists/', 'src/components/goals/', 'src/components/calendar-sync/', 'src/components/time/'];
 
 function ownSources(root: string): Array<{ rel: string; code: string }> {
     const mirrorFile = path.join(root, 'ui-mirror.json');

@@ -61,6 +61,8 @@ function membershipDb(membership: { role: string; status?: string }, owners = 2)
         // Sub-phase 3.2a: goals and initiatives the member leads lose their lead.
         goal: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
         initiative: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+        // Sub-phase 3.4b: the member's running timer is stopped (none here); the timer lock is a raw statement.
+        timeEntry: { findFirst: jest.fn().mockResolvedValue(null) },
         // Roadmap 3.3b: the member's calendar connections move to DISCONNECTING.
         calendarConnection: { findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
         // Sub-phase 2.8a: the member's reviewer rows still asked are withdrawn first.

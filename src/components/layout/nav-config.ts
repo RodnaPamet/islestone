@@ -16,7 +16,7 @@
 import type { Role } from '@prisma/client';
 import { useTranslations } from 'next-intl';
 
-import { Bell, CalendarRefresh, EnvelopeArrowRight, Folder, GridLayoutRows, InputField, MarketingTarget, UserCheck, Views } from '@inflect/ui/components/ui/icons/nucleo';
+import { Bell, CalendarRefresh, Timer2, EnvelopeArrowRight, Folder, GridLayoutRows, InputField, MarketingTarget, UserCheck, Views } from '@inflect/ui/components/ui/icons/nucleo';
 import { membershipOpensAdminConsole } from '@/lib/auth/edge-admin-roles';
 import type { PermissionSet } from '@/lib/permissions';
 import { usePendingIntakeCount } from '@/components/intake/data/intake-data';
@@ -28,6 +28,8 @@ import type { NavGlyph } from './nav-item';
 export const NAV_PATHS = {
     myWork: '/my-work',
     inbox: '/inbox',
+    // Sub-phase 3.4b: one sidebar entry, Time, over My time (3.4c adds Timesheets, 3.4d Time totals).
+    time: '/time',
     workItems: '/work-items',
     projects: '/projects',
     cycles: '/cycles',
@@ -42,6 +44,9 @@ export const NAV_PATHS = {
     initiatives: '/roadmap/initiatives',
     settings: '/settings',
 } as const;
+
+/** The Time entry's area: every page under it (3.4b; Timesheets and Time totals join it). */
+export const TIME_AREA = '/time';
 
 /** The Roadmap entry's area: every page under it (decision 222). */
 export const ROADMAP_AREA = '/roadmap';
@@ -82,7 +87,7 @@ export interface NavSectionDef {
 /**
  * The sidebar's sections.
  *
- *   (untitled)   My Work, Inbox — the member's own work and notifications
+ *   (untitled)   My Work, Inbox, Time (3.4b) — the member's own work, notifications and time
  *   Workspace    Work items, Projects, Cycles (2.5a), Roadmap (3.2b), Intake and Forms (2.6a), Views
  *
  * Settings is the footer gear, not a row. Work items (the workspace-wide
@@ -103,6 +108,16 @@ export function useNavSections(): NavSectionDef[] {
             items: [
                 { key: 'myWork', href: tenantHref(NAV_PATHS.myWork), label: t('myWork'), icon: UserCheck },
                 { key: 'inbox', href: tenantHref(NAV_PATHS.inbox), label: t('inbox'), icon: Bell },
+                // Sub-phase 3.4b (decision 265): the person's own time, for holders of time.track
+                // (and, from 3.4c, those who approve weeks), current on every page under /time.
+                {
+                    key: 'time',
+                    href: tenantHref(NAV_PATHS.time),
+                    label: t('time'),
+                    icon: Timer2,
+                    visible: mayOpenTimeOf(perms),
+                    activePrefix: tenantHref(TIME_AREA),
+                },
             ],
         },
         {
@@ -156,4 +171,14 @@ export function useMayOpenSettings(): boolean {
     const perms = usePermissions();
     const { membershipRole } = useTenantContext();
     return mayOpenSettings(perms, membershipRole);
+}
+
+/** The Time entry's rule (3.4b): a holder of `time.track` or `time.approve`. The page asks the same on the server. */
+export function mayOpenTimeOf(perms: PermissionSet): boolean {
+    return perms.time?.track === true || perms.time?.approve === true;
+}
+
+/** Whether the current member may open the Time entry (`mayOpenTimeOf`). */
+export function useMayOpenTime(): boolean {
+    return mayOpenTimeOf(usePermissions());
 }

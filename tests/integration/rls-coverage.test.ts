@@ -326,6 +326,7 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             'TenantMembership',
             'TenantNotificationSettings',
             'TenantSecuritySettings',
+            'TimeEntry',
             'UserMfaEnrollment',
             'UserSession',
             'WorkItem',

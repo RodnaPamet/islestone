@@ -53,6 +53,7 @@ import { lockTenantOwners } from './tenant-owner-lock';
 import { clearPersonValuesInTx } from './custom-field';
 import { GoalRepository } from '../repositories/GoalRepository';
 import { InitiativeRepository } from '../repositories/InitiativeRepository';
+import { stopTimerOfRemovedMemberInTx } from './time-entry';
 import { WorkItemTemplateRepository } from '../repositories/TemplateRepository';
 import { withdrawReviewerRowsOfUser, type ReviewNoticeOut } from './review-engine';
 import { MembershipRepository } from '../repositories/MembershipRepository';
@@ -728,6 +729,11 @@ export async function removeTenantMember(
         // waits for this transaction and finds the person gone, a 400.
         await MembershipRepository.lockForDelete(db, ctx, membership.id);
         const second = await clearRowsNamingMember(db, ctx, membership.id, membership.userId, 2);
+
+        // Sub-phase 3.4b: their running timer stops and is recorded (the map's rule); their
+        // entries stay, kept for the workspace's life (decision 277), audited in time-entry.ts.
+        // After the membership's lock, so a timer started between the passes is stopped too.
+        await stopTimerOfRemovedMemberInTx(db, ctx, membership.userId);
 
         await db.tenantMembership.delete({
             where: { id: input.membershipId },

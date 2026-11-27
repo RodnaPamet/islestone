@@ -38,6 +38,10 @@ export interface PerfWorld {
     typeId: string;
     /** A cuid-shaped item id of the sibling workspace (never readable here). */
     siblingItemId: string;
+    /** Sub-phase 3.4b: the live item with the most time entries (an item's time). */
+    timeItemId: string;
+    /** Sub-phase 3.4b: last week's Monday, a full week of the heavy member's time (My time). */
+    timeWeek: string;
 }
 
 export function perfShape(): string {
@@ -99,6 +103,13 @@ export async function loadPerfWorld(db: PrismaClient): Promise<PerfWorld> {
     );
     const deletion = await one<{ deletionId: string }>(db, `SELECT "deletionId" FROM "WorkItem" WHERE "tenantId" = $1 AND "deletionId" IS NOT NULL ORDER BY "deletionId" LIMIT 1`, tenantId);
     const type = await one<{ id: string }>(db, `SELECT "id" FROM "WorkItemType" WHERE "tenantId" = $1 ORDER BY "sortKey" LIMIT 1`, tenantId);
+    const timeItem = await one<{ id: string }>(
+        db,
+        `SELECT t."workItemId" AS "id" FROM "TimeEntry" t JOIN "WorkItem" w ON w."id" = t."workItemId" AND w."deletedAt" IS NULL
+          WHERE t."tenantId" = $1 GROUP BY t."workItemId" ORDER BY count(*) DESC, t."workItemId" LIMIT 1`,
+        tenantId,
+    );
+    const lastMonday = await one<{ monday: string }>(db, `SELECT to_char(date_trunc('week', CURRENT_DATE) - interval '7 days', 'YYYY-MM-DD') AS "monday"`);
     const ctx = await resolveMemberContext({ tenantId, userId: heavy.id, job: 'perf' });
     if (!ctx) throw new Error('perf: the heavy member does not resolve');
     return {
@@ -121,5 +132,7 @@ export async function loadPerfWorld(db: PrismaClient): Promise<PerfWorld> {
         deletionId: deletion.deletionId,
         typeId: type.id,
         siblingItemId: sibling.id,
+        timeItemId: timeItem.id,
+        timeWeek: lastMonday.monday,
     };
 }

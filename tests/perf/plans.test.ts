@@ -26,6 +26,7 @@ import { ProjectRepository } from '@/app-layer/repositories/ProjectRepository';
 import { ReviewRepository } from '@/app-layer/repositories/ReviewRepository';
 import { SearchVectorRepository } from '@/app-layer/repositories/SearchVectorRepository';
 import { TeamRepository } from '@/app-layer/repositories/TeamRepository';
+import { TimeEntryRepository } from '@/app-layer/repositories/TimeEntryRepository';
 import { CommentRepository, listSortSpec, WorkItemRepository, type WorkItemFilters } from '@/app-layer/repositories/WorkItemRepository';
 import type { RequestContext } from '@/app-layer/types';
 import { resolveWorkingCalendars } from '@/app-layer/usecases/working-calendar';
@@ -162,6 +163,20 @@ const RUNNERS: Record<string, Runner> = {
         await WorkItemRepository.listAssignedForCalendarSync(db, ctx, v, w.heavyUserId, { ...window, take: 1001 });
         await WorkItemRepository.countAssignedForCalendarSync(db, ctx, v, w.heavyUserId, window);
         return WorkItemRepository.projectsWithOpenAssigned(db, ctx, v, w.heavyUserId, 1000);
+    },
+    // Time entries (3.4b): the heavy member's full week, as My time reads it; a day of it and their timer, as
+    // every entry write asks; the item with the most time, as its Time panel reads it.
+    "time: a person's week": (w, db, ctx) => {
+        const from = new Date(`${w.timeWeek}T00:00:00Z`);
+        return TimeEntryRepository.listForPerson(db, ctx, w.heavyUserId, from, new Date(from.getTime() + 6 * DAY));
+    },
+    "time: a day's total and the running timer": async (w, db, ctx) => {
+        await TimeEntryRepository.dayTotal(db, ctx, w.heavyUserId, new Date(`${w.timeWeek}T00:00:00Z`));
+        return TimeEntryRepository.running(db, ctx, w.heavyUserId);
+    },
+    "time: an item's total and first page": async (w, db, ctx) => {
+        await TimeEntryRepository.itemTotals(db, ctx, w.timeItemId, w.heavyUserId);
+        return TimeEntryRepository.itemPage(db, ctx, w.timeItemId, { limit: 50 });
     },
     'timeline: working calendars': async (w, db, ctx) => {
         await resolveWorkingCalendars(db, ctx, [w.teamId]);

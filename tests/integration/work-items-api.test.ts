@@ -254,6 +254,8 @@ const CALLS: Call[] = [
     { file: `${W}/[workItemId]/goal/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/goal`, params: (i) => P(i, { workItemId: i.other }), body: (i) => ({ goalId: i.goal }), write: true, key: 'work_items.edit' },
     // Sub-phase 3.4a: the estimate, in the team's unit (the API team estimates in points).
     { file: `${W}/[workItemId]/estimate/route.ts`, method: 'PUT', path: (i) => `/work-items/${i.other}/estimate`, params: (i) => P(i, { workItemId: i.other }), body: () => ({ value: 3, unit: 'POINTS' }), write: true, key: 'work_items.edit' },
+    // Sub-phase 3.4b: an item's time (the usecase also asks time.view or time.track; every built-in role but a guest holds one).
+    { file: `${W}/[workItemId]/time/route.ts`, method: 'GET', path: (i) => `/work-items/${i.item}/time`, params: (i) => P(i, { workItemId: i.item }), itemRead: true, write: false, key: 'work_items.view' },
     { file: `${W}/[workItemId]/ancestry/route.ts`, method: 'GET', path: (i) => `/work-items/${i.item}/ancestry`, params: (i) => P(i, { workItemId: i.item }), write: false, key: 'work_items.view' },
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/initiative/route.ts', method: 'PUT', path: (i) => `/projects/${i.project}/initiative`, params: (i) => P(i, { projectId: i.project }), body: (i) => ({ initiativeId: i.initiative }), write: true, key: 'projects.edit' },
     { file: 'src/app/api/t/[tenantSlug]/projects/[projectId]/milestones/route.ts', method: 'GET', path: (i) => `/projects/${i.project}/milestones`, params: (i) => P(i, { projectId: i.project }), write: false, key: 'projects.view' },

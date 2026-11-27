@@ -68,6 +68,10 @@ gauges (distinct users with an audited action, by plan). Wired today: workspace 
 (`/api/auth/register`), invites sent and redeemed, and MFA enrolment. The
 rest are wired by the sub-phase that builds their surface (onboarding 1.7,
 automations 5.1, billing and the active-user aggregator 8.1).
+Beside them, the features' own counters: `calendar.sync.outcome` and
+`calendar.sync.inbound` (3.3b, 3.3c) and `time.entries.recorded` (3.4b: a
+time entry recorded, by `source`, `manual` or `timer`; never a workspace, a
+person or an amount).
 `tests/guards/business-metrics-coverage.test.ts` holds each name to one
 definition and one recorder. Attributes never carry a person's identity.
 
