@@ -89,3 +89,12 @@ export interface DeletedPageData {
     /** Pages deleted with it, itself included. */
     groupSize: number;
 }
+
+/** A tree, as the client names it: the workspace's, or a project's. */
+export type PageTreeKey = { kind: 'workspace' } | { kind: 'project'; projectId: string };
+
+/** A tree a page may move to, as the server offered it (the move dialog). */
+export interface PageTreeOption {
+    key: PageTreeKey;
+    label: string;
+}

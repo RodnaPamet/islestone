@@ -63,6 +63,8 @@ export const MAIN_PAGES: readonly string[] = [
     '/time/totals',
     // Sub-phase 3.6a: the Analytics page (decision 324).
     '/analytics',
+    // Sub-phase 4.1a: Workspace pages (decision 341).
+    '/pages',
     '/work-items',
     '/views',
     '/projects',
@@ -129,6 +131,9 @@ export const SUBPAGES: readonly string[] = [
     '/settings/workload',
     // Sub-phase 3.6d: one dashboard (decision 326).
     '/analytics/dashboards/[dashboardId]',
+    // Sub-phase 4.1a: a page (either tree), and a project's Pages.
+    '/pages/[pageId]',
+    '/projects/[projectKey]/pages',
 ] as const;
 
 /**
