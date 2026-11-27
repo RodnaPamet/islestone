@@ -23,6 +23,7 @@ import { CustomFieldRepository } from '../repositories/CustomFieldRepository';
 import { LabelRepository } from '../repositories/LabelRepository';
 import { MembershipRepository } from '../repositories/MembershipRepository';
 import { ProjectRepository } from '../repositories/ProjectRepository';
+import { TeamRepository } from '../repositories/TeamRepository';
 import { WorkItemTemplateRepository, type WorkItemTemplateData as TemplateColumns, type WorkItemTemplateRow } from '../repositories/TemplateRepository';
 import { WorkItemTypeRepository } from '../repositories/WorkItemTypeRepository';
 import { assertCanManageItemTemplates, assertCanReadItemTemplates } from '../policies/template.policies';
@@ -31,6 +32,7 @@ import { keyBetween } from '../domain/fractional-index';
 import type { TemplateItemSource, TemplateUseContext } from '../domain/work-item-template';
 import { todayInTz } from '../notifications/work-item-due';
 import { checkCustomFieldValues } from './custom-field';
+import { estimateWriteFor } from './work-item-estimate';
 import { assertLabelsUsable } from './work-item';
 import { assertProjectWritable, notificationsTz } from './work-item-shared';
 import type { RequestContext } from '../types';
@@ -63,6 +65,8 @@ export function toWorkItemTemplateData(row: WorkItemTemplateRow): WorkItemTempla
         labelIds: row.labels.map((l) => l.labelId),
         assigneeId: row.assigneeId,
         dueInDays: row.dueInDays,
+        estimatePoints: row.estimatePoints,
+        estimateMinutes: row.estimateMinutes,
         customFields: asRecord(row.customFieldValuesJson),
         subItems: asSubItems(row.subItemsJson),
         archived: row.archivedAt !== null,
@@ -81,6 +85,8 @@ export function templateSource(row: WorkItemTemplateRow): TemplateItemSource {
         labelIds: data.labelIds,
         assigneeId: data.assigneeId,
         dueInDays: data.dueInDays,
+        estimatePoints: data.estimatePoints ?? null,
+        estimateMinutes: data.estimateMinutes ?? null,
         customFields: data.customFields,
         subItems: data.subItems,
     };
@@ -93,16 +99,18 @@ export async function templateUseContextInTx(
     project: { id: string; teamId: string },
     peopleNamed: readonly string[],
 ): Promise<TemplateUseContext> {
-    const [labels, fields, active] = await Promise.all([
+    const [labels, fields, active, estimateUnit] = await Promise.all([
         LabelRepository.list(db, ctx, { teamId: project.teamId }),
         CustomFieldRepository.listFields(db, ctx, project.id),
         MembershipRepository.listActiveUserIds(db, ctx, [...new Set(peopleNamed)]),
+        TeamRepository.estimateUnitOf(db, ctx, project.teamId),
     ]);
     return {
         today: todayInTz(todayClock(notificationsTz()), notificationsTz()),
         usableLabelIds: new Set(labels.map((l) => l.id)),
         activeMemberIds: active,
         liveFields: new Map(fields.map((f) => [f.id, { type: f.type, liveOptionIds: new Set(f.options.filter((o) => !o.archivedAt).map((o) => o.id)) }])),
+        estimateUnit: estimateUnit ?? null,
     };
 }
 
@@ -163,6 +171,9 @@ export interface ItemTemplateInput {
     labelIds?: string[];
     assigneeId?: string | null;
     dueInDays?: number | null;
+    /** The new item's estimate (3.4a, decision 258), in the column of the project's team's unit. */
+    estimatePoints?: number | null;
+    estimateMinutes?: number | null;
     customFields?: Readonly<Record<string, unknown>>;
     subItems?: Array<{ title: string }>;
 }
@@ -195,6 +206,21 @@ async function checkedColumns(
         data.assigneeId = input.assigneeId;
     }
     if (input.dueInDays !== undefined) data.dueInDays = input.dueInDays;
+    if (input.estimatePoints !== undefined || input.estimateMinutes !== undefined) {
+        // One estimate per template, in the team's unit at save (3.4a): the
+        // other column is cleared, so a template never carries a hidden one.
+        const named = input.estimatePoints !== undefined && input.estimatePoints !== null ? ('POINTS' as const) : input.estimateMinutes !== undefined && input.estimateMinutes !== null ? ('HOURS' as const) : null;
+        if (named === null) {
+            data.estimatePoints = null;
+            data.estimateMinutes = null;
+        } else {
+            const unit = (await TeamRepository.estimateUnitOf(db, ctx, project.teamId)) ?? null;
+            const value = named === 'POINTS' ? input.estimatePoints! : input.estimateMinutes!;
+            const patch = estimateWriteFor(unit, value, named);
+            data.estimatePoints = patch.estimatePoints ?? null;
+            data.estimateMinutes = patch.estimateMinutes ?? null;
+        }
+    }
     if (input.customFields !== undefined) {
         const values = await checkCustomFieldValues(db, ctx, project.id, input.customFields);
         data.customFieldValuesJson = Object.keys(values).length > 0 ? (values as Prisma.InputJsonValue) : Prisma.DbNull;
@@ -245,6 +271,8 @@ export async function createWorkItemTemplate(
             priority: data.priority ?? 'NONE',
             assigneeId: data.assigneeId ?? null,
             dueInDays: data.dueInDays ?? null,
+            estimatePoints: data.estimatePoints ?? null,
+            estimateMinutes: data.estimateMinutes ?? null,
             customFieldValuesJson: data.customFieldValuesJson ?? Prisma.DbNull,
             subItemsJson: data.subItemsJson ?? Prisma.DbNull,
             projectId: project.id,

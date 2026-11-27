@@ -81,6 +81,8 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${W}/[workItemId]/milestone/route.ts`]: { PUT: 'work_items.edit' },
     // Sub-phase 3.2a (owner decisions 211, 213 and 220).
     [`${W}/[workItemId]/goal/route.ts`]: { PUT: 'work_items.edit' },
+    // Sub-phase 3.4a (owner decision 257: an estimate is an item field).
+    [`${W}/[workItemId]/estimate/route.ts`]: { PUT: 'work_items.edit' },
     [`${W}/[workItemId]/ancestry/route.ts`]: { GET: 'work_items.view' },
     [`${T}/projects/[projectId]/initiative/route.ts`]: { PUT: 'projects.edit' },
     [`${T}/goals/route.ts`]: { GET: 'goals.view', POST: 'goals.manage' },

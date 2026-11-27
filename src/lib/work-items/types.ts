@@ -46,6 +46,13 @@ export interface WorkItemRow {
     milestoneId: string | null;
     /** The goal the item names directly (3.2a, decision 211); never inherited. */
     goalId?: string | null;
+    /**
+     * The estimate's two columns (3.4a, decision 257): only the one of the
+     * item's team's current unit is shown and counted (`countedEstimate` in
+     * `src/lib/work-items/estimate.ts`, with `config.teams`); the other is kept.
+     */
+    estimatePoints?: number | null;
+    estimateMinutes?: number | null;
     /** The repeat this item is an occurrence of, and the occurrence's date (2.5d). */
     recurrenceId?: string | null;
     occurrenceOn?: string | null;
@@ -172,7 +179,8 @@ export interface ViewMilestone {
 /** What every work-item view renders with: small sets, read once on the server. */
 export interface WorkItemViewConfig {
     projects: ViewProject[];
-    teams: Array<{ id: string; name: string }>;
+    /** Each team with its estimate unit (3.4a; `null`: the team does not estimate). */
+    teams: Array<{ id: string; name: string; estimateUnit?: 'POINTS' | 'HOURS' | null }>;
     /** Every team's live states, in each team's workflow order. */
     states: ViewState[];
     types: ViewType[];
@@ -340,16 +348,26 @@ export interface CycleScheduleData {
 
 export interface BurnUpPointData {
     date: string;
+    /** In the response's `measure`: items, points, or minutes for hours. */
     scope: number;
     started: number;
     completed: number;
+    /** In-scope items with no estimate in the counted unit (3.4a); 0 for the items measure. */
+    unestimated?: number;
 }
+
+/** What a burn-up counts (3.4a, decision 259): items always; points or hours when the cycle's team estimates in them. */
+export type BurnUpMeasure = 'items' | 'points' | 'hours';
 
 /** `GET /cycles/:id/burn-up`. */
 export interface BurnUpData {
     points: BurnUpPointData[];
     /** More items than the burn-up reads: the chart counts the first ones only. */
     truncated: boolean;
+    /** What `points` count (3.4a). */
+    measure?: BurnUpMeasure;
+    /** The measures this cycle offers: `items`, and the team's estimate unit's when it estimates. */
+    measures?: BurnUpMeasure[];
 }
 
 /** Live, visible items of a milestone (2.5b): scope leaves out cancelled ones. */
@@ -395,6 +413,9 @@ export interface WorkItemTemplateData {
     labelIds: string[];
     assigneeId: string | null;
     dueInDays: number | null;
+    /** The new item's estimate (3.4a, decision 258), in the unit its project's team used when it was saved. */
+    estimatePoints?: number | null;
+    estimateMinutes?: number | null;
     customFields: Record<string, unknown>;
     subItems: Array<{ title: string }>;
     archived: boolean;

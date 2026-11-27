@@ -106,3 +106,38 @@ describe('ProjectTemplateContentSchema', () => {
         expect(ProjectTemplateContentSchema.safeParse({ ...base, items: [{ ...item, milestoneIndex: null, subItems: subs }] }).success).toBe(false);
     });
 });
+
+describe('templateToCreateInput and the estimate (3.4a, decision 258)', () => {
+    it("keeps the source's estimate in the column of the team's unit, and skips one in another unit, named", () => {
+        const points = { ...source, estimatePoints: 5, estimateMinutes: null };
+        expect(templateToCreateInput(points, {}, { ...use, estimateUnit: 'POINTS' })).toMatchObject({ estimatePoints: 5, estimateMinutes: null });
+        const skipped = templateToCreateInput(points, {}, { ...use, estimateUnit: 'HOURS' });
+        expect(skipped).toMatchObject({ estimatePoints: null, estimateMinutes: null });
+        expect(skipped.skipped).toContain('estimate:unit');
+        // A team that does not estimate, or a context that says nothing, skips it too.
+        expect(templateToCreateInput(points, {}, { ...use, estimateUnit: null }).skipped).toContain('estimate:unit');
+        expect(templateToCreateInput(points, {}, use).skipped).toContain('estimate:unit');
+    });
+
+    it('a hidden value beside the counted one is not copied and not named; no estimate names nothing', () => {
+        const both = templateToCreateInput({ ...source, estimatePoints: 3, estimateMinutes: 90 }, {}, { ...use, estimateUnit: 'HOURS' });
+        expect(both).toMatchObject({ estimatePoints: null, estimateMinutes: 90 });
+        expect(both.skipped).not.toContain('estimate:unit');
+        expect(templateToCreateInput(source, {}, { ...use, estimateUnit: 'POINTS' }).skipped).not.toContain('estimate:unit');
+    });
+
+    it('the request wins when it names the estimate', () => {
+        const p = templateToCreateInput({ ...source, estimatePoints: 5 }, { estimatePoints: 1 }, { ...use, estimateUnit: 'POINTS' });
+        expect(p).toMatchObject({ estimatePoints: 1, estimateMinutes: null });
+        expect(templateToCreateInput({ ...source, estimatePoints: 5 }, { estimatePoints: null }, { ...use, estimateUnit: 'POINTS' })).toMatchObject({ estimatePoints: null });
+    });
+
+    it("a project template's starter item may carry an estimate; content saved before has none", () => {
+        const content = { version: 1, customFields: [], milestones: [], itemTemplates: [], items: [] };
+        expect(ProjectTemplateContentSchema.safeParse(content).success).toBe(true);
+        const item = { title: 'x', description: null, typeName: null, priority: 'NONE', labelNames: [], dueInDays: null, subItems: [], milestoneIndex: null };
+        expect(ProjectTemplateContentSchema.safeParse({ ...content, items: [{ ...item, estimatePoints: 13 }] }).success).toBe(true);
+        expect(ProjectTemplateContentSchema.safeParse({ ...content, items: [{ ...item, estimatePoints: 101 }] }).success).toBe(false);
+    });
+});
+

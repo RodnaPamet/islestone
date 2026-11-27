@@ -489,6 +489,9 @@ export interface AcceptIntakeInput {
     /** Fields a type's field set may require (2.4b-b): a milestone of the target project, who it waits on, dates. */
     milestoneId?: string | null;
     goalId?: string | null;
+    /** The estimate (3.4a), in the column of the target project's team's unit. */
+    estimatePoints?: number | null;
+    estimateMinutes?: number | null;
     waitingOnUserId?: string | null;
     startDate?: string | null;
     dueDate?: string | null;
@@ -561,6 +564,8 @@ export async function acceptIntakeRequest(ctx: RequestContext, id: string, input
                 cycleId: input.cycleId ?? null,
                 milestoneId: input.milestoneId ?? null,
                 goalId: input.goalId ?? null,
+                ...(input.estimatePoints !== undefined ? { estimatePoints: input.estimatePoints } : {}),
+                ...(input.estimateMinutes !== undefined ? { estimateMinutes: input.estimateMinutes } : {}),
                 waitingOnUserId: input.waitingOnUserId ?? null,
                 startDate: input.startDate ?? null,
                 dueDate: input.dueDate ?? null,

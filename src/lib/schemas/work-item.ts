@@ -17,6 +17,7 @@ import { DUE_FILTERS } from '@/app-layer/domain/work-item-due';
 import { WORKFLOW_STATE_CATEGORIES } from '@/app-layer/domain/workflow-state';
 import { CustomFieldValuesInputSchema } from '@/lib/schemas/custom-field';
 import { fieldIdOfFilterKey } from '@/lib/work-items/custom-fields';
+import { ESTIMATE_LIMITS, ESTIMATE_UNITS } from '@/lib/work-items/estimate';
 import { isListOrder } from '@/lib/work-items/list-sorts';
 import { badRequest } from '@/lib/errors/types';
 
@@ -36,6 +37,21 @@ export const DateOnly = z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date in the form YYYY-MM-DD.')
     .refine((s) => !Number.isNaN(Date.parse(`${s}T00:00:00Z`)) && new Date(`${s}T00:00:00Z`).toISOString().startsWith(s), 'Not a real date.');
+
+/** Whole points, 0 to 100 (3.4a; `ESTIMATE_LIMITS`). */
+export const EstimatePointsSchema = z.number().int().min(0).max(ESTIMATE_LIMITS.pointsMax);
+/** Whole minutes, 0 to 60,000 (3.4a; `ESTIMATE_LIMITS`). */
+export const EstimateMinutesSchema = z.number().int().min(0).max(ESTIMATE_LIMITS.minutesMax);
+
+/**
+ * `PUT /work-items/:id/estimate` (3.4a, decision 257): the value in the
+ * item's team's current unit (points, or minutes for hours), `null` to clear
+ * it. `unit` names the unit the value was typed in; another than the team's
+ * is 400 `ESTIMATE_UNIT`.
+ */
+export const SetWorkItemEstimateSchema = z
+    .object({ value: z.number().int().min(0).max(ESTIMATE_LIMITS.minutesMax).nullable(), unit: z.enum(ESTIMATE_UNITS).optional() })
+    .strict();
 
 export const PositionSchema = z
     .object({ afterId: Id.optional(), beforeId: Id.optional() })
@@ -64,6 +80,13 @@ export const CreateWorkItemSchema = z
         milestoneId: Id.nullish(),
         /** A live, unarchived goal named directly (3.2a, decision 211). */
         goalId: Id.nullish(),
+        /**
+         * The estimate (3.4a, decision 257), in the column of the project's
+         * team's unit: naming the other column is 400 `ESTIMATE_UNIT`, any on
+         * a team that does not estimate 409 `ESTIMATES_OFF`.
+         */
+        estimatePoints: EstimatePointsSchema.nullish(),
+        estimateMinutes: EstimateMinutesSchema.nullish(),
         /** The active member the item waits on (2.4b); refused into a closed state. */
         waitingOnUserId: Id.nullish(),
         /** An item template of the project (2.5c). */

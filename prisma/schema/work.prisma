@@ -26,6 +26,10 @@ model Team {
   id        String   @id @default(cuid())
   tenantId  String
   name      String
+  /// The unit the team estimates in (3.4a, owner decision 257): POINTS, HOURS,
+  /// or NULL when it does not estimate (the default). Its items' estimate in
+  /// the other unit is kept, hidden and uncounted; changing it moves no value.
+  estimateUnit EstimateUnit?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -278,6 +282,15 @@ model WorkItem {
   /// `ON DELETE SET NULL ("goalId")` in SQL for the purge (decision 219). Kept
   /// on moves; not watched by the transition trigger.
   goalId          String?
+  /// The estimate in points (3.4a, owner decision 257): a whole number, 0 to
+  /// 100 (CHECK `WorkItem_estimate_points_range`). Shown, written and counted
+  /// only while the item's team estimates in points; kept otherwise.
+  estimatePoints  Int?
+  /// The estimate in hours, stored as minutes, 0 to 60,000 (CHECK
+  /// `WorkItem_estimate_minutes_range`). Shown, written and counted only
+  /// while the item's team estimates in hours; kept otherwise. Both columns
+  /// are watched by the transition trigger (decision 259).
+  estimateMinutes Int?
 
   tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   project        Project             @relation(fields: [projectId, teamId, tenantId], references: [id, teamId, tenantId], onDelete: Cascade)
@@ -798,6 +811,10 @@ model WorkItemTransition {
   /// Since 2.4b (owner decision 107); NULL in rows written before. 3.6 counts
   /// time waiting from these rows.
   waitingOnUserId String?
+  /// Since 3.4a (owner decision 259); NULL in rows written before. The burn-up's
+  /// Points and Hours measures read them.
+  estimatePoints  Int?
+  estimateMinutes Int?
   deleted         Boolean
   at              DateTime              @default(now())
 
@@ -865,6 +882,11 @@ model WorkItemTemplate {
   assigneeId            String?
   /// The new item's due date, this many days after the day it is created (0 to 3650).
   dueInDays             Int?
+  /// The new item's estimate (3.4a, owner decision 258), in the unit its
+  /// project's team used when it was saved; a use under another unit skips it,
+  /// named `estimate:unit`. The same CHECKed ranges as the item's.
+  estimatePoints        Int?
+  estimateMinutes       Int?
   /// Field id → value, as `customFields` on a create.
   customFieldValuesJson Json?
   /// The sub-items made with the item: `[{ title }]`.

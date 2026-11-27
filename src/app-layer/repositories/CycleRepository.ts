@@ -58,6 +58,9 @@ export interface TransitionRow {
     stateCategory: WorkflowStateCategory;
     deleted: boolean;
     at: Date;
+    /** The estimate the row records (3.4a); NULL in rows written before. */
+    estimatePoints: number | null;
+    estimateMinutes: number | null;
 }
 
 export class CycleRepository {
@@ -234,7 +237,7 @@ export class CycleRepository {
             where: { tenantId: ctx.tenantId, workItemId: { in: [...workItemIds] }, at: { lte: until } },
             orderBy: [{ at: 'asc' }, { id: 'asc' }],
             take: BURN_UP_TRANSITION_CAP,
-            select: { id: true, workItemId: true, projectId: true, cycleId: true, stateCategory: true, deleted: true, at: true },
+            select: { id: true, workItemId: true, projectId: true, cycleId: true, stateCategory: true, deleted: true, at: true, estimatePoints: true, estimateMinutes: true },
         });
     }
 }

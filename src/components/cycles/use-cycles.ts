@@ -18,18 +18,19 @@ import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { ApiClientError, apiSend } from '@/lib/data/api-client';
 import { useTenantSWR } from '@/lib/data/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
-import type { BurnUpData, CycleData, CycleScheduleData } from '@/lib/work-items/types';
+import type { BurnUpData, BurnUpMeasure, CycleData, CycleScheduleData } from '@/lib/work-items/types';
 
 export const CYCLE_PATHS = {
     list: '/cycles',
     one: (id: string) => `/cycles/${encodeURIComponent(id)}`,
-    burnUp: (id: string) => `/cycles/${encodeURIComponent(id)}/burn-up`,
+    /** Items by default; points or hours (3.4a) when the cycle's team estimates in them. */
+    burnUp: (id: string, measure: BurnUpMeasure = 'items') => `/cycles/${encodeURIComponent(id)}/burn-up${measure === 'items' ? '' : `?measure=${measure}`}`,
     schedule: (teamId: string) => `/teams/${encodeURIComponent(teamId)}/cycle-schedule`,
 } as const;
 
 export const useCycles = (fallback?: CycleData[]) => useTenantSWR<CycleData[]>(CYCLE_PATHS.list, fallback ? { fallbackData: fallback } : {});
 export const useCycle = (id: string, fallback?: CycleData) => useTenantSWR<CycleData>(CYCLE_PATHS.one(id), fallback ? { fallbackData: fallback } : {});
-export const useBurnUp = (id: string) => useTenantSWR<BurnUpData>(CYCLE_PATHS.burnUp(id));
+export const useBurnUp = (id: string, measure: BurnUpMeasure = 'items') => useTenantSWR<BurnUpData>(CYCLE_PATHS.burnUp(id, measure), { keepPreviousData: true });
 export const useCycleSchedule = (teamId: string | null) => useTenantSWR<CycleScheduleData>(teamId ? CYCLE_PATHS.schedule(teamId) : null);
 
 /** The refusal a person reads: the server's sentence, or `fallback`. */
@@ -96,7 +97,7 @@ export function useCycleWrites() {
             },
             update: async (id: string, input: Partial<CycleFormInput>) => {
                 const saved = await apiSend<CycleData>('PATCH', apiUrl(CYCLE_PATHS.one(id)), input);
-                await revalidate(CYCLE_PATHS.one(id), CYCLE_PATHS.burnUp(id));
+                await revalidate(CYCLE_PATHS.one(id), CYCLE_PATHS.burnUp(id), CYCLE_PATHS.burnUp(id, 'points'), CYCLE_PATHS.burnUp(id, 'hours'));
                 return saved;
             },
             saveSchedule: async (teamId: string, input: Omit<CycleScheduleData, 'teamId' | 'saved'>) => {

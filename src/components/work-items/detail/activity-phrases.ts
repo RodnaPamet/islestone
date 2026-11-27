@@ -34,6 +34,7 @@ export const ACTIVITY_PHRASE = {
     WORK_ITEM_CYCLE_CHANGED: 'activity.cycleChanged',
     WORK_ITEM_MILESTONE_CHANGED: 'activity.milestoneChanged',
     WORK_ITEM_GOAL_CHANGED: 'activity.goalChanged',
+    WORK_ITEM_ESTIMATE_CHANGED: 'activity.estimateChanged',
     WORK_ITEM_WAITING_ON_CHANGED: 'activity.waitingOnChanged',
     WORK_ITEM_ANSWER_MARKED: 'activity.answerMarked',
     WORK_ITEM_ANSWER_CLEARED: 'activity.answerCleared',

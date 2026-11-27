@@ -326,7 +326,7 @@ describe('the schema speaks ADR 0006', () => {
             'WorkingCalendar',
             'WorkingCalendarHoliday',
         ]);
-        expect(ids.filter((i) => i.kind === 'enum').length).toBe(38);
+        expect(ids.filter((i) => i.kind === 'enum').length).toBe(39);
         expect(ids).toEqual(expect.arrayContaining([{ kind: 'value', name: 'MEMBER', where: 'Role.MEMBER' }]));
     });
 });

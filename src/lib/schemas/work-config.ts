@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { WORKFLOW_STATE_CATEGORIES } from '@/app-layer/domain/workflow-state';
 import { COLOR_PATTERN, WORK_ITEM_TYPE_ICONS } from '@/app-layer/domain/work-item-type-icons';
 
+import { ESTIMATE_UNITS } from '@/lib/work-items/estimate';
 import { CONFIGURABLE_BUILT_IN_FIELDS, FIELD_REQUIREMENTS } from '@/lib/work-items/field-sets';
 
 import { PositionSchema } from './work-item';
@@ -17,6 +18,14 @@ const Color = z.string().regex(COLOR_PATTERN, 'A colour is a token name or #RRGG
 
 export const CreateTeamSchema = z.object({ name: Name }).strict();
 export const RenameTeamSchema = z.object({ name: Name }).strict();
+/**
+ * `PATCH /teams/:teamId`: rename it, set its estimate unit (3.4a, decision
+ * 257; `null` stops estimating), or both. Changing the unit moves no value.
+ */
+export const UpdateTeamSchema = z
+    .object({ name: Name.optional(), estimateUnit: z.enum(ESTIMATE_UNITS).nullable().optional() })
+    .strict()
+    .refine((b) => b.name !== undefined || b.estimateUnit !== undefined, 'Give a name or an estimate unit.');
 
 export const CreateWorkflowStateSchema = z
     .object({

@@ -136,3 +136,81 @@ describe('burnUp properties', () => {
         );
     });
 });
+
+describe('burnUp in points and hours (3.4a, decision 259)', () => {
+    function e(workItemId: string, at: string, stateCategory: WorkflowStateCategory, points: number | null, minutes: number | null = null, cycleId: string | null = C): TransitionFact {
+        seq += 1;
+        return { workItemId, cycleId, stateCategory, deleted: false, at: new Date(at), seq, estimatePoints: points, estimateMinutes: minutes };
+    }
+    const opts = { ...base, today: d('2026-11-04'), now: new Date('2026-11-04T12:00:00Z') };
+
+    it('sums each in-scope item\'s estimate as its latest row records it, and names the unestimated', () => {
+        const rows = [
+            e('a', '2026-11-01T10:00:00Z', 'UNSTARTED', 3),
+            e('b', '2026-11-01T10:00:00Z', 'UNSTARTED', null),
+            e('c', '2026-11-01T10:00:00Z', 'UNSTARTED', 5, 120),
+            e('a', '2026-11-03T09:00:00Z', 'STARTED', 3),
+            // An estimate changed mid-cycle shows as a change of scope that day.
+            e('a', '2026-11-03T10:00:00Z', 'STARTED', 8),
+            e('c', '2026-11-04T09:00:00Z', 'DONE', 5, 120),
+        ];
+        expect(burnUp({ ...opts, measure: 'points', transitions: rows })).toEqual([
+            { date: '2026-11-02', scope: 8, started: 0, completed: 0, unestimated: 1 },
+            { date: '2026-11-03', scope: 13, started: 8, completed: 0, unestimated: 1 },
+            { date: '2026-11-04', scope: 13, started: 13, completed: 5, unestimated: 1 },
+        ]);
+        // Hours read the minutes column: only c carries one.
+        expect(burnUp({ ...opts, measure: 'hours', transitions: rows }).at(-1)).toEqual({ date: '2026-11-04', scope: 120, started: 120, completed: 120, unestimated: 2 });
+    });
+
+    it('the items measure is the default and its output is unchanged by estimates', () => {
+        fc.assert(
+            fc.property(
+                fc.array(
+                    fc.record({
+                        item: fc.constantFrom('a', 'b', 'c'),
+                        day: fc.integer({ min: 0, max: 6 }),
+                        cat: fc.constantFrom<WorkflowStateCategory>('UNSTARTED', 'STARTED', 'DONE', 'CANCELLED'),
+                        points: fc.option(fc.integer({ min: 0, max: 100 })),
+                    }),
+                    { maxLength: 20 },
+                ),
+                (spec) => {
+                    const rows = spec.map((r) => e(r.item, `2026-11-0${2 + r.day}T08:00:00Z`, r.cat, r.points));
+                    const bare = rows.map(({ estimatePoints: _p, estimateMinutes: _m, ...rest }) => rest);
+                    const withEstimates = burnUp({ ...opts, transitions: rows });
+                    expect(withEstimates).toEqual(burnUp({ ...opts, transitions: bare }));
+                    expect(withEstimates).toEqual(burnUp({ ...opts, measure: 'items', transitions: rows }));
+                    for (const p of withEstimates) expect(p).not.toHaveProperty('unestimated');
+                },
+            ),
+        );
+    });
+
+    it('in points, completed ≤ started ≤ scope every day, and unestimated + estimated items equal the item scope', () => {
+        fc.assert(
+            fc.property(
+                fc.array(
+                    fc.record({
+                        item: fc.constantFrom('a', 'b', 'c', 'd'),
+                        day: fc.integer({ min: 0, max: 6 }),
+                        cat: fc.constantFrom<WorkflowStateCategory>('UNSTARTED', 'STARTED', 'DONE', 'CANCELLED'),
+                        points: fc.option(fc.integer({ min: 0, max: 100 })),
+                    }),
+                    { maxLength: 24 },
+                ),
+                (spec) => {
+                    const rows = spec.map((r) => e(r.item, `2026-11-0${2 + r.day}T08:00:00Z`, r.cat, r.points));
+                    const items = burnUp({ ...opts, transitions: rows });
+                    const points = burnUp({ ...opts, measure: 'points', transitions: rows });
+                    points.forEach((p, i) => {
+                        expect(p.completed).toBeLessThanOrEqual(p.started);
+                        expect(p.started).toBeLessThanOrEqual(p.scope);
+                        expect(p.unestimated!).toBeLessThanOrEqual(items[i]!.scope);
+                    });
+                },
+            ),
+        );
+    });
+});
+

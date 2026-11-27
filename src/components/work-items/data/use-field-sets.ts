@@ -44,8 +44,15 @@ export function useFieldSet(typeId: string | undefined, projectId: string | unde
     const config = useWorkConfig();
     const { rules } = useProjectFieldSet(projectId);
     const key = liveCustomFieldIds.join(',');
+    // The project's team's estimate unit (3.4a): a team that does not estimate hides the estimate.
+    const estimateUnit = config.estimateUnitOfProject(projectId);
     return useMemo(
-        () => resolveFieldSet([...config.fieldSetEntries, ...rules], typeId ?? '', { projectId: projectId ?? null, liveCustomFieldIds: key ? key.split(',') : [] }),
-        [config.fieldSetEntries, rules, typeId, projectId, key],
+        () =>
+            resolveFieldSet([...config.fieldSetEntries, ...rules], typeId ?? '', {
+                projectId: projectId ?? null,
+                liveCustomFieldIds: key ? key.split(',') : [],
+                ...(estimateUnit !== undefined ? { estimateUnit } : {}),
+            }),
+        [config.fieldSetEntries, rules, typeId, projectId, key, estimateUnit],
     );
 }

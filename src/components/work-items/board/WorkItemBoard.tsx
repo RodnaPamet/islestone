@@ -32,6 +32,8 @@ import { PRIORITY_ORDER } from '@/lib/work-items/presentation';
 import type { WorkItemRow } from '@/lib/work-items/types';
 
 import { PriorityBadge, ReviewBadge } from '../badges';
+import { EstimateText } from '../fields/EstimateInput';
+import { countedEstimate } from '@/lib/work-items/estimate';
 import type { WorkItemListFilters } from '../data/list-filters';
 import { memberLabel, useMembers, useWorkConfig } from '../data/use-work-config';
 import { useWorkItemList, type WorkItemListResult } from '../data/use-work-item-list';
@@ -103,6 +105,9 @@ interface CardProps {
 function BoardCard(props: CardProps) {
     const { row, column, lane, grabbed, dndEnabled, canDropFromLane, columnNames, canMove, register, onOpen, onKey, onMoveTo, assigneeName } = props;
     const tCard = useTranslations('workItems');
+    // The estimate (3.4a): a small badge in the item's team's unit.
+    const estimateUnit = useWorkConfig().estimateUnitOfTeam(row.teamId);
+    const estimate = countedEstimate(estimateUnit, row);
     const ref = useRef<HTMLDivElement | null>(null);
     const [dragging, setDragging] = useState(false);
     useDraggableCard(ref, { itemId: row.id, column, lane }, { enabled: dndEnabled, canDropFromLane, onDragging: setDragging });
@@ -152,6 +157,12 @@ function BoardCard(props: CardProps) {
                 <PriorityBadge priority={row.priority} />
                 {/* Sub-phase 2.8b: the review mark; no review lane (a step names several people). */}
                 <ReviewBadge review={row.review} compact />
+                {estimate !== null && (
+                    <span className="rounded border border-border-subtle px-1 text-xs tabular-nums text-content-muted">
+                        <span className="sr-only">{tCard('estimate.cardPrefix')} </span>
+                        <EstimateText unit={estimateUnit} value={estimate} />
+                    </span>
+                )}
                 {row.dueDate && <span className="text-xs text-content-muted">{tCard('board.due', { date: row.dueDate })}</span>}
                 {assigneeName && (
                     <span className="ml-auto" title={assigneeName}>

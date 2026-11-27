@@ -46,3 +46,8 @@ export const SetCycleScheduleSchema = z
         rollover: z.enum(['NEXT_CYCLE', 'NO_CYCLE']),
     })
     .strict();
+
+/** `GET /cycles/:id/burn-up?measure=` (3.4a, decision 259): items by default. */
+export const BurnUpQuerySchema = z
+    .object({ measure: z.enum(['items', 'points', 'hours']).default('items') })
+    .strict();

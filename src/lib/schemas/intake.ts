@@ -6,6 +6,8 @@
  */
 import { z } from 'zod';
 
+import { EstimateMinutesSchema, EstimatePointsSchema } from '@/lib/schemas/work-item';
+
 import { INTAKE_LIMITS } from '@/lib/intake/form-definition';
 import { INTAKE_DECLINE_REASONS, INTAKE_VIEWS } from '@/lib/intake/types';
 import { DateOnly } from '@/lib/schemas/work-item';
@@ -101,6 +103,9 @@ export const AcceptIntakeRequestSchema = z
         milestoneId: Id.nullable().optional(),
         /** A goal named directly (3.2a, decision 211). */
         goalId: Id.nullable().optional(),
+        /** The estimate (3.4a), in the column of the target project's team's unit. */
+        estimatePoints: EstimatePointsSchema.nullable().optional(),
+        estimateMinutes: EstimateMinutesSchema.nullable().optional(),
         waitingOnUserId: Id.nullable().optional(),
         startDate: DateOnly.nullable().optional(),
         dueDate: DateOnly.nullable().optional(),

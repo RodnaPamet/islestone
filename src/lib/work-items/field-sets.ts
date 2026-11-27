@@ -31,6 +31,8 @@ export const CONFIGURABLE_BUILT_IN_FIELDS = [
     'answer',
     // The item's direct goal (3.2a, owner decision 211).
     'goal',
+    // The estimate in its team's unit (3.4a, owner decision 257).
+    'estimate',
 ] as const;
 export type BuiltInField = (typeof CONFIGURABLE_BUILT_IN_FIELDS)[number];
 
@@ -71,6 +73,8 @@ export interface FieldValues {
     answerCommentId?: string | null;
     /** The goal the item names directly (3.2a). */
     goalId?: string | null;
+    /** The estimate in the item's team's current unit (3.4a): points or minutes. */
+    estimate?: number | null;
     /** Field id → value; empty is absent, null, '', [] or false. */
     customFields?: Readonly<Record<string, unknown>>;
 }
@@ -87,6 +91,7 @@ const VALUE_OF: Record<BuiltInField, keyof FieldValues> = {
     milestone: 'milestoneId',
     answer: 'answerCommentId',
     goal: 'goalId',
+    estimate: 'estimate',
 };
 
 export function isBuiltInField(value: string): value is BuiltInField {
@@ -116,7 +121,17 @@ export function isClosedCategory(category: string | null | undefined): boolean {
 export function resolveFieldSet(
     rules: readonly FieldSetEntry[],
     typeId: string,
-    opts: { projectId?: string | null; liveCustomFieldIds?: Iterable<string> } = {},
+    opts: {
+        projectId?: string | null;
+        liveCustomFieldIds?: Iterable<string>;
+        /**
+         * The project's team's estimate unit (3.4a). `null`: the team does not
+         * estimate, so the estimate is HIDDEN whatever its rule says (a rule
+         * it cannot meet is ignored, as an archived field's is). Leave it out
+         * where the estimate is not asked (the timeline's date rules).
+         */
+        estimateUnit?: string | null;
+    } = {},
 ): ResolvedFieldSet {
     const builtIn = Object.fromEntries(CONFIGURABLE_BUILT_IN_FIELDS.map((f) => [f, defaultRequirement(f)])) as Record<BuiltInField, FieldRequirementValue>;
     const live = opts.liveCustomFieldIds ? new Set(opts.liveCustomFieldIds) : null;
@@ -130,6 +145,7 @@ export function resolveFieldSet(
             customFields[rule.customFieldId] = rule.requirement;
         }
     }
+    if (opts.estimateUnit === null) builtIn.estimate = 'HIDDEN';
     return { builtIn, customFields };
 }
 
@@ -145,7 +161,7 @@ function emptyValue(value: unknown): boolean {
     return false;
 }
 
-/** Is `key` empty in `values`? Priority `NONE` is empty; so are no labels. */
+/** Is `key` empty in `values`? Priority `NONE` is empty; so are no labels; an estimate of 0 is a value. */
 export function isFieldEmpty(key: FieldKey, values: FieldValues): boolean {
     if (key.startsWith('cf:')) return emptyValue(values.customFields?.[key.slice(3)]);
     const field = key as BuiltInField;
@@ -195,6 +211,7 @@ export const BUILT_IN_FIELD_LABELS: Record<BuiltInField, string> = {
     milestone: 'Milestone',
     answer: 'Answer',
     goal: 'Goal',
+    estimate: 'Estimate',
 };
 
 export function fieldLabel(key: FieldKey, customFieldNames?: ReadonlyMap<string, string>): string {

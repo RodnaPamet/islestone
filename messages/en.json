@@ -700,7 +700,8 @@
             "cycle": "Cycle",
             "milestone": "Milestone",
             "waitingOn": "Waiting on",
-            "review": "Review"
+            "review": "Review",
+            "estimate": "Estimate"
         },
         "fields": {
             "title": "Title",
@@ -718,7 +719,8 @@
             "repeat": "Repeat",
             "waitingOn": "Waiting on",
             "startDate": "Start date",
-            "goal": "Goal"
+            "goal": "Goal",
+            "estimate": "Estimate"
         },
         "fieldSet": {
             "required": "required",
@@ -735,7 +737,8 @@
                 "cycle": "Cycle",
                 "milestone": "Milestone",
                 "answer": "Answer",
-                "goal": "Goal"
+                "goal": "Goal",
+                "estimate": "Estimate"
             },
             "requirement": {
                 "REQUIRED": "Required",
@@ -924,7 +927,8 @@
             "reviewStepSkipped": "skipped a review step",
             "reviewRoundEnded": "ended a review round",
             "reviewersChanged": "changed the reviewers",
-            "reviewerWithdrawn": "withdrew a reviewer"
+            "reviewerWithdrawn": "withdrew a reviewer",
+            "estimateChanged": "changed the estimate"
         },
         "mentions": {
             "hint": "Type @ to mention a member.",
@@ -1111,7 +1115,8 @@
             "save": "Save template",
             "cancelEdit": "Cancel",
             "done": "Done",
-            "addQuestion": "Add a Question template"
+            "addQuestion": "Add a Question template",
+            "estimate": "Estimate"
         },
         "repeat": {
             "badgeRepeats": "Repeats",
@@ -1583,6 +1588,16 @@
                 "summaryRow": "The dates of {key} follow its sub-items: change theirs.",
                 "notHere": "The dates of {key} cannot be changed here."
             }
+        },
+        "estimate": {
+            "pointsPlaceholder": "0 to 100",
+            "hoursPlaceholder": "2h 30m",
+            "pointsHint": "Whole points, from 0 to 100.",
+            "hoursHint": "Hours and minutes, such as 2h 30m, 1.5h or 45m.",
+            "pointsInvalid": "Give a whole number of points from 0 to 100.",
+            "hoursInvalid": "Give a duration such as 2h 30m, 1.5h or 45m, of at most 1,000 hours.",
+            "points": "{count, plural, one {# pt} other {# pts}}",
+            "cardPrefix": "Estimate"
         }
     },
     "settings": {
@@ -1675,7 +1690,8 @@
             "loadFailed": "This list could not be loaded.",
             "failed": "That did not work. Try again.",
             "undo": "Undo",
-            "saved": "Saved"
+            "saved": "Saved",
+            "edit": "Edit"
         },
         "teams": {
             "title": "Teams",
@@ -1687,14 +1703,24 @@
             "empty": "No teams yet. Create one to start a project.",
             "col": {
                 "name": "Name",
-                "states": "Workflow"
+                "states": "Workflow",
+                "estimates": "Estimates"
             },
             "editWorkflow": "Workflow",
             "editWorkflowNamed": "Edit the workflow of {name}",
             "created": "Team {name} created",
             "deleted": "Team {name} deleted",
             "resource": "team",
-            "resourcePlural": "teams"
+            "resourcePlural": "teams",
+            "editTitle": "Edit team",
+            "editNamed": "Edit {name}",
+            "estimateUnit": {
+                "legend": "Estimates in",
+                "OFF": "Off",
+                "POINTS": "Points",
+                "HOURS": "Hours",
+                "hint": "Changing it keeps every estimate: items keep their value in the other unit, hidden and not counted, and show it again if you switch back."
+            }
         },
         "states": {
             "title": "{team}: workflow",
@@ -2249,7 +2275,24 @@
             "empty": "The burn-up starts on the cycle's first day.",
             "aria": "Burn-up: scope {scope}, completed {completed} today",
             "tooltip": "Scope {scope} · started {started} · completed {completed}",
-            "caption": "Scope, started and completed work items at the end of each day"
+            "caption": "Scope, started and completed work items at the end of each day",
+            "measure": {
+                "label": "Count",
+                "items": "Items",
+                "points": "Points",
+                "hours": "Hours",
+                "unestimated": "Not estimated",
+                "unavailable": "This cycle's team no longer estimates in this unit; the chart counts items.",
+                "summary": {
+                    "points": "{scope, plural, one {# point} other {# points}} in scope, {unestimated, plural, =0 {every item estimated} one {# item not estimated} other {# items not estimated}}",
+                    "hours": "{scope} in scope, {unestimated, plural, =0 {every item estimated} one {# item not estimated} other {# items not estimated}}"
+                },
+                "aria": {
+                    "items": "Burn-up: scope {scope}, completed {completed} today",
+                    "points": "Burn-up in points: scope {scope}, completed {completed} today",
+                    "hours": "Burn-up in hours: scope {scope}, completed {completed} today"
+                }
+            }
         }
     },
     "milestones": {
@@ -2397,7 +2440,8 @@
             "dueDate": "Due date",
             "startDate": "Start date",
             "milestone": "Milestone",
-            "goal": "Goal"
+            "goal": "Goal",
+            "estimate": "Estimate"
         },
         "decline": {
             "title": "Decline the request",

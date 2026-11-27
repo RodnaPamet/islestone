@@ -22,6 +22,8 @@ import type { ProjectTemplateSummary, WorkflowStateCategory } from '@/lib/work-i
 export interface SettingsTeam {
     id: string;
     name: string;
+    /** How the team estimates (3.4a, decision 257): `null` when it does not. */
+    estimateUnit?: 'POINTS' | 'HOURS' | null;
 }
 
 export interface SettingsState {

@@ -4,7 +4,7 @@
  * Every query filters by `tenantId` (RLS also scopes it). Written fresh for
  * Islestone.
  */
-import type { Prisma, WorkflowStateCategory } from '@prisma/client';
+import type { EstimateUnit, Prisma, WorkflowStateCategory } from '@prisma/client';
 
 import type { PrismaTx } from '@/lib/db-context';
 import type { RequestContext } from '../types';
@@ -30,26 +30,43 @@ export class TeamRepository {
             where: { tenantId: ctx.tenantId },
             orderBy: [{ name: 'asc' }, { id: 'asc' }],
             take: TEAM_LIST_TAKE,
-            select: { id: true, name: true, createdAt: true, updatedAt: true },
+            select: { id: true, name: true, estimateUnit: true, createdAt: true, updatedAt: true },
         });
     }
 
     static async getById(db: PrismaTx, ctx: RequestContext, id: string) {
         return db.team.findFirst({
             where: { id, tenantId: ctx.tenantId },
-            select: { id: true, name: true, createdAt: true, updatedAt: true },
+            select: { id: true, name: true, estimateUnit: true, createdAt: true, updatedAt: true },
         });
     }
 
     static async create(db: PrismaTx, ctx: RequestContext, name: string) {
         return db.team.create({
             data: { tenantId: ctx.tenantId, name },
-            select: { id: true, name: true, createdAt: true, updatedAt: true },
+            select: { id: true, name: true, estimateUnit: true, createdAt: true, updatedAt: true },
         });
     }
 
     static async rename(db: PrismaTx, ctx: RequestContext, id: string, name: string) {
         return db.team.updateMany({ where: { id, tenantId: ctx.tenantId }, data: { name } });
+    }
+
+    /** Change a team's name and estimate unit (3.4a); only the keys given. */
+    static async update(db: PrismaTx, ctx: RequestContext, id: string, data: { name?: string; estimateUnit?: EstimateUnit | null }) {
+        return db.team.updateMany({ where: { id, tenantId: ctx.tenantId }, data });
+    }
+
+    /** The estimate unit of a team (3.4a); `undefined` when there is no such team. */
+    static async estimateUnitOf(db: PrismaTx, ctx: RequestContext, teamId: string): Promise<EstimateUnit | null | undefined> {
+        const row = await db.team.findFirst({ where: { id: teamId, tenantId: ctx.tenantId }, select: { estimateUnit: true } });
+        return row ? row.estimateUnit : undefined;
+    }
+
+    /** The estimate unit of a project's team (3.4a): the field set's estimate rule depends on it. */
+    static async estimateUnitOfProject(db: PrismaTx, ctx: RequestContext, projectId: string): Promise<EstimateUnit | null | undefined> {
+        const row = await db.project.findFirst({ where: { id: projectId, tenantId: ctx.tenantId }, select: { team: { select: { estimateUnit: true } } } });
+        return row ? row.team.estimateUnit : undefined;
     }
 
     static async countProjects(db: PrismaTx, ctx: RequestContext, teamId: string) {

@@ -62,7 +62,7 @@ export async function getWorkItemViewConfig(
                 dueDate: dateOnly(p.dueDate),
                 initiativeId: p.initiativeId,
             })),
-            teams: teams.map((t) => ({ id: t.id, name: t.name })),
+            teams: teams.map((t) => ({ id: t.id, name: t.name, estimateUnit: t.estimateUnit ?? null })),
             states: states.map((s) => ({ id: s.id, teamId: s.teamId, name: s.name, category: s.category, isDefault: s.isDefault })),
             types: types.map((t) => ({ id: t.id, name: t.name, icon: t.icon, color: t.color })),
             labels: labels.map((l) => ({ id: l.id, teamId: l.teamId, name: l.name, color: l.color })),
