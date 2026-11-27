@@ -55,4 +55,10 @@ export const WORKLOAD_LIMITS = {
     weeksDefault: 12,
     /** The most people one workload read covers; it reads one past and refuses above (422). */
     personLimit: 500,
+    /** The most counted items one workload read places (3.5b); it reads one past and refuses above (422). */
+    itemLimit: 20_000,
+    /** The most items one cell lists (3.5b), most minutes first. */
+    cellItems: 200,
+    /** The most people one `userId` filter names. */
+    peopleFilterMax: 50,
 } as const;

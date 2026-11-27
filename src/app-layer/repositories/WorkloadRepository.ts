@@ -141,6 +141,23 @@ export class WorkloadRepository {
         return rows.map((r) => ({ userId: r.userId, name: r.user.name, active: true }));
     }
 
+    /**
+     * The deactivated members among `userIds` (3.5b): those who still hold
+     * open work are rows of the page with no capacity, so their work shows as
+     * over and can be handed on (ADR 0003 §1). Never a GUEST. By membership
+     * age, at most `take`.
+     */
+    static async deactivatedPeople(db: PrismaTx, ctx: Ctx, userIds: readonly string[], take: number): Promise<WorkloadPersonRecord[]> {
+        if (userIds.length === 0) return [];
+        const rows = await db.tenantMembership.findMany({
+            where: { tenantId: ctx.tenantId, status: 'DEACTIVATED', role: { not: 'GUEST' }, userId: { in: [...userIds] } },
+            orderBy: { createdAt: 'asc' },
+            take,
+            select: { userId: true, user: { select: { name: true } } },
+        });
+        return rows.map((r) => ({ userId: r.userId, name: r.user.name, active: false }));
+    }
+
     /** One person's membership in the workspace (any status but GUEST's is a person of the page). */
     static async personOf(db: PrismaTx, ctx: Ctx, userId: string): Promise<WorkloadPersonRecord | null> {
         const m = await db.tenantMembership.findUnique({

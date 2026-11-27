@@ -66,7 +66,29 @@ export const WorkloadQuerySchema = z
         /** A Monday, not before the current week; the current week when absent. */
         from: DateOnly.optional(),
         weeks: z.coerce.number().int().min(1).max(WORKLOAD_LIMITS.weeksMax).optional(),
-        /** One person (`me` for the caller). */
-        userId: Id.optional(),
+        /** One person or several, comma-separated (`me` for the caller); at most `peopleFilterMax`. */
+        userId: z
+            .string()
+            .min(1)
+            .max(WORKLOAD_LIMITS.peopleFilterMax * 65)
+            .refine((v) => v.split(',').length <= WORKLOAD_LIMITS.peopleFilterMax && v.split(',').every((id) => id.length >= 1 && id.length <= 64), 'At most 50 people.')
+            .optional(),
+        /** People with counted work in this project in the window (3.5b); their cells show its share. */
+        projectId: Id.optional(),
+        /** People with counted work in this team's projects in the window (3.5b). */
+        teamId: Id.optional(),
+        /** The people a workspace recipient list resolves to (3.5b). */
+        recipientListId: Id.optional(),
+        /** Only people over capacity in some week of the window (3.5b). */
+        over: z.enum(['true', 'false']).optional(),
+    })
+    .strict();
+
+/** `GET /workload/cell` (3.5b): one person's week (`me` the caller, `unassigned` the work assigned to nobody). */
+export const WorkloadCellQuerySchema = z
+    .object({
+        userId: Id,
+        /** The week's Monday, not before the current week. */
+        week: DateOnly,
     })
     .strict();

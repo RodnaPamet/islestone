@@ -108,6 +108,7 @@ const SPEC: Readonly<Record<string, Spec>> = {
     // Sub-phase 3.5a (decisions 284 to 300).
     [`${T}/workload/route.ts`]: { GET: 'workload.view' },
     [`${T}/workload/members/route.ts`]: { GET: 'workload.manage' },
+    [`${T}/workload/cell/route.ts`]: { GET: 'workload.view' },
     [`${T}/workload-settings/route.ts`]: { GET: 'workload.view', PUT: 'workload.manage' },
     [`${T}/members/[userId]/capacity/route.ts`]: { GET: 'workload.view', PUT: 'workload.manage' },
     [`${T}/members/[userId]/capacity/[capacityId]/route.ts`]: { DELETE: 'workload.manage' },
