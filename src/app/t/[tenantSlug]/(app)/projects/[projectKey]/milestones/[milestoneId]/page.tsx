@@ -9,10 +9,10 @@ import { milestonePageContext } from '@/lib/server/milestone-pages.server';
 export default async function MilestonePage({ params }: { params: Promise<{ tenantSlug: string; projectKey: string; milestoneId: string }> }) {
     const { tenantSlug, projectKey, milestoneId } = await params;
     const prefix = decodeURIComponent(projectKey).toUpperCase();
-    const { project, milestone, config, affordances, savedViews } = await milestonePageContext(tenantSlug, prefix, decodeURIComponent(milestoneId));
+    const { project, milestone, config, affordances, savedViews, forecast } = await milestonePageContext(tenantSlug, prefix, decodeURIComponent(milestoneId));
     return (
         <WorkConfigProvider config={config}>
-            <MilestoneView project={project} initialMilestone={milestone} affordances={affordances} savedViews={savedViews} />
+            <MilestoneView project={project} initialMilestone={milestone} affordances={affordances} savedViews={savedViews} forecast={forecast} />
         </WorkConfigProvider>
     );
 }

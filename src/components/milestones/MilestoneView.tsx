@@ -15,6 +15,7 @@ import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 import { Button } from '@inflect/ui/components/ui/button';
+import { ForecastSection } from '@/components/analytics/forecast/ForecastSection';
 import { WorkItemsView } from '@/components/work-items/WorkItemsView';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import type { MilestoneAffordances, MilestoneData, SavedViewAffordances } from '@/lib/work-items/types';
@@ -87,11 +88,14 @@ export function MilestoneView({
     initialMilestone,
     affordances,
     savedViews,
+    forecast = false,
 }: {
     project: { id: string; teamId: string; name: string; keyPrefix: string; archived: boolean };
     initialMilestone: MilestoneData;
     affordances: MilestoneAffordances;
     savedViews: SavedViewAffordances;
+    /** The Forecast section (3.6c, decision 324; `mayViewAnalytics`, asked on the server). */
+    forecast?: boolean;
 }) {
     const tView = useTranslations('milestones');
     const tenantHref = useTenantHref();
@@ -106,12 +110,15 @@ export function MilestoneView({
             viewKey={`milestone:${milestone.id}`}
             savedViews={savedViews}
             summary={
-                <MilestoneSummary
-                    milestone={milestone}
-                    projectId={project.id}
-                    milestonesHref={tenantHref(`/projects/${encodeURIComponent(project.keyPrefix)}/milestones`)}
-                    editable={affordances.manageMilestones && !project.archived}
-                />
+                <div className="space-y-default">
+                    <MilestoneSummary
+                        milestone={milestone}
+                        projectId={project.id}
+                        milestonesHref={tenantHref(`/projects/${encodeURIComponent(project.keyPrefix)}/milestones`)}
+                        editable={affordances.manageMilestones && !project.archived}
+                    />
+                    {forecast && !project.archived && <ForecastSection filters={{ projectId: project.id, milestoneId: milestone.id }} />}
+                </div>
             }
         />
     );

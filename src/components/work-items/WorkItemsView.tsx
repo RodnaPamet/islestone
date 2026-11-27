@@ -37,6 +37,7 @@ import { FilterProvider, useFilters } from '@/components/ui/filter';
 import { useLocalStorage } from '@/components/ui/hooks';
 import { BatchActionButton, createColumns, type TableInstance } from '@/components/ui/table';
 import { useColumnsDropdown } from '@/components/ui/table/use-columns-dropdown';
+import { ForecastAction } from '@/components/analytics/forecast/ForecastSection';
 import type { ColumnVisibilityState } from '@/components/ui/table/types';
 import { useTenantSWR } from '@/lib/data/use-tenant-swr';
 import { usePermissions, useTenantContext } from '@/lib/tenant-context-provider';
@@ -86,6 +87,8 @@ export interface WorkItemsViewProps {
     manageCustomFields?: boolean;
     /** Links shown first among the header's actions (a project's Milestones, 2.5b). */
     headerLinks?: React.ReactNode;
+    /** The Forecast action for the current filters (3.6c, decision 324; `mayViewAnalytics`, asked on the server). */
+    forecast?: boolean;
 }
 
 const NO_SAVED_VIEWS: SavedViewAffordances = { savePersonal: false, saveShared: false, moderate: false };
@@ -230,6 +233,7 @@ function WorkItemsViewBody({
     manageCustomFields = false,
     summary,
     headerLinks,
+    forecast = false,
 }: WorkItemsViewProps & { filterDefs: ReturnType<typeof buildWorkItemFilterDefs>['filters'] }) {
     const tBody = useTranslations('workItems');
     const searchParams = useSearchParams();
@@ -370,6 +374,7 @@ function WorkItemsViewBody({
                                 onActiveChange={setActiveViewId}
                             />
                         )}
+                        {forecast && <ForecastAction filters={filters} />}
                         <LayoutToggle value={layout} onChange={setLayout} />
                         {layout === 'list' && (
                             <Combobox

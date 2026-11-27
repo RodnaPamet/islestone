@@ -8,6 +8,6 @@ import { initiativePageContext } from '@/lib/server/goal-pages.server';
  */
 export default async function InitiativePage({ params }: { params: Promise<{ tenantSlug: string; initiativeId: string }> }) {
     const { tenantSlug, initiativeId } = await params;
-    const { detail, options, affordances } = await initiativePageContext(tenantSlug, decodeURIComponent(initiativeId));
-    return <InitiativeView initialDetail={detail} goalOptions={options.goals} projects={options.projects} teams={options.teams} affordances={affordances} />;
+    const { detail, options, affordances, forecast } = await initiativePageContext(tenantSlug, decodeURIComponent(initiativeId));
+    return <InitiativeView initialDetail={detail} goalOptions={options.goals} projects={options.projects} teams={options.teams} affordances={affordances} forecast={forecast} />;
 }

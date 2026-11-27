@@ -9,10 +9,10 @@ import { cyclePageContext } from '@/lib/server/cycle-pages.server';
  */
 export default async function CyclePage({ params }: { params: Promise<{ tenantSlug: string; cycleId: string }> }) {
     const { tenantSlug, cycleId } = await params;
-    const { cycle, teamName, config, affordances, savedViews } = await cyclePageContext(tenantSlug, decodeURIComponent(cycleId));
+    const { cycle, teamName, config, affordances, savedViews, forecast } = await cyclePageContext(tenantSlug, decodeURIComponent(cycleId));
     return (
         <WorkConfigProvider config={config}>
-            <CycleView initialCycle={cycle} teamName={teamName} affordances={affordances} savedViews={savedViews} />
+            <CycleView initialCycle={cycle} teamName={teamName} affordances={affordances} savedViews={savedViews} forecast={forecast} />
         </WorkConfigProvider>
     );
 }

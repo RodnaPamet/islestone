@@ -11,6 +11,7 @@
 import { notFound } from 'next/navigation';
 
 import { getTenantCtx } from '@/app-layer/context';
+import { mayViewAnalytics } from '@/app-layer/policies/analytics.policies';
 import { milestoneAffordances, mayReadMilestones } from '@/app-layer/policies/milestone.policies';
 import { savedViewAffordances } from '@/app-layer/policies/saved-view.policies';
 import { getMilestone, listMilestones } from '@/app-layer/usecases/milestone';
@@ -51,6 +52,7 @@ export async function milestonePageContext(
     config: WorkItemViewConfig;
     affordances: MilestoneAffordances;
     savedViews: SavedViewAffordances;
+    forecast: boolean;
 }> {
     return or404(async () => {
         const ctx = await getTenantCtx({ tenantSlug });
@@ -59,6 +61,6 @@ export async function milestonePageContext(
         const project = config.projects.find((p) => p.keyPrefix === keyPrefix);
         if (!project) notFound();
         const milestone = await getMilestone(ctx, project.id, milestoneId);
-        return { project, milestone, config, affordances: milestoneAffordances(ctx), savedViews: savedViewAffordances(ctx) };
+        return { project, milestone, config, affordances: milestoneAffordances(ctx), savedViews: savedViewAffordances(ctx), forecast: mayViewAnalytics(ctx) };
     });
 }

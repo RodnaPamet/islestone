@@ -10,6 +10,7 @@
 import { notFound } from 'next/navigation';
 
 import { getTenantCtx } from '@/app-layer/context';
+import { mayViewAnalytics } from '@/app-layer/policies/analytics.policies';
 import { cycleAffordances, mayReadCycles } from '@/app-layer/policies/cycle.policies';
 import { savedViewAffordances } from '@/app-layer/policies/saved-view.policies';
 import { getCycle, listCycles } from '@/app-layer/usecases/cycle';
@@ -45,12 +46,13 @@ export async function cyclePageContext(tenantSlug: string, cycleId: string): Pro
     config: WorkItemViewConfig;
     affordances: CycleAffordances;
     savedViews: SavedViewAffordances;
+    forecast: boolean;
 }> {
     return or404(async () => {
         const ctx = await getTenantCtx({ tenantSlug });
         if (!mayReadCycles(ctx)) notFound();
         const [cycle, config] = await Promise.all([getCycle(ctx, cycleId), getWorkItemViewConfig(ctx)]);
         const { team, ...data } = cycle;
-        return { cycle: data, teamName: team.name, config, affordances: cycleAffordances(ctx), savedViews: savedViewAffordances(ctx) };
+        return { cycle: data, teamName: team.name, config, affordances: cycleAffordances(ctx), savedViews: savedViewAffordances(ctx), forecast: mayViewAnalytics(ctx) };
     });
 }

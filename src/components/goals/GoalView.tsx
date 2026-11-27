@@ -18,6 +18,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useMemo, useState } from 'react';
 
+import { ForecastSection } from '@/components/analytics/forecast/ForecastSection';
 import { Button } from '@inflect/ui/components/ui/button';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
@@ -48,7 +49,18 @@ function RecordRow({ href, name, record }: { href: string; name: string; record:
     );
 }
 
-export function GoalView({ initialDetail, goalOptions, affordances }: { initialDetail: GoalDetail; goalOptions: ViewGoal[]; affordances: RoadmapAffordances }) {
+export function GoalView({
+    initialDetail,
+    goalOptions,
+    affordances,
+    forecast = false,
+}: {
+    initialDetail: GoalDetail;
+    goalOptions: ViewGoal[];
+    affordances: RoadmapAffordances;
+    /** The Forecast section of the goal's open items (3.6c, decision 324; `mayViewAnalytics`, asked on the server). */
+    forecast?: boolean;
+}) {
     const t = useTranslations('goals');
     const tRoadmap = useTranslations('roadmap');
     const router = useRouter();
@@ -134,6 +146,8 @@ export function GoalView({ initialDetail, goalOptions, affordances }: { initialD
                 <p className="text-xs text-content-muted">{t('detail.progressHint')}</p>
                 <ProgressCell name={goal.title} summary={goal} />
             </section>
+
+            {forecast && !goal.archived && <ForecastSection filters={{ goalId: goal.id }} />}
 
             <section aria-labelledby="goal-children" className="space-y-default">
                 <div className="flex flex-wrap items-center justify-between gap-tight">

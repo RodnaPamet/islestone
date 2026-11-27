@@ -3701,5 +3701,92 @@
             "unnamed": "A member with no name",
             "deactivated": "{name} (deactivated)"
         }
+    },
+    "forecast": {
+        "title": "Forecast",
+        "open": "Forecast",
+        "details": "Details",
+        "loading": "Working out the forecast…",
+        "failed": "The forecast could not be loaded.",
+        "tooLarge": "This forecast's history holds more than {limit} completed items; base it on fewer projects or a shorter window.",
+        "remaining": "{count, plural, =0 {No open items.} one {# open item.} other {# open items.}}",
+        "basedOn": {
+            "projects": "Based on {names}: {completions, plural, one {# item} other {# items}} finished in the last {weeks} weeks.",
+            "team": "Based on the {team} team: {completions, plural, one {# item} other {# items}} finished in the last {weeks} weeks.",
+            "workspace": "Based on the workspace: {completions, plural, one {# item} other {# items}} finished in the last {weeks} weeks."
+        },
+        "assumes": "Assumes these items get {share}% of that throughput and no new items are added.",
+        "caution": "Based on few items; the range is wide.",
+        "due": "{percent}% chance of finishing by the due date, {date}.",
+        "duePassed": "The due date, {date}, is today or has passed.",
+        "setAside": "Set aside (a forecast counts open items whatever their status): {filters}.",
+        "likely": {
+            "label": "Likely dates",
+            "p50": "50% likely",
+            "p85": "85% likely",
+            "p95": "95% likely",
+            "later": "Later than {date}"
+        },
+        "refused": {
+            "NOTHING_REMAINING": "Nothing left to forecast: no open items.",
+            "NO_SHARE": "Nothing to forecast with no share of the throughput.",
+            "TOO_FEW_COMPLETIONS": "Not enough history to forecast: {completions, plural, one {# item} other {# items}} finished in the last {weeks} weeks; a forecast needs at least {needed}.",
+            "TOO_FEW_WORKING_DAYS": "Not enough history to forecast: this scope has {workingDays, plural, one {# working day} other {# working days}} of history; a forecast needs at least {needed}.",
+            "BEYOND_TWO_YEARS": "No forecast within two years at the recent pace: {completions, plural, one {# item} other {# items}} finished in the last {weeks} weeks."
+        },
+        "controls": {
+            "window": "History",
+            "weeks": "{weeks} weeks",
+            "share": "Share of throughput",
+            "sharePercent": "{share}%",
+            "basedOn": "Based on",
+            "projects": "Projects",
+            "team": "{team} team",
+            "workspace": "Workspace",
+            "chooseProjects": "Projects in the history"
+        },
+        "histogram": {
+            "title": "Distribution",
+            "summary": {
+                "day": "Trials finishing on each working day.",
+                "week": "Trials finishing in each week."
+            },
+            "beyond": "{count, plural, one {# trial} other {# trials}} not done within two years are not drawn.",
+            "caption": {
+                "day": "Trials finishing per working day",
+                "week": "Trials finishing per week"
+            },
+            "from": "From",
+            "to": "To",
+            "trials": "Trials",
+            "range": "{from} to {to}",
+            "bucket": "{when}: {trials, plural, one {# trial} other {# trials}} ({share}%)",
+            "buckets": "Finishing days",
+            "due": "Due {date}",
+            "aria": "Distribution of {trials} trials over {buckets, plural, one {# period} other {# periods}}."
+        },
+        "curve": {
+            "title": "Chance finished by",
+            "caption": "The chance of every open item being done by each working day",
+            "date": "By",
+            "chance": "Chance",
+            "percent": "{value}%",
+            "due": "Due {date}",
+            "aria": "The chance of finishing rises to 50% by {p50} and 85% by {p85}."
+        },
+        "how": {
+            "title": "How this was computed",
+            "method": "Each of the trials draws, for every working day ahead, the completions of a random working day of the history, until the open items are done. The dates are the days by which half, 85% and 95% of the trials were done.",
+            "window": "History: {from} to {to}, {workingDays, plural, one {# working day} other {# working days}} ({zone}), {completions, plural, one {# item} other {# items}} finished.",
+            "noWindow": "No history recorded before today.",
+            "trials": "{trials} trials; seed {seed}.",
+            "record": {
+                "SHOWN": "Of {scorable} earlier forecasts here, the 85% date held {held} times (50%: {p50Held} of {p50}; 95%: {p95Held} of {p95}). Each was a forecast of the next {size} completions from the start of a week in the last year, with the history as it stood then.",
+                "NOT_ENOUGH": "Not enough history to show how forecasts held here.",
+                "TOO_LARGE": "Too much history to show how forecasts held here (more than {limit} completed items).",
+                "NONE": "How forecasts held here is shown beside a forecast that gives dates."
+            }
+        },
+        "assumesAll": "Assumes these items get all of that throughput and no new items are added."
     }
 }

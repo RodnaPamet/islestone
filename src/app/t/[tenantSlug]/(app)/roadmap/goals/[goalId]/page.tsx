@@ -8,6 +8,6 @@ import { goalPageContext } from '@/lib/server/goal-pages.server';
  */
 export default async function GoalPage({ params }: { params: Promise<{ tenantSlug: string; goalId: string }> }) {
     const { tenantSlug, goalId } = await params;
-    const { detail, options, affordances } = await goalPageContext(tenantSlug, decodeURIComponent(goalId));
-    return <GoalView initialDetail={detail} goalOptions={options.goals} affordances={affordances} />;
+    const { detail, options, affordances, forecast } = await goalPageContext(tenantSlug, decodeURIComponent(goalId));
+    return <GoalView initialDetail={detail} goalOptions={options.goals} affordances={affordances} forecast={forecast} />;
 }
