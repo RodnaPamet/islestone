@@ -42,7 +42,7 @@ const RUNS = 5;
 interface Scenario {
     name: string;
     file: string;
-    method: 'GET' | 'POST';
+    method: 'GET' | 'POST' | 'PUT';
     path: (w: PerfWorld, run: number) => string;
     params?: (w: PerfWorld, run: number) => Record<string, string>;
     body?: (w: PerfWorld, run: number) => unknown;
