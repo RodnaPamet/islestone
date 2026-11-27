@@ -23,9 +23,9 @@
  *   - **No figure per assignee** (decision 330): waits are grouped by whom an
  *     item waited on, never by its assignee.
  *
- * Never logs a person's figures. The waiting-now items' keys and titles are
- * read by id under the caller's visibility; no description, comment or
- * response text. Written fresh for Islestone.
+ * Never logs a person's figures. The waiting-now items' keys and titles come
+ * with the record's statement, read under the caller's visibility; no
+ * description, comment or response text. Written fresh for Islestone.
  */
 import { WorkingTimeMeter } from '../domain/analytics/elapsed';
 import { fieldWaits, reviewWaits, waitingFigures, type PartyWaits } from '../domain/analytics/waiting';
@@ -33,7 +33,6 @@ import { formatKey } from '../domain/work-item-key';
 import { assertCanViewAnalytics, mayReadAnalyticsPeople, readsWaitingAsPerson } from '../policies/analytics.policies';
 import { MembershipRepository } from '../repositories/MembershipRepository';
 import { ReviewRepository } from '../repositories/ReviewRepository';
-import { WorkItemRepository } from '../repositories/WorkItemRepository';
 import { WorkItemTransitionRepository } from '../repositories/WorkItemTransitionRepository';
 import type { RequestContext } from '../types';
 import { resolveScope, tooLarge, type AnalyticsQuery } from './analytics';
@@ -66,12 +65,13 @@ export async function getTimeWaiting(ctx: RequestContext, query: AnalyticsQuery,
         const spans = empty ? [] : await ReviewRepository.reviewSpans(db, ctx, { start: s.start, asOf: s.asOf, itemIds: s.record.itemIds, take: ANALYTICS_REVIEW_SPAN_LIMIT + 1 });
         if (spans.length > ANALYTICS_REVIEW_SPAN_LIMIT) throw tooLarge('reviews', spans.length, ANALYTICS_REVIEW_SPAN_LIMIT);
         const read = empty
-            ? { items: 0, segments: [] }
+            ? { items: 0, segments: [], labels: new Map<string, { number: number; title: string; keyPrefix: string }>() }
             : await WorkItemTransitionRepository.waitSpans(db, ctx, s.record, {
                   start: s.start,
                   asOf: s.asOf,
                   itemLimit: ANALYTICS_FLOW_ITEM_LIMIT,
                   reviewItemIds: [...new Set(spans.map((sp) => sp.workItemId))],
+                  openReviewItemIds: [...new Set(spans.filter((sp) => sp.end === null || sp.end > s.asOf.getTime()).map((sp) => sp.workItemId))],
               });
         if (read.items > ANALYTICS_FLOW_ITEM_LIMIT) throw tooLarge('items', read.items, ANALYTICS_FLOW_ITEM_LIMIT);
 
@@ -96,7 +96,7 @@ export async function getTimeWaiting(ctx: RequestContext, query: AnalyticsQuery,
         const partyOf = (userId: string) => (!everyone && userId !== ctx.userId ? userId : members.has(userId) ? userId : FORMER);
         const figures = waitingFigures(waits, read.segments, { start: s.start.getTime(), asOf: R }, meterFor, partyOf);
 
-        // The rows shown, then their waiting-now items' keys and titles (read by id, bounded).
+        // The rows shown, and their waiting-now items (keys and titles came with the record's statement).
         const shown: Array<[string, PartyWaits]> = [];
         if (everyone) shown.push(...[...figures.parties].filter(([k]) => k === FORMER || members.has(k)));
         else if (asPerson) shown.push([ctx.userId, figures.parties.get(ctx.userId) ?? ZERO]);
@@ -110,8 +110,7 @@ export async function getTimeWaiting(ctx: RequestContext, query: AnalyticsQuery,
             listed.set(k, p.now.slice(0, take));
             budget -= take;
         }
-        const ids = [...new Set([...listed.values()].flat().map((n) => n.workItemId))];
-        const labels = new Map((await WorkItemRepository.keyTitlesByIds(db, ctx, s.v, ids)).map((w) => [w.id, w]));
+        const labels = read.labels;
 
         const rowOf = (k: string, p: PartyWaits): WaitingPartyRow => {
             const m = members.get(k);

@@ -318,18 +318,40 @@ export class WorkItemTransitionRepository {
      * to an item with a review span (`reviewItemIds`, from
      * `ReviewRepository.reviewSpans`). The scope's predicate is COALESCEd (a
      * NULL recorded cycle or milestone against an id filter is out of scope).
+     *
+     * With them, the key and title of every item that may be waiting at
+     * `asOf` (its last row live and in scope, naming someone in waiting on or
+     * with a review span still open, `openReviewItemIds`), read from
+     * `WorkItem` with its own `deletedAt` and the caller's visibility, so the
+     * waiting-now lists need no read of their own. Never a description.
      */
     static async waitSpans(
         db: PrismaTx,
         ctx: Ctx,
         s: RecordScope,
-        window: { start: Date; asOf: Date; itemLimit: number; reviewItemIds: readonly string[] },
-    ): Promise<{ items: number; segments: WaitSegment[] }> {
+        window: { start: Date; asOf: Date; itemLimit: number; reviewItemIds: readonly string[]; openReviewItemIds: readonly string[] },
+    ): Promise<{ items: number; segments: WaitSegment[]; labels: Map<string, { number: number; title: string; keyPrefix: string }> }> {
         const t = ctx.tenantId;
+        const all = s.visibility.kind === 'ALL';
+        const granted = s.visibility.kind === 'GRANTED' ? [...s.visibility.projectIds] : [];
         const R = ts(window.asOf);
         const start = ts(window.start);
         const rows = await db.$queryRaw<
-            Array<{ kind: 'n' | 's'; workItemId: string | null; teamId: string | null; start: Date | null; end: Date | null; last: boolean | null; ord: bigint | number | null; open: boolean | null; userId: string | null; n: number | null }>
+            Array<{
+                kind: 'n' | 's';
+                workItemId: string | null;
+                teamId: string | null;
+                start: Date | null;
+                end: Date | null;
+                last: boolean | null;
+                ord: bigint | number | null;
+                open: boolean | null;
+                userId: string | null;
+                n: number | null;
+                number: number | null;
+                title: string | null;
+                keyPrefix: string | null;
+            }>
         >(Prisma.sql`
             WITH items AS (
                 SELECT DISTINCT t."workItemId"
@@ -347,26 +369,36 @@ export class WorkItemTransitionRepository {
                        LEAD(t."at") OVER w AS "nextAt"
                   FROM "WorkItemTransition" t
                  WHERE t."tenantId" = ${t} AND t."at" <= ${R}
-                   AND t."workItemId" IN (SELECT i."workItemId" FROM items i)
+                   AND t."workItemId" = ANY(ARRAY(SELECT i."workItemId" FROM items i))
                    AND (SELECT c."n" FROM counted c) <= ${window.itemLimit}
                 WINDOW w AS (PARTITION BY t."workItemId" ORDER BY t."at", t."id")
             )
             SELECT 'n' AS "kind", NULL AS "workItemId", NULL AS "teamId", NULL::timestamp AS "start", NULL::timestamp AS "end",
-                   NULL::boolean AS "last", NULL::bigint AS "ord", NULL::boolean AS "open", NULL AS "userId", c."n"
+                   NULL::boolean AS "last", NULL::bigint AS "ord", NULL::boolean AS "open", NULL AS "userId", c."n",
+                   NULL::int AS "number", NULL AS "title", NULL AS "keyPrefix"
               FROM counted c
             UNION ALL
             SELECT 's', r."workItemId", r."teamId", r."at", COALESCE(r."nextAt", ${R}), r."nextAt" IS NULL, r."ord",
-                   r."stateCategory" IN ('BACKLOG', 'UNSTARTED', 'STARTED'), r."waitingOnUserId", NULL
+                   r."stateCategory" IN ('BACKLOG', 'UNSTARTED', 'STARTED'), r."waitingOnUserId", NULL,
+                   w."number", w."title", p."keyPrefix"
               FROM r
+              LEFT JOIN "WorkItem" w
+                     ON r."nextAt" IS NULL
+                    AND (r."waitingOnUserId" IS NOT NULL OR r."workItemId" = ANY(${[...window.openReviewItemIds]}::text[]))
+                    AND w."tenantId" = ${t} AND w."id" = r."workItemId" AND w."deletedAt" IS NULL
+                    AND (${all}::boolean OR w."projectId" = ANY(${granted}::text[]))
+              LEFT JOIN "Project" p ON p."tenantId" = ${t} AND p."id" = w."projectId" AND p."deletedAt" IS NULL
              WHERE r."live"
                AND (r."waitingOnUserId" IS NOT NULL
                     OR (r."stateCategory" IN ('BACKLOG', 'UNSTARTED', 'STARTED') AND COALESCE(r."nextAt", ${R}) > ${start})
                     OR r."workItemId" = ANY(${[...window.reviewItemIds]}::text[]))`);
         let items = 0;
         const segments: WaitSegment[] = [];
+        const labels = new Map<string, { number: number; title: string; keyPrefix: string }>();
         for (const row of rows) {
             if (row.kind === 'n') items = Number(row.n);
-            else
+            else {
+                if (row.title !== null && row.keyPrefix !== null) labels.set(row.workItemId!, { number: Number(row.number), title: row.title, keyPrefix: row.keyPrefix });
                 segments.push({
                     workItemId: row.workItemId!,
                     ord: Number(row.ord),
@@ -377,8 +409,9 @@ export class WorkItemTransitionRepository {
                     open: row.open === true,
                     waitingOnUserId: row.userId,
                 });
+            }
         }
-        return { items, segments };
+        return { items, segments, labels };
     }
 
     /**

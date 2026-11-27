@@ -253,9 +253,10 @@ const SCENARIOS: Scenario[] = [
     { name: 'cycles: the burn-up of the current cycle', file: `${ROUTES}/cycles/[cycleId]/burn-up/route.ts`, method: 'GET', path: (w) => `/cycles/${w.currentCycleId}/burn-up`, params: (w) => ({ cycleId: w.currentCycleId }), budget: 8 },
     // ── end of the 3.6a analytics block ──
     // ── Time waiting (3.6b; the map's budget: at most 7 statements a read): the tenant binding, the scope's team when it is
-    // one project, the calendars, the one read of the items, their segments and review spans, the parties' names, and
-    // the waiting-now items' keys and titles. The workspace as the owner (every party's row), a project as the heavy
-    // member (its own row). ──
+    // one project, the calendars, the review spans (the review rows' own seam), the record's one statement (the items,
+    // their segments, the waiting-now items' keys and titles), and the parties' memberships and names (two statements:
+    // the membership, then the encrypted name). Measured on the 10k seed: the workspace as the owner (every party's
+    // row) 6, a project as the heavy member (its own row) 7. ──
     { name: 'analytics: time waiting, the workspace, twelve weeks', file: `${ROUTES}/analytics/waiting/route.ts`, method: 'GET', as: 'approver', path: () => `/analytics/waiting?${analyticsWindow()}`, budget: 7 },
     { name: 'analytics: time waiting, a project', file: `${ROUTES}/analytics/waiting/route.ts`, method: 'GET', path: (w) => `/analytics/waiting?projectId=${w.bigProjectId}&${analyticsWindow()}`, budget: 7 },
     // ── end of the 3.6b time-waiting block ──

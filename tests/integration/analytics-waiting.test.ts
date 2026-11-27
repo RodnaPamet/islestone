@@ -319,7 +319,7 @@ describeFn('time waiting (3.6b)', () => {
                             start.getTime(),
                             new Set(reviewItemIds),
                         );
-                        const got = await runInTenantContext(owner, (db) => WorkItemTransitionRepository.waitSpans(db, owner, scope, { start, asOf, itemLimit: 1000, reviewItemIds }));
+                        const got = await runInTenantContext(owner, (db) => WorkItemTransitionRepository.waitSpans(db, owner, scope, { start, asOf, itemLimit: 1000, reviewItemIds, openReviewItemIds: reviewItemIds }));
                         const key = (s: { workItemId: string; ord: number }) => `${s.workItemId}#${String(s.ord).padStart(3, '0')}`;
                         const sort = <T extends { workItemId: string; ord: number }>(xs: T[]) => [...xs].sort((a, b) => (key(a) < key(b) ? -1 : 1));
                         expect({ sc, items: got.items, segments: sort(got.segments) }).toEqual({ sc, items: items.length, segments: sort(expected) });

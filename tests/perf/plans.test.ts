@@ -305,7 +305,8 @@ const RUNNERS: Record<string, Runner> = {
         const window = analyticsWindow();
         const spans = await ReviewRepository.reviewSpans(db, ctx, { start: window.from, asOf: window.asOf, itemIds: null, take: 50_001 });
         const reviewItemIds = [...new Set(spans.map((sp) => sp.workItemId))];
-        return WorkItemTransitionRepository.waitSpans(db, ctx, recordScope(v, { projectIds: [w.bigProjectId] }), { start: window.from, asOf: window.asOf, itemLimit: 20_000, reviewItemIds });
+        const openReviewItemIds = [...new Set(spans.filter((sp) => sp.end === null).map((sp) => sp.workItemId))];
+        return WorkItemTransitionRepository.waitSpans(db, ctx, recordScope(v, { projectIds: [w.bigProjectId] }), { start: window.from, asOf: window.asOf, itemLimit: 20_000, reviewItemIds, openReviewItemIds });
     },
     "cycles: the burn-up's items and rows": async (w, db, ctx) => {
         const ids = await WorkItemTransitionRepository.itemIdsEverInCycle(db, ctx, w.currentCycleId);
