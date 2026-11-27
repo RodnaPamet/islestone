@@ -13,8 +13,8 @@
  *     `viewer.change`): drag and resize from the widget's handle, "Add
  *     widget", a widget's settings and its removal (through the undo toast).
  *     Each change sends the whole widget list with the dashboard's version as
- *     `If-Match`; a version conflict shows the server's layout with a
- *     "changed by someone else" toast. Rename, share and delete follow the
+ *     `If-Match`; a version conflict shows the server's layout and says it
+ *     was changed by someone else. Rename, share and delete follow the
  *     server's affordances; nothing here asks a role or a key.
  *
  * Copied from inflect-compliance `src/app/org/[orgSlug]/(app)/PortfolioDashboard.tsx`
