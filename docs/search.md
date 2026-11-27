@@ -57,6 +57,7 @@ Under row-level security a full-text (`@@`), `ILIKE` or trigram condition cannot
 | `search_work_item_title_words(p_query, p_all_projects, p_project_ids, p_limit)` → `(id)` | `WorkItemRepository.titleFullTextIds` (the list's `q`) | `WorkItem_search_title_fts` |
 | `search_work_item_title_substring(p_contains, p_all_projects, p_project_ids, p_limit)` → `(id)` | `WorkItemRepository.titleSubstringIds` (the list's `q`) | `WorkItem_search_title_trgm` |
 | `search_project_names(p_query, p_contains, p_prefix, p_all_projects, p_project_ids, p_limit)` → `(id, ordinal)` | `ProjectRepository.searchNameIds` (the palette) | `Project_search_name_trgm`, `Project_search_name_fts` |
+| `search_page_titles(p_query, p_contains, p_prefix, p_all_projects, p_project_ids, p_limit)` → `(id, ordinal)` (4.1a) | `PageRepository.searchTitleIds` (the move dialog's parent search; 4.1f's palette group) | `Page_search_title_trgm`, `Page_search_title_fts` |
 | `search_item_contents(p_query, p_all_projects, p_project_ids, p_limit)` → `("workItemId", "commentId", rank, bounded)` | `SearchVectorRepository.matchItems` (the palette and the list's `q`) | `SearchVector_search_lexemes`, and `SearchVector_search_recent` for the walk (decision 250, below) |
 
 Every one of them:
