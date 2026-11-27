@@ -240,6 +240,8 @@ GRANT EXECUTE ON FUNCTION search_page_titles(text, text, text, boolean, text[], 
 -- PageContent: SELECT, INSERT and UPDATE; its rows go with their page.
 GRANT SELECT, INSERT, UPDATE, DELETE ON "Page" TO app_user;
 GRANT SELECT, INSERT, UPDATE ON "PageContent" TO app_user;
+-- The schema's default privileges grant DELETE on every new table; take it back.
+REVOKE DELETE, TRUNCATE ON "PageContent" FROM app_user;
 
 ALTER TABLE "Page" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "Page" FORCE ROW LEVEL SECURITY;

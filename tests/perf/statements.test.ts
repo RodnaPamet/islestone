@@ -222,6 +222,13 @@ const SCENARIOS: Scenario[] = [
         path: (w) => `/work-items?assigneeId=${w.heavyUserId}&stateCategory=BACKLOG,UNSTARTED,STARTED&limit=50`,
         budget: 8,
     },
+    // Pages (4.1a; the map: "the page route in a fixed number of statements whatever the depth"). NOT MEASURED
+    // (4.1a could not seed here for lack of disk), estimated: a page reads the tenant binding, the page, its
+    // project (with its team), the breadcrumb in one recursive statement, its first page of subpages and their
+    // counts (6 or 7); a tree read the binding, the project, the children and their counts (4 or 5). Replace each
+    // with CI's first measurement; a budget only goes down.
+    { name: 'pages: the deepest page of the project', file: `${ROUTES}/pages/[pageId]/route.ts`, method: 'GET', path: (w) => `/pages/${w.pageLeafId}`, params: (w) => ({ pageId: w.pageLeafId }), budget: 7 },
+    { name: "pages: the project's tree, top level", file: `${ROUTES}/pages/route.ts`, method: 'GET', path: (w) => `/pages?projectId=${w.projectId}`, budget: 5 },
     // The roadmap (3.2c): the map's budget is at most 7 statements whatever the workspace's size; 6 since 3.5b read
     // the calendars and their holidays' dates in one statement.
     { name: 'roadmap: the whole workspace', file: `${ROUTES}/roadmap/route.ts`, method: 'GET', path: () => '/roadmap', budget: 6 },

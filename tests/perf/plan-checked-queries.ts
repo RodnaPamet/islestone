@@ -4,7 +4,7 @@
  * checks on the seeded database, and the repository methods each one runs.
  *
  * A repository method that reads `WorkItem`, `Comment`, `SearchVector`,
- * (3.4b) `TimeEntry` or (3.6a) `WorkItemTransition` is
+ * (3.4b) `TimeEntry`, (3.6a) `WorkItemTransition` or (4.1a) `Page` is
  * either named by a query here or carries a reason in `PLAN_CHECK_EXEMPT`
  * (`tests/guards/plan-checked-queries-coverage.test.ts`): a new list query
  * cannot avoid the check. `tests/perf/plans.test.ts` holds one runner per
@@ -280,6 +280,30 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
         maxBuffers: 50,
         maxBuffers100k: 50,
     },
+    // ── Pages and the tree (4.1a; decisions 341 to 344, 347's titles) ──────
+    // NOT MEASURED (4.1a could not seed here for lack of disk): every budget is an estimate. The 10k seed holds
+    // about 1,100 pages (100 per 1,000-item project, 100 in the workspace's tree, up to five deep), the 100k
+    // seed about 10,200 (2,000 in the large project). A tree read touches the partial index's entries of one
+    // parent and their counts: a few pages of each, estimated under 30 buffers at 10k, budget 100; the 100k
+    // large project's top level holds about 100 pages, budget 400. The breadcrumb reads at most five rows by
+    // key; a subtree at most a top-level page's descendants (about 20 at 10k, 400 in the large project at
+    // 100k); the Deleted list a project's deleted leaves and their groups; the title search the GIN entries of
+    // one word. Replace each with about twice CI's first measurement (docs/performance.md, "Plan checks").
+    { name: "pages: a tree's top level (a project)", methods: ['PageRepository.children', 'PageRepository.childCounts'], indexes: ['Page_live_project_tree'], maxBuffers: 100, maxBuffers100k: 400 },
+    { name: "pages: a page's subpages", methods: ['PageRepository.children', 'PageRepository.childCounts'], indexes: ['Page_live_project_tree'], maxBuffers: 100, maxBuffers100k: 300 },
+    { name: "pages: the workspace's tree, top level", methods: ['PageRepository.children', 'PageRepository.childCounts'], indexes: ['Page_live_workspace_tree'], maxBuffers: 100, maxBuffers100k: 300 },
+    { name: 'pages: the breadcrumb (one statement)', methods: ['PageRepository.chainUp'], indexes: ['Page_pkey|Page_id_tenantId_key|Page_id_projectId_tenantId_key'], maxBuffers: 50, maxBuffers100k: 50 },
+    { name: 'pages: a subtree (delete, move)', methods: ['PageRepository.subtree'], indexes: ['Page_tenantId_parentId_idx'], maxBuffers: 200, maxBuffers100k: 2000 },
+    { name: "pages: a tree's Deleted list", methods: ['PageRepository.listDeletedRoots'], indexes: ['Page_tenantId_projectId_parentId_sortKey_idx'], maxBuffers: 300, maxBuffers100k: 3000 },
+    {
+        name: 'pages: titles (trigram and full text)',
+        methods: ['PageRepository.searchTitleIds', 'PageRepository.findSearchRows'],
+        indexes: ['Page_search_title_fts', 'Page_search_title_trgm'],
+        maxBuffers: 300,
+        maxBuffers100k: 2000,
+        conditions: [{ index: 'Page_search_title_trgm', operator: '~~*' }, { index: 'Page_search_title_fts', operator: '@@' }],
+    },
+    // ── end of the 4.1a pages block ──
 ];
 
 /**
@@ -313,6 +337,18 @@ export const PLAN_CHECK_EXEMPT: Readonly<Record<string, string>> = {
     'TimeEntryRepository.get': 'one time entry by primary key (the write gate of a change or a delete, 3.4b)',
     'WorkItemRepository.keyTitlesByIds': 'at most 2,000 given ids by primary key (the analytics points\' keys and titles, 3.6a)',
     'TimeEntryRepository.anyInProject': "an existence probe, one row, on TimeEntry_tenantId_projectId_workDate_idx (the purge's choice of a tombstone, issue #117)",
+    // ── Pages (4.1a) ──
+    'PageRepository.getAny': 'one page by primary key (the gate of every page read and write)',
+    'PageRepository.lockForWrite': 'the given ids by primary key, locked in id order (decision 173)',
+    'PageRepository.siblingKeys': 'at most two named siblings by primary key (a placement)',
+    'PageRepository.neighbourKey': 'one row: the nearest live sibling key of one parent, on Page_live_project_tree or Page_live_workspace_tree',
+    'PageRepository.keyTaken': 'an existence probe, one row, among one parent\'s live children (a restore\'s placement)',
+    'PageRepository.ofDeletion': 'one delete group by Page_tenantId_deletionId_idx (a restore), at most PAGE_SUBTREE_CAP',
+    'PageRepository.purgeableGroups': "the nightly purge's deleted pages of one workspace past the window, grouped by delete group, at most ten groups",
+    'PageRepository.idsOfGroups': "the nightly purge's named delete groups by Page_tenantId_deletionId_idx",
+    'PageRepository.siblingGroupsNeedingRebalance': "the nightly rebalance's probe for a key past 64 characters in one workspace's pages (no index serves length()), at most 500 groups",
+    'PageRepository.siblingsInOrder': "the nightly rebalance's one sibling group in order, deleted rows included, on Page_tenantId_projectId_parentId_sortKey_idx",
+    // ── end of the 4.1a pages exemptions ──
 };
 
 /** A query's buffer budget at a shape: 10k and 100k are judged, any other shape is reported only (`null`). */

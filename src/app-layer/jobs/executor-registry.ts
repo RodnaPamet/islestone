@@ -589,6 +589,26 @@ executorRegistry.register('goal-purge', async (payload) => {
     });
 });
 
+// ── Pages (sub-phase 4.1a) ──────────────────────────────────────────
+
+executorRegistry.register('page-purge', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processPagePurge } = await import('./page-purge');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId };
+    const r = await processPagePurge(forwarded);
+    return makeResult('page-purge', startedAt, startMs, r.pages, r.pages, 0, { tenants: r.tenants, pages: r.pages, groups: r.groups });
+});
+
+executorRegistry.register('page-sortkey-rebalance', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processPageSortKeyRebalance } = await import('./page-sortkey-rebalance');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId };
+    const r = await processPageSortKeyRebalance(forwarded);
+    return makeResult('page-sortkey-rebalance', startedAt, startMs, r.pages, r.pages, 0, { groups: r.groups });
+});
+
 // ── Timesheets (sub-phase 3.4c) ─────────────────────────────────────
 
 executorRegistry.register('timesheet-reminder', async (payload) => {

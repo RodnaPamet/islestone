@@ -173,6 +173,20 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'page-purge',
+        pattern: '50 2 * * *',    // 02:50 UTC
+        // After the 02:30 work-item purge (docs/porting/maps/4.1.md, "Jobs").
+        description: 'Hard-delete page groups soft-deleted more than PAGE_PURGE_DAYS (30) ago, with their content. Counts-only audit entry per workspace.',
+        defaultPayload: {},
+    },
+    {
+        name: 'page-sortkey-rebalance',
+        pattern: '55 3 * * *',    // 03:55 UTC
+        // After the work-item rebalance at 03:45, a quiet hour.
+        description: 'Rewrite the sort keys of page sibling groups whose keys passed 64 characters, keeping their order.',
+        defaultPayload: {},
+    },
+    {
         name: 'work-item-sortkey-rebalance',
         pattern: '45 3 * * *',    // 03:45 UTC
         description: 'Rewrite the sort keys of projects whose keys passed 64 characters, keeping their order.',

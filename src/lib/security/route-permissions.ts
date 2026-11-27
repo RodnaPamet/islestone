@@ -807,6 +807,55 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'goals.manage',
         note: "Set or clear a goal's or an initiative's health: a person only (3.2b, decisions 205 and 214).",
     },
+    // ── Pages (sub-phase 4.1a; owner decisions 339 and 341 to 344) ──
+    {
+        path: new RegExp(`^${T}\\/pages(\\/search)?$`),
+        methods: ['GET'],
+        permission: 'pages.view',
+        note: "A tree's children, or pages by title (decision 342: a page is readable exactly when its tree is).",
+    },
+    {
+        path: new RegExp(`^${T}\\/pages$`),
+        methods: ['POST'],
+        permission: 'pages.create',
+        note: 'Create a page in a project\'s tree or the workspace\'s (decision 339: Owners, Admins and Members).',
+    },
+    {
+        path: new RegExp(`^${T}\\/pages\\/deleted$`),
+        methods: ['GET'],
+        permission: 'pages.delete',
+        note: "A tree's Deleted list: the key that restores (decision 344).",
+    },
+    {
+        path: new RegExp(`^${T}\\/pages\\/[^\\/]+$`),
+        methods: ['GET'],
+        permission: 'pages.view',
+        note: 'A page with its tree, ancestors and subpages; never its body.',
+    },
+    {
+        path: new RegExp(`^${T}\\/pages\\/[^\\/]+$`),
+        methods: ['PATCH'],
+        permission: 'pages.edit',
+        note: 'Rename a page: a versioned write, If-Match required (decision 343).',
+    },
+    {
+        path: new RegExp(`^${T}\\/pages\\/[^\\/]+\\/move$`),
+        methods: ['POST'],
+        permission: 'pages.edit',
+        note: 'Move a page with its subtree, within its tree or to another (decision 341).',
+    },
+    {
+        path: new RegExp(`^${T}\\/pages\\/[^\\/]+$`),
+        methods: ['DELETE'],
+        permission: 'pages.delete',
+        note: 'Delete a page softly with its subtree, as one group (decision 344).',
+    },
+    {
+        path: new RegExp(`^${T}\\/pages\\/[^\\/]+\\/restore$`),
+        methods: ['POST'],
+        permission: 'pages.delete',
+        note: "Restore a deleted page's group, through its root (decision 344).",
+    },
     {
         path: new RegExp(`^${T}\\/roadmap$`),
         methods: ['GET'],

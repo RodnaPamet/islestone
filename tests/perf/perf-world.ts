@@ -44,6 +44,10 @@ export interface PerfWorld {
     timeWeek: string;
     /** Sub-phase 3.4c: an Owner of the workspace, who approves weeks (the Timesheets page, a decision). */
     approverCtx: RequestContext;
+    /** Sub-phase 4.1a: the project's live page with the most live subpages (a tree read below the top level). */
+    pageParentId: string;
+    /** Sub-phase 4.1a: the project's deepest live page (the breadcrumb). */
+    pageLeafId: string;
 }
 
 export function perfShape(): string {
@@ -111,6 +115,25 @@ export async function loadPerfWorld(db: PrismaClient): Promise<PerfWorld> {
           WHERE t."tenantId" = $1 GROUP BY t."workItemId" ORDER BY count(*) DESC, t."workItemId" LIMIT 1`,
         tenantId,
     );
+    const pageParent = await one<{ id: string }>(
+        db,
+        `SELECT p."id" FROM "Page" p
+          WHERE p."tenantId" = $1 AND p."projectId" = $2 AND p."deletedAt" IS NULL
+          ORDER BY (SELECT count(*) FROM "Page" c WHERE c."parentId" = p."id" AND c."deletedAt" IS NULL) DESC, p."id"
+          LIMIT 1`,
+        tenantId,
+        project.id,
+    );
+    const pageLeaf = await one<{ id: string }>(
+        db,
+        `WITH RECURSIVE down AS (
+             SELECT "id", 1 AS level FROM "Page" WHERE "tenantId" = $1 AND "projectId" = $2 AND "parentId" IS NULL AND "deletedAt" IS NULL
+             UNION ALL
+             SELECT c."id", d.level + 1 FROM "Page" c JOIN down d ON c."parentId" = d."id" WHERE c."deletedAt" IS NULL AND d.level < 16)
+         SELECT "id" FROM down ORDER BY level DESC, "id" LIMIT 1`,
+        tenantId,
+        project.id,
+    );
     const lastMonday = await one<{ monday: string }>(db, `SELECT to_char(date_trunc('week', CURRENT_DATE) - interval '7 days', 'YYYY-MM-DD') AS "monday"`);
     const ctx = await resolveMemberContext({ tenantId, userId: heavy.id, job: 'perf' });
     if (!ctx) throw new Error('perf: the heavy member does not resolve');
@@ -140,5 +163,7 @@ export async function loadPerfWorld(db: PrismaClient): Promise<PerfWorld> {
         timeItemId: timeItem.id,
         timeWeek: lastMonday.monday,
         approverCtx: { ...approverCtx, requestId: 'perf-approver' },
+        pageParentId: pageParent.id,
+        pageLeafId: pageLeaf.id,
     };
 }

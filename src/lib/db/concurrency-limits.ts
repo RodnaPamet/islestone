@@ -405,3 +405,14 @@ export const WORK_ITEM_CREATE_BURST_PER_PROJECT = 25;
  * transactions.
  */
 export const WORK_ITEM_GRAPH_WRITES_PER_WORKSPACE = 1;
+
+/**
+ * How many page-tree writes run at once per workspace, in one process
+ * (sub-phase 4.1a; docs/porting/maps/4.1.md, "Page and the tree"; the pattern
+ * of decision 254). Every write that takes `lockPageTree` (a create, a move,
+ * a reorder, a delete, a restore) holds the workspace's page-tree advisory
+ * lock for its transaction, so the database runs them one at a time whatever
+ * this number says; a second write let through would only hold a pooled
+ * connection while it waited. A burst waits its turn; it is never refused.
+ */
+export const PAGE_TREE_WRITES_PER_WORKSPACE = 1;

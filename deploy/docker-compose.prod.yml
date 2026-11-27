@@ -121,6 +121,8 @@ x-runtime-env: &runtime-env
   PLATFORM_ADMIN_API_KEY: "${PLATFORM_ADMIN_API_KEY:-}" # pragma: allowlist secret (a reference, resolved from .env.prod)
   # Days a deleted goal or initiative stays restorable (3.2a, decision 219); empty is 30.
   GOAL_PURGE_DAYS: "${GOAL_PURGE_DAYS:-}"
+  # Days a deleted page group stays restorable (4.1a, decision 344); empty is 30.
+  PAGE_PURGE_DAYS: "${PAGE_PURGE_DAYS:-}"
 
 # Watchtower follows the images that carry both labels; no other Watchtower
 # on the host may touch them (each product runs its own, scoped).

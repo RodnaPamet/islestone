@@ -286,6 +286,8 @@ describe('the schema speaks ADR 0006', () => {
             'OrgInvite',
             'OrgMembership',
             'Organization',
+            'Page',
+            'PageContent',
             'PasswordResetToken',
             'Project',
             'ProjectIntake',

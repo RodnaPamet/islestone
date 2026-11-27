@@ -446,6 +446,11 @@ export const env = createEnv({
          * it (sub-phase 3.2a, owner decision 219: 30).
          */
         GOAL_PURGE_DAYS: z.coerce.number().int().min(1).default(30),
+        /**
+         * Days a soft-deleted page group stays restorable before `page-purge`
+         * hard-deletes it with its content (sub-phase 4.1a, owner decision 344: 30).
+         */
+        PAGE_PURGE_DAYS: z.coerce.number().int().min(1).default(30),
         /** SMTP user; with SMTP_PASS, the relay's credentials. Both or neither. */
         SMTP_USER: z.string().min(1).optional(),
         /** SMTP password. A secret: never logged. */
@@ -535,6 +540,7 @@ export const env = createEnv({
         NOTIFICATIONS_TZ: process.env.NOTIFICATIONS_TZ,
         WORK_ITEM_PURGE_DAYS: process.env.WORK_ITEM_PURGE_DAYS,
         GOAL_PURGE_DAYS: process.env.GOAL_PURGE_DAYS,
+        PAGE_PURGE_DAYS: process.env.PAGE_PURGE_DAYS,
         SMTP_USER: process.env.SMTP_USER,
         SMTP_PASS: process.env.SMTP_PASS,
         SMTP_FROM: process.env.SMTP_FROM,

@@ -40,6 +40,7 @@ import { setProjectIntake } from '@/app-layer/usecases/intake-settings';
 import { createLabel } from '@/app-layer/usecases/label';
 import { startMfaEnrollment, verifyMfaEnrollment } from '@/app-layer/usecases/mfa-enrollment';
 import { createMilestone } from '@/app-layer/usecases/milestone';
+import { createPage, deletePage } from '@/app-layer/usecases/page';
 import { createProject, deleteProject, setProjectArchived } from '@/app-layer/usecases/project';
 import { saveProjectAsTemplate } from '@/app-layer/usecases/project-template';
 import { archiveRecipientList, createRecipientList } from '@/app-layer/usecases/recipient-list';
@@ -180,6 +181,9 @@ export function setUpMatrixWorld(tag: string): { world: () => World; prisma: () 
         const question = await addQuestionType(owner, { name: 'Matrix question' });
         const goal = await createGoal(owner, { title: 'Matrix goal' });
         const initiative = await createInitiative(owner, { name: 'Matrix initiative', goalId: goal.id });
+        // Sub-phase 4.1a: a workspace page and a project page (the title search finds the first).
+        const page = await createPage(owner, { projectId: null, title: 'The matrix zebra page' });
+        const projectPage = await createPage(owner, { projectId: project.id, title: 'A project page' });
 
         Object.assign(w, {
             subject: {
@@ -205,6 +209,8 @@ export function setUpMatrixWorld(tag: string): { world: () => World; prisma: () 
                 milestoneId: milestone.id,
                 goalId: goal.id,
                 initiativeId: initiative.id,
+                pageId: page.id,
+                projectPageId: projectPage.id,
                 templateId: itemTemplate.id,
                 projectTemplateId: projectTemplate.id,
                 workspaceListId: workspaceList.id,
@@ -424,6 +430,12 @@ async function buildFixture(name: FixtureName, w: World, prisma: PrismaClient, c
             const g = await createGoal(owner, { title: `G ${nextSeq()}`, status: name === 'finishedGoal' ? 'COMPLETED' : 'PLANNED' });
             if (name === 'deletedGoal') await deleteGoal(owner, g.id);
             return { goalId: g.id };
+        }
+        case 'freshPage':
+        case 'deletedPage': {
+            const p = await createPage(owner, { projectId: null, title: `P ${nextSeq()}` });
+            if (name === 'deletedPage') await deletePage(owner, p.id);
+            return { pageId: p.id, version: String(p.version) };
         }
         case 'freshInitiative':
         case 'finishedInitiative':

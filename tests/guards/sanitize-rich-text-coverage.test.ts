@@ -91,6 +91,8 @@ const NON_RICH_TEXT_MODELS: Readonly<Record<string, string>> = {
         'auditStreamSecretEncrypted is the audit stream\'s HMAC secret: never rendered, never markup.',
     CalendarConnection:
         'tokenEncrypted is a calendar provider\'s OAuth token pair (3.3b, decision 238): a secret from the provider, never rendered, never markup.',
+    PageContent:
+        'state is the encoded Yjs state (base64) and contentJson and plainText its projections, built by the collaboration server\'s store path through the shared page schema, which drops what it does not know (4.1b, decision 345); HTML is rendered at use through sanitizeRichTextHtml (ADR 0015 §2). Nothing writes them before 4.1b.',
     TimeOff:
         'type is a closed code (VACATION, SICK or OTHER; decisions 287 and 303), accepted only through TimeOffTypeSchema and padded by TimeOffRepository: never free text, never markup.',
 };
@@ -193,7 +195,7 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
         // two template columns of 2.5c and the intake request of 2.6a; another
         // encrypted free-text model must be classified before it lands.
         expect(coverageEntries.map(([model]) => model).sort()).toEqual(['Comment', 'Goal', 'Initiative', 'IntakeFollowUp', 'IntakeRequest', 'ProjectTemplate', 'TimeEntry', 'Timesheet', 'WorkItem', 'WorkItemReviewer', 'WorkItemTemplate']);
-        expect(Object.keys(NON_RICH_TEXT_MODELS)).toEqual(['TenantSecuritySettings', 'CalendarConnection', 'TimeOff']);
+        expect(Object.keys(NON_RICH_TEXT_MODELS)).toEqual(['TenantSecuritySettings', 'CalendarConnection', 'PageContent', 'TimeOff']);
     });
 
     it.each(coverageEntries.length > 0 ? coverageEntries : [['(none)', '(none)', 'sanitizePlainText'] as const])(
