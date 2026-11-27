@@ -818,25 +818,30 @@ model Cycle {
 /// and, from 3.6, by analytics. No FK to `WorkItem`: the rows outlive an
 /// item's purge and go with the workspace (owner decision 66).
 model WorkItemTransition {
-  id              BigInt                @id @default(autoincrement())
-  tenantId        String
-  workItemId      String
-  projectId       String
-  teamId          String
-  stateId         String
-  stateCategory   WorkflowStateCategory
-  cycleId         String?
+  id                BigInt                 @id @default(autoincrement())
+  tenantId          String
+  workItemId        String
+  projectId         String
+  teamId            String
+  stateId           String
+  stateCategory     WorkflowStateCategory
+  /// Since 3.6a (owner decision 310): the state category before the change,
+  /// NULL on the insert row (and on an item's first recorded row, backfilled).
+  /// A completion is a row in DONE whose `fromStateCategory` is not DONE, found
+  /// through the partial index `WorkItemTransition_completions` (SQL only).
+  fromStateCategory WorkflowStateCategory?
+  cycleId           String?
   /// Since 2.5b; NULL in rows written before.
-  milestoneId     String?
+  milestoneId       String?
   /// Since 2.4b (owner decision 107); NULL in rows written before. 3.6 counts
   /// time waiting from these rows.
-  waitingOnUserId String?
+  waitingOnUserId   String?
   /// Since 3.4a (owner decision 259); NULL in rows written before. The burn-up's
   /// Points and Hours measures read them.
-  estimatePoints  Int?
-  estimateMinutes Int?
-  deleted         Boolean
-  at              DateTime              @default(now())
+  estimatePoints    Int?
+  estimateMinutes   Int?
+  deleted           Boolean
+  at                DateTime               @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
