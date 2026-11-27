@@ -473,3 +473,24 @@ enum BillableRateLevel {
   PROJECT
   MEMBER
 }
+
+/// Who sees a dashboard (sub-phase 3.6d; ADR 0014 §6; owner decision 326):
+/// its creator alone, or every holder of `analytics.view`. Only a holder of
+/// `analytics.share` makes or keeps one SHARED.
+enum DashboardVisibility {
+  PERSONAL
+  SHARED
+}
+
+/// What a dashboard widget shows (sub-phase 3.6d; owner decision 327): each
+/// reads one analytics route under the viewer's own visibility and keys.
+enum DashboardWidgetType {
+  COUNTS
+  THROUGHPUT
+  CYCLE_TIME
+  LEAD_TIME
+  CUMULATIVE_FLOW
+  BURN_UP
+  FORECAST
+  TIME_WAITING
+}

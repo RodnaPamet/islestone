@@ -114,6 +114,9 @@ model Tenant {
   timeOff                         TimeOff[]
   // Sub-phase 3.4d: billable rates (ADR 0012 §6).
   billableRates                   BillableRate[]
+  // Sub-phase 3.6d: dashboards (ADR 0014 §6).
+  dashboards                      Dashboard[]
+  dashboardWidgets                DashboardWidget[]
 
   teams                  Team[]
   workflowStates         WorkflowState[]

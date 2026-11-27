@@ -1,0 +1,66 @@
+// Sub-phase 3.6d: dashboards (docs/porting/maps/3.6.md, "Dashboards (3.6d)";
+// ADR 0014 §6; owner decisions 326 to 328; docs/analytics.md, "Dashboards
+// (3.6d)").
+//
+//   `Dashboard` — a page of analytics widgets, PERSONAL (its creator's) or
+//   SHARED (every holder of `analytics.view`; made and kept shared by holders
+//   of `analytics.share`, changed only by its creator). The default dashboard
+//   is a composition in code (`src/lib/analytics/default-dashboard.ts`), never
+//   a row.
+//   `DashboardWidget` — one chart or figure on a dashboard: its type, an
+//   optional title, its configuration (the scope as the list's filters and a
+//   relative window, parsed by `src/lib/schemas/dashboard.ts` on every write
+//   and read) and its place on the grid.
+//
+// What Prisma cannot declare lives in migration
+// `20261229120000_dashboards`: the CHECKs (name and title lengths, the grid
+// bounds, the version).
+
+/// A page of analytics widgets (roadmap 3.6d). Personal or shared.
+model Dashboard {
+  id              String              @id @default(cuid())
+  tenantId        String
+  /// Plaintext, sanitised, 1 to 80 characters (CHECK).
+  name            String
+  visibility      DashboardVisibility
+  /// An actor stamp, no FK: the member's removal deletes their PERSONAL
+  /// dashboards in its transaction; SHARED ones keep the stamp.
+  createdByUserId String
+  /// Optimistic concurrency (`If-Match`): every change of the name, the
+  /// visibility or the widgets increases it.
+  version         Int                 @default(1)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  tenant  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  widgets DashboardWidget[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, createdByUserId])
+  @@index([tenantId, visibility])
+}
+
+/// One chart or figure on a dashboard, with its scope.
+model DashboardWidget {
+  id          String              @id @default(cuid())
+  tenantId    String
+  /// FK (dashboardId, tenantId) → Dashboard, ON DELETE CASCADE.
+  dashboardId String
+  type        DashboardWidgetType
+  /// Plaintext, sanitised, at most 120 characters; NULL: the type's default title.
+  title       String?
+  /// The type's configuration, parsed by the discriminated union in
+  /// src/lib/schemas/dashboard.ts on every write and read.
+  configJson  Json
+  /// Grid position and size (inflect's bounds, CHECKed): x, y 0..47; w 1..12; h 1..24.
+  x           Int
+  y           Int
+  w           Int
+  h           Int
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dashboard Dashboard @relation(fields: [dashboardId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, dashboardId])
+}
