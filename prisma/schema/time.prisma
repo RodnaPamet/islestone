@@ -41,7 +41,7 @@
 //   `TenantTimeSettings.currency` — the workspace's one ISO 4217 code.
 //
 // What Prisma cannot declare lives in migration
-// `20261223120100_billable_rates`: the CHECKs, the unique rate per level,
+// `20261224120100_billable_rates`: the CHECKs, the unique rate per level,
 // scope and date (`NULLS NOT DISTINCT`), and the freeze trigger's admission
 // of the approval's stamp.
 
