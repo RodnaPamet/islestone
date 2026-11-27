@@ -245,6 +245,11 @@ export function recordTimeEntryRecorded(attrs: { source: 'manual' | 'timer' }): 
     counter('time.entries.recorded', 'Time entries recorded by how they were made').add(1, { source: attrs.source });
 }
 
+/** Sub-phase 3.4c: a week decided by an approver (decision 269). No workspace or person attribute. */
+export function recordTimesheetDecided(attrs: { outcome: 'approved' | 'returned' | 'reopened' }): void {
+    counter('time.timesheets.decided', 'Timesheets decided by outcome').add(1, { outcome: attrs.outcome });
+}
+
 // ════════════════════════════════════════════════════════════════════
 // OBSERVABLE GAUGES — active users (DAU / MAU), grouped by plan.
 //

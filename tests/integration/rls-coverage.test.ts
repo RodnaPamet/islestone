@@ -77,6 +77,10 @@ const NO_DELETE_TABLES: readonly string[] = [
     // Roadmap 3.3b: the workspace's calendar sync settings row is changed,
     // never deleted (a workspace's purge cascades as the owner).
     'TenantCalendarSettings',
+    // Sub-phase 3.4c: a timesheet's decision is history, and the workspace's
+    // time tracking settings row is changed, never deleted.
+    'Timesheet',
+    'TenantTimeSettings',
 ];
 
 describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
@@ -326,7 +330,9 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             'TenantMembership',
             'TenantNotificationSettings',
             'TenantSecuritySettings',
+            'TenantTimeSettings',
             'TimeEntry',
+            'Timesheet',
             'UserMfaEnrollment',
             'UserSession',
             'WorkItem',

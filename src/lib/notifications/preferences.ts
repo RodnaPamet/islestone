@@ -46,6 +46,10 @@ export const PREFERENCE_TYPES = [
     'INTAKE_REQUEST_RECEIVED',
     'INTAKE_REQUEST_WOKEN',
     'CALENDAR_CHANGE_NOT_APPLIED',
+    'TIMESHEET_SUBMITTED',
+    'TIMESHEET_RETURNED',
+    'TIMESHEET_APPROVED',
+    'TIMESHEET_REMINDER',
 ] as const satisfies readonly NotificationType[];
 
 export type PreferenceType = (typeof PREFERENCE_TYPES)[number];
@@ -57,8 +61,9 @@ export function isPreferenceType(type: string): type is PreferenceType {
 /**
  * The types immediate email is offered for (decision 132: assigned, mentioned
  * and waiting on; mentions since 2.7d; review requested and returned since
- * 2.8a, decision 161). The CHECK `NotificationPreference_immediate_types`
- * (migration `20261208120600_reviews`) holds the same list.
+ * 2.8a, decision 161; a returned timesheet since 3.4c, decision 276). The
+ * CHECK `NotificationPreference_immediate_types` (migration
+ * `20261222120500_timesheets`) holds the same list.
  */
 export const IMMEDIATE_EMAIL_TYPES = [
     'WORK_ITEM_ASSIGNED',
@@ -66,6 +71,7 @@ export const IMMEDIATE_EMAIL_TYPES = [
     'WORK_ITEM_MENTIONED',
     'WORK_ITEM_REVIEW_REQUESTED',
     'WORK_ITEM_REVIEW_RETURNED',
+    'TIMESHEET_RETURNED',
 ] as const satisfies readonly PreferenceType[];
 
 export function offersImmediateEmail(type: NotificationType): boolean {
@@ -130,6 +136,12 @@ export const PREFERENCE_DEFAULTS: Record<NotificationType, PreferenceChoice> = {
     INTAKE_REQUEST_WOKEN: { inApp: true, email: 'OFF' },
     // Sub-phase 3.3c (decision 230): in the bell only, never email.
     CALENDAR_CHANGE_NOT_APPLIED: { inApp: true, email: 'OFF' },
+    // Sub-phase 3.4c (decision 276): a returned week at once by email, the
+    // rest in the bell.
+    TIMESHEET_SUBMITTED: { inApp: true, email: 'OFF' },
+    TIMESHEET_RETURNED: { inApp: true, email: 'IMMEDIATE' },
+    TIMESHEET_APPROVED: { inApp: true, email: 'OFF' },
+    TIMESHEET_REMINDER: { inApp: true, email: 'OFF' },
 };
 
 /** What the workspace's settings say (`TenantNotificationSettings`). */

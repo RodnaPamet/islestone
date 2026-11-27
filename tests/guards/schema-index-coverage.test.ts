@@ -132,10 +132,15 @@ const LIST_QUERY_INDEXES: readonly CompositeIndex[] = [
     // Sub-phase 3.4b: time entries.
     { model: 'TimeEntry', fields: ['tenantId', 'userId', 'workDate'], justification: "A person's week (My time), a day's total and their running timer." },
     { model: 'TimeEntry', fields: ['tenantId', 'workItemId', 'workDate'], justification: "An item's time: its total and its entries, newest first." },
+    // Sub-phase 3.4c.
+    { model: 'Timesheet', fields: ['tenantId', 'status', 'weekStart'], justification: 'The weeks waiting for a decision, oldest first, and those decided in the last 12 weeks (the Timesheets page).' },
 ];
 
 /** Tenant models whose list queries are fully served by Layers A + B, with the reason. */
 const LIST_MODELS_TENANT_INDEX_SUFFICIENT: Record<string, string> = {
+    // Sub-phase 3.4c. One row per workspace (its primary key is tenantId); the
+    // Monday reminder's cross-workspace sweep reads the rows with approval on, bounded.
+    TenantTimeSettings: 'One row per workspace (@id tenantId); the reminder sweep reads those with approval on, bounded and ordered by tenantId.',
     // Roadmap 3.3b. A member's own connections (at most two, by the unique
     // (tenantId, userId, provider)); a workspace's by state (@@index([tenantId, state])).
     CalendarConnection: "A member's connections by @@unique([tenantId, userId, provider]); a workspace's by @@index([tenantId, state]); the dispatcher's sweep, bounded, by the same.",
@@ -261,7 +266,7 @@ describe('schema-index-coverage — parser sanity', () => {
     it('parses the tenancy models, their indexes and their relation FK groups', () => {
         const membership = MODELS.find((m) => m.name === 'TenantMembership');
         expect(MODELS.map((m) => m.name).sort()).toEqual([
-            'Account', 'AuditLog', 'AuditOutbox', 'CalendarConnection', 'CalendarSyncedEvent', 'Comment', 'CustomField', 'CustomFieldOption', 'CustomFieldValue', 'Cycle', 'CycleSchedule', 'Goal', 'Initiative', 'IntakeBlockedSender', 'IntakeFollowUp', 'IntakeForm', 'IntakeInboundEmail', 'IntakeNotifyMember', 'IntakeRequest', 'Label', 'Mention', 'Milestone', 'Notification', 'NotificationOutbox', 'NotificationPreference', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Project', 'ProjectIntake', 'ProjectKeyPrefix', 'ProjectKeySequence', 'ProjectTemplate', 'RecipientList', 'RecipientListMember', 'SavedView', 'SearchVector', 'Team', 'Tenant', 'TenantCalendarSettings', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'TimeEntry', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken', 'WorkItem', 'WorkItemKeyAlias', 'WorkItemLabel', 'WorkItemLink', 'WorkItemRecurrence', 'WorkItemRelation', 'WorkItemReviewRound', 'WorkItemReviewStep', 'WorkItemReviewStepList', 'WorkItemReviewer', 'WorkItemTemplate', 'WorkItemTemplateLabel', 'WorkItemTransition', 'WorkItemType', 'WorkItemTypeField', 'WorkItemTypeReviewStep', 'WorkItemTypeReviewStepReviewer', 'WorkItemWatcher', 'WorkflowState', 'WorkingCalendar', 'WorkingCalendarHoliday',
+            'Account', 'AuditLog', 'AuditOutbox', 'CalendarConnection', 'CalendarSyncedEvent', 'Comment', 'CustomField', 'CustomFieldOption', 'CustomFieldValue', 'Cycle', 'CycleSchedule', 'Goal', 'Initiative', 'IntakeBlockedSender', 'IntakeFollowUp', 'IntakeForm', 'IntakeInboundEmail', 'IntakeNotifyMember', 'IntakeRequest', 'Label', 'Mention', 'Milestone', 'Notification', 'NotificationOutbox', 'NotificationPreference', 'OrgAuditLog', 'OrgInvite', 'OrgMembership', 'Organization', 'PasswordResetToken', 'Project', 'ProjectIntake', 'ProjectKeyPrefix', 'ProjectKeySequence', 'ProjectTemplate', 'RecipientList', 'RecipientListMember', 'SavedView', 'SearchVector', 'Team', 'Tenant', 'TenantCalendarSettings', 'TenantCustomRole', 'TenantInvite', 'TenantMembership', 'TenantNotificationSettings', 'TenantSecuritySettings', 'TenantTimeSettings', 'TimeEntry', 'Timesheet', 'User', 'UserMfaEnrollment', 'UserSession', 'VerificationToken', 'WorkItem', 'WorkItemKeyAlias', 'WorkItemLabel', 'WorkItemLink', 'WorkItemRecurrence', 'WorkItemRelation', 'WorkItemReviewRound', 'WorkItemReviewStep', 'WorkItemReviewStepList', 'WorkItemReviewer', 'WorkItemTemplate', 'WorkItemTemplateLabel', 'WorkItemTransition', 'WorkItemType', 'WorkItemTypeField', 'WorkItemTypeReviewStep', 'WorkItemTypeReviewStepReviewer', 'WorkItemWatcher', 'WorkflowState', 'WorkingCalendar', 'WorkingCalendarHoliday',
         ]);
         expect(membership?.fieldIdName).toBe('id');
         expect(membership?.blockIndexes).toContainEqual(['tenantId', 'status']);

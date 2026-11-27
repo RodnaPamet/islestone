@@ -28,6 +28,8 @@ export interface WorkItemPurgeResult {
     tenants: number;
     items: number;
     projects: number;
+    /** Of `projects`, those left as tombstones for their time entries (issue #117). */
+    tombstones: number;
 }
 
 export function purgeWindowDays(): number {
@@ -42,17 +44,19 @@ export async function processWorkItemPurge(options: WorkItemPurgeOptions = {}): 
         const tenantIds = await runWithoutRls({ reason: 'cross-tenant-sweep' }, async (db) => {
             const [items, projects] = await Promise.all([
                 db.workItem.groupBy({ by: ['tenantId'], where: { deletedAt: { lt: before }, ...(options.tenantId ? { tenantId: options.tenantId } : {}) } }),
-                db.project.groupBy({ by: ['tenantId'], where: { deletedAt: { lt: before }, ...(options.tenantId ? { tenantId: options.tenantId } : {}) } }),
+                // A tombstone (issue #117) is already purged: it brings no workspace back.
+                db.project.groupBy({ by: ['tenantId'], where: { deletedAt: { lt: before }, purgedAt: null, ...(options.tenantId ? { tenantId: options.tenantId } : {}) } }),
             ]);
             return [...new Set([...items, ...projects].map((r) => r.tenantId))].sort();
         });
-        const result: WorkItemPurgeResult = { tenants: 0, items: 0, projects: 0 };
+        const result: WorkItemPurgeResult = { tenants: 0, items: 0, projects: 0, tombstones: 0 };
         for (const tenantId of tenantIds) {
             const ctx = await buildTenantSystemJobContext({ tenantId, job: 'work-item-purge' });
             const r = await purgeWorkspaceWorkItems(ctx, before, windowDays);
             result.tenants += 1;
             result.items += r.items;
             result.projects += r.projects;
+            result.tombstones += r.tombstones;
         }
         logger.info('work-item purge finished', { component: 'jobs', ...result, windowDays });
         return result;

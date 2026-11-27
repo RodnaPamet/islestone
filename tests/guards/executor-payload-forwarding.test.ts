@@ -68,6 +68,7 @@ describe('GUARD: executors read their payload', () => {
             'notification-purge',
             'search-index-rebuild',
             'tenant-dek-rotation',
+            'timesheet-reminder',
             'work-item-due-notification',
             'work-item-purge',
             'work-item-recurrence',

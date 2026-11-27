@@ -412,6 +412,19 @@ The reminders are deduplicated per window, step and person (a step's due day is 
 
 Owner decisions 227 and 230 ([docs/calendar-sync.md](calendar-sync.md), "The read-back"; ADR 0011 §1). One bell type, `CALENDAR_CHANGE_NOT_APPLIED` (migration `20261219120000_notification_type_calendar_change`, alone), written by `createCalendarChangeNotAppliedNotification` (`src/app-layer/notifications/calendar-change.ts`), which asks `isInAppTypeEnabled` first like every writer: to the member whose moved calendar day was not applied (a stale change, a refused edit, a moved milestone event). It names the item's key (and sets `workItemId`) or the milestone's name and links to it; never text. **In-app only, never email**: `IN_APP_ONLY_TYPES` in `src/lib/notifications/preferences.ts` (the default `{ inApp: true, email: 'OFF' }`, `emailChoicesFor` offers OFF alone, `choiceRefusal` answers 400 `EMAIL_NOT_OFFERED`, `resolveDelivery` never mails it) and the CHECK `NotificationPreference_in_app_only_types` (migration `20261219120100_calendar_read_back`). One per synced event and changed day (the dedupe key carries the event's client id and the day). The workspace may mute it like any listed type (`in-app-types.ts`).
 
+## Timesheets (3.4c)
+
+Owner decision 276 ([docs/time-tracking.md](time-tracking.md), "Timesheets (3.4c)"; ADR 0012 §8). Four bell types, each alone in its migration (`20261222120000` to `20261222120300`), written by `createTimesheetNotifications` (`src/app-layer/notifications/timesheet.ts`), which asks `isInAppTypeEnabled` first like every writer; no row names a work item (`workItemId` NULL):
+
+| Type | To | Default |
+|---|---|---|
+| `TIMESHEET_SUBMITTED` | whoever approves weeks: the people of the settings' workspace recipient list who hold `time.approve` (`resolveListRecipients`), else every ACTIVE holder of `time.approve`, at most 50; never the week's person; links to the Timesheets page | bell only |
+| `TIMESHEET_RETURNED` | the person, when an approver returns their week or reopens an approved one ("Timesheet reopened"); links to their week | bell; email at once |
+| `TIMESHEET_APPROVED` | the person, when their week is approved | bell only |
+| `TIMESHEET_REMINDER` | while approval is on, every ACTIVE member holding `time.track` who recorded time last week and has not submitted it, from the `timesheet-reminder` job (Mondays 09:20 in `NOTIFICATIONS_TZ`), once per person and week | bell only |
+
+Immediate email is offered for a returned week: `IMMEDIATE_EMAIL_TYPES` and the CHECK `NotificationPreference_immediate_types` gain it (migration `20261222120500_timesheets`); the email (`EmailNotificationType.TIMESHEET_RETURNED`, alone in `20261222120400`; `email/timesheet-returned.tsx`) names the week and who, deduped per address, week row version and day. After the commit `emitTimesheetNotices` (`usecases/timesheet.ts`) rings them; nobody is told of their own act. The bells and the email never carry the explanation's text. A decision rings once per version of the week's row. The digest lists a member's daily timesheet rows, the submitted ones only while they still hold `time.approve` and their own week's while they still hold `time.track`.
+
 ## Retention (2.7c)
 
 Owner decision 135. The nightly `notification-purge` (03:10 UTC) deletes, per

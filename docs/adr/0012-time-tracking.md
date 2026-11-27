@@ -28,7 +28,7 @@ Roadmap 3.4 asks to "add time entries (timer and manual), estimates in points or
 ## Consequences
 
 - Points and minutes never mix in a sum; a burn-up, a total or a later capacity view reads one unit, and items of a team in the other unit are named rather than converted.
-- A time entry outlives its item and a member's removal: approved weeks never change underneath, and roadmap 8.3's user deletion and retention settings must handle `TimeEntry`, `Timesheet` and `BillableRate`.
+- A time entry outlives its item and a member's removal: approved weeks never change underneath, and roadmap 8.3's user deletion and retention settings must handle `TimeEntry`, `Timesheet` and `BillableRate`. It outlives its project's purge too: a purged project that time entries name leaves a tombstone, its key, name and deletion kept, read by time alone (owner decision 281, 2026-11-27; `docs/work-items.md`, "The purge and project tombstones").
 - Entries record when and for how long a person worked on which item: personal data about work. They are only ever the person's own statements; nothing is inferred from activity, and no screenshot, idle detection or location is collected.
 - "Approve" names two decisions, a proposal's and a timesheet's; their objects tell them apart.
 - Rates are plaintext integers protected by the permission key, not by encryption, so totals can be summed in the database.

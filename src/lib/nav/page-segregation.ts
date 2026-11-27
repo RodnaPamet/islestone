@@ -55,8 +55,9 @@ export const BACK_AFFORDANCE_COHORT_TODO: readonly string[] = [] as const;
 export const MAIN_PAGES: readonly string[] = [
     '/my-work',
     '/inbox',
-    // Sub-phase 3.4b: the Time entry's My time.
+    // Sub-phase 3.4b: the Time entry's My time; 3.4c its Timesheets.
     '/time',
+    '/time/timesheets',
     '/work-items',
     '/views',
     '/projects',
@@ -117,6 +118,8 @@ export const SUBPAGES: readonly string[] = [
     '/settings/working-calendars/[teamId]',
     // Roadmap 3.3b: the workspace's calendar sync settings.
     '/settings/calendar-sync',
+    // Sub-phase 3.4c: the workspace's time tracking settings.
+    '/settings/time-tracking',
 ] as const;
 
 /**

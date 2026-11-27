@@ -71,7 +71,8 @@ automations 5.1, billing and the active-user aggregator 8.1).
 Beside them, the features' own counters: `calendar.sync.outcome` and
 `calendar.sync.inbound` (3.3b, 3.3c) and `time.entries.recorded` (3.4b: a
 time entry recorded, by `source`, `manual` or `timer`; never a workspace, a
-person or an amount).
+person or an amount) and `time.timesheets.decided` (3.4c: a week approved,
+returned or reopened, by `outcome`).
 `tests/guards/business-metrics-coverage.test.ts` holds each name to one
 definition and one recorder. Attributes never carry a person's identity.
 

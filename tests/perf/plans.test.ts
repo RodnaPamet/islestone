@@ -178,6 +178,15 @@ const RUNNERS: Record<string, Runner> = {
         await TimeEntryRepository.itemTotals(db, ctx, w.timeItemId, w.heavyUserId);
         return TimeEntryRepository.itemPage(db, ctx, w.timeItemId, { limit: 50 });
     },
+    "timesheets: a week's sums": (w, db, ctx) => {
+        const from = new Date(`${w.timeWeek}T00:00:00Z`);
+        return TimeEntryRepository.weekSums(db, ctx, w.heavyUserId, from, new Date(from.getTime() + 6 * DAY));
+    },
+    "timesheets: a page of weeks' sums": (w, db, ctx) => {
+        // The heavy member's last 50 weeks: as many weeks as a page shows, each with entries.
+        const from = new Date(`${w.timeWeek}T00:00:00Z`).getTime();
+        return TimeEntryRepository.sumsForWeeks(db, ctx, Array.from({ length: 50 }, (_, i) => ({ userId: w.heavyUserId, weekStart: new Date(from - i * 7 * DAY) })));
+    },
     'timeline: working calendars': async (w, db, ctx) => {
         await resolveWorkingCalendars(db, ctx, [w.teamId]);
         return resolveWorkingCalendars(db, ctx);
@@ -211,6 +220,10 @@ const RUNNERS: Record<string, Runner> = {
     'job: the sort-key rebalance': async (w, db, ctx) => {
         await WorkItemRepository.projectsNeedingRebalance(db, ctx, SORT_KEY_REBALANCE_LENGTH);
         return WorkItemRepository.orderedPageIncludingDeleted(db, ctx, w.projectId, undefined, 500);
+    },
+    'job: the timesheet reminder': (w, db, ctx) => {
+        const from = new Date(`${w.timeWeek}T00:00:00Z`);
+        return TimeEntryRepository.activeMembersWithTimeIn(db, ctx, from, new Date(from.getTime() + 6 * DAY), 5_000);
     },
     'job: the search-index rebuild': async (w, db, ctx) => {
         // One page of each kind, through the keyset (after 'c', which sorts before every cuid): a page

@@ -229,6 +229,14 @@ export const SCHEDULED_JOBS: ScheduleDefinition[] = [
         defaultPayload: {},
     },
     {
+        name: 'timesheet-reminder',
+        pattern: '20 9 * * 1',    // Mondays 09:20 in NOTIFICATIONS_TZ
+        // The start of the working week, off the hour (decision 276: a Monday reminder).
+        tz: env.NOTIFICATIONS_TZ,
+        description: 'While "Timesheets need approval" is on, remind every member who recorded time last week and has not submitted it (one bell per person and week, under their preference). Writes no time; idempotent through the dedupe key.',
+        defaultPayload: {},
+    },
+    {
         name: 'search-index-rebuild',
         pattern: '40 2 * * *',    // 02:40 in NOTIFICATIONS_TZ, a quiet hour, before the 03:10 purge
         tz: env.NOTIFICATIONS_TZ,

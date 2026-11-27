@@ -105,6 +105,9 @@ model Tenant {
   calendarSyncedEvents            CalendarSyncedEvent[]
   // Sub-phase 3.4b: time entries (ADR 0012).
   timeEntries                     TimeEntry[]
+  // Sub-phase 3.4c: timesheets and their settings (ADR 0012 §5).
+  timesheets                      Timesheet[]
+  timeSettings                    TenantTimeSettings?
 
   teams                  Team[]
   workflowStates         WorkflowState[]
@@ -258,4 +261,6 @@ model User {
 
   // Sub-phase 3.4b: the person's own time entries (ADR 0012).
   timeEntries TimeEntry[] @relation("TimeEntryPerson")
+  // Sub-phase 3.4c: the person's own weeks (ADR 0012 §5).
+  timesheets  Timesheet[] @relation("TimesheetPerson")
 }

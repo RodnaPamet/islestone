@@ -570,6 +570,7 @@ executorRegistry.register('work-item-purge', async (payload) => {
         tenants: r.tenants,
         items: r.items,
         projects: r.projects,
+        tombstones: r.tombstones,
     });
 });
 
@@ -585,6 +586,21 @@ executorRegistry.register('goal-purge', async (payload) => {
         initiatives: r.initiatives,
         projectsUnlinked: r.projectsUnlinked,
         itemsUnlinked: r.itemsUnlinked,
+    });
+});
+
+// ── Timesheets (sub-phase 3.4c) ─────────────────────────────────────
+
+executorRegistry.register('timesheet-reminder', async (payload) => {
+    const startedAt = new Date().toISOString();
+    const startMs = performance.now();
+    const { processTimesheetReminder } = await import('./timesheet-reminder');
+    const forwarded: NamesEveryField<typeof payload> = { tenantId: payload.tenantId };
+    const r = await processTimesheetReminder(forwarded);
+    return makeResult('timesheet-reminder', startedAt, startMs, r.tenants, r.reminded, r.failedTenants, {
+        tenants: r.tenants,
+        reminded: r.reminded,
+        weekStart: r.weekStart,
     });
 });
 

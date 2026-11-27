@@ -113,6 +113,17 @@ enum NotificationType {
   /// (a stale change, a refused edit, a moved milestone event), to that
   /// member, in-app only (owner decisions 227 and 230).
   CALENDAR_CHANGE_NOT_APPLIED
+  /// Sub-phase 3.4c: a member submitted their week, to whoever approves weeks
+  /// (owner decision 276).
+  TIMESHEET_SUBMITTED
+  /// Sub-phase 3.4c: your week was returned, or an approved week reopened,
+  /// with an explanation (decisions 270 and 276); never the explanation's text.
+  TIMESHEET_RETURNED
+  /// Sub-phase 3.4c: your week was approved (decision 276).
+  TIMESHEET_APPROVED
+  /// Sub-phase 3.4c: the Monday reminder to submit last week while approval
+  /// is on (decision 276).
+  TIMESHEET_REMINDER
 }
 
 /// The kind of an outbound email in `NotificationOutbox` (sub-phase 1.6).
@@ -151,6 +162,10 @@ enum EmailNotificationType {
   /// Sub-phase 2.8a: a reviewer returned your work item, mailed at once when
   /// your preference says so (decision 161; the default).
   WORK_ITEM_REVIEW_RETURNED
+  /// Sub-phase 3.4c: your week was returned or reopened, mailed at once when
+  /// your preference says so (owner decision 276; the default); never the
+  /// explanation's text.
+  TIMESHEET_RETURNED
 }
 
 /// A review round's state (sub-phase 2.8a, ADR 0009). PLANNED: steps editable,
@@ -431,4 +446,18 @@ enum EstimateUnit {
 enum TimeEntrySource {
   MANUAL
   TIMER
+}
+
+/// A week's timesheet (sub-phase 3.4c; ADR 0012 §5; owner decisions 256, 268
+/// to 270): SUBMITTED by the person, APPROVED or RETURNED (with an
+/// explanation) by a holder of `time.approve` who is not that person,
+/// WITHDRAWN when the person takes it back before it is decided. No row is a
+/// week not submitted ("Draft" is banned, ADR 0006). An approved week
+/// reopened by an approver is RETURNED again. SUBMITTED and APPROVED freeze
+/// the week's entries (the trigger `time_entry_week_frozen`).
+enum TimesheetStatus {
+  SUBMITTED
+  APPROVED
+  RETURNED
+  WITHDRAWN
 }

@@ -127,6 +127,85 @@ export class TimeEntryRepository {
         });
     }
 
+    /**
+     * The person's week in one statement (3.4c): finished minutes, billable
+     * minutes and entries dated in `[from, to]`, and whether a timer counts on
+     * one of its days (decision 263: such a week is not submitted).
+     */
+    static async weekSums(db: PrismaTx, ctx: Ctx, userId: string, from: Date, to: Date): Promise<{ minutes: number; billableMinutes: number; entries: number; timerOn: boolean }> {
+        const rows = await db.$queryRaw<Array<{ minutes: bigint | null; billable: bigint | null; entries: bigint; timer: boolean | null }>>(Prisma.sql`
+            SELECT SUM(t."minutes") AS minutes,
+                   SUM(t."minutes") FILTER (WHERE t."billable") AS billable,
+                   COUNT(t."minutes") AS entries,
+                   BOOL_OR(t."minutes" IS NULL) AS timer
+              FROM "TimeEntry" t
+             WHERE t."tenantId" = ${ctx.tenantId}
+               AND t."userId" = ${userId}
+               AND t."workDate" BETWEEN ${from}::date AND ${to}::date`);
+        const row = rows[0];
+        return { minutes: Number(row?.minutes ?? 0), billableMinutes: Number(row?.billable ?? 0), entries: Number(row?.entries ?? 0), timerOn: row?.timer === true };
+    }
+
+    /**
+     * The sums of several people's weeks in one statement (the Timesheets
+     * page, 3.4c): finished minutes, billable minutes and entries per
+     * `(userId, weekStart)` pair, each week seven days from its Monday.
+     */
+    static async sumsForWeeks(db: PrismaTx, ctx: Ctx, weeks: ReadonlyArray<{ userId: string; weekStart: Date }>): Promise<Map<string, { minutes: number; billableMinutes: number; entries: number }>> {
+        const out = new Map<string, { minutes: number; billableMinutes: number; entries: number }>();
+        if (weeks.length === 0) return out;
+        // One lateral read per week, each on the person's index (a join over every week at once let the planner
+        // walk the workspace's dates instead). The week's last day is passed, not computed: under row-level
+        // security `"weekStart" + 6` (a function that is not LEAKPROOF) stays a filter, and the scan would walk
+        // every later entry of the person.
+        const rows = await db.$queryRaw<Array<{ userId: string; weekStart: Date; minutes: bigint | null; billable: bigint | null; entries: bigint }>>(Prisma.sql`
+            SELECT w."userId", w."weekStart", s.minutes, s.billable, s.entries
+              FROM unnest(${weeks.map((w) => w.userId)}::text[], ${weeks.map((w) => w.weekStart)}::date[], ${weeks.map((w) => new Date(w.weekStart.getTime() + 6 * 86_400_000))}::date[]) AS w("userId", "weekStart", "weekEnd")
+             CROSS JOIN LATERAL (
+                   SELECT SUM(t."minutes") AS minutes,
+                          SUM(t."minutes") FILTER (WHERE t."billable") AS billable,
+                          COUNT(t."minutes") AS entries
+                     FROM "TimeEntry" t
+                    WHERE t."tenantId" = ${ctx.tenantId}
+                      AND t."userId" = w."userId"
+                      AND t."workDate" BETWEEN w."weekStart" AND w."weekEnd"
+                      AND t."minutes" IS NOT NULL
+                   ) s`);
+        for (const r of rows) {
+            out.set(`${r.userId}:${r.weekStart.toISOString().slice(0, 10)}`, { minutes: Number(r.minutes ?? 0), billableMinutes: Number(r.billable ?? 0), entries: Number(r.entries) });
+        }
+        return out;
+    }
+
+    /**
+     * The workspace's ACTIVE members who recorded finished time dated in
+     * `[from, to]`, at most `take` (the Monday reminder, 3.4c): per member one
+     * probe on the person's index, so the read grows with the members, not the
+     * entries.
+     */
+    static async activeMembersWithTimeIn(db: PrismaTx, ctx: Ctx, from: Date, to: Date, take: number): Promise<string[]> {
+        const rows = await db.$queryRaw<Array<{ userId: string }>>(Prisma.sql`
+            SELECT m."userId"
+              FROM "TenantMembership" m
+             WHERE m."tenantId" = ${ctx.tenantId}
+               AND m."status" = 'ACTIVE'
+               AND EXISTS (
+                   SELECT 1 FROM "TimeEntry" t
+                    WHERE t."tenantId" = ${ctx.tenantId}
+                      AND t."userId" = m."userId"
+                      AND t."workDate" BETWEEN ${from}::date AND ${to}::date
+                      AND t."minutes" IS NOT NULL)
+             ORDER BY m."userId"
+             LIMIT ${take}`);
+        return rows.map((r) => r.userId);
+    }
+
+    /** Whether any entry names the project (the purge's choice between a tombstone and a delete, issue #117). */
+    static async anyInProject(db: PrismaTx, ctx: Ctx, projectId: string): Promise<boolean> {
+        const row = await db.timeEntry.findFirst({ where: { tenantId: ctx.tenantId, projectId }, select: { id: true } });
+        return row !== null;
+    }
+
     static async create(db: PrismaTx, ctx: Ctx, data: TimeEntryInsert): Promise<TimeEntryRow> {
         return db.timeEntry.create({
             data: { tenantId: ctx.tenantId, createdByUserId: data.userId, ...data },

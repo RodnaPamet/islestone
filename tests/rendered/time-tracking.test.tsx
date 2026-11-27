@@ -79,6 +79,18 @@ function week(entries: TimeWeekData['entries']): TimeWeekData {
     };
 }
 
+/** The week's timesheet read (3.4c): approval off, never submitted, open to edits. */
+const openSheet = {
+    userId: 'u-ada',
+    weekStart: '2026-11-23',
+    approvalRequired: false,
+    timesheet: null,
+    frozen: false,
+    timerOn: false,
+    sums: { minutes: 0, billableMinutes: 0, entries: 0 },
+    viewer: { submit: false, withdraw: false, edit: true },
+};
+
 beforeEach(() => {
     __resetPendingUndoToastsForTest();
 });
@@ -172,7 +184,7 @@ describe("the item's Time panel", () => {
 
 describe('My time', () => {
     const affordable = (data: TimeWeekData, extra: Parameters<typeof installFetch>[0] = {}) =>
-        installFetch({ 'GET /time-entries': { body: data }, 'GET /time-entries/timer': { body: { timer: null } }, ...extra });
+        installFetch({ 'GET /time-entries': { body: data }, 'GET /time-entries/timer': { body: { timer: null } }, 'GET /timesheets/week': { body: openSheet }, ...extra });
 
     it('is a labelled grid of items and days with totals, and has no axe violations', async () => {
         affordable(week([{ ...entry(), item: visible }, { ...entry({ id: 'te-2', workDate: '2026-11-24', minutes: 30 }), item: visible }, { ...entry({ id: 'te-3', workItemId: null, workDate: '2026-11-26', minutes: 15 }), item: { kind: 'deleted' } }]));

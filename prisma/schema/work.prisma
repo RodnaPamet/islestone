@@ -100,6 +100,11 @@ model Project {
   deletedAt       DateTime?
   /// An actor stamp, like an audit row's user id: a plain column, no FK.
   deletedByUserId String?
+  /// Set only on a tombstone (issue #117, owner decision 281): a deleted
+  /// project the purge emptied but kept because time entries name it. It
+  /// names no due date or initiative and is never restored (CHECK
+  /// `Project_purged_is_tombstone`); only time totals read it.
+  purgedAt        DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 

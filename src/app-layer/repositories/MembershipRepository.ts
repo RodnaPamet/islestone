@@ -71,6 +71,21 @@ export class MembershipRepository {
         });
     }
 
+    /**
+     * The workspace's ACTIVE memberships with their role and custom role, the
+     * most senior first (the `Role` enum's order), at most `take`: who may be
+     * told of a submitted week when no recipient list is set (3.4c, decision
+     * 269). The caller predicts each one's permissions.
+     */
+    static async activeMembershipsBySeniority(db: PrismaTx, ctx: RequestContext, take: number) {
+        return db.tenantMembership.findMany({
+            where: { tenantId: ctx.tenantId, status: 'ACTIVE' },
+            orderBy: [{ role: 'asc' }, { userId: 'asc' }],
+            take,
+            select: { userId: true, role: true, customRole: { select: { grantsJson: true, baseRole: true } } },
+        });
+    }
+
     /** Name and address of the given users (decrypted by the PII extension). */
     static async contactsOf(db: PrismaTx, userIds: readonly string[]) {
         if (userIds.length === 0) return [];

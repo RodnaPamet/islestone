@@ -16,6 +16,9 @@
  *     has a label ("ISL-12, Tuesday 24 November, 1h 30m").
  *   - What it offers is `affordances` (asked on the server) and the week's
  *     own `viewer`; nothing here asks a role or a key.
+ *   - The week's timesheet (3.4c): its status line with Submit or Take back,
+ *     and a submitted or approved week's cells read-only (the timesheet
+ *     read's `viewer.edit`; the freeze trigger refuses a write regardless).
  *
  * Written fresh for Islestone.
  */
@@ -33,7 +36,10 @@ import { addDays, weekStartOf } from '@/lib/time/week';
 import { formatDuration } from '@/lib/work-items/estimate';
 
 import { TimeEntryDialog, type TimeEntryDraft } from './TimeEntryDialog';
+import { TimeTabs } from './TimeTabs';
+import { TimesheetStatusLine } from './TimesheetStatusLine';
 import { useTimeWeek, useTimeWrites } from './data/use-time';
+import { useTimesheetWeek } from './data/use-timesheets';
 import { formatDay } from './time-format';
 import { buildWeekGrid, type WeekCell, type WeekRow } from './week-grid-model';
 
@@ -47,6 +53,8 @@ export function MyTimeView({ affordances, today, weekStart }: { affordances: Tim
     const pathname = usePathname();
     const [week, setWeek] = useState(weekStart);
     const { data, error, isLoading } = useTimeWeek(affordances.track ? week : null);
+    // The week's timesheet (3.4c): its status line and whether it is frozen.
+    const sheet = useTimesheetWeek(affordances.track ? week : null);
     const writes = useTimeWrites();
     const [dialog, setDialog] = useState<DialogState | null>(null);
     const [dayCell, setDayCell] = useState<{ row: WeekRow; cell: WeekCell } | null>(null);
@@ -54,7 +62,8 @@ export function MyTimeView({ affordances, today, weekStart }: { affordances: Tim
     const cellRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
 
     const grid = useMemo(() => (data ? buildWeekGrid(data) : null), [data]);
-    const canEdit = affordances.record && (data?.viewer.edit ?? false);
+    // A submitted or approved week is read-only (decision 270): the timesheet read says so.
+    const canEdit = affordances.record && (data?.viewer.edit ?? false) && (sheet.data?.viewer.edit ?? false);
 
     const goTo = (next: string) => {
         setWeek(next);
@@ -124,6 +133,7 @@ export function MyTimeView({ affordances, today, weekStart }: { affordances: Tim
                 description={t('description')}
                 actions={canEdit ? <Button variant="primary" text={t('addTime')} onClick={() => setDialog({ kind: 'add', workItem: null, date: week <= today && today <= end ? today : week })} /> : undefined}
             />
+            <TimeTabs approve={affordances.approve} />
             <div className="flex flex-wrap items-center gap-tight">
                 <Button variant="secondary" size="sm" text={t('previousWeek')} onClick={() => goTo(addDays(week, -7))} />
                 <Button variant="secondary" size="sm" text={t('thisWeek')} disabled={week === thisWeek} onClick={() => goTo(thisWeek)} />
@@ -133,6 +143,7 @@ export function MyTimeView({ affordances, today, weekStart }: { affordances: Tim
                 </h2>
             </div>
             {!affordances.track && <p className="text-sm text-content-muted">{t('approveOnly')}</p>}
+            {sheet.data && <TimesheetStatusLine week={sheet.data} />}
             {error && (
                 <p role="alert" className="text-sm text-content-error">
                     {t('loadFailed')}

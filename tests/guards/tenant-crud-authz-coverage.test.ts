@@ -20,7 +20,7 @@ import { gitFiles } from '../helpers/git-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const T = 'src/app/api/t/[tenantSlug]';
-const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates', 'intake', 'search', 'recipient-lists', 'working-calendar', 'goals', 'initiatives', 'roadmap', 'time-entries'].map((r) => `${T}/${r}/`);
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates', 'intake', 'search', 'recipient-lists', 'working-calendar', 'goals', 'initiatives', 'roadmap', 'time-entries', 'time-settings', 'timesheets'].map((r) => `${T}/${r}/`);
 
 type Spec = Partial<Record<'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', string>>;
 const W = `${T}/work-items`;
@@ -96,6 +96,15 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${T}/time-entries/[timeEntryId]/route.ts`]: { PATCH: 'time.track', DELETE: 'time.track' },
     [`${T}/time-entries/timer/route.ts`]: { GET: 'time.track', POST: 'time.track' },
     [`${T}/time-entries/timer/stop/route.ts`]: { POST: 'time.track' },
+    // Sub-phase 3.4c: timesheets and the time tracking settings.
+    [`${T}/time-settings/route.ts`]: { GET: 'time.view', PUT: 'admin.manage' },
+    [`${T}/timesheets/route.ts`]: { GET: 'time.approve', POST: 'time.track' },
+    [`${T}/timesheets/week/route.ts`]: { GET: 'time.track' },
+    [`${T}/timesheets/[timesheetId]/route.ts`]: { GET: 'time.approve' },
+    [`${T}/timesheets/[timesheetId]/withdraw/route.ts`]: { POST: 'time.track' },
+    [`${T}/timesheets/[timesheetId]/approve/route.ts`]: { POST: 'time.approve' },
+    [`${T}/timesheets/[timesheetId]/return/route.ts`]: { POST: 'time.approve' },
+    [`${T}/timesheets/[timesheetId]/reopen/route.ts`]: { POST: 'time.approve' },
     [`${W}/[workItemId]/time/route.ts`]: { GET: 'work_items.view' },
     [`${T}/initiatives/route.ts`]: { GET: 'goals.view', POST: 'goals.manage' },
     [`${T}/initiatives/[initiativeId]/route.ts`]: { GET: 'goals.view', PATCH: 'goals.manage', DELETE: 'goals.manage' },
