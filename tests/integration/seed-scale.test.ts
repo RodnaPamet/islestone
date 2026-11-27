@@ -41,6 +41,8 @@ describeFn('the scale seeder (mini shape)', () => {
             expect(w.decryptedChecked).toBe(100);
             expect(w.searchVectors).toBe(w.describedItems + w.liveComments);
             expect(w.auditEntries).toBeGreaterThan(0);
+            // Sub-phase 3.4b: time entries on about 60 % of the live items.
+            expect(w.timeEntries).toBeGreaterThan(w.liveItems * 2);
         }
 
         const second = await seedScale({ shape: SHAPES.mini, bulkUrl: getTestDirectDatabaseUrl() });

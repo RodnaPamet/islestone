@@ -14,7 +14,7 @@
  */
 
 /** The tables no checked query may read with a sequential scan (map part 1.2). */
-export const GUARDED_TABLES: readonly string[] = ['WorkItem', 'Comment', 'SearchVector', 'WorkItemTransition', 'AuditLog'];
+export const GUARDED_TABLES: readonly string[] = ['WorkItem', 'Comment', 'SearchVector', 'WorkItemTransition', 'AuditLog', 'TimeEntry'];
 
 /** The session settings that turn every statement's plan into a NOTICE. */
 export const AUTO_EXPLAIN_SETTINGS: ReadonlyArray<readonly [string, string]> = [

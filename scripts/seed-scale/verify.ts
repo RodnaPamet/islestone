@@ -43,6 +43,8 @@ export interface WorkspaceReport {
     relations: number;
     customFieldValues: number;
     watchers: number;
+    /** Sub-phase 3.4b. */
+    timeEntries: number;
     auditEntries: number;
     decryptedChecked: number;
 }
@@ -104,6 +106,12 @@ async function verifyWorkspace(bulk: PrismaClient, shape: Shape, slug: string): 
            LEFT JOIN LATERAL (SELECT max(w."number") AS "top", count(*) AS "items" FROM "WorkItem" w WHERE w."projectId" = s."projectId") w ON true
           WHERE s."tenantId" = $1 AND (s."lastValue" <> COALESCE(w."top", 0) OR s."lastValue" <> w."items")`,
     );
+    // Sub-phase 3.4b: time entries, their envelopes, and a heavy member with a full week behind them.
+    const timeEntries = await q(`SELECT count(*) AS n FROM "TimeEntry" WHERE "tenantId" = $1`);
+    const timeBadEnvelopes = await q(`SELECT count(*) AS n FROM "TimeEntry" WHERE "tenantId" = $1 AND "description" IS NOT NULL AND "description" NOT LIKE 'v2:%'`);
+    const overfullDays = await q(
+        `SELECT count(*) AS n FROM (SELECT 1 FROM "TimeEntry" WHERE "tenantId" = $1 GROUP BY "userId", "workDate" HAVING sum("minutes") > 1440) d`,
+    );
     const liveDescribed = await q(`SELECT count(*) AS n FROM "WorkItem" WHERE "tenantId" = $1 AND "description" IS NOT NULL AND "deletedAt" IS NULL`);
 
     check(items === shapeItemCount(shape), `${slug} holds ${items} items, the shape ${shapeItemCount(shape)}`);
@@ -113,6 +121,9 @@ async function verifyWorkspace(bulk: PrismaClient, shape: Shape, slug: string): 
     check(transitions === items, `${slug}: ${transitions} items with a transition of ${items}`);
     check(badEnvelopes === 0, `${slug}: ${badEnvelopes} descriptions or comments not in the workspace key's envelope`);
     check(sequenceMismatches === 0, `${slug}: ${sequenceMismatches} key sequences disagree with their items`);
+    check(timeEntries > liveItems * 2 && timeEntries < liveItems * 4 + 600, `${slug}: ${timeEntries} time entries for ${liveItems} live items (about three each, and the heavy member's weeks)`);
+    check(timeBadEnvelopes === 0, `${slug}: ${timeBadEnvelopes} time entry descriptions not in the workspace key's envelope`);
+    check(overfullDays === 0, `${slug}: ${overfullDays} person-days hold more than 24 hours`);
 
     const chain = await verifyAuditChain(tenantId);
     check(chain.valid, `${slug}: the audit chain is broken at ${chain.firstBreakAt ?? '?'}`);
@@ -154,6 +165,7 @@ async function verifyWorkspace(bulk: PrismaClient, shape: Shape, slug: string): 
         relations,
         customFieldValues,
         watchers,
+        timeEntries,
         auditEntries: chain.totalEntries,
         decryptedChecked,
     };

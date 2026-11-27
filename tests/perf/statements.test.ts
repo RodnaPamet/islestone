@@ -83,6 +83,12 @@ const SCENARIOS: Scenario[] = [
     // The calendar (3.3a): a month grid around today (42 days), the workspace's and one project's: the
     // tenant binding, the visible projects, the window's items, the undated count, the cycles, the
     // milestones and the working calendar (8 measured on the 10k seed, either way).
+    // Time entries (3.4b), as measured on the 10k seed: the week reads the context's settings, the entries and
+    // their items (with their projects and types, Prisma's own statements); an item's time the context, the item and
+    // its project, the total, the page and the people's names. The map proposed 4 and 3 counting neither the
+    // context's statement nor Prisma's relation reads; none of these is per row.
+    { name: 'time: a week of the heavy member', file: `${ROUTES}/time-entries/route.ts`, method: 'GET', path: (w) => `/time-entries?week=${w.timeWeek}`, budget: 5 },
+    { name: "time: an item's time", file: `${ROUTES}/work-items/[workItemId]/time/route.ts`, method: 'GET', path: (w) => `/work-items/${w.timeItemId}/time`, params: (w) => ({ workItemId: w.timeItemId }), budget: 6 },
     { name: 'calendar: the workspace, a month grid', file: `${ROUTES}/work-items/calendar/route.ts`, method: 'GET', path: () => `/work-items/calendar?${monthGrid()}`, budget: 8 },
     { name: 'calendar: one project, a month grid', file: `${ROUTES}/work-items/calendar/route.ts`, method: 'GET', path: (w) => `/work-items/calendar?projectId=${w.projectId}&${monthGrid()}`, budget: 8 },
     {
@@ -92,6 +98,16 @@ const SCENARIOS: Scenario[] = [
         path: () => '/work-items',
         body: (w, run) => ({ projectId: w.projectId, typeId: w.typeId, title: `Perf create ${run}`, description: 'Задачата на проекта and a description to index.' }),
         budget: 32,
+    },
+    // Time entries (3.4b): adding time, a write of its own (the item gate, the week's lock, the day's total, the
+    // insert, and its hash-chained audit entry). Each run a day of its own far in the future, so no day fills.
+    {
+        name: 'time: add an entry',
+        file: `${ROUTES}/time-entries/route.ts`,
+        method: 'POST',
+        path: () => '/time-entries',
+        body: (w, run) => ({ workItemId: w.timeItemId, workDate: `2099-01-${String(run + 2).padStart(2, '0')}`, minutes: 30 }),
+        budget: 12,
     },
 ];
 

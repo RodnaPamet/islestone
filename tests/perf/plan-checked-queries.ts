@@ -3,7 +3,8 @@
  * docs/performance.md): every named query whose plan the `perf` project
  * checks on the seeded database, and the repository methods each one runs.
  *
- * A repository method that reads `WorkItem`, `Comment` or `SearchVector` is
+ * A repository method that reads `WorkItem`, `Comment`, `SearchVector` or
+ * (3.4b) `TimeEntry` is
  * either named by a query here or carries a reason in `PLAN_CHECK_EXEMPT`
  * (`tests/guards/plan-checked-queries-coverage.test.ts`): a new list query
  * cannot avoid the check. `tests/perf/plans.test.ts` holds one runner per
@@ -138,6 +139,22 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
         noIndexBecause: 'a workspace holds one calendar per team and its holidays (at most 500 each): a sequential scan of a few pages is the cheapest plan at every workspace size; the budget holds it small',
         maxBuffers: 100, maxBuffers100k: 100,
     },
+    // ── Time entries (3.4b): a person's week, a day's total and the timer, an item's time ──
+    // 10k (about 29,000 entries a workspace): 121 to 142 buffers measured for the heavy member's week (its rows and
+    // the index pages, heap-fetched), 21 for a day's total and the timer, 17 for the item with the most time.
+    // 100k: NOT MEASURED (no disk for the 100k seed here; issue #93's extrapolation): the heavy member's week holds
+    // more rows there (Zipf over 200 writers, bounded by 24 hours a day), about three times the 10k read, and an
+    // item's entries do not grow with the workspace; each budget about twice that. Replace with about twice the
+    // nightly's first 100k measurement.
+    { name: "time: a person's week", methods: ['TimeEntryRepository.listForPerson'], indexes: ['TimeEntry_tenantId_userId_workDate_idx'], maxBuffers: 300, maxBuffers100k: 900 },
+    {
+        name: "time: a day's total and the running timer",
+        methods: ['TimeEntryRepository.dayTotal', 'TimeEntryRepository.running'],
+        indexes: ['TimeEntry_tenantId_userId_workDate_idx', 'TimeEntry_one_timer_per_person|TimeEntry_tenantId_userId_workDate_idx'],
+        maxBuffers: 50,
+        maxBuffers100k: 150,
+    },
+    { name: "time: an item's total and first page", methods: ['TimeEntryRepository.itemTotals', 'TimeEntryRepository.itemPage'], indexes: ['TimeEntry_tenantId_workItemId_workDate_idx'], maxBuffers: 50, maxBuffers100k: 100 },
     // ── Writes' reads: placement, moves, a member's removal ────────────────
     { name: 'placement: sort keys around a position', methods: ['WorkItemRepository.lastSortKey', 'WorkItemRepository.nextSortKeyAfter', 'WorkItemRepository.prevSortKeyBefore', 'WorkItemRepository.liveSortKeysAmong'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 100, maxBuffers100k: 100 },
     { name: 'removal: a member\'s items', methods: ['WorkItemRepository.lockItemsOfPerson'], indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx|WorkItem_tenantId_assigneeId_sortKey_id_idx', 'WorkItem_tenantId_waitingOnUserId_stateCategory_dueDate_idx', 'CustomFieldValue_tenantId_userId_idx|CustomFieldValue_tenantId_fieldId_userId_idx'], maxBuffers: 7500, maxBuffers100k: 88000 },
@@ -181,6 +198,7 @@ export const PLAN_CHECK_EXEMPT: Readonly<Record<string, string>> = {
     'ReviewRepository.lockItems': 'the given ids by primary key, locked in id order',
     'SearchVectorRepository.descriptionTexts': 'one rebuild page of ids by primary key',
     'SearchVectorRepository.commentTexts': 'one rebuild page of ids by primary key',
+    'TimeEntryRepository.get': 'one time entry by primary key (the write gate of a change or a delete, 3.4b)',
 };
 
 /** A query's buffer budget at a shape: 10k and 100k are judged, any other shape is reported only (`null`). */

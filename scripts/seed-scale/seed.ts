@@ -10,6 +10,7 @@ import { PrismaClient } from '@prisma/client';
 import { BATCH_SIZE, seedProjectBulk } from './bulk';
 import { planProject } from './plan';
 import { stream } from './random';
+import { seedTimeEntries } from './time';
 import { seedProjectSample } from './sample';
 import { sampleCount, shapeItemCount, type Shape } from './shapes';
 import { verifySeed, type SeedReport } from './verify';
@@ -79,6 +80,8 @@ export async function seedScale(opts: {
                 const bulkResult = await seedProjectBulk(env, bulk, ws, project, plans, from);
                 await seedProjectSample(env, ws, project, plans, from, bulkResult);
             }
+            // Sub-phase 3.4b: time entries over the items just written.
+            await seedTimeEntries(env, bulk, ws);
             seededSlugs.push(slug);
         }
         if (seededSlugs.length > 0) {

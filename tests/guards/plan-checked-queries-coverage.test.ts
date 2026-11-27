@@ -5,8 +5,9 @@
  * The `perf` project checks the plan of every query in PLAN_CHECKED_QUERIES
  * on the seeded database; this guard, which needs no database, holds the
  * registry to the code: every static method of a class under
- * `src/app-layer/repositories/` that READS `WorkItem`, `Comment` or
- * `SearchVector` (a Prisma read on `workItem`, `comment` or `searchVector`,
+ * `src/app-layer/repositories/` that READS `WorkItem`, `Comment`,
+ * `SearchVector` or (3.4b) `TimeEntry` (a Prisma read on `workItem`,
+ * `comment`, `searchVector` or `timeEntry`,
  * raw SQL naming one of the three tables, or a call of a search function
  * that reads one) is named by a query's `methods`
  * or carries a reason in PLAN_CHECK_EXEMPT, and neither list names a method
@@ -27,9 +28,9 @@ import { PLAN_CHECK_EXEMPT, PLAN_CHECKED_QUERIES } from '../perf/plan-checked-qu
 import { gitEnvFor, gitFiles, REPO_ROOT } from '../helpers/git-files';
 import { SEARCH_DEFINER_FUNCTIONS } from '../helpers/search-definer';
 
-const PRISMA_READ = /\.(workItem|comment|searchVector)\s*\.\s*(findMany|findFirst|findUnique|findFirstOrThrow|findUniqueOrThrow|count|aggregate|groupBy)\s*\(/;
+const PRISMA_READ = /\.(workItem|comment|searchVector|timeEntry)\s*\.\s*(findMany|findFirst|findUnique|findFirstOrThrow|findUniqueOrThrow|count|aggregate|groupBy)\s*\(/;
 const RAW_READ = /\$queryRaw/;
-const GUARDED_TABLE = /"(WorkItem|Comment|SearchVector)"/;
+const GUARDED_TABLE = /"(WorkItem|Comment|SearchVector|TimeEntry)"/;
 /**
  * A search function that reads a guarded table (owner decision 245): a call
  * names no table, but the function's body reads them
