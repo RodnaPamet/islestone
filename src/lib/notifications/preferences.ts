@@ -84,7 +84,7 @@ export function offersImmediateEmail(type: NotificationType): boolean {
  * 230: "in-app only, no email"): a calendar change that was not applied; and
  * from 3.5a (decision 300) time off someone else changed for you. The CHECK
  * `NotificationPreference_in_app_only_types` (migrations
- * `20261219120100_calendar_read_back`, `20261222120100_workload`) holds the
+ * `20261219120100_calendar_read_back`, `20261223120100_workload`) holds the
  * same list.
  */
 export const IN_APP_ONLY_TYPES = ['CALENDAR_CHANGE_NOT_APPLIED', 'TIME_OFF_CHANGED_BY_OTHER'] as const satisfies readonly PreferenceType[];

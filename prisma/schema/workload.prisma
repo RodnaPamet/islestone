@@ -13,7 +13,7 @@
 //   and holders of `workload.manage`. Kept for the workspace's life (decision
 //   289); goes with the membership.
 //
-// What Prisma cannot declare lives in migration `20261222120100_workload`: the
+// What Prisma cannot declare lives in migration `20261223120100_workload`: the
 // CHECKs (minutes, a Monday, the ciphertext shape of the type) and the team
 // link `ON DELETE SET NULL ("calendarTeamId")`.
 
