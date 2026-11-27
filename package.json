@@ -31,6 +31,7 @@
     "ui:mirror": "node scripts/ui-mirror.mjs verify",
     "test:integration": "jest --selectProjects integration --runInBand",
     "test:perf": "jest --selectProjects perf --runInBand",
+    "forecast:calibration": "tsx scripts/forecast-calibration.ts",
     "seed:scale": "tsx scripts/seed-scale/index.ts",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
