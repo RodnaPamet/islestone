@@ -5,7 +5,8 @@
  *
  *   - the catalogue: the column, the trigger writing it (NULL on an insert,
  *     the old category on an update, also as `app_user`), and the partial
- *     index `WorkItemTransition_completions` with its exact predicate;
+ *     indexes `WorkItemTransition_completions` and `_creations` with their
+ *     exact predicates;
  *   - the migration's backfill (its own statement, read from the file) gives
  *     each row its item's previous category in the record's order and an
  *     item's first row NULL;
@@ -99,6 +100,8 @@ describeFn('the transition record and the analytics reads (3.6a)', () => {
         expect(ix!.def).toBe(
             'CREATE INDEX "WorkItemTransition_completions" ON public."WorkItemTransition" USING btree ("tenantId", "projectId", at) WHERE (("stateCategory" = \'DONE\'::"WorkflowStateCategory") AND ("fromStateCategory" IS DISTINCT FROM \'DONE\'::"WorkflowStateCategory"))',
         );
+        const [created] = await prisma.$queryRaw<Array<{ def: string }>>`SELECT indexdef::text AS def FROM pg_indexes WHERE indexname = 'WorkItemTransition_creations'`;
+        expect(created!.def).toBe('CREATE INDEX "WorkItemTransition_creations" ON public."WorkItemTransition" USING btree ("tenantId", "projectId", at) WHERE ("fromStateCategory" IS NULL)');
     });
 
     it('writes NULL on the insert row and the old category on each change, also as app_user', async () => {

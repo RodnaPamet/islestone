@@ -39,6 +39,9 @@ export interface WorkspaceReport {
     describedItems: number;
     searchVectors: number;
     transitions: number;
+    /** Sub-phase 3.6a: the back-dated record's rows, and completions in the last year. */
+    transitionRows: number;
+    yearCompletions: number;
     labels: number;
     relations: number;
     customFieldValues: number;
@@ -118,6 +121,34 @@ async function verifyWorkspace(bulk: PrismaClient, shape: Shape, slug: string): 
     const overfullDays = await q(
         `SELECT count(*) AS n FROM (SELECT 1 FROM "TimeEntry" WHERE "tenantId" = $1 GROUP BY "userId", "workDate" HAVING sum("minutes") > 1440) d`,
     );
+    // Sub-phase 3.6a: the back-dated record (history.ts). Every item's last row is its picture; each row's
+    // fromStateCategory is its item's previous row's category; about six rows an item.
+    const transitionRows = await q(`SELECT count(*) AS n FROM "WorkItemTransition" WHERE "tenantId" = $1`);
+    const lastRowMismatches = await q(
+        `SELECT count(*) AS n
+           FROM "WorkItem" w
+           LEFT JOIN LATERAL (
+               SELECT t.* FROM "WorkItemTransition" t
+                WHERE t."tenantId" = w."tenantId" AND t."workItemId" = w."id"
+                ORDER BY t."at" DESC, t."id" DESC LIMIT 1) l ON true
+          WHERE w."tenantId" = $1
+            AND (l."id" IS NULL OR l."projectId" <> w."projectId" OR l."teamId" <> w."teamId" OR l."stateId" <> w."stateId"
+                 OR l."stateCategory" <> w."stateCategory" OR l."cycleId" IS DISTINCT FROM w."cycleId"
+                 OR l."milestoneId" IS DISTINCT FROM w."milestoneId" OR l."waitingOnUserId" IS DISTINCT FROM w."waitingOnUserId"
+                 OR l."estimatePoints" IS DISTINCT FROM w."estimatePoints" OR l."estimateMinutes" IS DISTINCT FROM w."estimateMinutes"
+                 OR l."deleted" <> (w."deletedAt" IS NOT NULL))`,
+    );
+    const chainMismatches = await q(
+        `SELECT count(*) AS n FROM (
+             SELECT "fromStateCategory", LAG("stateCategory") OVER (PARTITION BY "workItemId" ORDER BY "at", "id") AS "previous"
+               FROM "WorkItemTransition" WHERE "tenantId" = $1) x
+          WHERE x."fromStateCategory" IS DISTINCT FROM x."previous"`,
+    );
+    const yearCompletions = await q(
+        `SELECT count(*) AS n FROM "WorkItemTransition"
+          WHERE "tenantId" = $1 AND "stateCategory" = 'DONE' AND "fromStateCategory" IS DISTINCT FROM 'DONE' AND "at" >= now() - interval '365 days'`,
+    );
+    const reopens = await q(`SELECT count(*) AS n FROM "WorkItemTransition" WHERE "tenantId" = $1 AND "fromStateCategory" = 'DONE' AND "stateCategory" <> 'DONE'`);
     const liveDescribed = await q(`SELECT count(*) AS n FROM "WorkItem" WHERE "tenantId" = $1 AND "description" IS NOT NULL AND "deletedAt" IS NULL`);
     // Sub-phase 3.4d: the rates at three levels, approved weeks, and every stamp in an approved week.
     const rateLevels = await q(`SELECT count(DISTINCT "level") AS n FROM "BillableRate" WHERE "tenantId" = $1`);
@@ -149,6 +180,11 @@ async function verifyWorkspace(bulk: PrismaClient, shape: Shape, slug: string): 
     check(comments > items * 2 && comments < items * 4, `${slug}: ${comments} comments for ${items} items (about three each)`);
     check(searchVectors === describedItems + liveComments, `${slug}: ${searchVectors} search vectors for ${describedItems} descriptions and ${liveComments} live comments`);
     check(transitions === items, `${slug}: ${transitions} items with a transition of ${items}`);
+    check(lastRowMismatches === 0, `${slug}: ${lastRowMismatches} items whose last transition is not their picture`);
+    check(chainMismatches === 0, `${slug}: ${chainMismatches} transitions whose fromStateCategory is not the previous row's category`);
+    check(transitionRows > items * 3 && transitionRows < items * 9, `${slug}: ${transitionRows} transitions for ${items} items (about six each)`);
+    check(yearCompletions > items * 0.3, `${slug}: ${yearCompletions} completions in the last year for ${items} items`);
+    check(reopens > 0, `${slug}: no reopened item in the record`);
     check(badEnvelopes === 0, `${slug}: ${badEnvelopes} descriptions or comments not in the workspace key's envelope`);
     check(sequenceMismatches === 0, `${slug}: ${sequenceMismatches} key sequences disagree with their items`);
     check(timeEntries > liveItems * 2 && timeEntries < liveItems * 4 + 600, `${slug}: ${timeEntries} time entries for ${liveItems} live items (about three each, and the heavy member's weeks)`);
@@ -200,6 +236,8 @@ async function verifyWorkspace(bulk: PrismaClient, shape: Shape, slug: string): 
         describedItems,
         searchVectors,
         transitions,
+        transitionRows,
+        yearCompletions,
         labels,
         relations,
         customFieldValues,

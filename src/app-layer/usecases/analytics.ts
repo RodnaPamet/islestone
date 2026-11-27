@@ -330,7 +330,7 @@ export async function getDurations(ctx: RequestContext, query: AnalyticsQuery & 
             points: newest.flatMap((p) => {
                 const w = labels.get(p.workItemId);
                 if (!w) return [];
-                return [{ workItemId: p.workItemId, key: formatKey(w.project.keyPrefix, w.number), title: w.title, completedOn: fromEpochDay(epochDayOf(p.completedAt, tz)), cycleTime: p.cycleTime, leadTime: p.leadTime }];
+                return [{ workItemId: p.workItemId, key: formatKey(w.keyPrefix, w.number), title: w.title, completedOn: fromEpochDay(epochDayOf(p.completedAt, tz)), cycleTime: p.cycleTime, leadTime: p.leadTime }];
             }),
             pointsNewestOnly: measured.length > ANALYTICS_POINT_LIMIT,
             age: ageRows.map((a) => ({

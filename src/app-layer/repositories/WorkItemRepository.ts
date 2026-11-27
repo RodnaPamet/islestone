@@ -1635,14 +1635,22 @@ export class WorkItemRepository {
         return counts;
     }
 
-    /** The key and title of live, visible items (archived projects included), by id: the analytics points' labels. */
-    static async keyTitlesByIds(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, ids: readonly string[]) {
+    /**
+     * The key and title of live, visible items (archived projects included),
+     * by id: the analytics points' labels. One statement (the project joined),
+     * `tenantId`, `deletedAt` and visibility in its own `WHERE`.
+     */
+    static async keyTitlesByIds(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, ids: readonly string[]): Promise<Array<{ id: string; number: number; title: string; keyPrefix: string }>> {
         if (ids.length === 0) return [];
-        return db.workItem.findMany({
-            where: { tenantId: ctx.tenantId, id: { in: [...ids] }, deletedAt: null, AND: [projectVisibilityWhere(v, { includeArchived: true })] },
-            take: ids.length,
-            select: { id: true, number: true, title: true, project: { select: { keyPrefix: true } } },
-        });
+        const all = v.kind === 'ALL';
+        const granted = v.kind === 'GRANTED' ? [...v.projectIds] : [];
+        const rows = await db.$queryRaw<Array<{ id: string; number: number; title: string; keyPrefix: string }>>(Prisma.sql`
+            SELECT w."id", w."number", w."title", p."keyPrefix"
+              FROM "WorkItem" w
+              JOIN "Project" p ON p."id" = w."projectId" AND p."tenantId" = ${ctx.tenantId} AND p."deletedAt" IS NULL
+             WHERE w."tenantId" = ${ctx.tenantId} AND w."id" = ANY(${[...ids]}::text[]) AND w."deletedAt" IS NULL
+               AND (${all}::boolean OR w."projectId" = ANY(${granted}::text[]))`);
+        return rows.map((r) => ({ ...r, number: Number(r.number) }));
     }
 
     // ── Cycles (sub-phase 2.5a) ──────────────────────────────────────

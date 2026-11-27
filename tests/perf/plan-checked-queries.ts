@@ -3,8 +3,8 @@
  * docs/performance.md): every named query whose plan the `perf` project
  * checks on the seeded database, and the repository methods each one runs.
  *
- * A repository method that reads `WorkItem`, `Comment`, `SearchVector` or
- * (3.4b) `TimeEntry` is
+ * A repository method that reads `WorkItem`, `Comment`, `SearchVector`,
+ * (3.4b) `TimeEntry` or (3.6a) `WorkItemTransition` is
  * either named by a query here or carries a reason in `PLAN_CHECK_EXEMPT`
  * (`tests/guards/plan-checked-queries-coverage.test.ts`): a new list query
  * cannot avoid the check. `tests/perf/plans.test.ts` holds one runner per
@@ -230,6 +230,23 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     // measured 162; the 100k budget extrapolated with its ten times the members.
     { name: 'job: the timesheet reminder', methods: ['TimeEntryRepository.activeMembersWithTimeIn'], indexes: ['TimeEntry_tenantId_userId_workDate_idx'], maxBuffers: 350, maxBuffers100k: 3500 },
     { name: 'job: the search-index rebuild', methods: ['SearchVectorRepository.staleDescriptionPage', 'SearchVectorRepository.staleCommentPage'], indexes: ['SearchVector_one_per_description', 'SearchVector_one_per_comment', 'Comment_search_live_ids'], maxBuffers: 10000, maxBuffers100k: 10000 },
+    // ── Analytics (3.6a, decision 331): reads over the transition record, twelve weeks ──
+    // 10k measured on the seed's back-dated record (about 44,000 rows a workspace, history.ts): the workspace's
+    // completions and counts 49,947 buffers (every completion of the window probed twice on the item's record:
+    // its later rows and its latest row; the creations through WorkItemTransition_creations), one project's
+    // 1,494, their first starts 2,747, the largest project's flow 5,264, the age of its started items 947, the
+    // counts now and a label filter 1,205, the current cycle's burn-up 2,118; each budget about twice that.
+    // 100k: NOT MEASURED (no disk for the 100k seed here): ten times the workspace's rows, twenty times the
+    // largest project's (20,000 items against the 10k seed's 1,000), each budgeted at about twice that
+    // multiple; replace with about twice the nightly's first 100k measurement.
+    { name: 'analytics: completions in a window, workspace', methods: ['WorkItemTransitionRepository.completionsPerDay', 'WorkItemTransitionRepository.windowCounts'], indexes: ['WorkItemTransition_completions', 'WorkItemTransition_creations'], maxBuffers: 100000, maxBuffers100k: 1000000 },
+    { name: 'analytics: completions in a window, one project', methods: ['WorkItemTransitionRepository.completionsPerDay'], indexes: ['WorkItemTransition_completions'], maxBuffers: 3000, maxBuffers100k: 60000 },
+    { name: 'analytics: the first start of completed items', methods: ['WorkItemTransitionRepository.completionDurations'], indexes: ['WorkItemTransition_completions', 'WorkItemTransition_tenantId_workItemId_at_idx'], maxBuffers: 5500, maxBuffers100k: 110000 },
+    { name: 'analytics: flow over a project', methods: ['WorkItemTransitionRepository.flowItemIds', 'WorkItemTransitionRepository.flowDeltas'], indexes: ['WorkItemTransition_tenantId_projectId_at_idx', 'WorkItemTransition_tenantId_workItemId_at_idx|WorkItemTransition_tenantId_cycleId_workItemId_idx'], maxBuffers: 10500, maxBuffers100k: 210000 },
+    { name: 'analytics: the age of started items', methods: ['WorkItemTransitionRepository.startedItemsByFirstStart'], indexes: ['WorkItemTransition_tenantId_workItemId_at_idx'], maxBuffers: 2000, maxBuffers100k: 40000 },
+    { name: 'analytics: counts now and a filter on current values', methods: ['WorkItemRepository.countsByCategory', 'WorkItemRepository.idsMatchingCurrentValues'], indexes: ['WorkItemLabel_tenantId_labelId_workItemId_idx'], maxBuffers: 2500, maxBuffers100k: 25000 },
+    { name: "cycles: the burn-up's items and rows", methods: ['WorkItemTransitionRepository.itemIdsEverInCycle', 'WorkItemTransitionRepository.transitionsOf'], indexes: ['WorkItemTransition_tenantId_cycleId_workItemId_idx', 'WorkItemTransition_tenantId_workItemId_at_idx|WorkItemTransition_tenantId_cycleId_workItemId_idx'], maxBuffers: 4500, maxBuffers100k: 45000 },
+    // ── end of the 3.6a analytics block ──
 ];
 
 /**
@@ -261,6 +278,7 @@ export const PLAN_CHECK_EXEMPT: Readonly<Record<string, string>> = {
     'SearchVectorRepository.descriptionTexts': 'one rebuild page of ids by primary key',
     'SearchVectorRepository.commentTexts': 'one rebuild page of ids by primary key',
     'TimeEntryRepository.get': 'one time entry by primary key (the write gate of a change or a delete, 3.4b)',
+    'WorkItemRepository.keyTitlesByIds': 'at most 2,000 given ids by primary key (the analytics points\' keys and titles, 3.6a)',
     'TimeEntryRepository.anyInProject': "an existence probe, one row, on TimeEntry_tenantId_projectId_workDate_idx (the purge's choice of a tombstone, issue #117)",
 };
 

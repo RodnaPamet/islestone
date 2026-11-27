@@ -250,6 +250,12 @@ const parallel = (paths, check) => async () => {
     return { ok: !bad && !problem, status: bad ? bad.status : 200, ms, problem };
 };
 
+/** The Analytics page's default window (3.6a): the twelve weeks ending today, UTC days. */
+const analyticsWindow = () => {
+    const day = (n) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+    return `from=${day(-83)}&to=${day(0)}`;
+};
+
 /** A document request, then the requests its page fires together (a first load). */
 const documentThen = (doc, paths) => async () => {
     const started = performance.now();
@@ -321,6 +327,9 @@ function scenarioRunners(w) {
         ),
         // Workload (3.5b): every member's twelve weeks from this week, as the Workload page first reads it.
         workload: single('GET', api('/workload?weeks=12'), (b) => (Array.isArray(b?.people) && Array.isArray(b?.weeks) && b.weeks.length === 12 ? null : 'the workload answered no people')),
+        // Analytics (3.6a): the page's default window, the twelve weeks ending today.
+        'analytics-throughput': single('GET', api(`/analytics/throughput?${analyticsWindow()}&bin=week`), (b) => (Array.isArray(b?.bins) ? null : 'throughput answered no bins')),
+        'analytics-flow': single('GET', api(`/analytics/flow?projectId=${w.big.id}&${analyticsWindow()}&burnUp=1`), (b) => (Array.isArray(b?.days) && b?.burnUp ? null : 'flow answered no days')),
         create: single('POST', (run) => ({ path: api('/work-items'), body: { projectId: p, typeId: w.typeId, title: `Perf harness create ${run}`, description: 'Задачата на проекта and a description to index.' } }), null),
         edit: single(
             'PATCH',

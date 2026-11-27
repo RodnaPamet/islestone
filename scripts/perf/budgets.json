@@ -192,6 +192,18 @@
       "enforced": false,
       "reportedBecause": "3.5b's budget (docs/porting/maps/3.5.md, 'Performance') is reported and not enforced until the nightly 100k run has measured it, as the timeline's and the roadmap's are"
     },
+    "analytics-throughput": {
+      "label": "Analytics: throughput of the whole workspace, twelve weeks (GET /analytics/throughput)",
+      "budgets": { "10k": { "p50": 200, "p95": 400 }, "100k": { "p50": 200, "p95": 400 } },
+      "enforced": false,
+      "reportedBecause": "3.6a's budget (docs/porting/maps/3.6.md, 'Performance'): reported and not enforced until the nightly 100k run has measured it, as the timeline's and the roadmap's were"
+    },
+    "analytics-flow": {
+      "label": "Analytics: cumulative flow and the burn-up of the largest project, twelve weeks (GET /analytics/flow)",
+      "budgets": { "10k": { "p50": 350, "p95": 700 }, "100k": { "p50": 350, "p95": 700 } },
+      "enforced": false,
+      "reportedBecause": "3.6a's budget (docs/porting/maps/3.6.md, 'Performance'), for the 100k seed's 20,000-item project: reported and not enforced until the nightly 100k run has measured it"
+    },
     "create": {
       "write": true,
       "label": "Write: create with a description",

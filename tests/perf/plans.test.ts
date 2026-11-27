@@ -28,6 +28,7 @@ import { SearchVectorRepository } from '@/app-layer/repositories/SearchVectorRep
 import { TeamRepository } from '@/app-layer/repositories/TeamRepository';
 import { TimeEntryRepository } from '@/app-layer/repositories/TimeEntryRepository';
 import { WorkloadRepository } from '@/app-layer/repositories/WorkloadRepository';
+import { WorkItemTransitionRepository, type RecordScope } from '@/app-layer/repositories/WorkItemTransitionRepository';
 import { CommentRepository, listSortSpec, WorkItemRepository, type WorkItemFilters } from '@/app-layer/repositories/WorkItemRepository';
 import type { RequestContext } from '@/app-layer/types';
 import { resolveWorkingCalendars } from '@/app-layer/usecases/working-calendar';
@@ -60,6 +61,14 @@ const list = (filters: WorkItemFilters, sort: ListSort = 'manual'): Runner => (w
 
 /** The phrase every content search uses: two common Bulgarian words, stemmed. */
 const CONTENT_QUERY = 'задачата проекта';
+
+/** An analytics read's scope (3.6a): recorded filters as given, no filter on current values. */
+const recordScope = (v: ProjectVisibility, over: Partial<RecordScope> = {}): RecordScope => ({ visibility: v, projectIds: null, teamIds: null, cycle: null, milestone: null, itemIds: null, ...over });
+/** The Analytics page's default window: the twelve weeks ending today (UTC days), read now. */
+const analyticsWindow = () => {
+    const end = new Date(today().getTime() + DAY);
+    return { from: new Date(end.getTime() - 84 * DAY), to: end, asOf: new Date(Math.min(Date.now(), end.getTime())), tz: 'UTC' };
+};
 
 const RUNNERS: Record<string, Runner> = {
     'list: project, manual order': (w, db, ctx, v) => list({ projectId: w.projectId })(w, db, ctx, v),
@@ -270,6 +279,30 @@ const RUNNERS: Record<string, Runner> = {
     'job: the timesheet reminder': (w, db, ctx) => {
         const from = new Date(`${w.timeWeek}T00:00:00Z`);
         return TimeEntryRepository.activeMembersWithTimeIn(db, ctx, from, new Date(from.getTime() + 6 * DAY), 5_000);
+    },
+    // Analytics (3.6a): the workspace's and a project's twelve weeks, as the page first reads them.
+    'analytics: completions in a window, workspace': async (w, db, ctx, v) => {
+        await WorkItemTransitionRepository.completionsPerDay(db, ctx, recordScope(v), analyticsWindow());
+        return WorkItemTransitionRepository.windowCounts(db, ctx, recordScope(v), analyticsWindow());
+    },
+    'analytics: completions in a window, one project': (w, db, ctx, v) => WorkItemTransitionRepository.completionsPerDay(db, ctx, recordScope(v, { projectIds: [w.bigProjectId] }), analyticsWindow()),
+    'analytics: the first start of completed items': (w, db, ctx, v) => WorkItemTransitionRepository.completionDurations(db, ctx, recordScope(v, { projectIds: [w.bigProjectId] }), analyticsWindow(), 50_001),
+    'analytics: flow over a project': async (w, db, ctx, v) => {
+        const window = analyticsWindow();
+        const scope = recordScope(v, { projectIds: [w.bigProjectId] });
+        const ids = await WorkItemTransitionRepository.flowItemIds(db, ctx, scope, window.asOf, 20_001);
+        const fromDay = Math.floor(window.from.getTime() / DAY);
+        return WorkItemTransitionRepository.flowDeltas(db, ctx, scope, ids, { fromDay, end: window.to, asOf: window.asOf, tz: 'UTC', doneSince: window.from, measure: 'items' });
+    },
+    'analytics: the age of started items': (w, db, ctx, v) =>
+        WorkItemTransitionRepository.startedItemsByFirstStart(db, ctx, { ...recordScope(v, { projectIds: [w.bigProjectId] }), includeArchived: false, initiativeProjectIds: null }, 2_000),
+    'analytics: counts now and a filter on current values': async (w, db, ctx, v) => {
+        await WorkItemRepository.countsByCategory(db, ctx, v, { projectId: w.bigProjectId }, null, today());
+        return WorkItemRepository.idsMatchingCurrentValues(db, ctx, v, { labelId: w.labelId }, { take: 50_001, today: today() });
+    },
+    "cycles: the burn-up's items and rows": async (w, db, ctx) => {
+        const ids = await WorkItemTransitionRepository.itemIdsEverInCycle(db, ctx, w.currentCycleId);
+        return WorkItemTransitionRepository.transitionsOf(db, ctx, ids.slice(0, 5_000), new Date());
     },
     'job: the search-index rebuild': async (w, db, ctx) => {
         // One page of each kind, through the keyset (after 'c', which sorts before every cuid): a page

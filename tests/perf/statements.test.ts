@@ -70,6 +70,12 @@ function monthGrid(): string {
     return `from=${day(-14)}&to=${day(27)}`;
 }
 
+/** The Analytics page's default window (3.6a): the twelve weeks ending today. */
+function analyticsWindow(): string {
+    const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+    return `from=${day(-83)}&to=${day(0)}`;
+}
+
 /** The Monday `n` weeks after `from` (a Monday), date-only. */
 function mondayAfter(from: string, n: number): string {
     return new Date(Date.parse(`${from}T00:00:00Z`) + n * 7 * 86_400_000).toISOString().slice(0, 10);
@@ -196,6 +202,19 @@ const SCENARIOS: Scenario[] = [
     { name: "time export: a month's entries as CSV", file: `${ROUTES}/time-totals/export/route.ts`, method: 'GET', as: 'approver', path: (w) => `/time-totals/export?${monthQuery(w.timeWeek)}&format=csv`, budget: 13 },
     { name: 'calendar: the workspace, a month grid', file: `${ROUTES}/work-items/calendar/route.ts`, method: 'GET', path: () => `/work-items/calendar?${monthGrid()}`, budget: 7 },
     { name: 'calendar: one project, a month grid', file: `${ROUTES}/work-items/calendar/route.ts`, method: 'GET', path: (w) => `/work-items/calendar?projectId=${w.projectId}&${monthGrid()}`, budget: 7 },
+    // ── Analytics (3.6a; the map's budget: at most 7 statements a read), as measured on the 10k seed: the tenant
+    // binding, the scope's team when it is one project, the calendars, the filter's items when it names current
+    // values, the read itself (counts: the categories now and the window's counts; durations: the completions,
+    // the age and the points' labels; flow: the teams' units, the items followed and the sweep). Counts 5,
+    // throughput 4 (a label filter 5), durations 7, flow with the burn-up 7. The cycle burn-up, 7 before 3.6a,
+    // reads its team's calendar for its zone (decision 316): 8. ──
+    { name: 'analytics: counts, the workspace, twelve weeks', file: `${ROUTES}/analytics/counts/route.ts`, method: 'GET', path: () => `/analytics/counts?${analyticsWindow()}`, budget: 7 },
+    { name: 'analytics: throughput, the workspace, twelve weeks', file: `${ROUTES}/analytics/throughput/route.ts`, method: 'GET', path: () => `/analytics/throughput?${analyticsWindow()}&bin=week`, budget: 7 },
+    { name: 'analytics: cycle time with age, a project', file: `${ROUTES}/analytics/durations/route.ts`, method: 'GET', path: (w) => `/analytics/durations?projectId=${w.bigProjectId}&${analyticsWindow()}&measure=cycle`, budget: 7 },
+    { name: 'analytics: flow and the burn-up, a project', file: `${ROUTES}/analytics/flow/route.ts`, method: 'GET', path: (w) => `/analytics/flow?projectId=${w.bigProjectId}&${analyticsWindow()}&burnUp=1`, budget: 7 },
+    { name: 'analytics: throughput, a label filter (current values)', file: `${ROUTES}/analytics/throughput/route.ts`, method: 'GET', path: (w) => `/analytics/throughput?labelId=${w.labelId}&${analyticsWindow()}`, budget: 7 },
+    { name: 'cycles: the burn-up of the current cycle', file: `${ROUTES}/cycles/[cycleId]/burn-up/route.ts`, method: 'GET', path: (w) => `/cycles/${w.currentCycleId}/burn-up`, params: (w) => ({ cycleId: w.currentCycleId }), budget: 8 },
+    // ── end of the 3.6a analytics block ──
     {
         name: 'create: one item with a description',
         file: `${ROUTES}/work-items/route.ts`,

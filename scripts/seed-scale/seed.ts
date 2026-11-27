@@ -10,6 +10,7 @@ import { PrismaClient } from '@prisma/client';
 import { BATCH_SIZE, seedProjectBulk } from './bulk';
 import { planProject } from './plan';
 import { stream } from './random';
+import { seedHistory } from './history';
 import { seedTimeEntries } from './time';
 import { seedCapacityAndTimeOff } from './workload';
 import { seedProjectSample } from './sample';
@@ -85,6 +86,8 @@ export async function seedScale(opts: {
             await seedTimeEntries(env, bulk, ws);
             // Sub-phase 3.5b: capacity and time off for the Workload page.
             await seedCapacityAndTimeOff(env, bulk, ws);
+            // Sub-phase 3.6a: the record's back-dated year, ending on every item's current picture.
+            await seedHistory(env, bulk, ws.tenantId, slug);
             seededSlugs.push(slug);
         }
         if (seededSlugs.length > 0) {

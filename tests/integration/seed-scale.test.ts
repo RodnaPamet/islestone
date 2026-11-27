@@ -5,7 +5,8 @@
  * integration database to keep the seeder from rotting against the usecases
  * it calls. The seed's own verification (counts, both audit chains, 100
  * decrypted descriptions found by their own text, the two-tenant read)
- * runs at the end of every seed and is asserted here.
+ * runs at the end of every seed and is asserted here, with the back-dated
+ * record's (3.6a) rows.
  */
 import type { PrismaClient } from '@prisma/client';
 
@@ -49,6 +50,9 @@ describeFn('the scale seeder (mini shape)', () => {
             expect(w.estimatedItems).toBeGreaterThan(w.items * 0.5);
             expect(w.capacityRows).toBeGreaterThan(0);
             expect(w.timeOffDates).toBeGreaterThanOrEqual(25);
+            // Sub-phase 3.6a: a back-dated year in the record, about six rows an item.
+            expect(w.transitionRows).toBeGreaterThan(w.items * 3);
+            expect(w.yearCompletions).toBeGreaterThan(w.items * 0.3);
         }
 
         const second = await seedScale({ shape: SHAPES.mini, bulkUrl: getTestDirectDatabaseUrl() });

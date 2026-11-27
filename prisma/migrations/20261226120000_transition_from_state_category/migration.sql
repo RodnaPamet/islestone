@@ -62,3 +62,12 @@ WHERE t."id" = p."id" AND p."previous" IS NOT NULL;
 -- predicate exactly.
 CREATE INDEX "WorkItemTransition_completions" ON "WorkItemTransition"("tenantId", "projectId", "at")
     WHERE "stateCategory" = 'DONE' AND "fromStateCategory" IS DISTINCT FROM 'DONE';
+
+-- ─── 5) Creations, by an index ────────────────────────────────────
+--
+-- An item's first row (its insert, or for an item older than the record its
+-- first recorded change) is the one row with no category before it: the
+-- Analytics counts' "created in the window" reads these through this index
+-- rather than every row of the window (3.6a, as built).
+CREATE INDEX "WorkItemTransition_creations" ON "WorkItemTransition"("tenantId", "projectId", "at")
+    WHERE "fromStateCategory" IS NULL;
