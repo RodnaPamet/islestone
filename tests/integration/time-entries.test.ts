@@ -118,6 +118,8 @@ describeFn('time entries and timers (3.4b)', () => {
             const checks = await prisma.$queryRaw<Array<{ conname: string }>>`
                 SELECT conname FROM pg_constraint WHERE conrelid = '"TimeEntry"'::regclass AND contype = 'c' ORDER BY conname`;
             expect(checks.map((c) => c.conname)).toEqual([
+                'TimeEntry_frozen_rate_billable',
+                'TimeEntry_frozen_rate_whole',
                 'TimeEntry_minutes_range',
                 'TimeEntry_own_time',
                 'TimeEntry_running_is_timer',
