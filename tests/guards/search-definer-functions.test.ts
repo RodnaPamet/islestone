@@ -8,7 +8,7 @@
  * which is BYPASSRLS: inside it no policy applies, so its body is the
  * isolation. With no database, from the migrations git lists, this guard holds:
  *
- *   1. The search functions are exactly the five of `SEARCH_DEFINER_FUNCTIONS`
+ *   1. The search functions are exactly the six of `SEARCH_DEFINER_FUNCTIONS` (4.1a adds search_page_titles)
  *      (`tests/helpers/search-definer.ts`), and every definition parses.
  *   2. Each one's latest body hashes to its pinned value, so a change to what a
  *      definer function reads is a reviewed diff here, and passes
@@ -141,7 +141,7 @@ function strayCallers(root: string, specs: readonly SearchDefinerSpec[]): string
 }
 
 describe('the search functions (decision 245)', () => {
-    it('are the five pinned functions, each defined, owned, granted and isolating as pinned', () => {
+    it('are the six pinned functions, each defined, owned, granted and isolating as pinned', () => {
         expect(definitionProblems(REPO_ROOT, SEARCH_DEFINER_FUNCTIONS)).toEqual([]);
     });
 

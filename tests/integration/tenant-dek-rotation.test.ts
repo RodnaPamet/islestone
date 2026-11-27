@@ -256,6 +256,10 @@ describeFn('rotateTenantDek and the sweep (integration — real DB)', () => {
             'IntakeRequest.body',
             'IntakeRequest.declineExplanation',
             'IntakeRequest.internalRemark',
+            // Sub-phase 4.1a: a page's state and projections (decision 346).
+            'PageContent.contentJson',
+            'PageContent.plainText',
+            'PageContent.state',
             'ProjectTemplate.contentJson',
             'TenantSecuritySettings.auditStreamSecretEncrypted',
             // Sub-phase 3.4b: a time entry's description.

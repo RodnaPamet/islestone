@@ -676,7 +676,7 @@ describe('listCustomRoles — grantsJson normalisation', () => {
     function legacyBlob(): Record<string, unknown> {
         const full = getPermissionsForRole('MEMBER') as unknown as Record<string, unknown>;
         const partial: Record<string, unknown> = { ...full };
-        delete partial.docs;
+        delete partial.pages;
         delete partial.canvas;
         delete partial.automations;
         return partial;
@@ -730,10 +730,10 @@ describe('listCustomRoles — grantsJson normalisation', () => {
         const roles = await listCustomRoles(makeCtx('ADMIN'));
         const perms = roles[0].grantsJson;
 
-        // MEMBER grants docs view/create/edit, canvas view/edit and
+        // MEMBER grants every pages key, canvas view/edit and
         // automations view only, so each line tells a fill from an invented
         // `false`.
-        expect(perms.docs).toEqual(getPermissionsForRole('MEMBER').docs);
+        expect(perms.pages).toEqual(getPermissionsForRole('MEMBER').pages);
         expect(perms.canvas).toEqual(getPermissionsForRole('MEMBER').canvas);
         expect(perms.automations).toEqual(getPermissionsForRole('MEMBER').automations);
     });

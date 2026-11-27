@@ -50,6 +50,7 @@ const SITE_CONTRACTS: Record<string, string> = {
     'src/components/work-items/data/use-review.ts': 'removing a reviewer and removing a review step not yet opened (the detail\'s review section, 2.8b)',
     'src/components/settings/use-type-review-steps.ts': 'removing a default review step of a type (Settings → a type → Review steps, 2.8c)',
     'src/components/analytics/data/use-dashboards.ts': "a dashboard's delete and a widget's removal (the Analytics page's dashboards, 3.6d)",
+    'src/components/pages/use-pages.ts': 'page delete with the pages below it (a tree\'s rows, a page\'s own header, 4.1a)',
     'src/components/goals/use-goals.ts': 'goal and initiative delete, and taking a project off an initiative (the Goals and Initiatives pages and their pages, 3.2b)',
     'src/components/calendar-sync/use-calendar-sync.ts': "disconnecting a member's own calendar and withdrawing Microsoft 365's consent, both removing synced events (the member's Calendar sync section and Settings → Calendar sync, 3.3b)",
     'src/components/time/data/use-time.ts': "deleting one's own time entry and discarding a running timer (My time and an item's Time panel, 3.4b, decision 277)",

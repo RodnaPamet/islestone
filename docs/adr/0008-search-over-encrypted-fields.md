@@ -1,6 +1,6 @@
 # 0008 — Search over encrypted fields
 
-Status: Accepted (owner decisions 124 to 126 and 145 to 147, 2026-11-20): a plaintext full-text index over work-item descriptions and comment bodies (D1, option C), Bulgarian and English stemming through one custom text-search configuration (D2, revised by the owner; the dictionary, its licence, the image and the rollout decided in 145 to 147), the token key moot (D3)
+Status: Accepted (owner decisions 124 to 126 and 145 to 147, 2026-11-20): a plaintext full-text index over work-item descriptions and comment bodies (D1, option C), Bulgarian and English stemming through one custom text-search configuration (D2, revised by the owner; the dictionary, its licence, the image and the rollout decided in 145 to 147), the token key moot (D3); amended by owner decisions 340 and 347, 2026-11-27 (ADR 0015): pages' titles, bodies and comments searched through `PageSearchVector`, and descriptions and comments, now rich text, vectorised from their plain-text projection
 
 ## Context
 
@@ -50,7 +50,7 @@ No search vector, index or other derivative is stored for:
 - **Project-template content**: `ProjectTemplate.contentJson`.
 - **Personal data**: every field in `PII_FIELD_MAP` (`src/lib/security/pii-middleware.ts`): a user's email and name, OAuth tokens, the outbox address, the intake requester's name and address, and any field added to it later.
 - Every other field in the encryption manifest not listed under "What is indexed", notification text, audit details and the transition record.
-- Pages' plain-text projection (ADR 0005 §6.4, roadmap 4.1) and embeddings (roadmap 6.5): each needs its own amendment to this ADR before it is built.
+- Embeddings (roadmap 6.5): they need their own amendment to this ADR before they are built. Pages' plain-text projection was such an amendment and is now indexed (owner decision 347, below).
 
 A new searchable source is an amendment to this ADR, never a code change alone.
 
@@ -78,6 +78,17 @@ Under row-level security `@@` is not `LEAKPROOF`, so a match could not be an ind
 #### The bound on content matches (note, owner decision 250)
 
 A common word can match tens of thousands of vectors, and ranking every one before the limit grew each search with its matches (H2b's finding F3: 0.85 to 1.2 s p95 at 100k items, `docs/performance.md`). Since decision 250 `search_item_contents` ranks a bounded candidate set: the caller's 2,000 most recently written live, visible matching vectors (the vector's own `updatedAt`, the time its description or comment was last written; kept by the rebuild), walked newest first through the index `SearchVector_search_recent` in a large workspace for a query common among the newest vectors, and otherwise read through the vector index and sorted, then ranked. Titles, keys and project names are still searched in full. When more vectors matched, the function says so with one boolean, `bounded`, computed after the workspace, deletion and visibility predicates, so it says nothing about rows the caller cannot see; the palette and the list's `q` then say they are showing recent matches. This changes which content matches are ranked, not what is stored or who may see it. `docs/search.md`, "The bound on content matches".
+
+#### Pages, and rich-text descriptions and comments (amendment, owner decisions 340 and 347)
+
+Roadmap 4.1 adds pages (ADR 0015). Owner decision 347 (2026-11-27, relayed) amends this ADR to search them; the owner chose it knowing what it costs, stated as for decision 124: **the searchable words of every page body and every page comment become readable in the database, its dumps and its off-host backups.**
+
+- **What is indexed.** A page's title (plaintext already, a row field): an expression index in `islestone_bg_en`. A page's body: one vector from its plain-text projection (`PageContent.plainText`), written by the collaboration server's store path in the store's own transaction. A live page comment: one vector from its plain-text projection, written by the page-comment usecases in the comment's transaction and removed when it is deleted.
+- **The stored form.** A table of its own, `PageSearchVector` (`tenantId`, `pageId`, nullable `commentId`, `lexemes` `tsvector`, the configuration name, a revision, `updatedAt`), rather than a second parent on `SearchVector`, so the pinned item functions and their hashes do not change. The same rules as `SearchVector`: one repository the only module with SQL against it, a GIN index leading with `tenantId` and partial on the configuration, row-level security, its own grants, a two-tenant test, classified in `PLAINTEXT_DERIVATIVES`, cascading with the page, the comment and the workspace, left out of workspace exports, rebuilt by `search-index-rebuild`.
+- **The read path.** Two scoped SECURITY DEFINER functions on decision 245's pattern, `search_page_titles` and `search_page_contents`: the workspace from `app.tenant_id`, page visibility (the scope's) and `deletedAt` in their own `WHERE`, bounded like decision 250 (the caller's most recently written live, visible matches, with the `bounded` flag), ids and ranks only, never text. Snippets are built from the decrypted projection under the same visibility, never stored. The palette shows a "Pages" group.
+- **Still excluded.** Page versions, comment anchors, version names and everything in "What is excluded, entirely" above; embeddings over pages need a further amendment (6.5).
+
+**Descriptions and comments are rich text from roadmap 4.1g** (owner decision 340, 2026-11-27). Each is stored as an encrypted document beside its encrypted plain-text projection, which keeps the column the vector was always written from (`WorkItem.description`, `Comment.body`). What is indexed, who may read it and the readable-words trade-off do not change: the vector is written from the projection through the same seam, mention nodes never become lexemes (a mention projects as its old token, which `searchableText` strips), and the conversion job that turns existing text into documents calls the seam with the vector's time kept, so decision 250's "recent" order still means when a person last wrote the text. The change of source format bumps `SEARCH_VECTOR_REVISION` to 2, so the nightly rebuild re-vectorises every description and comment once (a revision and a rebuild, never a data migration). Snippets are built from the projection.
 
 #### Handling the plaintext on the way in
 
@@ -130,6 +141,7 @@ None.
 - The encryption-manifest guard carries a class of its own for deliberate plaintext derivatives, so the derivative is visible to every reader of the guard.
 - Islestone runs its own Postgres image, and the database refuses to migrate, and the app to start, without the Bulgarian dictionary.
 - ADR 0002 §11's S1 is superseded for descriptions and comments.
+- From roadmap 4.1 the searchable words of pages and page comments are readable in the same places (decision 347), and every description and comment is re-vectorised once from its rich text's projection (decision 340).
 
 ## What would change this decision
 
@@ -142,6 +154,7 @@ None.
 ## References
 
 - Roadmap (`docs/ROADMAP.md`): 2.2 (descriptions and comments encrypted), 2.7, 4.1, 6.5.
+- ADR 0015 (pages, page comments and rich-text descriptions and comments); `docs/porting/maps/4.1.md` ("Search", "Rich text in work items"); `docs/HANDOFF.md` decisions 340 and 347.
 - ADR 0002 §11 (encryption and the search options S1 to S4); ADR 0005 §6.4 (page projections); ADR 0007 (third-party licence exceptions).
 - `docs/porting/maps/2.7.md` (parts 2 and 3, open questions 1 to 3); `docs/HANDOFF.md` decisions 124 to 126.
 - inflect-compliance at `5528464fc54a8681956f3b9ce23ca9c075f0420e`: `src/app-layer/usecases/search.ts`, `src/lib/search/rank.ts`, `docs/ai-architecture/weaviate.md` (D-L4-2, D-L4-7). Pattern reuse: the search usecase and ranking are copied in 2.7b (`PROVENANCE.md`); nothing else.

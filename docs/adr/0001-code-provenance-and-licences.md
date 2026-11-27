@@ -216,7 +216,7 @@ Rules that follow:
   - a Dependabot hold on `tldraw` `>=4.0.0` and on transitive `@tiptap/core` `>=3.0.0`;
   - an audit exemption for tiptap 2.x under tldraw, re-justified on its own evidence;
   - a licence-gate exemption for `tldraw` and `@tldraw/editor`, which declare `SEE LICENSE IN LICENSE.md`. Each entry pins `version` and cites this ADR.
-- The roadmap's own Tiptap editor (sub-phase 4.1) is Tiptap 3, as in the parent (`package.json` lines 141–142 declare `@tiptap/react` and `@tiptap/starter-kit` at `^3.33.1`). It sits beside tldraw's tiptap 2.x in the same tree, as it does in the parent.
+- The roadmap's own Tiptap editor (sub-phase 4.1) is Tiptap 3, as in the parent (`package.json` lines 141–142 declare `@tiptap/react` and `@tiptap/starter-kit` at `^3.33.1`). It sits beside tldraw's tiptap 2.x in the same tree, as it does in the parent. **Note for roadmap 4.1** (owner decisions 338 to 367, 2026-11-27; ADR 0015): 4.1 installs Tiptap 3 only and declares no `@tiptap/core` directly (its API comes through `@tiptap/react` and the extensions' peers), so the hold on transitive `@tiptap/core` `>=3.0.0` that 4.2 brings stays harmless, and 4.1 needs no tiptap 2.x audit exemption (GHSA-cp6q-959q-f8rh is fixed below the pinned 3.x). Under D1, 4.1 copies inflect-compliance's `RichTextEditor.tsx`, its `richtext` copy, its rendered test and `VersionDiff.tsx`, each with a `PROVENANCE.md` row (decision 366); the licence gate gains no deny-list entry for Tiptap's paid `@tiptap-pro/*` packages.
 
 Options considered and not chosen: **3b** (a commercial tldraw key: time-limited, with a usage-data clause and renewals), **3c** (Excalidraw, MIT, at the cost of rewriting the parent's editor layer).
 

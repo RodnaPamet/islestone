@@ -177,7 +177,8 @@
             "initiatives": "Initiatives",
             "time": "Time",
             "workload": "Workload",
-            "analytics": "Analytics"
+            "analytics": "Analytics",
+            "pages": "Pages"
         }
     },
     "ui": {
@@ -523,7 +524,8 @@
         "roadmap": "Roadmap",
         "time": "Time",
         "workload": "Workload",
-        "analytics": "Analytics"
+        "analytics": "Analytics",
+        "pages": "Pages"
     },
     "commandPalette": {
         "title": "Command palette",
@@ -3883,5 +3885,78 @@
             }
         },
         "assumesAll": "Assumes these items get all of that throughput and no new items are added."
+    },
+    "pages": {
+        "open": "Pages",
+        "workspaceTitle": "Workspace pages",
+        "workspaceDescription": "Pages for the whole workspace, nested under each other and ordered by hand.",
+        "projectTitle": "{project} pages",
+        "projectDescription": "The pages of {project}, nested under each other and ordered by hand.",
+        "new": "Page",
+        "treeHeading": "Pages",
+        "archived": "This project is archived: its pages can be read, not changed.",
+        "deletedHeading": "Deleted pages",
+        "showDeleted": "Show deleted pages",
+        "hideDeleted": "Hide deleted pages",
+        "bodyHeading": "Content",
+        "bodyEmpty": "This page has no content yet.",
+        "subpagesHeading": "Subpages",
+        "noSubpages": "No subpages.",
+        "undo": "Undo",
+        "restored": "Restored",
+        "failed": "That did not work. Try again.",
+        "tree": {
+            "empty": "No pages yet.",
+            "emptyEditable": "No pages yet. Create the first one.",
+            "loadMore": "Load more",
+            "expandNamed": "Expand {title} ({count, plural, one {# subpage} other {# subpages}})",
+            "collapseNamed": "Collapse {title}",
+            "subpagesOf": "Subpages of {title}",
+            "newSubpage": "New subpage",
+            "newSubpageNamed": "New subpage under {title}",
+            "rename": "Rename",
+            "renameNamed": "Rename {title}",
+            "move": "Move…",
+            "moveNamed": "Move {title}",
+            "moveUp": "Up",
+            "moveUpNamed": "Move {title} up",
+            "moveDown": "Down",
+            "moveDownNamed": "Move {title} down",
+            "delete": "Delete",
+            "deleteNamed": "Delete {title}"
+        },
+        "form": {
+            "createTitle": "New page",
+            "createSubpageTitle": "New subpage",
+            "renameTitle": "Rename page",
+            "title": "Title",
+            "titleHint": "Leave it empty for “Untitled”; rename it any time.",
+            "titleRequired": "A page needs a title.",
+            "create": "Create page",
+            "rename": "Rename page",
+            "created": "Page created",
+            "renamed": "Page renamed",
+            "failed": "That did not work. Try again."
+        },
+        "move": {
+            "title": "Move {title}",
+            "description": "The pages below it move with it.",
+            "tree": "Pages of",
+            "parent": "Under",
+            "parentHint": "Type to find a page by title, or keep it at the top level.",
+            "topLevel": "Top level",
+            "submit": "Move page",
+            "moved": "Moved {title}",
+            "failed": "That did not work. Try again."
+        },
+        "deletedToast": "Deleted {title} and the pages below it",
+        "deleted": {
+            "loading": "Loading…",
+            "empty": "No deleted pages.",
+            "listLabel": "Deleted pages",
+            "meta": "deleted {date}, {count, plural, one {# page} other {# pages}}",
+            "restore": "Restore",
+            "restoreNamed": "Restore {title}"
+        }
     }
 }

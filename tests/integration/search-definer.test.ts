@@ -66,6 +66,8 @@ function latestDefinitions() {
 /** The columns the owner may read, and nothing else. */
 const OWNER_COLUMNS: Readonly<Record<string, readonly string[]>> = {
     Comment: ['deletedAt', 'id', 'tenantId'],
+    // Sub-phase 4.1a: page titles (`search_page_titles`).
+    Page: ['deletedAt', 'id', 'projectId', 'tenantId', 'title'],
     Project: ['archivedAt', 'deletedAt', 'id', 'keyPrefix', 'name', 'tenantId'],
     // `id` and `updatedAt` since decision 250: the walk orders by them.
     SearchVector: ['commentId', 'configName', 'id', 'lexemes', 'tenantId', 'updatedAt', 'workItemId'],
@@ -113,7 +115,7 @@ describeFn('the search functions (decision 245)', () => {
             expect(definerProblems(spec, { ...def, body: fn.prosrc })).toEqual([]);
         });
 
-        it('no other function is owned by the definer role, and no search function exists outside the pinned five', async () => {
+        it('no other function is owned by the definer role, and no search function exists outside the pinned six', async () => {
             const owned = await prisma.$queryRaw<Array<{ proname: string }>>`
                 SELECT p.proname::text AS proname FROM pg_proc p JOIN pg_roles r ON r.oid = p.proowner WHERE r.rolname = ${SEARCH_DEFINER_ROLE} ORDER BY 1`;
             expect(owned.map((o) => o.proname)).toEqual(SEARCH_DEFINER_FUNCTIONS.map((s) => s.name).sort());
@@ -148,8 +150,8 @@ describeFn('the search functions (decision 245)', () => {
         it('the tables the functions read keep row-level security enabled and forced; the search operators stay not LEAKPROOF', async () => {
             const rls = await prisma.$queryRaw<Array<{ relname: string; relrowsecurity: boolean; relforcerowsecurity: boolean }>>`
                 SELECT relname::text, relrowsecurity, relforcerowsecurity FROM pg_class
-                 WHERE relname IN ('WorkItem', 'Project', 'Comment', 'SearchVector') AND relkind = 'r' ORDER BY relname`;
-            expect(rls).toEqual(['Comment', 'Project', 'SearchVector', 'WorkItem'].map((relname) => ({ relname, relrowsecurity: true, relforcerowsecurity: true })));
+                 WHERE relname IN ('WorkItem', 'Project', 'Comment', 'SearchVector', 'Page') AND relkind = 'r' ORDER BY relname`;
+            expect(rls).toEqual(['Comment', 'Page', 'Project', 'SearchVector', 'WorkItem'].map((relname) => ({ relname, relrowsecurity: true, relforcerowsecurity: true })));
             const ops = await prisma.$queryRaw<Array<{ proname: string; proleakproof: boolean }>>`
                 SELECT DISTINCT proname::text, proleakproof FROM pg_proc WHERE proname IN ('texticlike', 'ts_match_vq', 'similarity_op', 'similarity') ORDER BY 1`;
             expect(ops.map((o) => o.proname)).toEqual(['similarity', 'similarity_op', 'texticlike', 'ts_match_vq']);

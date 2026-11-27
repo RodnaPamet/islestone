@@ -23,6 +23,7 @@ import type { PrismaClient } from '@prisma/client';
 import { SORT_KEY_REBALANCE_LENGTH } from '@/app-layer/domain/fractional-index';
 import { visibleProjects, type ProjectVisibility } from '@/app-layer/policies/project-visibility';
 import { DashboardRepository } from '@/app-layer/repositories/DashboardRepository';
+import { PageRepository } from '@/app-layer/repositories/PageRepository';
 import { ProjectRepository } from '@/app-layer/repositories/ProjectRepository';
 import { ReviewRepository } from '@/app-layer/repositories/ReviewRepository';
 import { SearchVectorRepository } from '@/app-layer/repositories/SearchVectorRepository';
@@ -129,6 +130,30 @@ const RUNNERS: Record<string, Runner> = {
     'list: goal filter (project path or own goal)': (w, db, ctx, v) => list({ goalId: 'g', goalScope: { projectIds: [w.projectId], goalIds: ['no-such-goal'] } })(w, db, ctx, v),
     'list: initiative filter': (w, db, ctx, v) => list({ initiativeId: 'i', initiativeProjectIds: [w.projectId] })(w, db, ctx, v),
     'detail: the ancestry (one statement)': (w, db, ctx, v) => WorkItemRepository.ancestry(db, ctx, v, w.leafId),
+    // Pages (4.1a): the project's tree, a parent with subpages, the workspace's tree, the deepest page's
+    // breadcrumb, a top-level page's subtree, the project's Deleted list and a title search.
+    "pages: a tree's top level (a project)": async (w, db, ctx) => {
+        const rows = await PageRepository.children(db, ctx, { projectId: w.projectId, parentId: null }, 201);
+        return PageRepository.childCounts(db, ctx, rows.map((r) => r.id));
+    },
+    "pages: a page's subpages": async (w, db, ctx) => {
+        const rows = await PageRepository.children(db, ctx, { projectId: w.projectId, parentId: w.pageParentId }, 201);
+        return PageRepository.childCounts(db, ctx, rows.map((r) => r.id));
+    },
+    "pages: the workspace's tree, top level": async (w, db, ctx) => {
+        const rows = await PageRepository.children(db, ctx, { projectId: null, parentId: null }, 201);
+        return PageRepository.childCounts(db, ctx, rows.map((r) => r.id));
+    },
+    'pages: the breadcrumb (one statement)': (w, db, ctx) => PageRepository.chainUp(db, ctx, w.pageLeafId),
+    'pages: a subtree (delete, move)': async (w, db, ctx) => {
+        const top = (await PageRepository.chainUp(db, ctx, w.pageLeafId)).at(-1)!;
+        return PageRepository.subtree(db, ctx, top.id, 2001);
+    },
+    "pages: a tree's Deleted list": (w, db, ctx) => PageRepository.listDeletedRoots(db, ctx, w.projectId),
+    'pages: titles (trigram and full text)': async (w, db, ctx, v) => {
+        const hits = await PageRepository.searchTitleIds(db, ctx, v, 'проект', { limit: 100 });
+        return PageRepository.findSearchRows(db, ctx, v, hits.map((h) => h.id));
+    },
     "job: the goal purge's unlinked items": (w, db, ctx) => WorkItemRepository.lockItemsNamingGoals(db, ctx, ['no-such-goal']),
     // The project and the big project (initiatives' projects); the seed holds no goals, so the direct path names one no item names.
     'counts: progress, the project path': (w, db, ctx, v) => WorkItemRepository.countsByProjects(db, ctx, v, [w.projectId, w.bigProjectId]),

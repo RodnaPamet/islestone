@@ -117,6 +117,9 @@ model Tenant {
   // Sub-phase 3.6d: dashboards (ADR 0014 §6).
   dashboards                      Dashboard[]
   dashboardWidgets                DashboardWidget[]
+  // Sub-phase 4.1a: pages (ADR 0015).
+  pages                           Page[]
+  pageContents                    PageContent[]
 
   teams                  Team[]
   workflowStates         WorkflowState[]

@@ -116,6 +116,8 @@ export type FixtureName =
     | 'freshGoal'
     | 'finishedGoal'
     | 'deletedGoal'
+    | 'freshPage'
+    | 'deletedPage'
     | 'freshInitiative'
     | 'finishedInitiative'
     | 'deletedInitiative'
@@ -169,7 +171,7 @@ export type FixtureName =
     | 'annOverWeek';
 
 /** The matrix's route roots: one integration file each (map part 3, "Shape"). */
-export type MatrixRoot = 'work-items' | 'reviews' | 'projects' | 'configuration' | 'intake' | 'notifications' | 'admin-security' | 'time' | 'workload' | 'analytics';
+export type MatrixRoot = 'work-items' | 'reviews' | 'projects' | 'configuration' | 'intake' | 'notifications' | 'admin-security' | 'time' | 'workload' | 'analytics' | 'pages';
 
 export interface MatrixRow {
     /** Relative to `src/app/api/t/[tenantSlug]/`. */
@@ -949,6 +951,27 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
             expect: DASHBOARD_MODERATE,
         },
         { route: 'dashboards/[dashboardId]/route.ts', method: 'DELETE', key: 'analytics.view', subject: "the caller's own personal dashboard", fixture: 'ownDashboard', expect: ANALYTICS },
+    ],
+    // Sub-phase 4.1a (decision 339): pages.view for every workspace-wide role (decision 342: a page is readable
+    // exactly when its tree is); pages.create, edit and delete for Owners, Admins and Members, so the narrowed member
+    // keeps them (its base is MEMBER) and the widened viewer has none (its base is VIEWER). A GUEST holds no key (204).
+    pages: [
+        { route: 'pages/route.ts', method: 'GET', key: 'pages.view', subject: "the workspace's tree", query: () => ({ scope: 'workspace' }), reveals: (s) => s.pageId, expect: WS_READ },
+        { route: 'pages/route.ts', method: 'GET', key: 'pages.view', subject: "a project's tree", query: (s) => ({ projectId: s.projectId }), reveals: (s) => s.projectPageId, expect: READ },
+        { route: 'pages/route.ts', method: 'POST', key: 'pages.create', subject: 'a new workspace page', body: (s) => ({ projectId: null, title: `Page ${s.seq}` }), expect: MEMBER_WRITE },
+        {
+            route: 'pages/route.ts', method: 'POST', key: 'pages.create', subject: 'a new page in an archived project',
+            body: (s) => ({ projectId: s.archivedProjectId, title: `Archived ${s.seq}` }),
+            refusedAudit: false,
+            expect: c('archived', 'archived', 'archived', 'denied', g('denied'), 'archived', 'denied'),
+        },
+        { route: 'pages/search/route.ts', method: 'GET', key: 'pages.view', subject: 'pages by title', query: () => ({ q: 'zebra' }), reveals: (s) => s.pageId, expect: WS_READ },
+        { route: 'pages/deleted/route.ts', method: 'GET', key: 'pages.delete', subject: "the workspace tree's Deleted list", query: () => ({ scope: 'workspace' }), expect: MEMBER_WRITE },
+        { route: 'pages/[pageId]/route.ts', method: 'GET', key: 'pages.view', subject: 'a workspace page', expect: WS_READ },
+        { route: 'pages/[pageId]/route.ts', method: 'PATCH', key: 'pages.edit', subject: 'a fresh page', fixture: 'freshPage', ifMatch: (s) => s.version!, body: (s) => ({ title: `Renamed ${s.seq}` }), expect: MEMBER_WRITE },
+        { route: 'pages/[pageId]/route.ts', method: 'DELETE', key: 'pages.delete', subject: 'a fresh page', fixture: 'freshPage', expect: MEMBER_WRITE },
+        { route: 'pages/[pageId]/move/route.ts', method: 'POST', key: 'pages.edit', subject: 'a fresh page', fixture: 'freshPage', body: (s) => ({ projectId: s.projectId, parentId: null }), expect: MEMBER_WRITE },
+        { route: 'pages/[pageId]/restore/route.ts', method: 'POST', key: 'pages.delete', subject: 'a fresh deleted page', fixture: 'deletedPage', expect: MEMBER_WRITE },
     ],
 };
 

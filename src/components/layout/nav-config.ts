@@ -16,7 +16,7 @@
 import type { Role } from '@prisma/client';
 import { useTranslations } from 'next-intl';
 
-import { Bell, CalendarRefresh, ChartArea2, Gauge6, Timer2, EnvelopeArrowRight, Folder, GridLayoutRows, InputField, MarketingTarget, UserCheck, Views } from '@inflect/ui/components/ui/icons/nucleo';
+import { Bell, CalendarRefresh, ChartArea2, Gauge6, Timer2, EnvelopeArrowRight, Folder, GridLayoutRows, InputField, MarketingTarget, Page2, UserCheck, Views } from '@inflect/ui/components/ui/icons/nucleo';
 import { membershipOpensAdminConsole } from '@/lib/auth/edge-admin-roles';
 import type { PermissionSet } from '@/lib/permissions';
 import { usePendingIntakeCount } from '@/components/intake/data/intake-data';
@@ -48,6 +48,8 @@ export const NAV_PATHS = {
     workload: '/workload',
     // Sub-phase 3.6a (decision 324): the Analytics page; from 3.6d its dashboards.
     analytics: '/analytics',
+    // Sub-phase 4.1a (decision 341): Workspace pages, the workspace's page tree.
+    pages: '/pages',
     settings: '/settings',
 } as const;
 
@@ -56,6 +58,17 @@ export const TIME_AREA = '/time';
 
 /** The Roadmap entry's area: every page under it (decision 222). */
 export const ROADMAP_AREA = '/roadmap';
+
+/**
+ * Whether the sidebar shows the Pages entry (sub-phase 4.1a). Held back until
+ * 4.1b merges the editor (docs/porting/maps/4.1.md, "Split"): Workspace pages
+ * and a project's Pages exist, but a page holds nothing editable yet. 4.1b
+ * sets it true; the entry itself is below.
+ */
+export const PAGES_IN_SIDEBAR = false;
+
+/** The Pages entry's area: every page under it (a page's own URL is `/pages/<id>`, 4.1a). */
+export const PAGES_AREA = '/pages';
 
 /** The Analytics entry's area: every page under it (3.6a; 3.6d's dashboards join it). */
 export const ANALYTICS_AREA = '/analytics';
@@ -166,6 +179,15 @@ export function useNavSections(): NavSectionDef[] {
                     icon: EnvelopeArrowRight,
                     visible: readsIntake,
                     ...(pending > 0 ? { badge: pending, badgeLabel: t('intakeBadge', { count: pending }) } : {}),
+                },
+                // Sub-phase 4.1a (decision 339: `pages.view`): Workspace pages; held back until 4.1b.
+                {
+                    key: 'pages',
+                    href: tenantHref(NAV_PATHS.pages),
+                    label: t('pages'),
+                    icon: Page2,
+                    visible: PAGES_IN_SIDEBAR && perms.pages?.view === true,
+                    activePrefix: tenantHref(PAGES_AREA),
                 },
                 // Every member who sees projects may send a request through an open form.
                 { key: 'forms', href: tenantHref(NAV_PATHS.forms), label: t('forms'), icon: InputField, visible: perms.projects?.view === true },

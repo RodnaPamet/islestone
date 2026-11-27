@@ -73,6 +73,9 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     // Sub-phase 3.2a.
     Goal: 'tests/integration/goals.test.ts',
     Initiative: 'tests/integration/goals.test.ts',
+    // Sub-phase 4.1a.
+    Page: 'tests/integration/pages.test.ts',
+    PageContent: 'tests/integration/pages.test.ts',
     // Sub-phases 2.1–2.2.
     Team: 'tests/integration/work-tables-isolation.test.ts',
     WorkflowState: 'tests/integration/work-tables-isolation.test.ts',

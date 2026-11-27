@@ -44,7 +44,7 @@ describe('the PermissionSet schema', () => {
             'time',
             'workload',
             'analytics',
-            'docs',
+            'pages',
             'canvas',
             'automations',
             'integrations',
@@ -83,7 +83,7 @@ describe('the role matrix', () => {
         );
     });
 
-    it('MEMBER does the work and administers nothing', () => {
+    it('MEMBER does the work and administers nothing (pages: all five keys, decision 339)', () => {
         expect(granted(getPermissionsForRole('MEMBER'))).toEqual(
             [
                 'workspace.view',
@@ -111,9 +111,11 @@ describe('the role matrix', () => {
                 'workload.time_off',
                 'analytics.view',
                 'analytics.share',
-                'docs.view',
-                'docs.create',
-                'docs.edit',
+                'pages.view',
+                'pages.create',
+                'pages.edit',
+                'pages.comment',
+                'pages.delete',
                 'canvas.view',
                 'canvas.edit',
                 'automations.view',
@@ -139,7 +141,7 @@ describe('the role matrix', () => {
                 'workload.view',
                 'workload.time_off',
                 'analytics.view',
-                'docs.view',
+                'pages.view',
                 'canvas.view',
                 'agents.view',
             ].sort(),

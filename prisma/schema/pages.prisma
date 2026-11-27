@@ -1,0 +1,95 @@
+/// Pages (sub-phase 4.1; docs/porting/maps/4.1.md, "The model (4.1a)";
+/// ADR 0015 §1 and §2; ADR 0006 "Page words of sub-phase 4.1"; owner
+/// decisions 341 to 346). A page is a document in one of two trees: a
+/// project's (`projectId` set) or the workspace's (`projectId` NULL). Not a
+/// work item (principle 3): never in the list, board or an item read.
+///
+/// What Prisma cannot declare lives in migration `20261230120000_pages`:
+/// `COLLATE "C"` on `sortKey` (ADR 0002 §5), the parent key
+/// `(parentId, tenantId)` → `Page(id, tenantId)` NO ACTION DEFERRABLE
+/// INITIALLY DEFERRED (a subtree move or purge is one transaction), the
+/// deferred constraint trigger `page_same_scope` (a page's parent is in its
+/// own tree), the length and deletion-group CHECKs, the two partial tree
+/// indexes, the title search indexes and `search_page_titles`.
+
+/// A page (ADR 0006 "Page"; never Doc, Document, Wiki, Note or Article).
+/// Nested at most ten levels (decision 341), held by the usecases under the
+/// page-tree lock. Readable exactly when its tree is (decision 342).
+model Page {
+  id               String    @id @default(cuid())
+  tenantId         String
+  /// The project whose tree holds it; NULL: a workspace page. Composite key
+  /// `(projectId, tenantId)` → `Project`, cascading with the project's purge.
+  projectId        String?
+  /// The parent page in the same tree (the trigger `page_same_scope`); NULL:
+  /// a top-level page. NO ACTION DEFERRABLE INITIALLY DEFERRED in SQL.
+  parentId         String?
+  /// Fractional index among its siblings (ADR 0002 §5); `COLLATE "C"` in SQL.
+  sortKey          String
+  /// Plaintext (the tree, the breadcrumb, notifications, search), sanitised;
+  /// 1..200 characters (CHECK, decision 343).
+  title            String
+  /// The row's title and placement, not the body: a rename names it (`If-Match`).
+  version          Int       @default(1)
+  /// An actor stamp, like an audit row's user id: a plain column, no FK.
+  createdByUserId  String
+  /// Set by the collaboration server's store path (4.1b); NULL until then.
+  contentUpdatedAt DateTime?
+  /// Soft delete (decision 344); purged after `PAGE_PURGE_DAYS`.
+  deletedAt        DateTime?
+  /// An actor stamp: a plain column, no FK.
+  deletedByUserId  String?
+  /// Rows deleted together share it; both or neither with `deletedAt` (CHECK).
+  deletionId       String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project  Project?     @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  parent   Page?        @relation("PageTree", fields: [parentId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  children Page[]       @relation("PageTree")
+  content  PageContent?
+
+  @@unique([id, tenantId])
+  /// Target for comments and mentions that must match a page's tree (4.1c, 4.1d).
+  @@unique([id, projectId, tenantId])
+  /// A tree's children in order; the live reads use the partial indexes in SQL.
+  @@index([tenantId, projectId, parentId, sortKey])
+  /// The parent key.
+  @@index([tenantId, parentId])
+  /// A restore finds its group.
+  @@index([tenantId, deletionId])
+  /// The purge sweep across every workspace.
+  @@index([deletedAt])
+}
+
+/// A page's content (ADR 0006 "Page content"; ADR 0005 §6.4): the stored Yjs
+/// state, the source of truth for the body, and its projections. Written
+/// only by the collaboration server's store path (4.1b); a create writes the
+/// row empty. Every text column is ENCRYPTED (manifest
+/// `src/lib/security/encrypted-fields.ts`, decision 346).
+model PageContent {
+  /// Its own key: the key-rotation sweeps page every manifest table by `id`.
+  id             String   @id @default(cuid())
+  /// One content row per page.
+  pageId         String   @unique
+  tenantId       String
+  /// The encoded Yjs state, base64, then encrypted (decision 346). NULL: never stored.
+  state          String?
+  /// The ProseMirror JSON projection, schema-validated, encrypted (decision 345).
+  contentJson    String?
+  /// The text projection, encrypted (decisions 345 and 347).
+  plainText      String?
+  /// `PAGE_SCHEMA_REVISION` the projections were built with; 0: none built yet.
+  schemaRevision Int      @default(0)
+  /// The decoded state's size in bytes, for the cap (decision 362); 0 while empty.
+  stateBytes     Int      @default(0)
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  page   Page   @relation(fields: [pageId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  /// The one-to-one key Prisma asks of the composite relation.
+  @@unique([pageId, tenantId])
+  @@index([tenantId])
+}

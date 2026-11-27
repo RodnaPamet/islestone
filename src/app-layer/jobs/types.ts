@@ -215,6 +215,20 @@ export interface GoalPurgePayload {
 }
 
 /**
+ * Nightly page purge (sub-phase 4.1a, owner decision 344): page groups
+ * deleted more than `PAGE_PURGE_DAYS` ago. No `tenantId` sweeps every live
+ * workspace.
+ */
+export interface PagePurgePayload {
+    tenantId?: string;
+}
+
+/** Daily rebalance of page sibling groups whose sort keys passed the length bound (4.1a; ADR 0002 §5). */
+export interface PageSortKeyRebalancePayload {
+    tenantId?: string;
+}
+
+/**
  * Daily cycle rollover (sub-phase 2.5a): close ended cycles, move their
  * unfinished items on, keep the schedules filled. No `tenantId` sweeps every
  * workspace with cycles; a `tenantId` re-runs one.
@@ -354,6 +368,8 @@ export interface JobPayloadMap {
     'work-item-due-notification': WorkItemDueNotificationPayload;
     'work-item-purge': WorkItemPurgePayload;
     'goal-purge': GoalPurgePayload;
+    'page-purge': PagePurgePayload;
+    'page-sortkey-rebalance': PageSortKeyRebalancePayload;
     'work-item-sortkey-rebalance': WorkItemSortKeyRebalancePayload;
     'cycle-rollover': CycleRolloverPayload;
     'intake-snooze-wake': IntakeSnoozeWakePayload;
@@ -469,6 +485,20 @@ export const JOB_DEFAULTS: Record<JobName, {
     'goal-purge': {
         // One attempt: the next nightly run is the retry, and every page it
         // finished is already committed.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 60_000 },
+        removeOnComplete: 30,
+        removeOnFail: 100,
+    },
+    'page-purge': {
+        // One attempt: the next nightly run is the retry, and every pass it
+        // finished is already committed.
+        attempts: 1,
+        backoff: { type: 'fixed', delay: 60_000 },
+        removeOnComplete: 30,
+        removeOnFail: 100,
+    },
+    'page-sortkey-rebalance': {
         attempts: 1,
         backoff: { type: 'fixed', delay: 60_000 },
         removeOnComplete: 30,

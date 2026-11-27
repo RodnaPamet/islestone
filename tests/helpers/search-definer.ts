@@ -37,7 +37,7 @@ export interface SearchDefinerSpec {
     /** The one module under `src/` that calls it. */
     caller: string;
     /** The tables its body reads, by alias. */
-    tables: Readonly<Record<string, 'WorkItem' | 'Project' | 'Comment' | 'SearchVector'>>;
+    tables: Readonly<Record<string, 'WorkItem' | 'Project' | 'Comment' | 'SearchVector' | 'Page'>>;
     /** Its hard cap on rows. */
     cap: number;
     /** The columns it returns: ids and ranks only. */
@@ -108,6 +108,17 @@ export const SEARCH_DEFINER_FUNCTIONS: readonly SearchDefinerSpec[] = [
         bodySha256: 'a93ffe3144d4ca5bc07bc219c04af1c199817ef7604e346502a5dd905da105b4',
         candidates: { bound: 2000, walkWindow: 50000, largeWorkspace: 100000, denseSample: 2000, denseMatches: 100 },
         planSettings: true,
+    },
+    // Sub-phase 4.1a (decision 347's titles; migration `20261230120000_pages`): a
+    // page's tree is the workspace's or a live, unarchived, visible project's.
+    {
+        name: 'search_page_titles',
+        argTypes: 'text, text, text, boolean, text[], integer',
+        caller: 'src/app-layer/repositories/PageRepository.ts',
+        tables: { g: 'Page', p: 'Project' },
+        cap: 100,
+        returns: ['id', 'ordinal'],
+        bodySha256: 'd3d75c0baab36cab211a3367400bbdb49c579140ce0e312bd122bc069b02e353',
     },
 ];
 
@@ -212,6 +223,7 @@ export function definerProblems(spec: SearchDefinerSpec, def: Pick<SearchDefiner
     const flat = body.replace(/\s+/g, ' ');
     for (const [alias, table] of Object.entries(spec.tables)) {
         if (table === 'WorkItem' && !flat.includes(`${alias}."deletedAt" IS NULL`)) problems.push(`does not filter ${alias}."deletedAt" (the item)`);
+        if (table === 'Page' && !flat.includes(`${alias}."deletedAt" IS NULL`)) problems.push(`does not filter ${alias}."deletedAt" (the page)`);
         if (table === 'Project' && !flat.includes(`${alias}."deletedAt" IS NULL AND ${alias}."archivedAt" IS NULL`)) problems.push(`does not filter ${alias}."deletedAt" and "archivedAt" (the project)`);
         if (
             table === 'Comment' &&
@@ -222,8 +234,18 @@ export function definerProblems(spec: SearchDefinerSpec, def: Pick<SearchDefiner
     }
     const projectAlias = Object.entries(spec.tables).find(([, t]) => t === 'Project')?.[0];
     const itemAlias = Object.entries(spec.tables).find(([, t]) => t === 'WorkItem')?.[0];
-    const visibleColumn = itemAlias ? `${itemAlias}."projectId"` : `${projectAlias}."id"`;
+    const pageAlias = Object.entries(spec.tables).find(([, t]) => t === 'Page')?.[0];
+    const visibleColumn = itemAlias ? `${itemAlias}."projectId"` : pageAlias ? `${pageAlias}."projectId"` : `${projectAlias}."id"`;
     if (!flat.includes(`(p_all_projects IS TRUE OR ${visibleColumn} = ANY (COALESCE(p_project_ids, '{}'::text[])))`)) problems.push('does not apply project visibility');
+    // A page (4.1a): a workspace page, or one of a live, unarchived project in the visibility input; nothing else.
+    if (
+        pageAlias &&
+        !flat.includes(
+            `(${pageAlias}."projectId" IS NULL OR (${projectAlias}."deletedAt" IS NULL AND ${projectAlias}."archivedAt" IS NULL AND (p_all_projects IS TRUE OR ${pageAlias}."projectId" = ANY (COALESCE(p_project_ids, '{}'::text[])))))`,
+        )
+    ) {
+        problems.push('does not keep a page to the workspace\'s tree or a live, visible project\'s');
+    }
     if (spec.tables.s === 'SearchVector' && !flat.includes(`s."configName" = 'islestone_bg_en'`)) problems.push('does not name the configuration');
 
     // ── The bound ────────────────────────────────────────────────────

@@ -78,6 +78,10 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/settings/calendar-sync': { href: '/settings', label: 'Settings' },
     // Sub-phase 3.4c.
     '/settings/time-tracking': { href: '/settings', label: 'Settings' },
+    // Sub-phase 4.1a. A page falls back to Workspace pages (its tree is in its
+    // breadcrumb); a project's Pages to the project.
+    '/pages/[pageId]': { href: '/pages', label: 'Pages' },
+    '/projects/[projectKey]/pages': { href: '/projects/[projectKey]', label: 'Project' },
     '/settings/workload': { href: '/settings', label: 'Settings' },
     '/settings/working-calendars/[teamId]': { href: '/settings/working-calendars', label: 'Working calendars' },
     // Sub-phase 3.6d: a dashboard falls back to the Analytics page.

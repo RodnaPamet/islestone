@@ -56,6 +56,9 @@ export interface WorkspaceReport {
     timeOffDates: number;
     auditEntries: number;
     decryptedChecked: number;
+    /** Sub-phase 4.1a: pages in every tree, and the live ones. */
+    pages: number;
+    livePages: number;
 }
 
 export interface SeedReport {
@@ -174,6 +177,14 @@ async function verifyWorkspace(bulk: PrismaClient, shape: Shape, slug: string): 
     const timeOffDates = await q(`SELECT count(*) AS n FROM "TimeOff" WHERE "tenantId" = $1`);
     const timeOffShapes = await q(`SELECT count(DISTINCT length("type")) AS n FROM "TimeOff" WHERE "tenantId" = $1`);
     const timeOffPlain = await q(`SELECT count(*) AS n FROM "TimeOff" WHERE "tenantId" = $1 AND "type" NOT LIKE 'v2:%'`);
+    // Sub-phase 4.1a: every tree's pages, each with its content row, every parent in its own tree and live under a live page.
+    const pages = await q(`SELECT count(*) AS n FROM "Page" WHERE "tenantId" = $1`);
+    const livePages = await q(`SELECT count(*) AS n FROM "Page" WHERE "tenantId" = $1 AND "deletedAt" IS NULL`);
+    const pageContents = await q(`SELECT count(*) AS n FROM "PageContent" WHERE "tenantId" = $1`);
+    const pageStrays = await q(
+        `SELECT count(*) AS n FROM "Page" c JOIN "Page" p ON p."id" = c."parentId"
+          WHERE c."tenantId" = $1 AND (p."projectId" IS DISTINCT FROM c."projectId" OR (c."deletedAt" IS NULL AND p."deletedAt" IS NOT NULL))`,
+    );
 
     check(items === shapeItemCount(shape), `${slug} holds ${items} items, the shape ${shapeItemCount(shape)}`);
     check(liveItems > items * 0.95 && liveItems < items, `${slug}: ${liveItems} of ${items} items live (about 1 % are deleted)`);
@@ -198,6 +209,8 @@ async function verifyWorkspace(bulk: PrismaClient, shape: Shape, slug: string): 
     check(hoursEstimated > hoursItems * 0.5 && hoursEstimated < hoursItems * 0.7, `${slug}: ${hoursEstimated} of ${hoursItems} hours-team items estimated (about 60 %)`);
     check(wrongUnit === 0, `${slug}: ${wrongUnit} items hold an estimate outside their team's unit`);
     check(capacityRows > 0 && timeOffDates > 0, `${slug}: ${capacityRows} capacity rows and ${timeOffDates} dates of time off`);
+    check(livePages > items * 0.1 && livePages < pages, `${slug}: ${livePages} of ${pages} pages live (about one per ten items, a few deleted)`);
+    check(pageContents === pages && pageStrays === 0, `${slug}: ${pageContents} content rows for ${pages} pages, ${pageStrays} pages outside their parent's tree or live under a deleted page`);
     check(timeOffShapes === 1 && timeOffPlain === 0, `${slug}: time off's types are not one padded ciphertext length (${timeOffShapes} lengths, ${timeOffPlain} not in the envelope)`);
 
     const chain = await verifyAuditChain(tenantId);
@@ -249,6 +262,8 @@ async function verifyWorkspace(bulk: PrismaClient, shape: Shape, slug: string): 
         timeOffDates,
         auditEntries: chain.totalEntries,
         decryptedChecked,
+        pages,
+        livePages,
     };
 }
 

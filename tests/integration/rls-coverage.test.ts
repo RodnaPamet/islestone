@@ -81,6 +81,9 @@ const NO_DELETE_TABLES: readonly string[] = [
     // time tracking settings row is changed, never deleted.
     'Timesheet',
     'TenantTimeSettings',
+    // Sub-phase 4.1a: a page's content row goes with its page's purge (the
+    // cascade runs as the table owner), never on its own.
+    'PageContent',
 ];
 
 describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
@@ -318,6 +321,8 @@ describeFn('Guardrail: RLS coverage (pg_policies ↔ schema)', () => {
             'Notification',
             'NotificationOutbox',
             'NotificationPreference',
+            'Page',
+            'PageContent',
             'Project',
             'ProjectIntake',
             'ProjectKeyPrefix',

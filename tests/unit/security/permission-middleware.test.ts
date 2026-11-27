@@ -343,7 +343,7 @@ describe('requirePermission — modes', () => {
 
         const handler = jest.fn().mockResolvedValue(new Response('ok'));
         await requireAllPermissions(
-            ['work_items.create', 'docs.create'],
+            ['work_items.create', 'pages.create'],
             handler,
         )(makeReq(), routeArgs);
 

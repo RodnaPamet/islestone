@@ -56,6 +56,8 @@ describe('executorRegistry — default registrations', () => {
             'notification-digest',
             'notification-outbox-flush',
             'notification-purge',
+            'page-purge',
+            'page-sortkey-rebalance',
             'search-index-rebuild',
             'tenant-dek-rotation',
             'timesheet-reminder',

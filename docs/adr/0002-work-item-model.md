@@ -1,6 +1,6 @@
 # 0002 — Work item model
 
-Status: Accepted (owner decisions, 2026-11-19; amended by owner decisions 100 to 119, 2026-11-20: field sets in §1 and §7, waiting on in §14, the marked answer in §15; and by owner decisions 148 to 165, 2026-11-20: review steps in §1, §3 and §14, ADR 0009; and by owner decisions 183, 188 and 200, 2026-11-20: blocks read as finish-to-start in §6 and the project's due date in §16, ADR 0010; and by owner decisions 205 to 224, 2026-11-21: an item's direct goal, health and the lifecycle in §2, goals, initiatives and progress in §17; and by owner decisions 255 to 279, 2026-11-26: the team's estimate unit and the item's two estimate columns in §12, estimates and time in §18, ADR 0012; and by owner decision 310, 2026-11-27: the transition record's `fromStateCategory` in §14, ADR 0014)
+Status: Accepted (owner decisions, 2026-11-19; amended by owner decisions 100 to 119, 2026-11-20: field sets in §1 and §7, waiting on in §14, the marked answer in §15; and by owner decisions 148 to 165, 2026-11-20: review steps in §1, §3 and §14, ADR 0009; and by owner decisions 183, 188 and 200, 2026-11-20: blocks read as finish-to-start in §6 and the project's due date in §16, ADR 0010; and by owner decisions 205 to 224, 2026-11-21: an item's direct goal, health and the lifecycle in §2, goals, initiatives and progress in §17; and by owner decisions 255 to 279, 2026-11-26: the team's estimate unit and the item's two estimate columns in §12, estimates and time in §18, ADR 0012; and by owner decision 310, 2026-11-27: the transition record's `fromStateCategory` in §14, ADR 0014; and by owner decisions 340 and 353 to 356, 2026-11-27: descriptions and comments as rich text in §11, `Comment` and `Mention` with a page parent, `WorkItemLink` type `PAGE` and `Notification.pageId` in §12 and §19, ADR 0015)
 
 ## Context
 
@@ -196,6 +196,7 @@ Common rules: a CHECK refuses `fromId = toId`; `@@unique([tenantId, type, fromId
   - **S3. Store keyed hashes of normalised words**, keyed per workspace. Exact-word search without readable words; no ranking by prefix or meaning.
   - **S4. Do not encrypt descriptions and comments.** Simplest; drops roadmap 2.2's requirement.
   - **Decision: S1 now; a search ADR chooses between S2 and S3 later.** Owner decision, 2026-11-19 (open question 2); the owner chose "S1 now, decide later". This is the recommendation. Until that ADR, search covers titles, keys and unencrypted fields only. The search ADR is due before roadmap 2.7, because 2.7 asks for full-text search over items and comments, and comment bodies are encrypted: under S1 alone, comments cannot be searched. Embeddings (6.5) are S2 by nature, so 6.5 needs that decision too. S4 was not chosen: descriptions and comments stay encrypted.
+  - **Rich text from roadmap 4.1g** (owner decision 340, 2026-11-27, the owner's choice C over the 4.1 map's recommended A; it replaces decision 127's "plain text until 4.1"; ADR 0015 §8). `WorkItem.description` and `Comment.body` stay encrypted and become the plain-text **projection** of a rich-text document stored beside each in a new encrypted column, `WorkItem.descriptionJson` and `Comment.bodyJson` (and `WorkItemTemplate.descriptionJson` for templates); the server validates the document against the editor's item-text node set and refuses anything else, and computes the projection itself. Audit entries still name the field, never its text; search reads the projection (ADR 0008, amended); `If-Match` on a description edit is unchanged (§9). Existing text is converted by a job, never rewritten by SQL.
   - **Superseded for descriptions and comments by [ADR 0008](0008-search-over-encrypted-fields.md)** (owner decisions 124 to 126, 2026-11-20). The owner chose S2: a plaintext `tsvector` full-text index (Bulgarian and English stemming, one custom configuration) over `WorkItem.description` and `Comment.body`, kept in `SearchVector` and written by the usecase in the text's own transaction; titles and keys get Postgres full-text and trigram indexes. The searchable words of descriptions and comments are therefore readable in the database, its dumps and its off-host backups; the text itself stays encrypted. Every other encrypted or personal field stays out of search (ADR 0008 lists them). Embeddings (6.5) and pages (4.1) need their own amendment to ADR 0008.
 
 ### 12. Schema sketch (illustrative, not final)
@@ -448,7 +449,7 @@ model CustomFieldValue {
 model Comment {
   id            String    @id @default(cuid())
   tenantId      String
-  workItemId    String    // roadmap 4.1 adds pageId; a CHECK then requires exactly one parent
+  workItemId    String    // roadmap 4.1 adds pageId; a CHECK then requires exactly one parent (decided 2026-11-27, decision 355; §19)
   authorUserId  String
   body          String    // encrypted (manifest); sanitised on write
   editedAt      DateTime?
@@ -539,6 +540,15 @@ Roadmap 3.4; owner decisions 255 to 279, 2026-11-26 (`docs/porting/maps/3.4.md`;
 - **The transition record gains both columns** (`WorkItemTransition.estimatePoints`, `.estimateMinutes`; the trigger watches them), so the cycle burn-up counts points or hours from recorded changes. Progress (§17) and the schedule's durations (ADR 0010) are unchanged: an hours estimate is effort, not a duration.
 - **Time entries are not work items** (roadmap 3.4b to 3.4d; ADR 0012). A `TimeEntry` names one work item and the project it was recorded in, and outlives the item's move and purge; it never appears in a work-item read, the list, the board, search or the Activity. An item's time spent is read through its own route.
 
+### 19. Documents: comments, mentions and links with a page
+
+Roadmap 4.1; owner decisions 340 and 353 to 356, 2026-11-27 (`docs/porting/maps/4.1.md`; ADR 0015).
+
+- **A comment has exactly one parent.** `Comment.workItemId` becomes nullable and `Comment.pageId` is added (`(pageId, tenantId)` → `Page`, cascading), a CHECK requiring exactly one; `@@unique([id, pageId, tenantId])` stands beside the existing triple, so `WorkItem.answerCommentId` still names a comment of the same item and a page comment can never be an answer. Page comments only: an optional anchor (`anchorFrom`, `anchorTo`, two Yjs relative positions, both or neither), one level of replies (`parentCommentId`, on the same page; a trigger refuses a reply to a reply) and a resolved state on root comments (`resolvedAt`, `resolvedByUserId`). Every work-item read still reads by `workItemId`, so page comments never appear on an item.
+- **A comment's body is rich text** (decision 340 for item comments, decision 356 for page comments; §11).
+- **A mention has exactly one parent.** `Mention.workItemId` becomes nullable and `Mention.pageId` is added, a CHECK requiring exactly one; its comment key gains a twin, `(commentId, pageId, tenantId)` → `Comment(id, pageId, tenantId)`. A mention in a page body is recorded for the person whose edit inserted it (decision 354); decision 129 holds everywhere.
+- **Links and notifications.** `WorkItemLink` gains type `PAGE` (its location the page id, shown with the page's current title or "No access"; decision 353); `Notification.pageId` (`ON DELETE SET NULL ("pageId")`) links a page bell. A page names work items by id only (ADR 0005 §6.3): a work item never stores a copy of a page and a page never stores a copy of an item's fields.
+
 ### Open questions for the owner
 
 All five were answered on 2026-11-19 in the working session.
@@ -582,7 +592,7 @@ All five were answered on 2026-11-19 in the working session.
   - 4 (global preamble);
   - 2.1, 2.2, 2.4, 2.5, 2.7 and H2;
   - 3.1 (scheduler reads blocking relations), 3.2 (goals and initiatives: §2's direct goal and §17, decisions 205 to 224);
-  - 4.1 (comments on pages), 4.3 (live updates);
+  - 4.1 (comments on pages, rich-text descriptions and comments; ADR 0015), 4.3 (live updates);
   - 5.3 (links by key), 5.5 (importers keep keys);
   - 6.5 (embeddings).
 - Islestone ADRs: `docs/adr/0001-code-provenance-and-licences.md` (D1 and the copy rule), `docs/adr/0003-assignee-and-delegate.md`, `docs/adr/0006-vocabulary.md`.

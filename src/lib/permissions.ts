@@ -65,7 +65,15 @@ export type PermissionSet = {
      * No key groups throughput, cycle time or counts by assignee (decision 330).
      */
     analytics: { view: boolean; share: boolean; people: boolean };
-    docs: { view: boolean; create: boolean; edit: boolean };
+    /**
+     * Pages (sub-phase 4.1, owner decision 339; ADR 0015 §10): read pages in the
+     * trees one can see (decision 342), create them, edit them (title, body,
+     * moves, versions), comment on them (4.1d), delete and restore them. The
+     * key uses the page's word: it replaced the unused `docs` domain ("Doc" is
+     * banned for a page, ADR 0006), and stored custom roles' `docs` grants were
+     * rewritten by migration `20261230120100_pages_permission_domain`.
+     */
+    pages: { view: boolean; create: boolean; edit: boolean; comment: boolean; delete: boolean };
     canvas: { view: boolean; edit: boolean };
     automations: { view: boolean; manage: boolean };
     integrations: { view: boolean; manage: boolean };
@@ -106,7 +114,7 @@ export const PERMISSION_SCHEMA = {
     time: ['view', 'track', 'approve', 'rates'],
     workload: ['view', 'time_off', 'manage'],
     analytics: ['view', 'share', 'people'],
-    docs: ['view', 'create', 'edit'],
+    pages: ['view', 'create', 'edit', 'comment', 'delete'],
     canvas: ['view', 'edit'],
     automations: ['view', 'manage'],
     integrations: ['view', 'manage'],
@@ -151,10 +159,10 @@ const ALL_DOMAINS: Grants = Object.fromEntries(
  *           view/create/edit/assign/comment, views view/create/edit/share,
  *           cycles, intake view/triage (decision 92), goals view/manage
  *           (decision 213), time view/track (decision 265), workload view/time_off
- *           (decision 298), analytics view/share (decision 329), docs view/create/edit,
+ *           (decision 298), analytics view/share (decision 329), pages (all, decision 339),
  *           canvas view/edit, automations and
  *           integrations view, agents view/delegate, workspace view.
- *   VIEWER  reads every project (`view` on the work domains, goals, time and agents),
+ *   VIEWER  reads every project (`view` on the work domains, goals, time, pages and agents),
  *           records its own time off (`workload.view` and `workload.time_off`,
  *           decision 298: time off is about oneself), reads analytics
  *           (`analytics.view`, decision 329) and
@@ -201,7 +209,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 time: ['view', 'track'],
                 workload: ['view', 'time_off'],
                 analytics: ['view', 'share'],
-                docs: ['view', 'create', 'edit'],
+                pages: 'all',
                 canvas: ['view', 'edit'],
                 automations: ['view'],
                 integrations: ['view'],
@@ -246,7 +254,7 @@ function viewerPermissions(): PermissionSet {
         time: ['view'],
         workload: ['view', 'time_off'],
         analytics: ['view'],
-        docs: ['view'],
+        pages: ['view'],
         canvas: ['view'],
         agents: ['view'],
     });

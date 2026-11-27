@@ -107,6 +107,12 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // names stay plaintext (breadcrumbs, the roadmap, notifications).
     Goal: ['description'],
     Initiative: ['description'],
+    // Page content (sub-phase 4.1; ADR 0015 §3; owner decisions 345 and 346):
+    // the encoded Yjs state as base64 text, and its ProseMirror JSON and text
+    // projections, under the workspace's DEK so both key rotations re-wrap
+    // them. Written only by the collaboration server's store path (4.1b); a
+    // page's create writes the row empty. Titles stay plaintext.
+    PageContent: ['state', 'contentJson', 'plainText'],
     // Calendar sync (roadmap 3.3b, owner decision 238; ADR 0011 §7): a member's
     // OAuth token pair and its expiry, as one JSON blob, under the workspace's
     // DEK so both key rotations re-encrypt it. A secret, never rendered,
