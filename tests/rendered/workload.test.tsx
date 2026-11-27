@@ -31,9 +31,10 @@ import { TimeOffCalendar } from '@/components/workload/TimeOffCalendar';
 import { WorkloadSettings } from '@/components/workload/WorkloadSettings';
 import { MyWorkloadLine } from '@/components/workload/MyWorkloadLine';
 import { WorkloadView } from '@/components/workload/WorkloadView';
-import type { TimeOffDayData, WorkloadCellData, WorkloadData, WorkloadMembersData, WorkloadPersonRow } from '@/lib/workload/types';
+import type { TimeOffDayData, WorkloadCellData, WorkloadData, WorkloadMembersData, WorkloadPersonRow, WorkloadRebalance } from '@/lib/workload/types';
+import { computeTimelineSchedule, type TimelineData } from '@/lib/work-items/timeline';
 
-import { installFetch, renderWorkspace } from '../helpers/work-items-harness';
+import { MEMBERS, PROJECT, TEAM, detail, installFetch, renderWorkspace, row } from '../helpers/work-items-harness';
 
 const ALL = { view: true, recordOwnTimeOff: true, manage: true };
 
@@ -103,6 +104,24 @@ const cellOfAda: WorkloadCellData = {
     moreItems: 0,
     itemsShown: true,
     timeSpentCounted: true,
+    rebalance: null,
+    rebalanceNote: null,
+};
+
+/** Ada's over-capacity week with its ways to rebalance (3.5c). */
+const rebalance: WorkloadRebalance = {
+    items: [
+        {
+            id: 'w-1', key: 'WEB-12', title: 'Launch page', projectId: PROJECT, minutes: 2400, startDate: '2026-11-30', dueDate: '2026-12-04',
+            assignTo: [{ userId: 'u-bob', name: 'Bob Builder', freeMinutes: 1800 }],
+            moveTo: { startDate: '2026-12-07', dueDate: '2026-12-11', from: '2026-12-07', to: '2026-12-11' },
+        },
+        { id: 'w-2', key: 'WEB-3', title: 'Old bug', projectId: PROJECT, minutes: 360, startDate: null, dueDate: '2026-11-10', assignTo: [], moveTo: null },
+    ],
+    dueDuringTimeOff: [{ id: 'w-4', key: 'WEB-4', title: 'Copy review', dueDate: '2026-12-01' }],
+    offered: { assign: true, moveDates: true },
+    assignUnavailable: false,
+    searchWeeks: 26,
 };
 
 function day(over: Partial<TimeOffDayData> = {}): TimeOffDayData {
@@ -186,6 +205,129 @@ describe('the Workload page', () => {
         expect(table).toHaveTextContent('Overdue: on the next working day');
         expect(table).toHaveTextContent('6h left of 8h');
         expect(await axe(sheet)).toHaveNoViolations();
+    });
+
+    it('lists the ways to rebalance an over-capacity week, each named by its act, and has no axe violations', async () => {
+        installFetch({
+            'GET /workload': { body: workload },
+            'GET /workload/cell': { body: { ...cellOfAda, rebalance } },
+            'GET /time-off': timeOffAnswer([]),
+            'GET /members/u-ada/capacity': capacity,
+        });
+        renderWorkspace(<WorkloadView affordances={ALL} userId="u-ada" today="2026-11-27" options={{ projects: [], teams: [], recipientLists: [], readsItems: true }} />);
+        const grid = await screen.findByRole('grid', { name: /Workload by week/ });
+        fireEvent.click(within(grid).getByRole('gridcell', { name: /^Ada, week of 30 Nov 2026/ }));
+        const ways = await screen.findByRole('region', { name: 'Ways to rebalance' });
+        const [first, second] = within(ways).getAllByTestId('workload-rebalance-item');
+        expect(first).toHaveTextContent('WEB-12 Launch page 40h this week');
+        expect(within(first!).getByRole('button', { name: 'Assign to Bob Builder' })).toBeInTheDocument();
+        expect(first).toHaveTextContent('30h free that week');
+        expect(within(first!).getByRole('button', { name: 'Move dates to 7 Dec – 11 Dec' })).toBeInTheDocument();
+        expect(second).toHaveTextContent('Nobody else on this project has room in every week it covers.');
+        expect(second).toHaveTextContent('No later dates fit within 26 weeks.');
+        expect(within(ways).getByTestId('workload-rebalance-time-off')).toHaveTextContent('WEB-4 Copy review is due on 1 Dec, a day Ada is off.');
+        // The word the decisions ban never appears.
+        expect(ways.textContent).not.toMatch(/suggest/i);
+        expect(await axe(ways)).toHaveNoViolations();
+    });
+
+    it('offers only the acts the server says the viewer may make', async () => {
+        installFetch({
+            'GET /workload': { body: workload },
+            'GET /workload/cell': { body: { ...cellOfAda, rebalance: { ...rebalance, offered: { assign: false, moveDates: true }, items: rebalance.items.map((i) => ({ ...i, assignTo: [] })) } } },
+            'GET /time-off': timeOffAnswer([]),
+            'GET /members/u-ada/capacity': capacity,
+        });
+        renderWorkspace(<WorkloadView affordances={ALL} userId="u-ada" today="2026-11-27" options={{ projects: [], teams: [], recipientLists: [], readsItems: true }} />);
+        fireEvent.click(within(await screen.findByRole('grid', { name: /Workload by week/ })).getByRole('gridcell', { name: /^Ada, week of 30 Nov 2026/ }));
+        const ways = await screen.findByRole('region', { name: 'Ways to rebalance' });
+        expect(within(ways).queryByRole('button', { name: /^Assign to/ })).toBeNull();
+        expect(ways).not.toHaveTextContent('Nobody else on this project');
+        expect(within(ways).getByRole('button', { name: 'Move dates to 7 Dec – 11 Dec' })).toBeInTheDocument();
+    });
+
+    it('"Assign to Bob" opens the assign picker with Bob chosen and sends the existing assign write with If-Match', async () => {
+        const item = row(12, { id: 'w-1', key: 'WEB-12', assigneeId: 'u-ada', version: 6 });
+        const { calls } = installFetch({
+            'GET /workload': { body: workload },
+            'GET /workload/cell': { body: { ...cellOfAda, rebalance } },
+            'GET /time-off': timeOffAnswer([]),
+            'GET /members/u-ada/capacity': capacity,
+            'GET /work-items/w-1': { body: detail(item) },
+            'GET /users/assignable': { body: MEMBERS },
+            'POST /work-items/w-1/assign': { body: detail({ ...item, assigneeId: 'u-bob', version: 7 }) },
+        });
+        renderWorkspace(<WorkloadView affordances={ALL} userId="u-ada" today="2026-11-27" options={{ projects: [], teams: [], recipientLists: [], readsItems: true }} />);
+        fireEvent.click(within(await screen.findByRole('grid', { name: /Workload by week/ })).getByRole('gridcell', { name: /^Ada, week of 30 Nov 2026/ }));
+        const ways = await screen.findByRole('region', { name: 'Ways to rebalance' });
+        expect(calls.some((c) => c.method !== 'GET')).toBe(false);
+        fireEvent.click(within(ways).getByRole('button', { name: 'Assign to Bob Builder' }));
+        expect(await screen.findByText('Bob Builder has 30h free that week and stays within capacity in every week it covers.')).toBeInTheDocument();
+        // The picker shows the person already chosen.
+        await waitFor(() => expect(screen.getByRole('combobox', { name: 'Assignee' })).toHaveTextContent('Bob Builder'));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Assign' })).toBeEnabled());
+        // Nothing is written until the person confirms.
+        expect(calls.some((c) => c.method !== 'GET')).toBe(false);
+        fireEvent.click(screen.getByRole('button', { name: 'Assign' }));
+        await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
+        const post = calls.find((c) => c.method === 'POST')!;
+        expect(post.path).toBe('/work-items/w-1/assign');
+        expect(post.body).toEqual({ assigneeId: 'u-bob' });
+        expect(post.ifMatch).toBe('"6"');
+    });
+
+    it('"Move dates" opens Change dates over the item\'s project timeline with the dates found, and sends the PATCH with If-Match', async () => {
+        const tl: TimelineData = {
+            asOf: '2026-11-27',
+            rows: [
+                {
+                    id: 'w-1', key: 'WEB-12', title: 'Launch page', projectId: PROJECT, teamId: TEAM, typeId: 'ty-feature', stateCategory: 'UNSTARTED', assigneeId: 'u-ada', parentId: null,
+                    sortKey: 'a1', startDate: '2026-11-30', dueDate: '2026-12-04', actualStart: null, actualFinish: null, milestoneId: null, calendarId: 'cal-1', version: 6, context: false,
+                },
+            ],
+            edges: [],
+            calendars: [{ id: 'cal-1', teamId: TEAM, timeZone: 'UTC', workingWeekdays: [1, 2, 3, 4, 5], holidays: [] }],
+            milestones: [],
+            projects: [{ id: PROJECT, name: 'Website', keyPrefix: 'WEB', dueDate: null, archived: false }],
+            hiddenDependencies: 0,
+            omittedContextRows: 0,
+        };
+        const saved = detail(row(12, { id: 'w-1', key: 'WEB-12', startDate: '2026-12-07', dueDate: '2026-12-11', version: 7 }));
+        const { calls } = installFetch({
+            'GET /workload': { body: workload },
+            'GET /workload/cell': { body: { ...cellOfAda, rebalance } },
+            'GET /time-off': timeOffAnswer([]),
+            'GET /members/u-ada/capacity': capacity,
+            'GET /work-items/timeline': { body: { ...tl, schedule: computeTimelineSchedule(tl) } },
+            'PATCH /work-items/w-1': { body: saved },
+        });
+        renderWorkspace(<WorkloadView affordances={ALL} userId="u-ada" today="2026-11-27" options={{ projects: [], teams: [], recipientLists: [], readsItems: true }} />);
+        fireEvent.click(within(await screen.findByRole('grid', { name: /Workload by week/ })).getByRole('gridcell', { name: /^Ada, week of 30 Nov 2026/ }));
+        const ways = await screen.findByRole('region', { name: 'Ways to rebalance' });
+        fireEvent.click(within(ways).getByRole('button', { name: 'Move dates to 7 Dec – 11 Dec' }));
+        await screen.findByTestId('change-dates-dialog');
+        expect(Object.fromEntries(calls.find((c) => c.path === '/work-items/timeline')!.search)).toEqual({ projectId: PROJECT });
+        expect(document.getElementById('change-dates-start')!.textContent).toMatch(/7/);
+        expect(document.getElementById('change-dates-due')!.textContent).toMatch(/11/);
+        expect(calls.some((c) => c.method !== 'GET')).toBe(false);
+        fireEvent.click(screen.getByRole('button', { name: 'Change dates' }));
+        await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true));
+        const patch = calls.find((c) => c.method === 'PATCH')!;
+        expect(patch.body).toEqual({ startDate: '2026-12-07', dueDate: '2026-12-11' });
+        expect(patch.ifMatch).toBe('"6"');
+    });
+
+    it('says when a week is too far ahead for ways to rebalance', async () => {
+        installFetch({
+            'GET /workload': { body: workload },
+            'GET /workload/cell': { body: { ...cellOfAda, rebalanceNote: 'TOO_FAR_AHEAD' } },
+            'GET /time-off': timeOffAnswer([]),
+            'GET /members/u-ada/capacity': capacity,
+        });
+        renderWorkspace(<WorkloadView affordances={ALL} userId="u-ada" today="2026-11-27" options={{ projects: [], teams: [], recipientLists: [], readsItems: true }} />);
+        fireEvent.click(within(await screen.findByRole('grid', { name: /Workload by week/ })).getByRole('gridcell', { name: /^Ada, week of 30 Nov 2026/ }));
+        expect(await screen.findByText('Ways to rebalance are worked out for weeks up to a year ahead.')).toBeInTheDocument();
+        expect(screen.queryByRole('region', { name: 'Ways to rebalance' })).toBeNull();
     });
 
     it('withholds the items from a caller who may not read work items', async () => {

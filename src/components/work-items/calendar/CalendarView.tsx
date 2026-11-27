@@ -33,15 +33,13 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { useTenantHref } from '@/lib/tenant-context-provider';
-import { resolveFieldSet } from '@/lib/work-items/field-sets';
 import type { CalendarItem } from '@/lib/work-items/calendar';
-import type { TimelineRow } from '@/lib/work-items/timeline';
 
 import type { WorkItemListFilters } from '../data/list-filters';
-import { useWorkConfig } from '../data/use-work-config';
 import { useWorkItemCalendar } from '../data/use-work-item-calendar';
 import { formatDay } from '../timeline/TimelineScheduleTable';
 import { CalendarMonth } from './CalendarMonth';
+import { useHiddenDates } from '../timeline/ChangeDatesFromProject';
 import { CalendarMove, type CalendarMoveRequest } from './CalendarMove';
 import { addMonths, cyclesByDay, dayKind, gridWindow, itemsByDay, markersByDay, monthOf, movableItems, type CalendarMarker } from './calendar-model';
 
@@ -132,7 +130,6 @@ function DayPanel({
 
 export function CalendarView({ filters, settings, onSettingsChange, onOpen, canEdit, initialMonth }: CalendarViewProps) {
     const tView = useTranslations('workItems.calendar');
-    const config = useWorkConfig();
     const href = useTenantHref();
     const [month, setMonth] = useState<Date>(() => initialMonth ?? monthOf(new Date().toISOString().slice(0, 10)));
     const range = useMemo(() => gridWindow(month), [month]);
@@ -142,14 +139,7 @@ export function CalendarView({ filters, settings, onSettingsChange, onOpen, canE
     const [moving, setMoving] = useState<CalendarMoveRequest | null>(null);
 
     // A type's start and due date rules (2.4b-b: built-in rules are the type's across the workspace).
-    const hiddenDates = useMemo(() => {
-        const of = (typeId: string) => {
-            const set = resolveFieldSet(config.fieldSetEntries, typeId);
-            return { startDate: set.builtIn.startDate === 'HIDDEN', dueDate: set.builtIn.dueDate === 'HIDDEN' };
-        };
-        const byType = new Map((config.types ?? []).map((t) => [t.id, of(t.id)] as const));
-        return (row: TimelineRow) => byType.get(row.typeId) ?? of(row.typeId);
-    }, [config.fieldSetEntries, config.types]);
+    const hiddenDates = useHiddenDates();
 
     const movable = useMemo(() => (data ? movableItems(data, { canEdit, hiddenDates }) : new Set<string>()), [data, canEdit, hiddenDates]);
     const byDay = useMemo(() => (data ? itemsByDay(data.items, range) : new Map<string, CalendarItem[]>()), [data, range]);

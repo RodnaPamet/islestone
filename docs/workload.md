@@ -1,6 +1,6 @@
-# Workload: capacity, time off and allocation
+# Workload: capacity, time off, allocation and the ways to rebalance
 
-Sub-phases 3.5a (capacity and time off) and 3.5b (allocation and the Workload view). The decisions are owner decisions 282 to 303 (`docs/HANDOFF.md`), recorded in [ADR 0013](adr/0013-workload-and-capacity.md) and the porting map [`docs/porting/maps/3.5.md`](porting/maps/3.5.md), whose "Rules no decision names (3.5a, as built)" and "(3.5b, as built)" list the choices the builds made. The ways to rebalance (3.5c) are not built yet.
+Sub-phases 3.5a (capacity and time off), 3.5b (allocation and the Workload view) and 3.5c (the ways to rebalance). The decisions are owner decisions 282 to 303 (`docs/HANDOFF.md`), recorded in [ADR 0013](adr/0013-workload-and-capacity.md) and the porting map [`docs/porting/maps/3.5.md`](porting/maps/3.5.md), whose "Rules no decision names (3.5a, as built)", "(3.5b, as built)" and "(3.5c, as built)" list the choices the builds made.
 
 The words are ADR 0006's: Capacity, Time off, Time off type, Workload, Allocated, Over capacity, Free, Workload settings; "Add time off", "Over by 6h". Never Availability, Leave, Day off, Absence, PTO, Allowance, Quota, Utilisation, Booked, Overbooked, Overloaded or Overtime, and "Holiday" is only a working calendar's day off for everyone (decision 303): time off's types are Vacation, Sick and Other.
 
@@ -86,6 +86,19 @@ A week is **over capacity** when its allocated hours exceed its capacity, shown 
 
 `GET /workload/cell?userId&week` (`workload.view`; `userId` a person, `me`, or `unassigned`): one week's capacity, allocation, over-capacity minutes and time-off dates with their hours (never a type), and the items that fill it, most minutes first, at most 200, each with its minutes there, its dates, its remaining hours and why it is there (spread over N working days, on one day, overdue). The items are listed only for a caller who may read work items (`itemsShown`); the figures are shown either way.
 
+## Ways to rebalance (3.5c)
+
+For a person's week that is over capacity, the cell's answer carries `rebalance` (decisions 283 and 299; ADR 0013 §8): ways to bring the week back within capacity, each line named by its act ("Assign to Ana", "Move dates to 14–18 Dec"; never "Suggestion"). They are worked out in code on every read and never stored, audited or logged; reading them writes nothing. A person opens one into a confirmation that already exists and confirms there or not: there is no new write path, and no automatic levelling.
+
+- **The planner** is the pure, property-tested `src/app-layer/domain/workload/options.ts` (`planRebalance`), over the same inputs as the read, on a window of weeks from the current one to 27 weeks after the cell's (`REBALANCE_LIMITS`). Each item is placed on its own calendar by the allocation module, whoever holds it.
+- **The items that fill the week**, most minutes there first (ties by id), as the cell lists them; options are worked out for the five largest.
+- **"Assign to …"**: at most three other ACTIVE members who already hold counted work of the item's project placed in the window, and who would stay within capacity in every week the item's placement covers if it were theirs (from its first day's week to its last day's); ranked by their free minutes in the cell's week (capacity less allocation, before taking the item), then by name. An item placed past the window names nobody: it cannot be shown to fit. It opens the assign picker with that person chosen (`RebalanceAssign`); confirming sends the existing assign write (`POST /work-items/:id/assign`, `work_items.assign`, `If-Match`, field sets, the audit entry and the bells are its own).
+- **"Move dates"**: the earliest later dates, moved whole by the engine's one move rule (`movePlannedDates` in `domain/schedule/move.ts`, which the timeline's drop also moves through: the working-day duration kept on the item's own calendar), at which the person is within capacity in every week the item would cover and the item is not overdue. The search moves the item's last day at most 26 weeks past the later of that day and today, and stops where the item would leave the window. It opens 3.1c's "Change dates" over the item's project's timeline with those dates (`ChangeDatesFromProject`, the calendar view's path): the preview, "Also move the N items it pushes later", the bound of 100 and every rule are 3.1c's, and `editableRows` is asked again there (a parent whose dates follow its sub-items is refused with a sentence).
+- **"Due during time off"**: the filling items due on a date the person has the whole day off; the date only, never a type.
+- **Who is offered them.** Only a signed-in person who reads work items and holds `work_items.assign` (the assign lines) or `work_items.edit` (the dates lines), asked on the server (`rebalance.offered`); an API key, an agent, a job and a caller with neither key get `rebalance: null` (ADR 0003: an agent never computes or applies one; 7.5's rescheduling will read the same modules and propose through the proposal queue). A week more than 52 weeks after the current one is not worked out (`rebalanceNote: 'TOO_FAR_AHEAD'`, said in the sheet).
+- **The reads.** For such a caller the cell reads every member's counted work in its one item read (the view's read; above its 20,000 bound it reads the person's alone and names nobody to assign to, `assignUnavailable`), the person and the others on their projects in its one people read, and their capacity over the window in its one capacity statement: still 8 statements.
+- **Copy** is `workload.rebalance.*`; the sheet's section is a labelled region under the items, with an `h3`.
+
 ## Who may do what
 
 The `workload` permission domain (decision 298):
@@ -101,7 +114,7 @@ The granular key decides (`src/app-layer/policies/workload.policies.ts`); a cust
 | Act | Route | Key |
 |---|---|---|
 | Capacity and allocation per person per week | `GET /workload?from&weeks&userId&projectId&teamId&recipientListId&over` | `workload.view` |
-| A week's items | `GET /workload/cell?userId&week` | `workload.view` |
+| A week's items, and its ways to rebalance (3.5c) | `GET /workload/cell?userId&week` | `workload.view` (the ways also need `work_items.assign` or `work_items.edit`) |
 | Settings → Workload's members | `GET /workload/members` | `workload.manage` |
 | The default | `GET` / `PUT /workload-settings` | `workload.view` / `workload.manage` |
 | A member's capacity | `GET` / `PUT /members/:userId/capacity` | `workload.view` / `workload.manage` |
@@ -117,7 +130,7 @@ The Workload sidebar entry (`workload.view`) opens `/workload`:
 
 - **My capacity and time off**: the person's capacity in force ("40h a week · Workspace calendar", or the workspace's default) and their time off as a month of dates (a `role=grid` with a roving tabindex), each date showing its hours or "Whole day" and its type; "Add time off"; a date opened to change it in place or remove it through the undo toast.
 - **Workload by week** (`WorkloadGrid`, a `role=grid` with a roving tabindex): one row per person, then the Unassigned row, one column per week, twelve weeks from the current one with "Previous weeks", "This week" and "Next weeks". Each cell shows "34h / 40h", a bar whose width and colour follow allocated ÷ capacity (`useHeatScale`), a red edge and "Over by 6h" when over, a filter's share, and "Time off 8h" when time off removed some; its label says all of it in words, so colour never carries meaning alone. A row ends with No dates, Not estimated, Points work and Later. The filters (people, project, team, recipient list, over capacity only) are the shared filter toolbar, kept in the address.
-- **A week's items**: Enter, Space or a click on a cell opens `WorkloadCellSheet`: the week's figures and time off, then its items in the shared `DataTable` (key, title, hours this week and remaining, dates, why), each opening the item's sheet.
+- **A week's items**: Enter, Space or a click on a cell opens `WorkloadCellSheet`: the week's figures and time off, then its items in the shared `DataTable` (key, title, hours this week and remaining, dates, why), each opening the item's sheet; for an over-capacity week, "Ways to rebalance" under them (`RebalanceWays`, 3.5c), each line opening the assign picker or "Change dates".
 - **My Work's line** (decision 300): above My Work's sections, for a holder of `workload.view`, "This week 34h of 40h · next week over by 6h" with a link to the Workload page filtered to the person (`MyWorkloadLine`, the workload read for the caller's two weeks); hidden when they have no counted work in either week.
 
 A work-item write anywhere re-reads every mounted workload read (`registerWorkload` in `work-item-cache.ts`): a change of assignee, dates, estimate or state moves hours between rows and weeks that only the server recomputes.
@@ -130,16 +143,16 @@ The data is `src/components/workload/data/` (`use-workload.ts`, `use-time-off.ts
 
 Measured on the 10k seed (which writes estimates on 60 % of the hours team's items, capacity for a quarter of the members and about 25 dates of time off for half of them; `scripts/seed-scale/workload.ts`):
 
-- **Statements per request**: the view 8 (the context; the calendars with their holidays' dates in one statement; the unplaced counts with each item's team's unit in one aggregate, which also names who holds open work; the people, active and deactivated holders, and their names; the default, the capacity rows and the time-off dates in one statement; the counted items; their time), My Work's line 8, a cell 8. None is per person or per item.
+- **Statements per request**: the view 8 (the context; the calendars with their holidays' dates in one statement; the unplaced counts with each item's team's unit in one aggregate, which also names who holds open work; the people, active and deactivated holders, and their names; the default, the capacity rows and the time-off dates in one statement; the counted items; their time), My Work's line 8, a cell 8, and an over-capacity cell with its ways to rebalance 8 (3.5c). None is per person or per item.
 - **Plan checks**: "workload: open assigned items of every member over 12 weeks" (the counts on the partial `WorkItem_progress_project_path`; the hours teams' items reached through their projects, which the planner prefers to the assignee index when every assignee is asked for), "workload: one person, two weeks" (the assignee index), "time: totals for a set of items" (the item index of `TimeEntry`) and "workload: time-off dates in a window" (the one capacity statement, the time-off part on `TimeOff_tenantId_userId_day_key`).
-- **The pure modules**: 500 people, 20,000 items, about 12,500 dates of time off and 26 weeks within 100 ms p95 in Node (`tests/unit/domain/workload-performance.test.ts`, failing at four times the budget), byte-equal under five process time zones.
+- **The pure modules**: 500 people, 20,000 items, about 12,500 dates of time off and 26 weeks within 100 ms p95 in Node (`tests/unit/domain/workload-performance.test.ts`, failing at four times the budget), byte-equal under five process time zones; the ways to rebalance for the farthest cell they are worked out for (an 80-week window, every other person a candidate) within the same budget.
 - **Latency**: the `workload` scenario (twelve weeks, every member; p50 250 ms, p95 600 ms at 10k; 400 and 900 at 100k) is reported, not enforced until the nightly 100k run has measured it; `time-off-set` is a write, run last.
 
 ## Privacy
 
-| Concern | 3.5a and 3.5b |
+| Concern | 3.5a, 3.5b and 3.5c |
 |---|---|
-| Records | Hours a week, dates and hours away, and a three-word reason, one of which is health data. Nothing is inferred from activity. Allocation is computed on every read from items' estimates and dates and never stored. |
+| Records | Hours a week, dates and hours away, and a three-word reason, one of which is health data. Nothing is inferred from activity. Allocation and the ways to rebalance are computed on every read from items' estimates and dates and never stored. |
 | Recorded time | Shrinks an item's remaining hours only for a viewer who already sees its total (`time.view`); a person's recorded week is never shown (decision 266). |
 | Retention | The workspace's life; the person or a manager deletes any date; a removed member's rows go with the membership. |
 | Logs | Never a person's capacity, time off, allocation or type; ids and counts. |

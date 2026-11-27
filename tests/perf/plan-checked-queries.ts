@@ -196,6 +196,7 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     // here): the hours teams hold about half of 100,000 items, so about ten times the workspace reads and two to three
     // times the heavy member's; each budget about twice that. Replace with about twice the nightly's first 100k
     // measurement.
+    // 3.5c: an over-capacity cell's ways to rebalance read every member's counted work through this same read.
     {
         name: 'workload: open assigned items of every member over 12 weeks',
         methods: ['WorkItemRepository.listForWorkload', 'WorkItemRepository.workloadUnplacedCounts'],

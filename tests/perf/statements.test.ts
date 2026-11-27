@@ -53,6 +53,8 @@ interface Scenario {
     setup?: (direct: PrismaClient, w: PerfWorld) => Promise<void>;
     /** The most statements one request may run (docs/performance.md, "Statements per request"). */
     budget: number;
+    /** What the answer must hold, so the scenario measures the path it names (read once more, never counted). */
+    answers?: (body: string) => boolean;
 }
 
 /**
@@ -135,6 +137,29 @@ function nextMonday(): string {
     return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - back + 7)).toISOString().slice(0, 10);
 }
 
+/**
+ * The week after next made over capacity for the heavy member (3.5c): a capacity row of 0 hours from that Monday and
+ * the row in force before it again from the Monday after, written once (never measured), so the cell of that week
+ * works out its ways to rebalance.
+ */
+const weekAfterNext = () => new Date(Date.parse(`${nextMonday()}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
+async function heavyMemberOverWeek(direct: PrismaClient, w: PerfWorld): Promise<void> {
+    const monday = weekAfterNext();
+    const after = new Date(Date.parse(`${monday}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
+    const inForce = await direct.$queryRawUnsafe<Array<{ weeklyMinutes: number; calendarTeamId: string | null }>>(
+        `SELECT c."weeklyMinutes", c."calendarTeamId" FROM "MemberCapacity" c WHERE c."tenantId" = $1 AND c."userId" = $2 AND c."effectiveFrom" < $3::date ORDER BY c."effectiveFrom" DESC LIMIT 1`,
+        w.tenantId, w.heavyUserId, monday,
+    );
+    const settings = await direct.$queryRawUnsafe<Array<{ m: number }>>(`SELECT "defaultWeeklyMinutes" AS m FROM "TenantWorkloadSettings" WHERE "tenantId" = $1`, w.tenantId);
+    const restore = inForce[0] ?? { weeklyMinutes: settings[0]?.m ?? 2400, calendarTeamId: null };
+    await direct.$executeRawUnsafe(
+        `INSERT INTO "MemberCapacity" ("id", "tenantId", "userId", "effectiveFrom", "weeklyMinutes", "calendarTeamId", "createdByUserId", "updatedAt")
+         VALUES ('perf-over-' || $1, $1, $2, $3::date, 0, NULL, $2, now()), ('perf-back-' || $1, $1, $2, $4::date, $5, $6, $2, now())
+         ON CONFLICT ("tenantId", "userId", "effectiveFrom") DO NOTHING`,
+        w.tenantId, w.heavyUserId, monday, after, restore.weeklyMinutes, restore.calendarTeamId,
+    );
+}
+
 /** A month of time off around today (3.5a): the window "My capacity and time off" reads. */
 function monthWindow(): string {
     const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
@@ -186,11 +211,23 @@ const SCENARIOS: Scenario[] = [
     // the counts of unplaced work with each item's team's unit (one aggregate, which also names who holds open work),
     // the people (active, and deactivated holders) and their names, the default with the capacity rows and the
     // time-off dates (one statement), the counted items and the time recorded on them; a cell reads one person (and
-    // their name) in place of the counts and the people, and the listed items' projects. A time-off month: the person,
+    // their name; since 3.5c the others on their projects in the same read) in place of the counts and the people, and the
+    // listed items' projects. A time-off month: the person,
     // its dates, the calendars and the person's capacity rows. None is per person or per item.
     { name: 'workload: capacity of every member, twelve weeks', file: `${ROUTES}/workload/route.ts`, method: 'GET', path: () => '/workload?weeks=12', budget: 8 },
     { name: "workload: My Work's line, the caller's two weeks", file: `${ROUTES}/workload/route.ts`, method: 'GET', path: () => '/workload?userId=me&weeks=2', budget: 8 },
     { name: "workload: the heavy member's next week, its items", file: `${ROUTES}/workload/cell/route.ts`, method: 'GET', path: () => `/workload/cell?userId=me&week=${nextMonday()}`, budget: 8 },
+    // 3.5c: an over-capacity week, its items and the ways to rebalance it (every member's counted work in the item read,
+    // the person and the others on their projects in the people read, their capacity in one): the cell's statements.
+    {
+        name: "workload: the heavy member's over-capacity week and its ways to rebalance",
+        file: `${ROUTES}/workload/cell/route.ts`,
+        method: 'GET',
+        path: () => `/workload/cell?userId=me&week=${weekAfterNext()}`,
+        setup: heavyMemberOverWeek,
+        budget: 8,
+        answers: (body) => body.includes('"assignTo":') && !body.includes('"rebalance":null'),
+    },
     { name: "time off: the caller's month", file: `${ROUTES}/time-off/route.ts`, method: 'GET', path: () => `/time-off?${monthWindow()}`, budget: 5 },
     // Time totals and the export (3.4d), as measured on the 10k seed: the totals of a quarter by project, as the
     // heavy member (no money: the tenant binding, the aggregate, the projects' names: 3) and as the owner (also the
@@ -350,6 +387,10 @@ describe(`statements per request on the seeded database (PERF_SHAPE=${process.en
                 handler(request(world, s.method, s.path(world, run), s.body?.(world, run)), { params: Promise.resolve({ tenantSlug: world.slug, ...(s.params?.(world, run) ?? {}) }) }),
             );
             measured.push({ name: s.name, perRequest, budget: s.budget });
+            if (s.answers) {
+                const res = await handler(request(world, s.method, s.path(world, 0), s.body?.(world, 0)), { params: Promise.resolve({ tenantSlug: world.slug, ...(s.params?.(world, 0) ?? {}) }) });
+                expect({ name: s.name, answers: s.answers(await res.text()) }).toEqual({ name: s.name, answers: true });
+            }
             getTenantCtxMock.mockImplementation(async () => ({ ...world.ctx, requestId: `perf-${Math.random()}` }));
             // A whole number: every request ran the same statements.
             expect({ name: s.name, perRequest, whole: Number.isInteger(perRequest) }).toEqual({ name: s.name, perRequest, whole: true });

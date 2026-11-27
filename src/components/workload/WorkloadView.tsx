@@ -8,7 +8,8 @@
  * can work: allocated hours, over-capacity weeks flagged, what could not be
  * placed at each row's end, and the work assigned to nobody as its own row.
  * The filters narrow the people (decision 297); a cell opens the week's items
- * in a sheet, each opening the item's own sheet.
+ * in a sheet, each opening the item's own sheet; an over-capacity week's ways
+ * to rebalance open the assign picker or "Change dates" (3.5c).
  *
  * What it offers is `workloadAffordances` and the options the server read;
  * nothing here asks a role or a key. Written fresh for Islestone.
@@ -27,8 +28,10 @@ import { WorkItemSheet } from '@/components/work-items/WorkItemSheet';
 import { ApiClientError } from '@/lib/data/api-client';
 import { addDays } from '@/lib/time/week';
 import { WORKLOAD_LIMITS } from '@/lib/workload/time-off';
-import type { WorkloadAffordances } from '@/lib/workload/types';
+import { ChangeDatesFromProject, useHiddenDates } from '@/components/work-items/timeline/ChangeDatesFromProject';
+import type { WorkloadAffordances, WorkloadRebalanceItem } from '@/lib/workload/types';
 
+import { RebalanceAssign, type RebalanceAssignRequest } from './RebalanceAssign';
 import { TimeOffCalendar } from './TimeOffCalendar';
 import { WorkloadCellSheet } from './WorkloadCellSheet';
 import { WorkloadGrid } from './WorkloadGrid';
@@ -62,6 +65,14 @@ function MyCapacity({ userId }: { userId: string }) {
             {next && <p className="text-content-muted">{tMine('next', { hours: hoursText(next.weeklyMinutes), date: formatDay(next.effectiveFrom, 'dateYear') })}</p>}
         </div>
     );
+}
+
+/** "Move dates" from the ways to rebalance (3.5c): 3.1c's "Change dates" over the item's project's timeline, with the dates found. */
+function RebalanceMoveDates({ item, onDone, onOpen }: { item: WorkloadRebalanceItem; onDone: () => void; onOpen: (id: string) => void }) {
+    const hiddenDates = useHiddenDates();
+    const to = item.moveTo!;
+    // The server offered the move only to a caller who may change dates; the timeline asks `editableRows` again.
+    return <ChangeDatesFromProject item={item} proposed={() => ({ startDate: to.startDate, dueDate: to.dueDate })} canEdit hiddenDates={hiddenDates} onDone={onDone} onOpen={onOpen} />;
 }
 
 function useWorkloadFilterDefs(options: WorkloadPageOptions) {
@@ -142,6 +153,8 @@ function WorkloadBody({
 
     const [cell, setCell] = useState<{ userId: string; week: string; name: string; unassigned: boolean } | null>(null);
     const [itemId, setItemId] = useState<string | null>(null);
+    const [assigning, setAssigning] = useState<RebalanceAssignRequest | null>(null);
+    const [moving, setMoving] = useState<WorkloadRebalanceItem | null>(null);
     const openCell = (row: WorkloadRow, c: WorkloadCell) => setCell({ userId: row.userId, week: c.week, name: row.name, unassigned: row.unassigned });
 
     return (
@@ -177,7 +190,15 @@ function WorkloadBody({
                 {data && (!filtered || rows.length > 0) && <WorkloadGrid weeks={data.weeks} rows={rows} rangeLabel={rangeLabel} shareScope={shareScope} onOpenCell={openCell} />}
             </section>
 
-            <WorkloadCellSheet cell={cell} onClose={() => setCell(null)} onOpenItem={options.readsItems ? (id) => setItemId(id) : undefined} />
+            <WorkloadCellSheet
+                cell={cell}
+                onClose={() => setCell(null)}
+                onOpenItem={options.readsItems ? (id) => setItemId(id) : undefined}
+                onAssign={options.readsItems ? (item, userId) => setAssigning({ item, userId }) : undefined}
+                onMoveDates={options.readsItems ? (item) => setMoving(item) : undefined}
+            />
+            {assigning && <RebalanceAssign request={assigning} onDone={() => setAssigning(null)} />}
+            {moving && <RebalanceMoveDates item={moving} onDone={() => setMoving(null)} onOpen={(id) => setItemId(id)} />}
             {options.readsItems && <WorkItemSheet workItemId={itemId} onClose={() => setItemId(null)} onOpenItem={(r) => setItemId(r.id)} />}
         </div>
     );

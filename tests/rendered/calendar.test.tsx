@@ -343,7 +343,7 @@ describe('the calendar view', () => {
         fireEvent.click(await screen.findByRole('button', { name: 'Move ISL-1 to another date' }));
         await pickDay('calendar-move-date', /^Tuesday, March 10th, 2026/);
         fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-        expect((await screen.findByTestId('calendar-move-status')).textContent).toBe('The dates of ISL-1 follow its sub-items: change theirs.');
+        expect((await screen.findByTestId('change-dates-status')).textContent).toBe('The dates of ISL-1 follow its sub-items: change theirs.');
         fireEvent.click(screen.getByRole('button', { name: 'Open the item' }));
         expect(onOpen).toHaveBeenCalledWith('w1');
     });
@@ -360,7 +360,7 @@ describe('the calendar view', () => {
         fireEvent.click(await screen.findByRole('button', { name: 'Move ISL-1 to another date' }));
         await pickDay('calendar-move-date', /^Tuesday, March 10th, 2026/);
         fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-        expect((await screen.findByTestId('calendar-move-status')).textContent).toMatch(/7,214 items, more than the 5000 a preview reads/);
+        expect((await screen.findByTestId('change-dates-status')).textContent).toMatch(/7,214 items, more than the 5000 a preview reads/);
         expect(calls.some((c) => c.method !== 'GET')).toBe(false);
     });
 

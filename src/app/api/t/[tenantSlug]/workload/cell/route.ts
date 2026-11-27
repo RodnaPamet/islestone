@@ -4,7 +4,8 @@
  * `?userId=<id>|me|unassigned&week=YYYY-MM-DD` under `workload.view`: the
  * week's capacity, allocation and time-off dates with their hours (never a
  * type), and its items, most minutes first, at most 200, listed only for a
- * caller who may read work items.
+ * caller who may read work items; for an over-capacity week, the ways to
+ * rebalance it (3.5c, decision 299), for a person who could act on them.
  *
  * Written fresh for Islestone.
  */

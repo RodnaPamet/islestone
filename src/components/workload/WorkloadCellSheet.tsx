@@ -7,7 +7,8 @@
  * it in the shared `DataTable` (key, title, hours this week, dates, why),
  * most minutes first, each opening the item's sheet. The items are listed
  * only for a reader of work items, which the server decides (`itemsShown`).
- * 3.5c adds "Ways to rebalance" under the table.
+ * For an over-capacity week, "Ways to rebalance" (3.5c) under the table:
+ * what the server worked out, each line opening an existing confirmation.
  *
  * Written fresh for Islestone.
  */
@@ -17,7 +18,9 @@ import { useMemo } from 'react';
 import { Sheet } from '@/components/ui/sheet';
 import { DataTable, createColumns } from '@/components/ui/table';
 import { formatDay } from '@/components/time/time-format';
-import type { WorkloadCellItem } from '@/lib/workload/types';
+import type { WorkloadCellItem, WorkloadRebalanceItem } from '@/lib/workload/types';
+
+import { RebalanceWays } from './RebalanceWays';
 
 import { useWorkloadCell } from './data/use-workload';
 import { hoursText } from './workload-model';
@@ -28,6 +31,10 @@ export interface WorkloadCellSheetProps {
     onClose: () => void;
     /** Open an item's sheet; absent when the page cannot show one. */
     onOpenItem?: (id: string) => void;
+    /** "Assign to …": open the assign picker with the person chosen (3.5c). */
+    onAssign?: (item: WorkloadRebalanceItem, userId: string) => void;
+    /** "Move dates": open "Change dates" with the dates found (3.5c). */
+    onMoveDates?: (item: WorkloadRebalanceItem) => void;
 }
 
 function datesText(item: WorkloadCellItem, none: string): string {
@@ -37,7 +44,7 @@ function datesText(item: WorkloadCellItem, none: string): string {
     return none;
 }
 
-export function WorkloadCellSheet({ cell, onClose, onOpenItem }: WorkloadCellSheetProps) {
+export function WorkloadCellSheet({ cell, onClose, onOpenItem, onAssign, onMoveDates }: WorkloadCellSheetProps) {
     const tCell = useTranslations('workload.cell');
     const { data, error, isLoading } = useWorkloadCell(cell ? { userId: cell.userId, week: cell.week } : null);
 
@@ -131,6 +138,10 @@ export function WorkloadCellSheet({ cell, onClose, onOpenItem }: WorkloadCellShe
                             ) : (
                                 <p className="text-sm text-content-muted">{tCell('itemsHidden')}</p>
                             )}
+                            {data.rebalance && onAssign && onMoveDates && (
+                                <RebalanceWays rebalance={data.rebalance} personName={data.name} onAssign={onAssign} onMoveDates={onMoveDates} />
+                            )}
+                            {data.rebalanceNote === 'TOO_FAR_AHEAD' && <p className="text-xs text-content-muted">{tCell('rebalanceTooFar')}</p>}
                         </>
                     )}
                 </div>

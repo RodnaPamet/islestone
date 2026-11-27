@@ -153,16 +153,25 @@ export class WorkloadRepository {
      * every role but GUEST (decision 204), narrowed to `userIds` when given,
      * and the DEACTIVATED members among `holders` (those who still hold open
      * work: rows with no capacity, so their work shows as over and can be
-     * handed on, ADR 0003 §1). Oldest membership first, at most `take` (the
-     * caller reads one past its limit of active people and refuses above).
+     * handed on, ADR 0003 §1), and `anyStatus` whatever their status (the
+     * cell's person, 3.5c: one read for the person and the others on their
+     * projects). Oldest membership first, at most `take` (the caller reads
+     * one past its limit of active people and refuses above).
      */
-    static async people(db: PrismaTx, ctx: Ctx, query: { take: number; userIds?: readonly string[]; holders: readonly string[] }): Promise<WorkloadPersonRecord[]> {
+    static async people(
+        db: PrismaTx,
+        ctx: Ctx,
+        query: { take: number; userIds?: readonly string[]; holders: readonly string[]; anyStatus?: readonly string[] },
+    ): Promise<WorkloadPersonRecord[]> {
         const active: Prisma.TenantMembershipWhereInput = { status: 'ACTIVE', ...(query.userIds ? { userId: { in: [...query.userIds] } } : {}) };
+        const or: Prisma.TenantMembershipWhereInput[] = [active];
+        if (query.holders.length > 0) or.push({ status: 'DEACTIVATED', userId: { in: [...query.holders] } });
+        if (query.anyStatus && query.anyStatus.length > 0) or.push({ userId: { in: [...query.anyStatus] } });
         const rows = await db.tenantMembership.findMany({
             where: {
                 tenantId: ctx.tenantId,
                 role: { not: 'GUEST' },
-                OR: query.holders.length > 0 ? [active, { status: 'DEACTIVATED', userId: { in: [...query.holders] } }] : [active],
+                OR: or,
             },
             orderBy: { createdAt: 'asc' },
             take: query.take,

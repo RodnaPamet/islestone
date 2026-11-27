@@ -1507,6 +1507,16 @@
                 "failed": "The dependency could not be added.",
                 "wrongType": "Draw a dependency from the end of one bar to the start of the next, between items you can change.",
                 "notHere": "This dependency cannot be removed here."
+            },
+            "fromProject": {
+                "changeTitle": "Change dates for {key}",
+                "openItem": "Open the item",
+                "close": "Close",
+                "loading": "Reading the schedule of {key}…",
+                "loadFailed": "The schedule could not be read, so the change cannot be previewed. Try again.",
+                "tooLarge": "Its project has {count, plural, one {# item} other {# items}}, more than the {limit} a preview reads: change the dates on the item.",
+                "summaryRow": "The dates of {key} follow its sub-items: change theirs.",
+                "notHere": "The dates of {key} cannot be changed here."
             }
         },
         "goal": {
@@ -1588,15 +1598,7 @@
                 "date": "New due date",
                 "hint": "Its start date, if it has one, moves by the same number of days.",
                 "cancel": "Cancel",
-                "continue": "Continue",
-                "changeTitle": "Change dates for {key}",
-                "openItem": "Open the item",
-                "close": "Close",
-                "loading": "Reading the schedule of {key}…",
-                "loadFailed": "The schedule could not be read, so the change cannot be previewed. Try again.",
-                "tooLarge": "Its project has {count, plural, one {# item} other {# items}}, more than the {limit} a preview reads: change the dates on the item.",
-                "summaryRow": "The dates of {key} follow its sub-items: change theirs.",
-                "notHere": "The dates of {key} cannot be changed here."
+                "continue": "Continue"
             }
         },
         "estimate": {
@@ -3529,7 +3531,8 @@
             },
             "remaining": "{remaining} left of {estimate}",
             "noDate": "—",
-            "close": "Close"
+            "close": "Close",
+            "rebalanceTooFar": "Ways to rebalance are worked out for weeks up to a year ahead."
         },
         "myWork": {
             "label": "Your workload",
@@ -3538,6 +3541,30 @@
             "nextWeek": "next week {allocated} of {capacity}",
             "nextWeekOver": "next week over by {over}",
             "open": "Open Workload"
+        },
+        "rebalance": {
+            "heading": "Ways to rebalance",
+            "intro": "Each opens the usual confirmation; nothing changes until you confirm.",
+            "thisWeek": "{hours} this week",
+            "assignTo": "Assign to {name}",
+            "free": "{hours} free that week",
+            "moveDates": "Move dates to {dates}",
+            "noAssign": "Nobody else on this project has room in every week it covers.",
+            "noMove": "No later dates fit within {weeks} weeks.",
+            "assignUnavailable": "This workspace has too much counted work to say who else has room.",
+            "dueDuringTimeOff": "Due during time off",
+            "dueOnDayOff": "{title} is due on {date}, a day {name} is off.",
+            "someone": "Someone",
+            "assign": {
+                "title": "Assign {key}",
+                "assignee": "Assignee",
+                "hint": "{name} has {hours} free that week and stays within capacity in every week it covers.",
+                "someone": "Someone",
+                "confirm": "Assign",
+                "cancel": "Cancel",
+                "loading": "Reading {key}…",
+                "loadFailed": "The item could not be read. Try again."
+            }
         }
     },
     "analytics": {

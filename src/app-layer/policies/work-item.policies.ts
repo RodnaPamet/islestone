@@ -89,6 +89,15 @@ export function assertCanEditWorkItems(ctx: RequestContext) {
 }
 
 /**
+ * The predicate {@link assertCanAssignWorkItems} asserts, for a page that
+ * offers an assignment rather than refusing one (the Workload page's ways to
+ * rebalance, 3.5c).
+ */
+export function mayAssignWorkItems(ctx: RequestContext): boolean {
+    return ctx.permissions.canWrite && !granularWorkItemsDenied(ctx, 'assign');
+}
+
+/**
  * OWNER, ADMIN and MEMBER can (re)assign work items.
  *
  * Split out from `assertCanEditWorkItems` because `work_items.assign` is its
@@ -96,7 +105,7 @@ export function assertCanEditWorkItems(ctx: RequestContext) {
  * ability to move work onto other people.
  */
 export function assertCanAssignWorkItems(ctx: RequestContext) {
-    if (!ctx.permissions.canWrite || granularWorkItemsDenied(ctx, 'assign')) {
+    if (!mayAssignWorkItems(ctx)) {
         throw forbidden('You do not have permission to assign work items.');
     }
 }

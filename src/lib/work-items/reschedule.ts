@@ -37,9 +37,9 @@ import {
     previousWorkingDay,
     toEpochDay,
     workingDayDiff,
-    workingDaysInclusive,
     type CompiledCalendar,
 } from '@/app-layer/domain/schedule/calendar';
+import { movePlannedDates } from '@/app-layer/domain/schedule/move';
 import type { ItemSchedule, ScheduleConflict } from '@/app-layer/domain/schedule/types';
 
 import { withRowDates, type TimelineResponse, type TimelineRow } from './timeline';
@@ -60,15 +60,8 @@ export function proposeDates(row: ItemDates, calendar: CompiledCalendar, mode: D
     const start = row.startDate ? toEpochDay(row.startDate) : null;
     const due = row.dueDate ? toEpochDay(row.dueDate) : null;
     if (mode === 'move') {
-        if (start !== null && due !== null && start <= due) {
-            const duration = Math.max(1, workingDaysInclusive(calendar, start, due));
-            const newStart = nextWorkingDay(calendar, start + days);
-            return { startDate: fromEpochDay(newStart), dueDate: fromEpochDay(addWorkingDays(calendar, newStart, duration - 1)) };
-        }
-        return {
-            startDate: start === null ? null : fromEpochDay(nextWorkingDay(calendar, start + days)),
-            dueDate: due === null ? null : fromEpochDay(nextWorkingDay(calendar, due + days)),
-        };
+        const moved = movePlannedDates({ startDate: start, dueDate: due }, calendar, days);
+        return { startDate: moved.startDate === null ? null : fromEpochDay(moved.startDate), dueDate: moved.dueDate === null ? null : fromEpochDay(moved.dueDate) };
     }
     // A resize: the bar of a one-date item spans that date, so either end is it.
     const anchor = start ?? due;
