@@ -6,8 +6,8 @@
  * server's `viewer.change`; "Add widget" sending the whole list with the
  * dashboard's version as `If-Match`; a widget's settings; a widget's removal
  * through the undo toast (Undo sends nothing, the window's close sends the
- * list without it); a version conflict showing the server's layout with the
- * "changed by someone else" toast; "Customise" saving a personal copy of the
+ * list without it); a version conflict showing the server's layout and
+ * saying it was changed by someone else; "Customise" saving a personal copy of the
  * default and opening it in edit mode; a widget saved in an unreadable form
  * saying so; a dashboard one may not change offering neither Edit nor
  * Delete; a cycle window naming a team with no current cycle; and no axe

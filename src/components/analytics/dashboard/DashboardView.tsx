@@ -139,9 +139,9 @@ export function DashboardView({ dashboard, affordances, today, startEditing = fa
                     return null;
                 } catch (err) {
                     const server = conflictDashboard(err);
+                    // The caller shows the sentence once (a toast, or the picker's own line).
                     if (server) {
                         adopt(server);
-                        toast.error(t('changedElsewhere'));
                         return t('changedElsewhere');
                     }
                     return refusalOf(err, t('failed'));
@@ -152,7 +152,7 @@ export function DashboardView({ dashboard, affordances, today, startEditing = fa
             chainRef.current = run.catch(() => undefined);
             return run;
         },
-        [adopt, dashboard, place, t, toast, writes],
+        [adopt, dashboard, place, t, writes],
     );
 
     const onLayoutChange = useCallback(
