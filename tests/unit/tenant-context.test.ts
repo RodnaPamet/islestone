@@ -199,7 +199,7 @@ describe('resolveTenantContext', () => {
                 id: 'role-1',
                 tenantId: TENANT.id,
                 baseRole: 'VIEWER',
-                grantsJson: { ...viewer, docs: { view: true, create: true, edit: false } },
+                grantsJson: { ...viewer, pages: { view: true, create: true, edit: false, comment: true, delete: false } },
             },
         });
 
@@ -208,7 +208,7 @@ describe('resolveTenantContext', () => {
         expect(ctx.role).toBe('VIEWER');
         expect(ctx.membership.role).toBe('MEMBER');
         expect(ctx.permissions).toEqual({ canRead: true, canWrite: false, canAdmin: false, canExport: false });
-        expect(ctx.appPermissions.docs).toEqual({ view: true, create: true, edit: false });
+        expect(ctx.appPermissions.pages).toEqual({ view: true, create: true, edit: false, comment: true, delete: false });
         expect(ctx.appPermissions.work_items.create).toBe(false);
         expect(ctx.membership).not.toHaveProperty('customRole');
     });

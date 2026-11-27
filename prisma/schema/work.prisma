@@ -137,6 +137,8 @@ model Project {
   timeEntries          TimeEntry[]
   /// The project's billable rates (3.4d; decision 272).
   billableRates        BillableRate[]
+  /// The project's page tree (4.1a, decision 341); cascades with the purge.
+  pages                Page[]
 
   @@unique([id, tenantId])
   /// Target of WorkItem's composite FK: an item's team is its project's team.
