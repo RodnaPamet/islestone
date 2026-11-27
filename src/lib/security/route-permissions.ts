@@ -1029,10 +1029,10 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
     // ── Analytics (sub-phase 3.6a; owner decisions 329 to 331) ───────
     // Reads over the transition record under the caller's visibility; none under /admin/.
     {
-        path: new RegExp(`^${T}\\/analytics\\/(counts|throughput|durations|flow)$`),
+        path: new RegExp(`^${T}\\/analytics\\/(counts|throughput|durations|flow|waiting)$`),
         methods: ['GET'],
         permission: 'analytics.view',
-        note: 'Counts, throughput, cycle time and lead time with age, cumulative flow and the burn-up over the list\'s filters (decision 329).',
+        note: 'Counts, throughput, cycle time and lead time with age, cumulative flow and the burn-up over the list\'s filters; time waiting, whose rows for other people the usecase gives only to analytics.people (decision 329).',
     },
     // ── Estimates (sub-phase 3.4a; owner decision 257) ───────────────
     {

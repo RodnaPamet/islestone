@@ -58,7 +58,7 @@ export interface AnalyticsFrame {
 
 export interface AnalyticsTooLargeDetails {
     reason: typeof ANALYTICS_TOO_LARGE;
-    /** What was over its bound: completions, items in the flow, or items a filter selects. */
+    /** What was over its bound: completions, items in the flow (or in time waiting), or items a filter selects. */
     what: 'completions' | 'items' | 'filter';
     count: number;
     limit: number;
@@ -159,6 +159,85 @@ export interface FlowResponse extends AnalyticsFrame {
     days: FlowDayRow[];
     burnUp: { measure: AnalyticsMeasure; measures: AnalyticsMeasure[]; points: BurnUpRow[] } | null;
     /** Items followed (ever in scope up to the window's end). */
+    items: number;
+}
+
+// ─── Time waiting (3.6b; decisions 76, 317, 329 and 332) ─────────────────
+
+/** The most waits at the moment of reading listed per party (the rest counted in `waitingNow`). */
+export const WAITING_NOW_LISTED = 10;
+/** The most waiting-now items listed across the parties shown (their keys and titles are read by id). */
+export const WAITING_NOW_LISTED_TOTAL = 2_000;
+
+/** Whom a row is about: a member (active or deactivated) by name, or every removed member as one anonymous row. */
+export type WaitingParty = { kind: 'member'; userId: string; name: string | null; active: boolean } | { kind: 'former' };
+
+/** Ended waits' lengths in working days to one decimal: their count, median and 85th percentile (nearest rank). */
+export interface EndedWaitsSummary {
+    count: number;
+    p50: number | null;
+    p85: number | null;
+}
+
+export interface WaitingNowItem {
+    workItemId: string;
+    key: string;
+    title: string;
+    /** A reviewer's wait (decision 317), not waiting on. */
+    asReviewer: boolean;
+    /** The wait so far, in working days. */
+    age: number;
+}
+
+export interface WaitingPartyRow {
+    party: WaitingParty;
+    /** Time waited in the window, in working days (decision 313). */
+    waited: number;
+    /** Of which as a reviewer (decision 317). */
+    asReviewer: number;
+    /** Items waited on in the window. */
+    items: number;
+    /** Waits that ended in the window (whole waits). */
+    ended: EndedWaitsSummary;
+    /** Items waiting on the party at the moment of reading. */
+    waitingNow: number;
+    /** Those waits, the oldest first, at most `WAITING_NOW_LISTED`. */
+    waitingNowItems: WaitingNowItem[];
+}
+
+export interface WaitingTotals {
+    /** Time waited in the window, summed over everyone waited on. */
+    waited: number;
+    asReviewer: number;
+    /** The time open items spent waiting on someone (each instant of an item once). */
+    itemTimeWaiting: number;
+    /** Open item time in the window. */
+    openItemTime: number;
+    /** `itemTimeWaiting / openItemTime`; null with no open item time. */
+    share: number | null;
+    items: number;
+    ended: EndedWaitsSummary;
+    /** Items waiting on someone at the moment of reading. */
+    waitingNow: number;
+}
+
+export interface WaitingResponse extends AnalyticsFrame {
+    totals: WaitingTotals;
+    /**
+     * The caller's own row (decision 329), zeros when nobody waited on them.
+     * Absent for a caller who is not a person (an API key or an agent;
+     * decision 332).
+     */
+    self?: WaitingPartyRow;
+    /**
+     * Every party's row, the caller's included, the most time waited first:
+     * only for a holder of `analytics.people` who is a person (decisions 329
+     * and 332). Absent otherwise, never null or empty for want of the key.
+     */
+    people?: WaitingPartyRow[];
+    /** The waiting-now lists were cut at `WAITING_NOW_LISTED_TOTAL` across the rows shown. */
+    waitingNowCut: boolean;
+    /** Items followed (ever in scope up to the moment of reading). */
     items: number;
 }
 

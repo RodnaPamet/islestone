@@ -85,7 +85,7 @@ export type AnalyticsQuery = Omit<ListWorkItemsQuery, 'order' | 'dir' | 'cursor'
  */
 const CURRENT_VALUE_FILTERS = ['typeId', 'priority', 'labelId', 'parentId', 'assigneeId', 'createdById', 'waitingOnId', 'goalScope', 'reviewerId', 'watching', 'q'] as const;
 
-function tooLarge(what: AnalyticsTooLargeDetails['what'], count: number, limit: number): AppError {
+export function tooLarge(what: AnalyticsTooLargeDetails['what'], count: number, limit: number): AppError {
     const noun = what === 'completions' ? 'completed items' : what === 'filter' ? 'items matching this filter' : 'items';
     const details: AnalyticsTooLargeDetails = { reason: ANALYTICS_TOO_LARGE, what, count, limit };
     return new AppError(`This chart would read ${count >= limit ? `more than ${limit}` : count} ${noun}; it reads at most ${limit}. Narrow the filter or the window.`, ANALYTICS_TOO_LARGE, 422, true, details);
@@ -116,7 +116,7 @@ function single(list: readonly string[] | null | undefined): string | null {
     return list && list.length === 1 && list[0] !== 'none' ? list[0]! : null;
 }
 
-interface Scope {
+export interface Scope {
     v: ProjectVisibility;
     listFilters: WorkItemFilters;
     keyHit: KeyHit | null;
@@ -142,7 +142,7 @@ interface Scope {
  * The scope of a read: the window, the list's filters split into recorded and
  * current ones, the scope's calendar and today in its zone.
  */
-async function resolveScope(db: PrismaTx, ctx: RequestContext, query: AnalyticsQuery, now: Date, opts: { allCalendars: boolean }): Promise<Scope> {
+export async function resolveScope(db: PrismaTx, ctx: RequestContext, query: AnalyticsQuery, now: Date, opts: { allCalendars: boolean }): Promise<Scope> {
     const { from, to, ...filters } = query;
     const fromDay = parseDay(from, 'from');
     const lastDay = parseDay(to, 'to');
