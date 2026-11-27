@@ -52,6 +52,7 @@ import { TenantSwitcher } from './tenant-switcher';
 import { OrgWorkspaceSwitcher } from './org-workspace-switcher';
 import { UserMenu, USER_MENU_ROW_CLASS } from './user-menu';
 import { NotificationsBell } from './notifications-bell';
+import { TimerChip } from '@/components/time/TimerChip';
 import { EnvironmentBadge } from './environment-badge';
 import type { AppShellVariant } from './AppShell';
 import { NavBar, NavBarBrand, NavBarMobileMenu } from './nav-bar';
@@ -206,6 +207,8 @@ export function TopChrome({ variant, user, onMobileMenuClick, onLogout }: TopChr
                     {renderIdentity()}
                     {/* The bell reads the workspace's notifications; the org
                         chrome (sub-phase 8.3) decides what it shows. */}
+                    {/* The person's running timer (3.4b), in a workspace only. */}
+                    {variant === 'org' ? null : <TimerChip />}
                     {variant === 'org' ? null : <NotificationsBell />}
                     <UserMenu
                         displayName={user.name ?? null}

@@ -53,6 +53,7 @@ import { countedEstimate } from '@/lib/work-items/estimate';
 import { RepeatControl } from './detail/RepeatControl';
 import { PinnedAnswer, useMarkAnswer } from './detail/AnswerControls';
 import { ReviewSteps, useReviewWaitingOn } from './detail/ReviewSteps';
+import { TimePanel } from './detail/TimePanel';
 import { AssigneePicker, CyclePicker, GoalPicker, LabelsPicker, MilestonePicker, PriorityPicker, StatePicker, TypePicker, WaitingOnPicker } from './pickers';
 import { AncestryBreadcrumb } from './detail/AncestryBreadcrumb';
 
@@ -434,6 +435,8 @@ export function WorkItemDetail({ workItemId, variant, onOpenItem, onDeleted }: W
                         )}
                         <PinnedAnswer item={item} row={row} canEdit={perms.edit} />
                         <ReviewSteps workItemId={item.id} projectId={item.projectId} viewerId={viewerId} />
+                        {/* Time (3.4b): beside an hours team's estimate; the panel follows its own read's viewer. */}
+                        <TimePanel itemId={item.id} itemKey={item.key} estimateMinutes={estimateUnit === 'HOURS' ? (item.estimateMinutes ?? null) : null} />
                         <WatchersPanel workItemId={item.id} projectId={item.projectId} />
                     </div>
                 );

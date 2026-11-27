@@ -17,27 +17,48 @@
  * workspace in the URL: during a switch, a stale answer for the previous
  * workspace never applies to the next one. No answer means no Settings row
  * (fail closed).
+ *
+ * Sub-phase 3.4b adds the timer's actions (the map's "Start timer on ISL-12"
+ * and "Stop timer"): the top chrome's timer registers Stop while the person's
+ * timer is on, and an item's Time panel registers Start while it is open and
+ * offers one. Each is keyed by workspace and used only for the workspace in
+ * the URL, as the access is; the panel and the chrome asked the server first.
  */
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { useMayOpenSettings } from '@/components/layout/nav-config';
+import { useMayOpenSettings, useMayOpenTime } from '@/components/layout/nav-config';
 import { useTenantContext } from '@/lib/tenant-context-provider';
 
 export interface PaletteWorkspaceAccess {
     tenantSlug: string;
     mayOpenSettings: boolean;
+    /** The Time entry's rule (the sidebar's): `time.track` or `time.approve`. */
+    mayOpenTime?: boolean;
+}
+
+/** The timer's actions the shell registers (3.4b). */
+export interface PaletteTimerActions {
+    tenantSlug: string;
+    /** Set while the person's timer is on. */
+    stop?: { key: string; run: () => void };
+    /** Set while an item's Time panel offers a timer. */
+    start?: { key: string; run: () => void };
 }
 
 interface PaletteWorkspaceAccessValue {
     access: PaletteWorkspaceAccess | null;
     setAccess: (next: PaletteWorkspaceAccess | null) => void;
+    timer: PaletteTimerActions | null;
+    setTimer: (update: (current: PaletteTimerActions | null) => PaletteTimerActions | null) => void;
 }
 
 const PaletteWorkspaceAccessContext = createContext<PaletteWorkspaceAccessValue | null>(null);
 
 export function PaletteWorkspaceAccessProvider({ children }: { children: ReactNode }) {
     const [access, setAccess] = useState<PaletteWorkspaceAccess | null>(null);
-    const value = useMemo(() => ({ access, setAccess }), [access]);
+    const [timer, setTimerState] = useState<PaletteTimerActions | null>(null);
+    const setTimer = useCallback((update: (current: PaletteTimerActions | null) => PaletteTimerActions | null) => setTimerState(update), []);
+    const value = useMemo(() => ({ access, setAccess, timer, setTimer }), [access, timer, setTimer]);
     return <PaletteWorkspaceAccessContext.Provider value={value}>{children}</PaletteWorkspaceAccessContext.Provider>;
 }
 
@@ -56,10 +77,39 @@ export function RegisterPaletteWorkspaceAccess() {
     const setAccess = useContext(PaletteWorkspaceAccessContext)?.setAccess;
     const { tenantSlug } = useTenantContext();
     const mayOpenSettings = useMayOpenSettings();
+    const mayOpenTime = useMayOpenTime();
     useEffect(() => {
         if (!setAccess) return;
-        setAccess({ tenantSlug, mayOpenSettings });
+        setAccess({ tenantSlug, mayOpenSettings, mayOpenTime });
         return () => setAccess(null);
-    }, [setAccess, tenantSlug, mayOpenSettings]);
+    }, [setAccess, tenantSlug, mayOpenSettings, mayOpenTime]);
     return null;
+}
+
+/** The registered timer actions for `tenantSlug`, or null (another workspace, none registered). */
+export function usePaletteTimerActions(tenantSlug: string | null): PaletteTimerActions | null {
+    const timer = useContext(PaletteWorkspaceAccessContext)?.timer ?? null;
+    return timer && tenantSlug !== null && timer.tenantSlug === tenantSlug ? timer : null;
+}
+
+/**
+ * Registers one timer action (`stop` or `start`) for the open workspace while
+ * `action` is set, and withdraws it on change or unmount. Renders nothing.
+ */
+export function useRegisterPaletteTimerAction(kind: 'stop' | 'start', action: { key: string; run: () => void } | null): void {
+    const setTimer = useContext(PaletteWorkspaceAccessContext)?.setTimer;
+    const { tenantSlug } = useTenantContext();
+    const key = action?.key ?? null;
+    const run = action?.run;
+    useEffect(() => {
+        if (!setTimer || key === null || !run) return;
+        setTimer((current) => ({ ...(current?.tenantSlug === tenantSlug ? current : { tenantSlug }), [kind]: { key, run } }));
+        return () =>
+            setTimer((current) => {
+                if (!current || current.tenantSlug !== tenantSlug || current[kind]?.key !== key) return current;
+                const next = { ...current };
+                delete next[kind];
+                return next;
+            });
+    }, [setTimer, tenantSlug, kind, key, run]);
 }

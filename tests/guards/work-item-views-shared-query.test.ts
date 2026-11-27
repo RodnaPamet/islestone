@@ -28,8 +28,10 @@ import * as path from 'node:path';
 import { gitEnvFor, gitFiles, REPO_ROOT } from '../helpers/git-files';
 import { codeOf } from '../helpers/source-blocks';
 
-const VIEW_ROOTS = ['src/components/work-items/', 'src/app/t/[tenantSlug]/(app)/work-items/', 'src/app/t/[tenantSlug]/(app)/projects/', 'src/app/t/[tenantSlug]/(app)/my-work/'];
+const VIEW_ROOTS = ['src/components/work-items/', 'src/components/time/', 'src/app/t/[tenantSlug]/(app)/time/', 'src/app/t/[tenantSlug]/(app)/work-items/', 'src/app/t/[tenantSlug]/(app)/projects/', 'src/app/t/[tenantSlug]/(app)/my-work/'];
 const DATA_ROOT = 'src/components/work-items/data/';
+/** The Time pages' data folder (3.4b): reads and writes of time entries and the timer. */
+const TIME_DATA_ROOT = 'src/components/time/data/';
 
 function viewSources(root: string) {
     return gitFiles(root)
@@ -45,14 +47,14 @@ export function rawFetches(root: string): string[] {
 
 export function strayReads(root: string): string[] {
     return viewSources(root)
-        .filter(({ rel, code }) => !rel.startsWith(DATA_ROOT) && /\buseSWR(?:Infinite)?\s*\(/.test(code))
+        .filter(({ rel, code }) => !rel.startsWith(DATA_ROOT) && !rel.startsWith(TIME_DATA_ROOT) && /\buseSWR(?:Infinite)?\s*\(/.test(code))
         .map(({ rel }) => rel);
 }
 
 /** `apiSend(...)` calls to a versioned route that carry no `ifMatch`. */
 export function unversionedWrites(root: string): string[] {
     const out: string[] = [];
-    for (const { rel, code } of viewSources(root).filter((f) => f.rel.startsWith(DATA_ROOT))) {
+    for (const { rel, code } of viewSources(root).filter((f) => f.rel.startsWith(DATA_ROOT) || f.rel.startsWith(TIME_DATA_ROOT))) {
         for (const m of code.matchAll(/apiSend\s*(?:<[^>]*>)?\s*\(/g)) {
             let depth = 1;
             let i = (m.index ?? 0) + m[0].length;
@@ -67,7 +69,9 @@ export function unversionedWrites(root: string): string[] {
             const versioned = (/^\s*'PATCH'/.test(args) && /\/work-items\/\$\{[^}]+\}`/.test(args)) || /\/(state|assign|move)`/.test(args);
             // A review write that names the round (2.8b, `use-review.ts`'s `url(…)` paths under the item's review).
             const reviewVersioned = /['`]\/(send|withdraw)['`]/.test(args) || /\/skip`/.test(args) || (/^\s*'PUT'/.test(args) && /['`]\/steps['`]/.test(args));
-            if ((versioned || reviewVersioned) && !/\bifMatch\b/.test(args)) out.push(rel);
+            // A change of one's own time entry (3.4b) names its version.
+            const timeVersioned = /^\s*'PATCH'/.test(args) && /\/time-entries\/\$\{/.test(args);
+            if ((versioned || reviewVersioned || timeVersioned) && !/\bifMatch\b/.test(args)) out.push(rel);
             // A change of dates from the timeline (3.1c, decision 194) carries each item's version in its body.
             if (/\/work-items\/bulk\/dates['`]/.test(args) && !/\bversion\s*:/.test(args)) out.push(rel);
         }

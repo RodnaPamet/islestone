@@ -30,6 +30,7 @@ import {
     renderHook,
     fireEvent,
     act,
+    screen,
     waitFor,
 } from '@testing-library/react';
 
@@ -86,7 +87,7 @@ import {
     usePaletteCommands,
     type PaletteCommand,
 } from '@/components/command-palette/use-palette-commands';
-import { RegisterPaletteWorkspaceAccess } from '@/components/command-palette/workspace-access';
+import { RegisterPaletteWorkspaceAccess, useRegisterPaletteTimerAction } from '@/components/command-palette/workspace-access';
 import { getPermissionsForRole } from '@/lib/permissions';
 import { TenantProvider } from '@/lib/tenant-context-provider';
 import type { Role } from '@prisma/client';
@@ -266,6 +267,80 @@ describe('Command Palette — the Settings row', () => {
             </Shell>,
         );
         expect(settingsRow()).toBeNull();
+    });
+});
+
+// ─── Time (3.4b): the entry and the timer's actions ───────────────────
+
+/** The top chrome's timer and an item's Time panel registering their actions, inside the workspace. */
+function TimerActions({ stop, start }: { stop?: () => void; start?: () => void }) {
+    function Register() {
+        useRegisterPaletteTimerAction('stop', React.useMemo(() => (stop ? { key: 'ISL-7', run: stop } : null), []));
+        useRegisterPaletteTimerAction('start', React.useMemo(() => (start ? { key: 'ISL-9', run: start } : null), []));
+        return null;
+    }
+    return (
+        <TenantProvider
+            value={{
+                userId: 'u1',
+                tenantId: 't1',
+                tenantSlug: 'acme-corp',
+                tenantName: 'Acme',
+                role: 'MEMBER',
+                membershipRole: 'MEMBER',
+                permissions: makeRequestContext('MEMBER').permissions,
+                appPermissions: getPermissionsForRole('MEMBER'),
+            }}
+        >
+            {/* eslint-disable-next-line react-hooks/static-components */}
+            <Register />
+        </TenantProvider>
+    );
+}
+
+describe('Command Palette — time (3.4b)', () => {
+    const timeRow = () => document.querySelector('[data-testid="command-palette-nav-nav:time"]');
+
+    it('lists My time for a member who records time, and not for a Viewer', async () => {
+        const { unmount } = render(
+            <Shell>
+                <MemberAccess role="MEMBER" />
+            </Shell>,
+        );
+        await waitFor(() => expect(timeRow()).not.toBeNull());
+        expect(timeRow()!.getAttribute('data-href')).toBe('/t/acme-corp/time');
+        unmount();
+        render(
+            <Shell>
+                <MemberAccess role="VIEWER" />
+            </Shell>,
+        );
+        await waitFor(() => expect(document.querySelector('[data-testid="command-palette-nav-nav:projects"]')).not.toBeNull());
+        expect(timeRow()).toBeNull();
+    });
+
+    it('offers Stop timer and Start timer on the open item while they are registered, and runs them', async () => {
+        const stop = jest.fn();
+        const start = jest.fn();
+        render(
+            <Shell>
+                <TimerActions stop={stop} start={start} />
+            </Shell>,
+        );
+        expect(await screen.findByText('Stop timer')).toBeInTheDocument();
+        expect(screen.getByText('Start timer on ISL-9')).toBeInTheDocument();
+        fireEvent.click(document.querySelector('[data-testid="command-palette-action-action:stop-timer"]')!);
+        // The palette defers the action by a microtask.
+        await act(async () => {
+            await Promise.resolve();
+        });
+        await waitFor(() => expect(stop).toHaveBeenCalled());
+    });
+
+    it('offers no timer action when none is registered', () => {
+        render(<Shell />);
+        expect(screen.queryByText('Stop timer')).toBeNull();
+        expect(screen.queryByText(/Start timer on/)).toBeNull();
     });
 });
 

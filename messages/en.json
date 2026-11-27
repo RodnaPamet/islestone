@@ -174,7 +174,8 @@
             "forms": "Forms",
             "roadmap": "Roadmap",
             "goals": "Goals",
-            "initiatives": "Initiatives"
+            "initiatives": "Initiatives",
+            "time": "Time"
         }
     },
     "ui": {
@@ -517,7 +518,8 @@
         "intake": "Intake",
         "forms": "Forms",
         "intakeBadge": "{count, plural, one {# new request} other {# new requests}}",
-        "roadmap": "Roadmap"
+        "roadmap": "Roadmap",
+        "time": "Time"
     },
     "commandPalette": {
         "title": "Command palette",
@@ -553,6 +555,9 @@
             "goToCycles": "Go to Cycles",
             "goToForms": "Go to Forms",
             "goToRoadmap": "Go to Roadmap",
+            "goToMyTime": "Go to My time",
+            "stopTimer": "Stop timer",
+            "startTimerOn": "Start timer on {key}",
             "goToGoals": "Go to Goals",
             "goToInitiatives": "Go to Initiatives"
         }
@@ -1598,6 +1603,27 @@
             "hoursInvalid": "Give a duration such as 2h 30m, 1.5h or 45m, of at most 1,000 hours.",
             "points": "{count, plural, one {# pt} other {# pts}}",
             "cardPrefix": "Estimate"
+        },
+        "time": {
+            "heading": "Time",
+            "spent": "Time spent {spent}",
+            "yourTime": "Your time {spent}",
+            "estimate": "Estimate {estimate}",
+            "add": "Add time",
+            "addTitle": "Add time on {key}",
+            "editTitle": "Change time on {key}",
+            "startTimer": "Start timer",
+            "stopTimer": "Stop timer",
+            "timerOn": "Timer on",
+            "none": "No time recorded yet.",
+            "entries": "Time entries on {key}",
+            "someone": "A former member",
+            "billable": "Billable",
+            "edit": "Change",
+            "delete": "Delete",
+            "loadMore": "Load more",
+            "discarded": "The timer ran under 30 seconds and was discarded.",
+            "failed": "That did not work. Try again."
         }
     },
     "settings": {
@@ -3026,6 +3052,67 @@
                 "consent_declined": "Microsoft 365 was not authorised: consent was declined or not allowed.",
                 "consent_failed": "Microsoft 365 could not be authorised. Try again."
             }
+        }
+    },
+    "time": {
+        "writes": {
+            "deleted": "Time entry deleted",
+            "undo": "Undo",
+            "failed": "That did not work. Try again."
+        },
+        "dialog": {
+            "description": "Time you spent on one work item on one day. Type it as 1h 30m, 1.5h or 90m.",
+            "item": "Work item",
+            "date": "Date",
+            "spent": "Time spent",
+            "spentHint": "For example 1h 30m, 1.5h or 90m.",
+            "billable": "Billable",
+            "descriptionLabel": "Description (optional)",
+            "pickItem": "Pick a work item.",
+            "pickDate": "Pick a date.",
+            "invalidDuration": "Enter between 1 minute and 24 hours, such as 1h 30m.",
+            "descriptionTooLong": "A description is at most {max} characters.",
+            "cancel": "Cancel",
+            "save": "Save",
+            "delete": "Delete"
+        },
+        "timer": {
+            "label": "Timer on {key}",
+            "stop": "Stop timer",
+            "capped": "Stopped counting at 12 hours",
+            "deletedItem": "Deleted item",
+            "discarded": "The timer ran under 30 seconds and was discarded.",
+            "failed": "The timer could not be stopped."
+        },
+        "myTime": {
+            "title": "My time",
+            "description": "Your week of time, by work item and day.",
+            "addTime": "Add time",
+            "addOn": "Add time on {item}",
+            "editOn": "Change time on {item}",
+            "previousWeek": "Previous week",
+            "thisWeek": "This week",
+            "nextWeek": "Next week",
+            "gridLabel": "Your time, {range}",
+            "item": "Work item",
+            "total": "Total",
+            "dayTotals": "Day totals",
+            "empty": "No time this week. Add time, or start a timer on a work item.",
+            "noTime": "no time",
+            "timerOn": "Timer on",
+            "cellLabel": "{item}, {day}, {spent}",
+            "cellLabelTimer": "{item}, {day}, {spent}, timer on",
+            "deletedItem": "Deleted item",
+            "hiddenItem": "Item you cannot see",
+            "dayEntries": "Entries",
+            "dayEntriesOf": "{item}, {day}",
+            "billable": "Billable",
+            "edit": "Change",
+            "delete": "Delete",
+            "loading": "Loading your week…",
+            "loadFailed": "Your week could not be loaded.",
+            "approveOnly": "You approve weeks but record no time of your own.",
+            "failed": "That did not work. Try again."
         }
     }
 }

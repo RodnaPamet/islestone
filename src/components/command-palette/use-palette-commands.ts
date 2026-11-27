@@ -16,7 +16,9 @@
  *     who know the sidebar learn the palette for free.
  *
  *   - **Actions**: only universally safe ones — `Ask the assistant` (only
- *     while the assistant's launcher is mounted, sub-phase 6.4),
+ *     while the assistant's launcher is mounted, sub-phase 6.4), the timer's
+ *     "Stop timer" and "Start timer on ISL-12" (3.4b, registered by the top
+ *     chrome's timer and an open item's Time panel, which asked the server),
  *     `Toggle theme` and `Sign out`. Destructive or permission-gated
  *     actions are deliberately excluded; running them from the palette
  *     bypasses the confirmation UX their dedicated surfaces provide.
@@ -46,6 +48,7 @@ import {
     Settings,
     Sparkles,
     Target,
+    Timer,
     UserCheck,
     type LucideIcon,
 } from 'lucide-react';
@@ -56,7 +59,7 @@ import { useAssistantOpen } from '@/components/assistant/assistant-open-context'
 import { NAV_PATHS } from '@/components/layout/nav-config';
 import { useTheme } from '@/components/theme/ThemeProvider';
 
-import { usePaletteWorkspaceAccess } from './workspace-access';
+import { usePaletteTimerActions, usePaletteWorkspaceAccess } from './workspace-access';
 import { signOutToLogin } from '@/lib/auth/client-sign-out';
 
 export type PaletteCommandGroup = 'Navigation' | 'Actions';
@@ -112,7 +115,11 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
         setAssistantOpen(true);
     }, [setAssistantOpen]);
     // Fail closed: no registered answer for this workspace, no Settings row.
-    const mayOpenSettings = usePaletteWorkspaceAccess(tenantSlug)?.mayOpenSettings === true;
+    const access = usePaletteWorkspaceAccess(tenantSlug);
+    const mayOpenSettings = access?.mayOpenSettings === true;
+    // Sub-phase 3.4b: the Time entry and the timer's actions, registered by the shell.
+    const mayOpenTime = access?.mayOpenTime === true;
+    const timer = usePaletteTimerActions(tenantSlug);
     const doSignOut = useCallback(() => {
         void signOutToLogin();
     }, []);
@@ -140,6 +147,19 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                 href: href(NAV_PATHS.inbox),
                 keywords: ['notifications'],
             },
+            ...(mayOpenTime
+                ? [
+                      {
+                          id: 'nav:time',
+                          group: 'Navigation' as const,
+                          label: t('goToMyTime'),
+                          matchLabel: 'My time',
+                          icon: Timer,
+                          href: href(NAV_PATHS.time),
+                          keywords: ['time', 'timesheet', 'hours'],
+                      },
+                  ]
+                : []),
             {
                 id: 'nav:work-items',
                 group: 'Navigation',
@@ -223,6 +243,21 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
             });
         }
         // ─── Actions ──────────────────────────────────────────────────
+        // The timer (3.4b): Stop while the person's timer is on; Start on the item whose Time panel is open.
+        if (timer?.stop) {
+            commands.push({ id: 'action:stop-timer', group: 'Actions', label: t('stopTimer'), matchLabel: 'Stop timer', icon: Timer, perform: timer.stop.run, keywords: ['time'] });
+        }
+        if (timer?.start && timer.start.key !== timer.stop?.key) {
+            commands.push({
+                id: 'action:start-timer',
+                group: 'Actions',
+                label: t('startTimerOn', { key: timer.start.key }),
+                matchLabel: `Start timer on ${timer.start.key}`,
+                icon: Timer,
+                perform: timer.start.run,
+                keywords: ['time'],
+            });
+        }
         if (assistantAvailable) {
             commands.push({
                 id: 'action:open-assistant',
@@ -253,7 +288,7 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
             },
         );
         return commands;
-    }, [t, tenantSlug, mayOpenSettings, toggleTheme, doSignOut, assistantAvailable, openAssistant]);
+    }, [t, tenantSlug, mayOpenSettings, mayOpenTime, timer, toggleTheme, doSignOut, assistantAvailable, openAssistant]);
 }
 
 /**

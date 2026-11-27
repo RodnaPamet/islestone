@@ -74,6 +74,15 @@ export function useTenantContext(): TenantContextValue {
 }
 
 /**
+ * The workspace context, or null outside a `TenantProvider`: for chrome that
+ * renders in both shells (the top chrome's timer, 3.4b) and must render
+ * nothing outside a workspace rather than throw.
+ */
+export function useOptionalTenantContext(): TenantContextValue | null {
+    return useContext(TenantContext);
+}
+
+/**
  * Hook to retrieve granular app permissions for UI rendering logic.
  */
 export function usePermissions(): PermissionSet {

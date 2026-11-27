@@ -129,6 +129,7 @@ describe('the application shell', () => {
         expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
             ['My Work', '/t/acme/my-work'],
             ['Inbox', '/t/acme/inbox'],
+            ['Time', '/t/acme/time'],
             ['Work items', '/t/acme/work-items'],
             ['Projects', '/t/acme/projects'],
             ['Cycles', '/t/acme/cycles'],
@@ -176,6 +177,7 @@ describe('the application shell', () => {
         expect(ids).toEqual([
             '/t/acme/my-work',
             '/t/acme/inbox',
+            '/t/acme/time',
             '/t/acme/work-items',
             '/t/acme/projects',
             '/t/acme/cycles',

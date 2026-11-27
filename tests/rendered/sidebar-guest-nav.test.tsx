@@ -85,3 +85,29 @@ describe('the Roadmap entry (decision 222)', () => {
         expect(entry).toHaveAttribute('aria-current', 'page');
     });
 });
+
+describe('the Time entry (3.4b, decision 265)', () => {
+    afterEach(() => {
+        mockPathname = '/t/acme/my-work';
+    });
+
+    it('shows to a holder of time.track and not to a Viewer, who records no time', () => {
+        expect(navKeys('MEMBER')).toContain('nav-time');
+        expect(navKeys('OWNER')).toContain('nav-time');
+        expect(navKeys('VIEWER')).not.toContain('nav-time');
+    });
+
+    it('is the current page under /time', () => {
+        mockPathname = '/t/acme/time';
+        const { container } = render(
+            <KeyboardShortcutProvider>
+                <TenantProvider value={tenant('MEMBER')}>
+                    <SidebarContent user={{ name: 'Ada' }} onLogout={() => {}} />
+                </TenantProvider>
+            </KeyboardShortcutProvider>,
+        );
+        const entry = container.querySelector('[data-testid="nav-time"]');
+        expect(entry).toHaveAttribute('href', '/t/acme/time');
+        expect(entry).toHaveAttribute('aria-current', 'page');
+    });
+});
