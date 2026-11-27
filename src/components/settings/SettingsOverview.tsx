@@ -21,7 +21,7 @@ import type { WorkConfigAffordances } from '@/lib/work-items/types';
 
 import { useLabels, useProjects, useProjectTemplates, useTeams, useWorkItemTypes } from './settings-data';
 
-const SECTIONS = ['teams', 'workItemTypes', 'labels', 'projects', 'projectTemplates', 'workingCalendars', 'intake', 'notifications', 'recipientLists', 'calendarSync'] as const;
+const SECTIONS = ['teams', 'workItemTypes', 'labels', 'projects', 'projectTemplates', 'workingCalendars', 'intake', 'notifications', 'recipientLists', 'calendarSync', 'timeTracking'] as const;
 type SectionKey = (typeof SECTIONS)[number];
 
 const SECTION_PATH: Record<SectionKey, string> = {
@@ -35,6 +35,7 @@ const SECTION_PATH: Record<SectionKey, string> = {
     notifications: '/settings/notifications',
     recipientLists: '/settings/recipient-lists',
     calendarSync: '/settings/calendar-sync',
+    timeTracking: '/settings/time-tracking',
 };
 
 export function SettingsOverview({ title, affordances }: { title: string; affordances: WorkConfigAffordances }) {
@@ -58,6 +59,7 @@ export function SettingsOverview({ title, affordances }: { title: string; afford
         notifications: undefined,
         recipientLists: undefined,
         calendarSync: undefined,
+        timeTracking: undefined,
     };
     const readOnly = !affordances.manageWorkConfig && !affordances.createProject;
     const hasTeam = (counts.teams ?? 0) > 0;

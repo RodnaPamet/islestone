@@ -76,6 +76,8 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     // Roadmap 3.1a. A team's working calendar falls back to the calendars page.
     '/settings/working-calendars': { href: '/settings', label: 'Settings' },
     '/settings/calendar-sync': { href: '/settings', label: 'Settings' },
+    // Sub-phase 3.4c.
+    '/settings/time-tracking': { href: '/settings', label: 'Settings' },
     '/settings/working-calendars/[teamId]': { href: '/settings/working-calendars', label: 'Working calendars' },
 };
 

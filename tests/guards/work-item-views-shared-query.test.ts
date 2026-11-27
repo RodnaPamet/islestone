@@ -71,7 +71,9 @@ export function unversionedWrites(root: string): string[] {
             const reviewVersioned = /['`]\/(send|withdraw)['`]/.test(args) || /\/skip`/.test(args) || (/^\s*'PUT'/.test(args) && /['`]\/steps['`]/.test(args));
             // A change of one's own time entry (3.4b) names its version.
             const timeVersioned = /^\s*'PATCH'/.test(args) && /\/time-entries\/\$\{/.test(args);
-            if ((versioned || reviewVersioned || timeVersioned) && !/\bifMatch\b/.test(args)) out.push(rel);
+            // A timesheet's acts (3.4c) name the week's version.
+            const timesheetVersioned = /\/timesheets\/\$\{[^}]+\}\/(withdraw|approve|return|reopen)`/.test(args);
+            if ((versioned || reviewVersioned || timeVersioned || timesheetVersioned) && !/\bifMatch\b/.test(args)) out.push(rel);
             // A change of dates from the timeline (3.1c, decision 194) carries each item's version in its body.
             if (/\/work-items\/bulk\/dates['`]/.test(args) && !/\bversion\s*:/.test(args)) out.push(rel);
         }
@@ -122,6 +124,10 @@ describe('the detectors, against a planted repository', () => {
             ].join('\n'),
             'src/components/work-items/data/dates.ts': "apiSend('POST', apiUrl('/work-items/bulk/dates'), { dragged: { id }, pushed: [] });\n",
             'src/components/work-items/data/dates-ok.ts': "apiSend('POST', apiUrl('/work-items/bulk/dates'), { dragged: { id, version: v }, pushed: [] });\n",
+            'src/components/time/data/sheets.ts': [
+                "apiSend('POST', apiUrl(`/timesheets/${id}/approve`), undefined);",
+                "apiSend('POST', apiUrl(`/timesheets/${id}/return`), { explanation }, { ifMatch: v });",
+            ].join('\n'),
             'src/app/t/[tenantSlug]/(app)/work-items/page.tsx': "const x = window.fetch('/y');\n",
         };
         for (const [rel, content] of Object.entries(plant)) {
@@ -140,7 +146,12 @@ describe('the detectors, against a planted repository', () => {
         expect(strayReads(root)).toEqual(['src/components/work-items/reads.tsx']);
     });
 
-    it('finds a versioned write without If-Match (a withdraw of the round among them, a change of dates without versions), not a restore or a response', () => {
-        expect(unversionedWrites(root).sort()).toEqual(['src/components/work-items/data/dates.ts', 'src/components/work-items/data/hook.ts', 'src/components/work-items/data/review.ts']);
+    it('finds a versioned write without If-Match (a withdraw of the round among them, a change of dates without versions, an approval of a timesheet), not a restore or a response', () => {
+        expect(unversionedWrites(root).sort()).toEqual([
+            'src/components/time/data/sheets.ts',
+            'src/components/work-items/data/dates.ts',
+            'src/components/work-items/data/hook.ts',
+            'src/components/work-items/data/review.ts',
+        ]);
     });
 });

@@ -4,7 +4,8 @@
  * (`getTenantCtx`, the gates the API asks), what the pages offer
  * (`timeAffordances`, the predicates the usecases assert), and today's date
  * in `NOTIFICATIONS_TZ` through the clock seam, the week My time opens on.
- * A viewer who neither records time nor approves weeks gets a 404.
+ * A viewer who neither records time nor approves weeks gets a 404; the
+ * Timesheets page (3.4c) only whoever approves weeks.
  *
  * Written fresh for Islestone.
  */
@@ -25,4 +26,14 @@ export async function myTimePageContext(tenantSlug: string, week: string | undef
     const zone = notificationsTz();
     const today = dayKeyInTz(todayClock(zone), zone);
     return { affordances: timeAffordances(ctx), today, weekStart: weekStartOf(week && isCalendarDate(week) ? week : today) };
+}
+
+/**
+ * The Timesheets page (3.4c): whoever approves weeks (`time.approve`, decision
+ * 269); anybody else gets a 404, as for a page they may not open.
+ */
+export async function timesheetsPageContext(tenantSlug: string): Promise<{ affordances: TimeAffordances }> {
+    const ctx = await getTenantCtx({ tenantSlug });
+    if (!mayApproveTime(ctx)) notFound();
+    return { affordances: timeAffordances(ctx) };
 }

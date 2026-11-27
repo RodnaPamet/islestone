@@ -1682,6 +1682,11 @@
                 "title": "Calendar sync",
                 "body": "Whether members may sync their open items and milestones to their own Google or Outlook calendar, and Microsoft 365's authorisation.",
                 "open": "Open calendar sync"
+            },
+            "timeTracking": {
+                "title": "Time tracking",
+                "body": "Whether members submit their weeks of time for approval, and who is told when they do.",
+                "open": "Open time tracking"
             }
         },
         "firstProject": {
@@ -2177,6 +2182,21 @@
             "teamCalendarHeading": "Team calendar",
             "useWorkspace": "Use the workspace calendar",
             "teamCalendarRemoved": "{team} uses the workspace calendar again"
+        },
+        "timeTracking": {
+            "title": "Time tracking",
+            "description": "How members' time is kept: whether their weeks are approved, and who is told.",
+            "readOnly": "Only an Owner or Admin changes these settings.",
+            "loadFailed": "The time tracking settings could not be loaded.",
+            "timesheets": "Timesheets",
+            "approvalRequired": "Timesheets need approval",
+            "approvalRequiredHint": "Members submit each week, Monday to Sunday; anyone who approves weeks, other than the member, approves or returns it. A submitted or approved week cannot be changed. Turning this off leaves weeks already submitted to be decided.",
+            "whoIsTold": "Who is told of a submitted week",
+            "whoIsToldHint": "A workspace recipient list; its members who approve weeks are told. With none, everyone who approves weeks is told.",
+            "everyApprover": "Everyone who approves weeks",
+            "listArchived": "An archived list (nobody is told through it)",
+            "saved": "Time tracking settings saved.",
+            "failed": "The settings could not be saved."
         }
     },
     "views": {
@@ -3116,6 +3136,77 @@
             "loading": "Loading your week…",
             "loadFailed": "Your week could not be loaded.",
             "approveOnly": "You approve weeks but record no time of your own.",
+            "failed": "That did not work. Try again."
+        },
+        "tabs": {
+            "label": "Time",
+            "myTime": "My time",
+            "timesheets": "Timesheets"
+        },
+        "status": {
+            "notSubmitted": "This week is not submitted.",
+            "submitted": "Submitted {date}. Its time is frozen until it is decided or taken back.",
+            "approved": "Approved by {name} on {date}.",
+            "returned": "Returned by {name}:",
+            "withdrawn": "Taken back. Submit it again when it is ready.",
+            "anApprover": "an approver",
+            "submit": "Submit",
+            "withdraw": "Take back",
+            "cancel": "Cancel",
+            "timerOn": "Stop the timer counting in this week before you submit it.",
+            "frozen": "A submitted or approved week cannot be changed.",
+            "emptyTitle": "No time this week",
+            "emptyBody": "This week holds no time. Submit it anyway?",
+            "failed": "That did not work. Try again."
+        },
+        "timesheets": {
+            "title": "Timesheets",
+            "descriptionPending": "Weeks members submitted, waiting for a decision, oldest first.",
+            "descriptionDecided": "Weeks approved or returned in the last 12 weeks, newest first.",
+            "viewLabel": "Which weeks",
+            "pending": "Waiting",
+            "decided": "Decided",
+            "emptyPending": "No weeks are waiting for a decision.",
+            "emptyDecided": "No weeks were decided in the last 12 weeks.",
+            "loadFailed": "The timesheets could not be loaded.",
+            "loadMore": "Load more",
+            "resource": "timesheet",
+            "resourcePlural": "timesheets",
+            "unknownPerson": "A member",
+            "anApprover": "an approver",
+            "col": {
+                "person": "Person",
+                "week": "Week",
+                "total": "Time",
+                "billable": "Billable",
+                "submitted": "Submitted",
+                "status": "Status"
+            },
+            "status": {
+                "SUBMITTED": "Waiting",
+                "APPROVED": "Approved by {name}",
+                "RETURNED": "Returned by {name}",
+                "WITHDRAWN": "Taken back"
+            },
+            "sheetTitle": "Timesheet",
+            "sheetTitleOf": "{person}, {week}",
+            "sums": "{total} in {entries, plural, one {# entry} other {# entries}}, {billable} billable.",
+            "returnedBecause": "Returned: {explanation}",
+            "noEntries": "No time this week.",
+            "row": "work item",
+            "rowPlural": "work items",
+            "described": "What was done",
+            "approve": "Approve",
+            "return": "Return",
+            "reopen": "Reopen",
+            "returnTitle": "Return this week",
+            "returnBody": "Say what to change. The member sees your explanation; nobody else is told it.",
+            "reopenTitle": "Reopen this approved week",
+            "reopenBody": "Say why it is reopened. The member sees your explanation and can change the week and submit it again.",
+            "explanation": "Explanation",
+            "explanationHint": "Up to 2,000 characters.",
+            "explanationRequired": "Say why: an explanation is required.",
+            "cancel": "Cancel",
             "failed": "That did not work. Try again."
         }
     }

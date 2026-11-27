@@ -28,8 +28,9 @@ import type { NavGlyph } from './nav-item';
 export const NAV_PATHS = {
     myWork: '/my-work',
     inbox: '/inbox',
-    // Sub-phase 3.4b: one sidebar entry, Time, over My time (3.4c adds Timesheets, 3.4d Time totals).
+    // Sub-phase 3.4b: one sidebar entry, Time, over My time; 3.4c adds Timesheets (3.4d Time totals).
     time: '/time',
+    timesheets: '/time/timesheets',
     workItems: '/work-items',
     projects: '/projects',
     cycles: '/cycles',
