@@ -4,7 +4,8 @@
  *
  * Each row below carries a cascading foreign key to the membership
  * (`WorkItemWatcher`, `Mention`, `IntakeNotifyMember`,
- * `WorkItemTypeReviewStepReviewer`, `NotificationPreference`), and each write
+ * `WorkItemTypeReviewStepReviewer`, `NotificationPreference`; from 3.5a
+ * `TimeOff` and `MemberCapacity`), and each write
  * checked "an ACTIVE member" with a plain read, or not at all, then inserted.
  * A removal that deleted the membership between the read and the insert made
  * the insert's foreign-key check fail when the removal committed: an untyped
@@ -48,6 +49,8 @@ import { removeTenantMember } from '@/app-layer/usecases/tenant-admin';
 import { createWorkItem, updateWorkItem } from '@/app-layer/usecases/work-item';
 import { addComment, addWatcher, editComment, watchWorkItem } from '@/app-layer/usecases/work-item-collab';
 import { addQuestionType } from '@/app-layer/usecases/work-item-type';
+import { setTimeOffDays } from '@/app-layer/usecases/time-off';
+import { setMemberCapacity } from '@/app-layer/usecases/workload-capacity';
 
 import { prismaTestClient, resetDatabase } from '../../helpers/db';
 import { makeRequestContext } from '../../helpers/make-context';
@@ -314,6 +317,24 @@ describeFn('concurrency: writes naming a member against that member\'s removal',
         expect(removal).toBe('committed');
         refusedWith(write, 403);
         expect(await prisma.notificationPreference.count({ where: { tenantId: ws.tenantId, userId: lee.userId } })).toBe(0);
+    });
+
+    // Sub-phase 3.5a: capacity and time off cascade with the membership; a manager naming the person being
+    // removed is refused as naming any non-member, and nothing is stored.
+    it("recording time off for the person being removed: a 400, nothing stored", async () => {
+        const lee = await leaver();
+        const { removal, write } = await removalAround(lee, [], () => setTimeOffDays(ws.owner, { userId: lee.userId, days: [{ day: '2051-05-05', minutes: null, type: 'SICK' }] }));
+        expect(removal).toBe('committed');
+        refusedWith(write, 400);
+        expect(await prisma.timeOff.count({ where: { tenantId: ws.tenantId, userId: lee.userId } })).toBe(0);
+    });
+
+    it("setting the capacity of the person being removed: a 400, nothing stored", async () => {
+        const lee = await leaver();
+        const { removal, write } = await removalAround(lee, [], () => setMemberCapacity(ws.owner, lee.userId, { effectiveFrom: '2051-05-01', weeklyMinutes: 1200, calendarTeamId: null }));
+        expect(removal).toBe('committed');
+        refusedWith(write, 400);
+        expect(await prisma.memberCapacity.count({ where: { tenantId: ws.tenantId, userId: lee.userId } })).toBe(0);
     });
 
     it('watchers, comments and edits naming a member racing the real removal: never a deadlock, never a non-member watching or mentioned', async () => {
