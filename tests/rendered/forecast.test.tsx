@@ -99,7 +99,7 @@ describe('the Forecast section', () => {
         expect(within(curve).getByRole('cell', { name: '100%' })).toBeInTheDocument();
         expect(within(sheet).getByTestId('forecast-seed')).toHaveTextContent('10,000 trials; seed 123456789.');
         expect(within(sheet).getByTestId('forecast-record')).toHaveTextContent('Of 34 earlier forecasts here, the 85% date held 29 times');
-        expect(within(sheet).getByRole('radio', { name: 'Core team' })).toBeInTheDocument();
+        expect(within(sheet).getByRole('radio', { name: 'Core (team)' })).toBeInTheDocument();
 
         fireEvent.click(within(sheet).getByRole('radio', { name: '50%' }));
         expect(await within(await screen.findByTestId('forecast-detail')).findByText('Assumes these items get 50% of that throughput and no new items are added.')).toBeInTheDocument();
@@ -126,6 +126,20 @@ describe('the Forecast section', () => {
         renderWorkspace(<ForecastSection filters={{ projectId: 'p1' }} />);
         expect(await screen.findByTestId('forecast-p95')).toHaveTextContent('Later than 27 Nov 2028');
         expect(screen.getByTestId('forecast-due')).toHaveTextContent('The due date, 20 Nov 2026, is today or has passed.');
+    });
+});
+
+describe('the compact Forecast section (a project\'s or a milestone\'s page)', () => {
+    it('keeps to one line: the dates and the chance by the due date, the rest in the sheet', async () => {
+        installFetch({ 'GET /analytics/forecast': { body: dated } });
+        const { container } = renderWorkspace(<ForecastSection filters={{ projectId: 'p1', milestoneId: 'm1' }} compact />);
+        const section = await screen.findByRole('region', { name: 'Forecast' });
+        expect(await within(section).findByTestId('forecast-p85')).toHaveTextContent('17 Dec 2026');
+        expect(within(section).getByTestId('forecast-due')).toHaveTextContent('87% chance of finishing by the due date, 18 Dec 2026.');
+        expect(within(section).queryByText(/Based on/)).toBeNull();
+        fireEvent.click(within(section).getByRole('button', { name: 'Details' }));
+        expect(await within(await screen.findByTestId('forecast-detail')).findByText(/Based on Platform, Web/)).toBeInTheDocument();
+        expect(await axe(container)).toHaveNoViolations();
     });
 });
 

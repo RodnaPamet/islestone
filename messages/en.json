@@ -3741,7 +3741,7 @@
             "sharePercent": "{share}%",
             "basedOn": "Based on",
             "projects": "Projects",
-            "team": "{team} team",
+            "team": "{team} (team)",
             "workspace": "Workspace",
             "chooseProjects": "Projects in the history"
         },

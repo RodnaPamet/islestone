@@ -35,7 +35,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ tenant
                 viewKey={`project:${project.id}`}
                 savedViews={savedViews}
                 forecast={forecast}
-                summary={forecast && !project.archived ? <ForecastSection filters={{ projectId: project.id }} /> : undefined}
+                summary={forecast && !project.archived ? <ForecastSection filters={{ projectId: project.id }} compact /> : undefined}
                 manageCustomFields={workConfig.manageCustomFields && !project.archived}
                 headerLinks={
                     <>

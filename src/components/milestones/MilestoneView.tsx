@@ -117,7 +117,7 @@ export function MilestoneView({
                         milestonesHref={tenantHref(`/projects/${encodeURIComponent(project.keyPrefix)}/milestones`)}
                         editable={affordances.manageMilestones && !project.archived}
                     />
-                    {forecast && !project.archived && <ForecastSection filters={{ projectId: project.id, milestoneId: milestone.id }} />}
+                    {forecast && !project.archived && <ForecastSection filters={{ projectId: project.id, milestoneId: milestone.id }} compact />}
                 </div>
             }
         />

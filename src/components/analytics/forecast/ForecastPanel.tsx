@@ -39,9 +39,23 @@ export function chancePercent(finished: number, trials: number): number {
     return Math.min(99, Math.max(1, Math.round((finished / trials) * 100)));
 }
 
-function LikelyDates({ f }: { f: ForecastResponse }) {
+function LikelyDates({ f, compact = false }: { f: ForecastResponse; compact?: boolean }) {
     const tDates = useTranslations('forecast.likely');
     const text = (d: ForecastLikelyDate) => (d.beyond ? tDates('later', { date: formatDay(d.date, 'dateYear') }) : formatDay(d.date, 'dateYear'));
+    if (compact) {
+        return (
+            <dl className="flex flex-wrap items-baseline gap-x-default gap-y-tight text-sm" aria-label={tDates('label')} data-testid="forecast-dates">
+                {(['p50', 'p85', 'p95'] as const).map((p) => (
+                    <div key={p} className="flex items-baseline gap-1">
+                        <dt className="text-xs text-content-muted">{tDates(p)}</dt>
+                        <dd className="font-semibold tabular-nums text-content-emphasis" data-testid={`forecast-${p}`}>
+                            {text(f.likely![p])}
+                        </dd>
+                    </div>
+                ))}
+            </dl>
+        );
+    }
     return (
         <dl className="grid grid-cols-3 gap-default" aria-label={tDates('label')} data-testid="forecast-dates">
             {(['p50', 'p85', 'p95'] as const).map((p) => (
@@ -247,9 +261,11 @@ export interface ForecastPanelProps {
     onChoices: (next: ForecastChoices) => void;
     /** The sheet's view: the controls, the charts and how it was computed. */
     detailed?: boolean;
+    /** One line (a project page, where the board needs the height): the dates or the refusal, the rest in the sheet. */
+    compact?: boolean;
 }
 
-export function ForecastPanel({ filters, choices, onChoices, detailed = false }: ForecastPanelProps) {
+export function ForecastPanel({ filters, choices, onChoices, detailed = false, compact = false }: ForecastPanelProps) {
     const t = useTranslations('forecast');
     const read = useForecast(filters, choices);
     const f = read.data;
@@ -268,6 +284,18 @@ export function ForecastPanel({ filters, choices, onChoices, detailed = false }:
         );
     }
     if (!f) return <p className="text-sm text-content-muted">{t('loading')}</p>;
+    if (compact && !detailed) {
+        return (
+            <div className="flex flex-wrap items-baseline gap-x-default gap-y-tight" data-testid="forecast-panel">
+                {f.refused ? <Refusal f={f} /> : <LikelyDates f={f} compact />}
+                {!f.refused && f.due && !f.due.passed && f.due.finished !== null && (
+                    <span className="text-sm text-content-muted" data-testid="forecast-due">
+                        {t('due', { percent: chancePercent(f.due.finished, f.trials), date: formatDay(f.due.date, 'dateYear') })}
+                    </span>
+                )}
+            </div>
+        );
+    }
     return (
         <div className="space-y-default" data-testid={detailed ? 'forecast-detail' : 'forecast-panel'}>
             {detailed && <Controls f={f} choices={choices} onChoices={onChoices} />}

@@ -42,20 +42,29 @@ function ForecastSheet({ open, onClose, filters, choices, onChoices }: { open: b
     );
 }
 
-/** A scope page's Forecast section: the summary, and "Details" for the sheet. */
-export function ForecastSection({ filters }: { filters: WorkItemListFilters }) {
+/**
+ * A scope page's Forecast section: the summary, and "Details" for the sheet.
+ * `compact` keeps it to one line (the dates or the refusal), for a page whose
+ * board or timeline needs the height.
+ */
+export function ForecastSection({ filters, compact = false }: { filters: WorkItemListFilters; compact?: boolean }) {
     const tSection = useTranslations('forecast');
     const [choices, setChoices] = useState<ForecastChoices>({});
     const [open, setOpen] = useState(false);
     return (
-        <section aria-labelledby="forecast-section-title" className="space-y-tight rounded-lg border border-border-default p-4" data-testid="forecast-section">
-            <div className="flex flex-wrap items-center justify-between gap-tight">
+        <section
+            aria-labelledby="forecast-section-title"
+            className={compact ? 'flex flex-wrap items-center gap-default rounded-lg border border-border-default px-4 py-2' : 'space-y-tight rounded-lg border border-border-default p-4'}
+            data-testid="forecast-section"
+        >
+            <div className={compact ? 'contents' : 'flex flex-wrap items-center justify-between gap-tight'}>
                 <h2 id="forecast-section-title" className="text-sm font-semibold text-content-emphasis">
                     {tSection('title')}
                 </h2>
-                <Button variant="ghost" size="sm" text={tSection('details')} onClick={() => setOpen(true)} />
+                {!compact && <Button variant="ghost" size="sm" text={tSection('details')} onClick={() => setOpen(true)} />}
             </div>
-            <ForecastPanel filters={filters} choices={choices} onChoices={setChoices} />
+            <ForecastPanel filters={filters} choices={choices} onChoices={setChoices} compact={compact} />
+            {compact && <Button variant="ghost" size="sm" text={tSection('details')} onClick={() => setOpen(true)} />}
             <ForecastSheet open={open} onClose={() => setOpen(false)} filters={filters} choices={choices} onChoices={setChoices} />
         </section>
     );
