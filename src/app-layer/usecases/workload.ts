@@ -109,3 +109,9 @@ export async function getWorkload(ctx: RequestContext, query: WorkloadQuery): Pr
         };
     });
 }
+
+/** Today in the workspace calendar's zone (`workload.view`): the date the Workload page opens on. */
+export async function getWorkloadToday(ctx: RequestContext): Promise<string> {
+    assertCanViewWorkload(ctx);
+    return runInTenantReadContext(ctx, async (db) => fromEpochDay((await workspaceToday(db, ctx)).today));
+}

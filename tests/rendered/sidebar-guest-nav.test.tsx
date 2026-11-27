@@ -111,3 +111,12 @@ describe('the Time entry (3.4b, decision 265)', () => {
         expect(entry).toHaveAttribute('aria-current', 'page');
     });
 });
+
+describe('the Workload entry (3.5a, decisions 297 and 298)', () => {
+    it('shows to every holder of workload.view, a Viewer too, and never to a guest', () => {
+        expect(navKeys('MEMBER')).toContain('nav-workload');
+        expect(navKeys('VIEWER')).toContain('nav-workload');
+        expect(navKeys('OWNER')).toContain('nav-workload');
+        expect(navKeys('GUEST')).not.toContain('nav-workload');
+    });
+});

@@ -58,6 +58,8 @@ export const MAIN_PAGES: readonly string[] = [
     // Sub-phase 3.4b: the Time entry's My time; 3.4c its Timesheets.
     '/time',
     '/time/timesheets',
+    // Sub-phase 3.5a: the Workload page (decision 297).
+    '/workload',
     '/work-items',
     '/views',
     '/projects',
@@ -120,6 +122,8 @@ export const SUBPAGES: readonly string[] = [
     '/settings/calendar-sync',
     // Sub-phase 3.4c: the workspace's time tracking settings.
     '/settings/time-tracking',
+    // Sub-phase 3.5a: the default capacity, members' capacity and time off.
+    '/settings/workload',
 ] as const;
 
 /**

@@ -78,6 +78,7 @@ const PARENT_MAP: Record<string, CanonicalParent> = {
     '/settings/calendar-sync': { href: '/settings', label: 'Settings' },
     // Sub-phase 3.4c.
     '/settings/time-tracking': { href: '/settings', label: 'Settings' },
+    '/settings/workload': { href: '/settings', label: 'Settings' },
     '/settings/working-calendars/[teamId]': { href: '/settings/working-calendars', label: 'Working calendars' },
 };
 

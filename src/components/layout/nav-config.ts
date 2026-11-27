@@ -16,7 +16,7 @@
 import type { Role } from '@prisma/client';
 import { useTranslations } from 'next-intl';
 
-import { Bell, CalendarRefresh, Timer2, EnvelopeArrowRight, Folder, GridLayoutRows, InputField, MarketingTarget, UserCheck, Views } from '@inflect/ui/components/ui/icons/nucleo';
+import { Bell, CalendarRefresh, Gauge6, Timer2, EnvelopeArrowRight, Folder, GridLayoutRows, InputField, MarketingTarget, UserCheck, Views } from '@inflect/ui/components/ui/icons/nucleo';
 import { membershipOpensAdminConsole } from '@/lib/auth/edge-admin-roles';
 import type { PermissionSet } from '@/lib/permissions';
 import { usePendingIntakeCount } from '@/components/intake/data/intake-data';
@@ -43,6 +43,8 @@ export const NAV_PATHS = {
     roadmap: '/roadmap',
     goals: '/roadmap/goals',
     initiatives: '/roadmap/initiatives',
+    // Sub-phase 3.5a (decision 297): the Workload page, people by weeks.
+    workload: '/workload',
     settings: '/settings',
 } as const;
 
@@ -89,7 +91,7 @@ export interface NavSectionDef {
  * The sidebar's sections.
  *
  *   (untitled)   My Work, Inbox, Time (3.4b) — the member's own work, notifications and time
- *   Workspace    Work items, Projects, Cycles (2.5a), Roadmap (3.2b), Intake and Forms (2.6a), Views
+ *   Workspace    Work items, Projects, Cycles (2.5a), Roadmap (3.2b), Workload (3.5a), Intake and Forms (2.6a), Views
  *
  * Settings is the footer gear, not a row. Work items (the workspace-wide
  * list and board) and Projects arrived with 2.3; the Inbox unread badge
@@ -140,6 +142,8 @@ export function useNavSections(): NavSectionDef[] {
                     visible: perms.goals?.view === true,
                     activePrefix: tenantHref(ROADMAP_AREA),
                 },
+                // Sub-phase 3.5a (decisions 297 and 298: `workload.view`): people by weeks.
+                { key: 'workload', href: tenantHref(NAV_PATHS.workload), label: t('workload'), icon: Gauge6, visible: perms.workload?.view === true },
                 {
                     key: 'intake',
                     href: tenantHref(NAV_PATHS.intake),

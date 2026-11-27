@@ -11,6 +11,8 @@
  * Written fresh for Islestone.
  */
 import { goalAffordances } from '@/app-layer/policies/goal.policies';
+import { workloadAffordances } from '@/app-layer/policies/workload.policies';
+import type { WorkloadAffordances } from '@/lib/workload/types';
 import type { GoalAffordances } from '@/lib/goals/types';
 import { notFound } from 'next/navigation';
 
@@ -36,6 +38,7 @@ export async function settingsPageAccess(
     recipientLists: RecipientListAffordances;
     goals: GoalAffordances;
     calendarSync: { manage: boolean; open: boolean };
+    workload: WorkloadAffordances;
 }> {
     const session = await getSessionOrThrow();
     let ctx;
@@ -64,5 +67,7 @@ export async function settingsPageAccess(
         goals: goalAffordances(ctx),
         // Settings → Calendar sync (3.3b): the routes' key and the operator's switch.
         calendarSync: { manage: mayManageCalendarSync(ctx), open: isCalendarSyncOpen() },
+        // Settings → Workload (3.5a): the usecases' own predicates.
+        workload: workloadAffordances(ctx),
     };
 }
