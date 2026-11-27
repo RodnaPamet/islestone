@@ -117,6 +117,10 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // before it is stored, never audited, logged or search-indexed (ADR 0008).
     // Minutes, dates and the billable flag stay plaintext (totals sum them).
     TimeEntry: ['description'],
+    // Timesheets (sub-phase 3.4c; owner decision 270): why a week was returned
+    // or reopened, written by an approver for the person; sanitised, never
+    // audited, logged or notified. The admitted re-wrap is the key sweeps'.
+    Timesheet: ['returnExplanation'],
 } as const;
 
 /** Set of model names with at least one encrypted field. Fast-path check. */

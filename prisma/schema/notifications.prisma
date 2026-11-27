@@ -201,6 +201,8 @@ model RecipientList {
   reviewSteps     WorkItemReviewStepList[]
   /// The default review steps of types that name this list (2.8c, decision 159).
   typeReviewSteps WorkItemTypeReviewStepReviewer[]
+  /// The time tracking settings that name this list for submitted weeks (3.4c, decision 269).
+  timeSettings    TenantTimeSettings[]
 
   @@unique([id, tenantId])
   @@index([tenantId, projectId, archivedAt])

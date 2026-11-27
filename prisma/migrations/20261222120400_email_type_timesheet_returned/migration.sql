@@ -1,0 +1,13 @@
+-- Sub-phase 3.4c: timesheets and their approval (docs/porting/maps/3.4.md,
+-- "Notifications (decision 276)"; ADR 0012 §8; owner decision 276). A bare
+-- ADD VALUE, alone in its migration (tests/guards/migration-enum-isolation.test.ts).
+--
+-- Its writer ships in the same release and is reachable once an Owner or
+-- Admin turns on "Timesheets need approval" and an approver returns a week.
+-- While Watchtower rolls the images, a worker still on the previous image
+-- cannot read an outbox row of this type: its drain fails that tick and the
+-- next tick on the new image sends the row (each row is claimed before its send).
+--
+-- Your week was returned or reopened, mailed at once when your preference says
+-- so (the default); never the explanation's text.
+ALTER TYPE "EmailNotificationType" ADD VALUE 'TIMESHEET_RETURNED';

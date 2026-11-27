@@ -11,6 +11,22 @@
 // `20261221120000_time_entries`: the partial unique of one timer per person
 // per workspace, the CHECKs, and the work item's link `ON DELETE SET NULL
 // ("workItemId")`. 3.4c adds the week's freeze, 3.4d the frozen rates.
+//
+// Sub-phase 3.4c: timesheets and their approval (docs/porting/maps/3.4.md,
+// "Timesheets and approval (3.4c)"; ADR 0012 §5; owner decisions 256, 268 to
+// 270 and 276).
+//
+//   `Timesheet` — one person's week, Monday to Sunday by each entry's date,
+//   once they submit it; no row is a week not submitted. Decided by a holder
+//   of `time.approve` who is not that person.
+//   `TenantTimeSettings` — one row per workspace, none being the defaults:
+//   "Timesheets need approval" (off) and the recipient list told of
+//   submitted weeks.
+//
+// What Prisma cannot declare lives in migration `20261222120500_timesheets`:
+// the CHECKs, the recipient list's link `ON DELETE SET NULL
+// ("approvalRecipientListId")`, and the trigger `time_entry_week_frozen`,
+// which refuses any write to the entries of a submitted or approved week.
 
 model TimeEntry {
   id              String          @id @default(cuid())
@@ -60,4 +76,57 @@ model TimeEntry {
   @@index([tenantId, workItemId, workDate])
   /// A project's time (3.4d's totals).
   @@index([tenantId, projectId, workDate])
+}
+
+model Timesheet {
+  id                String          @id @default(cuid())
+  tenantId          String
+  /// The person whose week it is. FK → User, RESTRICT (no user is deleted
+  /// before 8.3). No FK to the membership: a removed member's weeks stay.
+  userId            String
+  /// The Monday that starts the week (CHECK `extract(isodow) = 1`), date-only.
+  weekStart         DateTime        @db.Date
+  status            TimesheetStatus
+  /// When the person last submitted it.
+  submittedAt       DateTime
+  /// When it was approved or returned (or reopened); NULL while SUBMITTED or WITHDRAWN.
+  decidedAt         DateTime?
+  /// Who decided it: an actor stamp, no FK; never the week's own person (CHECK).
+  decidedByUserId   String?
+  /// Why it was returned or reopened. ENCRYPTED (manifest), sanitised, 1 to
+  /// 2,000 characters of plaintext (checked in the usecase); set exactly while
+  /// RETURNED (CHECK). Never audited, logged or notified.
+  returnExplanation String?
+  /// Optimistic concurrency for the acts (`If-Match`).
+  version           Int             @default(1)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation("TimesheetPerson", fields: [userId], references: [id], onDelete: Restrict)
+
+  /// One per person and week; also a person's weeks.
+  @@unique([tenantId, userId, weekStart])
+  @@unique([id, tenantId])
+  /// The weeks waiting for a decision, oldest first, and the decided ones.
+  @@index([tenantId, status, weekStart])
+}
+
+/// A workspace's time tracking settings (3.4c; ADR 0006 "Time tracking
+/// settings"): no row is the defaults. 3.4d adds the currency.
+model TenantTimeSettings {
+  tenantId                String   @id
+  /// "Timesheets need approval" (decision 268): off until an Owner or Admin turns it on.
+  approvalRequired        Boolean  @default(false)
+  /// The workspace recipient list told of submitted weeks (decision 269); none:
+  /// every holder of `time.approve`. `(approvalRecipientListId, tenantId)` →
+  /// `RecipientList(id, tenantId)`, `ON DELETE SET NULL ("approvalRecipientListId")` in SQL.
+  approvalRecipientListId String?
+  version                 Int      @default(1)
+  updatedAt               DateTime @updatedAt
+
+  tenant                Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  approvalRecipientList RecipientList? @relation(fields: [approvalRecipientListId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([tenantId, approvalRecipientListId])
 }
