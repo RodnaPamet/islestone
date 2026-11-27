@@ -163,7 +163,8 @@ export type FixtureName =
     | 'ownSubmittedTimesheet'
     | 'ownTimeOff'
     | 'annTimeOff'
-    | 'futureCapacity';
+    | 'futureCapacity'
+    | 'annOverWeek';
 
 /** The matrix's route roots: one integration file each (map part 3, "Shape"). */
 export type MatrixRoot = 'work-items' | 'reviews' | 'projects' | 'configuration' | 'intake' | 'notifications' | 'admin-security' | 'time' | 'workload' | 'analytics';
@@ -235,6 +236,11 @@ const TRACK = c('ok', 'ok', 'ok', 'denied', g('denied'), 'ok', 'denied');
 const APPROVE = c('ok', 'ok', 'denied', 'denied', g('denied'), 'denied', 'denied');
 /** `workload.view` and `workload.time_off` (decision 298): every built-in role but a guest, and both custom roles. */
 const WORKLOAD = c('ok', 'ok', 'ok', 'ok', g('denied'), 'ok', 'ok');
+/**
+ * The ways to rebalance (3.5c, decision 299): read under `workload.view`, present only for a caller who may
+ * assign work items or change their dates (the narrowed member still assigns); `empty` asserts their absence.
+ */
+const REBALANCE = c('ok', 'ok', 'ok', 'empty', g('denied'), 'ok', 'empty');
 /** `workload.manage` (decision 298): OWNER and ADMIN. */
 const WORKLOAD_MANAGE = c('ok', 'ok', 'denied', 'denied', g('denied'), 'denied', 'denied');
 /**
@@ -811,6 +817,13 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         {
             route: 'workload/cell/route.ts', method: 'GET', key: 'workload.view', subject: "the items that fill a member's week (3.5b); never a type",
             query: (s) => ({ userId: s.annId!, week: nextWeekMonday() }), reveals: (s) => s.annId!, expect: WORKLOAD,
+        },
+        {
+            // Sub-phase 3.5c (decision 299): the ways to rebalance an over-capacity week are worked out for a
+            // person who could make the write (`work_items.assign` or `work_items.edit`); a Viewer and the
+            // widened viewer read the week without them. `reveals` is an "Assign to" option's key.
+            route: 'workload/cell/route.ts', method: 'GET', key: 'workload.view', subject: "an over-capacity week's ways to rebalance (3.5c)", fixture: 'annOverWeek',
+            query: (s) => ({ userId: s.annId!, week: nextWeekMonday() }), reveals: () => '"assignTo":[{', expect: REBALANCE,
         },
         { route: 'workload/members/route.ts', method: 'GET', key: 'workload.manage', subject: "Settings → Workload's members", expect: WORKLOAD_MANAGE },
         { route: 'workload-settings/route.ts', method: 'GET', key: 'workload.view', subject: 'the default weekly capacity', expect: WORKLOAD },

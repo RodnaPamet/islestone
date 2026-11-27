@@ -69,7 +69,7 @@ import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { prismaTestClient, resetDatabase } from '../../helpers/db';
 import { makeRequestContext } from '../../helpers/make-context';
 
-import { MATRIX, MATRIX_ROLES, TENANT_API_ROOT, day, monday, outcomeOf, pastWeek, type FixtureName, type MatrixRole, type MatrixRoot, type MatrixRow, type Subject } from './table';
+import { MATRIX, MATRIX_ROLES, TENANT_API_ROOT, day, monday, nextWeekMonday, outcomeOf, pastWeek, type FixtureName, type MatrixRole, type MatrixRoot, type MatrixRow, type Subject } from './table';
 
 type Handler = (req: NextRequest, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>;
 
@@ -338,6 +338,19 @@ async function buildFixture(name: FixtureName, w: World, prisma: PrismaClient, c
             const timeOffDay = day(Number(nextSeq()));
             await setTimeOffDays(ctxAs(w, 'ANN'), { days: [{ day: timeOffDay, minutes: 240, type: 'SICK' }] });
             return { timeOffDay, timeOffUserId: w.users.ANN };
+        }
+        case 'annOverWeek': {
+            // An hours team's project where Ann holds 30h next week twice over (over her 40h) and Rae 1h.
+            const k = nextSeq();
+            const team = await createTeam(owner, { name: `Hours ${k}` });
+            await updateTeam(owner, team.id, { estimateUnit: 'HOURS' });
+            const p = await createProject(owner, { teamId: team.id, name: `Load ${k}`, keyPrefix: `WL${letterKey(Number(k))}` });
+            const week = nextWeekMonday();
+            const friday = new Date(Date.parse(`${week}T00:00:00Z`) + 4 * 86_400_000).toISOString().slice(0, 10);
+            for (const [who, minutes] of [[w.users.ANN, 1800], [w.users.ANN, 1800], [w.users.RAE, 60]] as const) {
+                await createWorkItem(owner, { projectId: p.id, typeId: s.typeId!, title: `load ${k}`, assigneeId: who, startDate: week, dueDate: friday, estimateMinutes: minutes });
+            }
+            return { annId: w.users.ANN };
         }
         case 'futureCapacity': {
             const row = await setMemberCapacity(owner, w.users.ANN, { effectiveFrom: monday(Number(nextSeq())), weeklyMinutes: 1200, calendarTeamId: null });

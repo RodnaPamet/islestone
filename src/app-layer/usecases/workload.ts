@@ -28,21 +28,26 @@
  *
  * `GET /workload/cell?userId&week` (`workload.view`): the items that fill one
  * person's week, most minutes first, at most 200, each with its minutes and
- * why; listed only when the caller may read work items.
+ * why; listed only when the caller may read work items. For an over-capacity
+ * week, the ways to rebalance it (3.5c, decision 299;
+ * `domain/workload/options.ts`), worked out only for a signed-in person who
+ * reads work items and may assign them or change their dates: nothing is
+ * stored, and an option only opens an existing confirmation.
  *
  * Written fresh for Islestone.
  */
 import { visibleProjects } from '../policies/project-visibility';
 import { mayViewTime } from '../policies/time.policies';
-import { mayReadWorkItems } from '../policies/work-item.policies';
-import { assertCanViewWorkload } from '../policies/workload.policies';
+import { mayAssignWorkItems, mayEditWorkItems, mayReadWorkItems } from '../policies/work-item.policies';
+import { actsOnWorkloadAsPerson, assertCanViewWorkload } from '../policies/workload.policies';
 import { ProjectRepository } from '../repositories/ProjectRepository';
 import { TimeEntryRepository } from '../repositories/TimeEntryRepository';
 import { WorkItemRepository, type WorkItemWorkloadRow } from '../repositories/WorkItemRepository';
 import { WorkloadRepository, type WorkloadPersonRecord } from '../repositories/WorkloadRepository';
 import type { RequestContext } from '../types';
 import { fromEpochDay, isoWeekday, todayIn, toEpochDay, type EpochDay } from '../domain/schedule/calendar';
-import type { CapacityPerson, CapacityRowSpec, TimeOffDaySpec } from '../domain/workload/capacity';
+import { capacityByWeek, type CapacityPerson, type CapacityRowSpec, type TimeOffDaySpec } from '../domain/workload/capacity';
+import { planRebalance, REBALANCE_LIMITS, type RebalanceOptions } from '../domain/workload/options';
 import { buildWorkload, hasShareInWindow, isOverInWindow, type ItemCalendar, type WorkloadItemSpec, type WorkloadRowFigures } from '../domain/workload/workload';
 import { resolveListRecipients } from '../notifications/recipient-list';
 import { DEFAULT_WEEKLY_MINUTES } from './workload-capacity';
@@ -54,7 +59,7 @@ import { runInTenantReadContext, type PrismaTx } from '@/lib/db-context';
 import { AppError, badRequest, notFound } from '@/lib/errors/types';
 import { dateOnlyValue } from '@/lib/time/week';
 import { WORKLOAD_LIMITS } from '@/lib/workload/time-off';
-import type { WorkloadCellData, WorkloadCellItem, WorkloadData, WorkloadFiltersApplied, WorkloadPersonRow } from '@/lib/workload/types';
+import type { WorkloadCellData, WorkloadCellItem, WorkloadData, WorkloadFiltersApplied, WorkloadPersonRow, WorkloadRebalance, WorkloadRebalanceItem } from '@/lib/workload/types';
 
 /** The most capacity rows and time-off dates one read takes (500 people, 26 weeks). */
 const CAPACITY_ROWS_TAKE = 20_000;
@@ -250,89 +255,209 @@ export async function getWorkload(ctx: RequestContext, query: WorkloadQuery): Pr
     });
 }
 
-/** The items that fill one person's week (or the unassigned's), with the week's figures. */
+/**
+ * The items that fill one person's week (or the unassigned's), with the week's figures and, for an
+ * over-capacity week, the ways to rebalance it (3.5c).
+ *
+ * A viewer who could be offered a way (a signed-in person who reads work items and holds
+ * `work_items.assign` or `work_items.edit`) has the counted work read over the options' window: every
+ * member's when they may assign (the people on each item's project and their weeks), else the person's.
+ * The statements stay the cell's: the calendars, the visibility, the items, their time, the people, their
+ * capacity, the projects shown.
+ */
 export async function getWorkloadCell(ctx: RequestContext, query: { userId: string; week: string }): Promise<WorkloadCellData> {
     assertCanViewWorkload(ctx);
     const forUnassigned = query.userId === UNASSIGNED_CELL;
     const userId = query.userId === 'me' ? ctx.userId : query.userId;
     const itemsShown = mayReadWorkItems(ctx);
+    // ADR 0003: only a signed-in person is offered a way to rebalance; an agent never computes one.
+    const person = actsOnWorkloadAsPerson(ctx);
+    const offered = { assign: itemsShown && person && mayAssignWorkItems(ctx), moveDates: itemsShown && person && mayEditWorkItems(ctx) };
+    const mayRebalance = !forUnassigned && (offered.assign || offered.moveDates);
 
     return runInTenantReadContext(ctx, async (db) => {
         const calendars = await resolveWorkingCalendars(db, ctx);
         const win = windowOf(calendars, query.week, 1);
         const v = await visibleProjects(ctx, db);
-        const person = forUnassigned ? null : await WorkloadRepository.personOf(db, ctx, userId);
-        if (!forUnassigned && !person) throw notFound('That person is not a member of this workspace.');
+        const cellAhead = (win.first - win.currentWeek) / 7;
+        const tooFar = mayRebalance && cellAhead > REBALANCE_LIMITS.cellWeeksAhead;
+        // The options' window: from the current week to some weeks after the cell's (`domain/workload/options.ts`).
+        const options = mayRebalance && !tooFar ? { first: win.currentWeek, weekCount: cellAhead + 1 + REBALANCE_LIMITS.weeksAfterCell } : null;
+        const readFrom = options ? options.first : win.first;
+        const readTo = options ? options.first + 7 * options.weekCount - 1 : win.last;
 
-        const capacity = person ? await capacityInputs(db, ctx, [person], win.first, win.last) : null;
-        const rows = await WorkItemRepository.listForWorkload(db, ctx, v, {
-            ...(person ? { assigneeIds: [person.userId] } : { unassignedOnly: true }),
-            dueOnOrAfter: win.first > win.currentWeek ? dateOnlyValue(fromEpochDay(win.first)) : null,
-            take: WORKLOAD_LIMITS.itemLimit + 1,
-        });
+        const personItems = async () =>
+            WorkItemRepository.listForWorkload(db, ctx, v, {
+                ...(forUnassigned ? { unassignedOnly: true } : { assigneeIds: [userId] }),
+                // Only the current week shows overdue work (on today); a later cell reads what is due in it or after, unless options read from the current week.
+                dueOnOrAfter: !options && win.first > win.currentWeek ? dateOnlyValue(fromEpochDay(win.first)) : null,
+                take: WORKLOAD_LIMITS.itemLimit + 1,
+            });
+        let rows: WorkItemWorkloadRow[];
+        let everyoneRead = false;
+        if (options && offered.assign) {
+            // Every member's counted work (the view's one read); above its bound, the person's alone and nobody to assign to.
+            rows = await WorkItemRepository.listForWorkload(db, ctx, v, { take: WORKLOAD_LIMITS.itemLimit + 1 });
+            everyoneRead = rows.length <= WORKLOAD_LIMITS.itemLimit;
+            if (!everyoneRead) rows = await personItems();
+        } else {
+            rows = await personItems();
+        }
         if (rows.length > WORKLOAD_LIMITS.itemLimit) throw tooLarge(`places at most ${WORKLOAD_LIMITS.itemLimit} items`, WORKLOAD_LIMITS.itemLimit);
-        const { items, timeSpentCounted } = await countedItems(db, ctx, rows);
+        const { items: allItems, timeSpentCounted } = await countedItems(db, ctx, rows);
+        const items = forUnassigned ? allItems.filter((i) => i.assigneeId === null) : allItems.filter((i) => i.assigneeId === userId);
 
+        // The person, whatever their status, and the others holding work on the person's projects (ACTIVE ones only).
+        const itemCalendar = itemCalendars(calendars);
+        let peers: string[] = [];
+        if (options && everyoneRead) {
+            const projects = new Set(items.map((i) => i.projectId));
+            peers = [...new Set(allItems.filter((i) => i.assigneeId !== null && i.assigneeId !== userId && projects.has(i.projectId)).map((i) => i.assigneeId!))];
+        }
+        const people = forUnassigned ? [] : await WorkloadRepository.people(db, ctx, { take: peers.length + 2, userIds: peers, holders: [], anyStatus: [userId] });
+        const record = forUnassigned ? null : (people.find((p) => p.userId === userId) ?? null);
+        if (!forUnassigned && !record) throw notFound('That person is not a member of this workspace.');
+        const others = people.filter((p) => p.userId !== userId && p.active);
+
+        const capacity = record ? await capacityInputs(db, ctx, [record, ...others], readFrom, readTo) : null;
+        const calendarFor = (teamId: string | null) => calendars.forTeam(teamId).compiled;
         const figures = buildWorkload({
             firstMonday: win.first,
             weekCount: 1,
-            people: person && capacity ? [{ userId: person.userId, person: capacity.person(person) }] : [],
-            capacity: { defaultWeeklyMinutes: capacity?.defaultWeeklyMinutes ?? DEFAULT_WEEKLY_MINUTES, calendarFor: (teamId) => calendars.forTeam(teamId).compiled },
+            people: record && capacity ? [{ userId: record.userId, person: capacity.person(record) }] : [],
+            capacity: { defaultWeeklyMinutes: capacity?.defaultWeeklyMinutes ?? DEFAULT_WEEKLY_MINUTES, calendarFor },
             items,
-            calendarOfTeam: itemCalendars(calendars),
+            calendarOfTeam: itemCalendar,
         });
-        const row = person ? figures.rows.get(person.userId)! : figures.unassigned;
-        const filling = (figures.placed.get(person ? person.userId : null) ?? [])
+        const row = record ? figures.rows.get(record.userId)! : figures.unassigned;
+        const filling = (figures.placed.get(record ? record.userId : null) ?? [])
             .filter((p) => p.placement.weeks[0]! > 0)
             .sort((a, b) => b.placement.weeks[0]! - a.placement.weeks[0]! || (a.item.id < b.item.id ? -1 : a.item.id > b.item.id ? 1 : 0));
         const listed = itemsShown ? filling.slice(0, WORKLOAD_LIMITS.cellItems) : [];
+        const over = row.over[0]! > 0;
 
-        let cellItems: WorkloadCellItem[] = [];
-        if (listed.length > 0) {
-            const byId = new Map(rows.map((r) => [r.id, r] as const));
-            const projects = await ProjectRepository.visibleByIds(db, ctx, v, [...new Set(listed.map((p) => p.item.projectId))]);
-            const projectById = new Map(projects.map((p) => [p.id, p] as const));
-            cellItems = listed.flatMap((p) => {
-                const r = byId.get(p.item.id);
-                const project = projectById.get(p.item.projectId);
-                if (!r || !project) return [];
-                return [
-                    {
-                        id: r.id,
-                        key: formatKey(project.keyPrefix, r.number),
-                        title: r.title,
-                        projectId: project.id,
-                        projectName: project.name,
-                        startDate: r.startDate ? fromEpochDay(toEpochDay(r.startDate)) : null,
-                        dueDate: r.dueDate ? fromEpochDay(toEpochDay(r.dueDate)) : null,
-                        estimateMinutes: p.item.estimateMinutes,
-                        remainingMinutes: p.remainingMinutes,
-                        minutes: p.placement.weeks[0]!,
-                        reason: p.placement.reason,
-                        workingDays: p.placement.workingDays,
-                        from: fromEpochDay(p.placement.from),
-                        to: fromEpochDay(p.placement.to),
-                    },
-                ];
+        // The ways to rebalance an over-capacity week (decision 299): worked out in code, never stored.
+        let plan: RebalanceOptions | null = null;
+        if (options && over && record && capacity) {
+            const weeks = Array.from({ length: options.weekCount }, (_, i) => options.first + 7 * i);
+            const capacityCtx = { defaultWeeklyMinutes: capacity.defaultWeeklyMinutes, calendarFor };
+            const rebalancePerson = (p: WorkloadPersonRecord) => ({
+                userId: p.userId,
+                name: p.name,
+                capacity: capacityByWeek(capacity.person(p), weeks, capacityCtx).map((w) => w.capacityMinutes),
+                items: allItems.filter((i) => i.assigneeId === p.userId),
+            });
+            plan = planRebalance({
+                firstMonday: options.first,
+                weekCount: options.weekCount,
+                cellWeek: win.first,
+                person: rebalancePerson(record),
+                wholeDaysOff: capacity.person(record).timeOff.filter((t) => t.minutes === null).map((t) => t.day),
+                others: everyoneRead ? others.map(rebalancePerson) : null,
+                calendarOfTeam: itemCalendar,
+                offer: offered,
             });
         }
+
+        const byId = new Map(rows.map((r) => [r.id, r] as const));
+        const shownIds = new Set([...listed.map((p) => p.item.id), ...(plan ? [...plan.items.map((i) => i.itemId), ...plan.dueDuringTimeOff.map((d) => d.itemId)] : [])]);
+        const projectIds = [...new Set([...shownIds].map((id) => byId.get(id)?.projectId).filter((id): id is string => Boolean(id)))];
+        const projects = projectIds.length > 0 ? await ProjectRepository.visibleByIds(db, ctx, v, projectIds) : [];
+        const projectById = new Map(projects.map((p) => [p.id, p] as const));
+        const keyOf = (id: string) => {
+            const r = byId.get(id);
+            const project = r ? projectById.get(r.projectId) : undefined;
+            return r && project ? { r, project, key: formatKey(project.keyPrefix, r.number) } : null;
+        };
+
+        const cellItems: WorkloadCellItem[] = listed.flatMap((p) => {
+            const k = keyOf(p.item.id);
+            if (!k) return [];
+            return [
+                {
+                    id: k.r.id,
+                    key: k.key,
+                    title: k.r.title,
+                    projectId: k.project.id,
+                    projectName: k.project.name,
+                    startDate: dayString(k.r.startDate),
+                    dueDate: dayString(k.r.dueDate),
+                    estimateMinutes: p.item.estimateMinutes,
+                    remainingMinutes: p.remainingMinutes,
+                    minutes: p.placement.weeks[0]!,
+                    reason: p.placement.reason,
+                    workingDays: p.placement.workingDays,
+                    from: fromEpochDay(p.placement.from),
+                    to: fromEpochDay(p.placement.to),
+                },
+            ];
+        });
+        const rebalance: WorkloadRebalance | null = plan
+            ? {
+                  items: plan.items.flatMap((o): WorkloadRebalanceItem[] => {
+                      const k = keyOf(o.itemId);
+                      if (!k) return [];
+                      return [
+                          {
+                              id: o.itemId,
+                              key: k.key,
+                              title: k.r.title,
+                              projectId: k.project.id,
+                              minutes: o.minutes,
+                              startDate: dayString(k.r.startDate),
+                              dueDate: dayString(k.r.dueDate),
+                              assignTo: o.assignTo,
+                              moveTo: o.moveTo
+                                  ? {
+                                        startDate: o.moveTo.startDate === null ? null : fromEpochDay(o.moveTo.startDate),
+                                        dueDate: o.moveTo.dueDate === null ? null : fromEpochDay(o.moveTo.dueDate),
+                                        from: fromEpochDay(o.moveTo.from),
+                                        to: fromEpochDay(o.moveTo.to),
+                                    }
+                                  : null,
+                          },
+                      ];
+                  }),
+                  dueDuringTimeOff: plan.dueDuringTimeOff.flatMap((d) => {
+                      const k = keyOf(d.itemId);
+                      return k ? [{ id: d.itemId, key: k.key, title: k.r.title, dueDate: fromEpochDay(d.dueDate) }] : [];
+                  }),
+                  offered,
+                  assignUnavailable: offered.assign && !everyoneRead,
+                  searchWeeks: REBALANCE_LIMITS.searchWeeks,
+              }
+            : null;
+
         const week = row.capacity[0];
         return {
-            userId: person ? person.userId : UNASSIGNED_CELL,
-            name: person?.name ?? null,
-            active: person?.active ?? true,
+            userId: record ? record.userId : UNASSIGNED_CELL,
+            name: record?.name ?? null,
+            active: record?.active ?? true,
             week: fromEpochDay(win.first),
             capacityMinutes: week ? week.capacityMinutes : null,
             weeklyMinutes: week ? week.weeklyMinutes : null,
             allocatedMinutes: row.allocated[0]!,
             overMinutes: row.over[0]!,
-            timeOff: person && capacity ? capacity.person(person).timeOff.map((t) => ({ day: fromEpochDay(t.day), minutes: t.minutes })) : [],
+            timeOff:
+                record && capacity
+                    ? capacity
+                          .person(record)
+                          .timeOff.filter((t) => t.day >= win.first && t.day <= win.last)
+                          .map((t) => ({ day: fromEpochDay(t.day), minutes: t.minutes }))
+                    : [],
             items: cellItems,
             moreItems: itemsShown ? filling.length - listed.length : 0,
             itemsShown,
             timeSpentCounted,
+            rebalance,
+            rebalanceNote: tooFar && over ? 'TOO_FAR_AHEAD' : null,
         };
     });
+}
+
+/** A stored date-only value as `YYYY-MM-DD`, or NULL. */
+function dayString(d: Date | null): string | null {
+    return d ? fromEpochDay(toEpochDay(d)) : null;
 }
 
 /** Today in the workspace calendar's zone (`workload.view`): the date the Workload page opens on. */

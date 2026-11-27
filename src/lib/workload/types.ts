@@ -210,4 +210,58 @@ export interface WorkloadCellData {
     /** Whether the caller may read the items (`work_items.view`); the figures are shown either way. */
     itemsShown: boolean;
     timeSpentCounted: boolean;
+    /**
+     * "Ways to rebalance" (3.5c, decision 299): present only for an over-capacity week of a person, for a
+     * signed-in viewer who reads work items and may assign them or change their dates; NULL otherwise.
+     */
+    rebalance: WorkloadRebalance | null;
+    /** Why no ways to rebalance were worked out for an over-capacity week the viewer could act on; NULL otherwise. */
+    rebalanceNote: 'TOO_FAR_AHEAD' | null;
+}
+
+/** Someone who could take an item and stay within capacity in every week it covers ("Assign to Ana"). */
+export interface WorkloadAssignOption {
+    userId: string;
+    name: string | null;
+    /** Their capacity less their allocation in the cell's week, before taking the item. */
+    freeMinutes: number;
+}
+
+/** The earliest later dates at which the person stays within capacity ("Move ISL-12 to 14–18 Dec"). */
+export interface WorkloadMoveOption {
+    startDate: string | null;
+    dueDate: string | null;
+    /** The days its minutes would land on. */
+    from: string;
+    to: string;
+}
+
+/** One of the week's five largest items with the ways it could leave the week. */
+export interface WorkloadRebalanceItem {
+    id: string;
+    key: string;
+    title: string;
+    projectId: string;
+    /** Its minutes in the cell's week. */
+    minutes: number;
+    /** Its dates now. */
+    startDate: string | null;
+    dueDate: string | null;
+    /** At most three; empty when nobody fits or assigning is not offered. */
+    assignTo: WorkloadAssignOption[];
+    /** NULL when no later dates fit, or changing dates is not offered. */
+    moveTo: WorkloadMoveOption | null;
+}
+
+/** The ways to rebalance one over-capacity week (`GET /workload/cell`, 3.5c). Nothing is applied by reading them. */
+export interface WorkloadRebalance {
+    items: WorkloadRebalanceItem[];
+    /** Filling items due on a date the person has the whole day off (the date only; never a type). */
+    dueDuringTimeOff: Array<{ id: string; key: string; title: string; dueDate: string }>;
+    /** The writes the viewer could make: `work_items.assign`, `work_items.edit` (asked on the server). */
+    offered: { assign: boolean; moveDates: boolean };
+    /** Every member's work could not be read (above the read's bound): nobody is named to assign to. */
+    assignUnavailable: boolean;
+    /** How far "Move dates" searched, in weeks. */
+    searchWeeks: number;
 }
