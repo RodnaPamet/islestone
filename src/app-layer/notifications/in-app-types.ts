@@ -3,7 +3,7 @@
  * notification-settings API.
  *
  * A type is listed ONLY when its emitter asks `isInAppTypeEnabled` before it
- * writes (`assignment.ts`, `watcher.ts`, `work-item-due.ts`, `intake.ts`, `mention.ts`, `review.ts`, `calendar-change.ts`, `timesheet.ts`), so the API never offers a mute that
+ * writes (`assignment.ts`, `watcher.ts`, `work-item-due.ts`, `intake.ts`, `mention.ts`, `review.ts`, `calendar-change.ts`, `timesheet.ts`, `time-off.ts`), so the API never offers a mute that
  * changes nothing. A new in-app emitter must do both — check the mute list and
  * add its type here — or its type is not listed;
  * `tests/unit/notifications/in-app-types.test.ts` holds the two together.
@@ -29,6 +29,7 @@ import { MENTION_NOTIFICATION_TITLE, MENTION_NOTIFICATION_TYPE } from './mention
 import { REVIEW_NOTIFICATION_COPY, type ReviewNotificationType } from './review';
 import { CALENDAR_CHANGE_NOTIFICATION_TITLE, CALENDAR_CHANGE_NOTIFICATION_TYPE } from './calendar-change';
 import { TIMESHEET_NOTIFICATION_COPY, type TimesheetNotificationType } from './timesheet';
+import { TIME_OFF_NOTIFICATION_TITLE, TIME_OFF_NOTIFICATION_TYPE } from './time-off';
 
 export interface InAppNotificationTypeEntry {
     type: NotificationType;
@@ -58,5 +59,6 @@ export function listInAppNotificationTypes(): InAppNotificationTypeEntry[] {
             type,
             title: TIMESHEET_NOTIFICATION_COPY[type].title,
         })),
+        { type: TIME_OFF_NOTIFICATION_TYPE, title: TIME_OFF_NOTIFICATION_TITLE },
     ];
 }

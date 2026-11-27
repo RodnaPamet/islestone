@@ -262,6 +262,8 @@ describeFn('rotateTenantDek and the sweep (integration — real DB)', () => {
             'TimeEntry.description',
             // Sub-phase 3.4c: why a week was returned (the freeze trigger watches TimeEntry, not this row).
             'Timesheet.returnExplanation',
+            // Sub-phase 3.5a: time off's padded type (decision 287).
+            'TimeOff.type',
             'WorkItem.description',
             // Sub-phase 2.8a: a reviewer's response text (its trigger admits the re-wrap).
             'WorkItemReviewer.responseText',

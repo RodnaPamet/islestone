@@ -55,7 +55,8 @@ describe('preference defaults and types', () => {
     });
 
     it('a calendar change not applied is in the bell only (3.3c, decision 230): offered OFF alone, never mailed', () => {
-        expect(IN_APP_ONLY_TYPES).toEqual(['CALENDAR_CHANGE_NOT_APPLIED']);
+        expect(IN_APP_ONLY_TYPES).toEqual(['CALENDAR_CHANGE_NOT_APPLIED', 'TIME_OFF_CHANGED_BY_OTHER']);
+        expect(PREFERENCE_DEFAULTS.TIME_OFF_CHANGED_BY_OTHER).toEqual({ inApp: true, email: 'OFF' });
         expect(PREFERENCE_DEFAULTS.CALENDAR_CHANGE_NOT_APPLIED).toEqual({ inApp: true, email: 'OFF' });
         expect(emailChoicesFor('CALENDAR_CHANGE_NOT_APPLIED')).toEqual(['OFF']);
         expect(emailChoicesFor('WORK_ITEM_ASSIGNED')).toEqual(['OFF', 'IMMEDIATE', 'DAILY']);

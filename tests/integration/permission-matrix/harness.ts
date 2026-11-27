@@ -50,6 +50,8 @@ import { createTeam, updateTeam } from '@/app-layer/usecases/team';
 import { createInviteToken } from '@/app-layer/usecases/tenant-invites';
 import { addTimeEntry, startTimer } from '@/app-layer/usecases/time-entry';
 import { approveTimesheet, submitTimesheet } from '@/app-layer/usecases/timesheet';
+import { setTimeOffDays } from '@/app-layer/usecases/time-off';
+import { setMemberCapacity } from '@/app-layer/usecases/workload-capacity';
 import { assignWorkItem, createWorkItem, deleteWorkItem } from '@/app-layer/usecases/work-item';
 import { markWorkItemAnswer } from '@/app-layer/usecases/work-item-answer';
 import { addComment, addWatcher, addWorkItemLabels, addWorkItemLink } from '@/app-layer/usecases/work-item-collab';
@@ -67,7 +69,7 @@ import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { prismaTestClient, resetDatabase } from '../../helpers/db';
 import { makeRequestContext } from '../../helpers/make-context';
 
-import { MATRIX, MATRIX_ROLES, TENANT_API_ROOT, day, outcomeOf, pastWeek, type FixtureName, type MatrixRole, type MatrixRoot, type MatrixRow, type Subject } from './table';
+import { MATRIX, MATRIX_ROLES, TENANT_API_ROOT, day, monday, outcomeOf, pastWeek, type FixtureName, type MatrixRole, type MatrixRoot, type MatrixRow, type Subject } from './table';
 
 type Handler = (req: NextRequest, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>;
 
@@ -314,6 +316,21 @@ async function buildFixture(name: FixtureName, w: World, prisma: PrismaClient, c
         case 'ownTimer': {
             await startTimer(ctxAs(w, caller, 'MEMBER'), { workItemId: s.sharedItemId!, timeZone: 'Europe/Sofia' });
             return {};
+        }
+        case 'ownTimeOff': {
+            // Written while the caller could record time off (a MEMBER context with their id), on a date of its own.
+            const timeOffDay = day(Number(nextSeq()));
+            await setTimeOffDays(ctxAs(w, caller, 'MEMBER'), { days: [{ day: timeOffDay, minutes: null, type: 'SICK' }] });
+            return { timeOffDay, timeOffUserId: me };
+        }
+        case 'annTimeOff': {
+            const timeOffDay = day(Number(nextSeq()));
+            await setTimeOffDays(ctxAs(w, 'ANN'), { days: [{ day: timeOffDay, minutes: 240, type: 'SICK' }] });
+            return { timeOffDay, timeOffUserId: w.users.ANN };
+        }
+        case 'futureCapacity': {
+            const row = await setMemberCapacity(owner, w.users.ANN, { effectiveFrom: monday(Number(nextSeq())), weeklyMinutes: 1200, calendarTeamId: null });
+            return { userId: w.users.ANN, capacityId: row.id };
         }
         case 'ownComment': {
             // Written while the caller could comment (a MEMBER context with their id).

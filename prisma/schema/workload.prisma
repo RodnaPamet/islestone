@@ -1,0 +1,104 @@
+// Sub-phase 3.5a: capacity and time off (docs/porting/maps/3.5.md, "Capacity
+// (3.5a)" and "Time off (3.5a)"; ADR 0013; owner decisions 282 to 303;
+// docs/workload.md).
+//
+//   `TenantWorkloadSettings` — the workspace's default weekly capacity; no row
+//   means the defaults.
+//   `MemberCapacity` — a member's hours a week from a Monday until their next
+//   row (decision 284), on the workspace's working calendar or a named team's
+//   (decision 285). Past rows are kept as history.
+//   `TimeOff` — one person's hours off, or the whole day, on one date
+//   (decision 286), with a type held apart (decisions 287 and 303): VACATION,
+//   SICK or OTHER, ENCRYPTED, padded to one length, seen only by the person
+//   and holders of `workload.manage`. Kept for the workspace's life (decision
+//   289); goes with the membership.
+//
+// What Prisma cannot declare lives in migration `20261222120100_workload`: the
+// CHECKs (minutes, a Monday, the ciphertext shape of the type) and the team
+// link `ON DELETE SET NULL ("calendarTeamId")`.
+
+/// One row per workspace; no row means the defaults (roadmap 3.5a).
+model TenantWorkloadSettings {
+  tenantId             String   @id
+  /// The capacity of a member with no MemberCapacity row in force: 0 to 6,000
+  /// minutes (100 hours) a week (CHECK). 2,400 (40 hours) by default.
+  defaultWeeklyMinutes Int      @default(2400)
+  /// Optimistic concurrency for the settings (`If-Match`).
+  version              Int      @default(1)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+/// A member's capacity from a Monday until the next row (decision 284).
+model MemberCapacity {
+  id              String   @id @default(cuid())
+  tenantId        String
+  /// FK `(tenantId, userId)` → `TenantMembership`, ON DELETE CASCADE: a
+  /// removed member's capacity goes with the membership (decision 289's rule).
+  userId          String
+  /// A Monday (CHECK on the ISO weekday), date-only.
+  effectiveFrom   DateTime @db.Date
+  /// 0 to 6,000 (CHECK). 0 means "works no hours".
+  weeklyMinutes   Int
+  /// The team whose working calendar the person counts on (decision 285);
+  /// NULL: the workspace's. `(calendarTeamId, tenantId)` → `Team`,
+  /// `ON DELETE SET NULL ("calendarTeamId")` in SQL.
+  calendarTeamId  String?
+  /// An actor stamp, no FK.
+  createdByUserId String
+  /// Optimistic concurrency for a change of the same Monday (`If-Match`).
+  version         Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  membership   TenantMembership @relation("MemberCapacityMembership", fields: [tenantId, userId], references: [tenantId, userId], onDelete: Cascade)
+  calendarTeam Team?            @relation(fields: [calendarTeamId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
+
+  /// A person's rows by date: the row in force for a week, and the history.
+  @@unique([tenantId, userId, effectiveFrom])
+  @@unique([id, tenantId])
+  /// The team link (Layer B of the index coverage).
+  @@index([tenantId, calendarTeamId])
+}
+
+/// One person's time off on one date (decision 286): hours off, or the whole
+/// day, with a type (decisions 287 and 303).
+model TimeOff {
+  id              String   @id @default(cuid())
+  tenantId        String
+  /// FK `(tenantId, userId)` → `TenantMembership`, ON DELETE CASCADE: a
+  /// removed member's time off goes with the membership.
+  userId          String
+  /// Date-only.
+  day             DateTime @db.Date
+  /// NULL: the whole day, whatever the day's capacity share is. Otherwise the
+  /// hours off, 1 to 1,439 minutes (CHECK).
+  minutes         Int?
+  /// VACATION, SICK or OTHER (decisions 287 and 303). ENCRYPTED under the
+  /// workspace's data key (manifest); the code is padded to 8 characters before
+  /// encryption, so every ciphertext has the same length; CHECKed to a
+  /// ciphertext shape, so no path stores it in plaintext. Read only for the
+  /// person and holders of `workload.manage`; never audited, logged, indexed,
+  /// searched or notified.
+  type            String
+  /// Who wrote it: the person, or a holder of `workload.manage`. An actor
+  /// stamp, no FK.
+  createdByUserId String
+  /// Who last changed it (the same stamp on an insert).
+  updatedByUserId String
+  /// Optimistic concurrency for a date's change.
+  version         Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  membership TenantMembership @relation("TimeOffMembership", fields: [tenantId, userId], references: [tenantId, userId], onDelete: Cascade)
+
+  /// One row per person and date; serves every read (a window of dates for
+  /// the people in scope).
+  @@unique([tenantId, userId, day])
+  @@unique([id, tenantId])
+}

@@ -121,6 +121,13 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // or reopened, written by an approver for the person; sanitised, never
     // audited, logged or notified. The admitted re-wrap is the key sweeps'.
     Timesheet: ['returnExplanation'],
+    // Time off (sub-phase 3.5a; ADR 0013 §3; docs/porting/maps/3.5.md, "The
+    // type, held apart"; owner decisions 287 and 303): VACATION, SICK or OTHER,
+    // padded to one width by TimeOffRepository before it reaches this layer so
+    // every ciphertext has the same length. "Sick" is health data: never
+    // audited, logged, indexed, searched or notified, and CHECKed to a
+    // ciphertext shape. Dates and minutes stay plaintext (capacity sums them).
+    TimeOff: ['type'],
 } as const;
 
 /** Set of model names with at least one encrypted field. Fast-path check. */

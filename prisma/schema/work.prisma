@@ -41,6 +41,8 @@ model Team {
   cycles           Cycle[]
   /// The team's own working calendar, when it has one (roadmap 3.1a, ADR 0010 §5).
   workingCalendars WorkingCalendar[]
+  /// Members whose capacity counts on this team's calendar (3.5a, decision 285).
+  memberCapacities MemberCapacity[]
 
   @@unique([id, tenantId])
   @@unique([tenantId, name])

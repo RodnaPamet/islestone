@@ -48,6 +48,14 @@ export type PermissionSet = {
      * amounts (3.4d). Never `billing`, which is 8.1's subscription.
      */
     time: { view: boolean; track: boolean; approve: boolean; rates: boolean };
+    /**
+     * Workload (sub-phase 3.5, owner decision 298; ADR 0013): `view` the
+     * Workload page (everyone's capacity, time-off dates and hours), `time_off`
+     * record one's own time off, `manage` the workspace default, anyone's
+     * capacity, anyone's time off and every time-off type (decision 287: the
+     * type is seen only by the person and holders of `manage`).
+     */
+    workload: { view: boolean; time_off: boolean; manage: boolean };
     docs: { view: boolean; create: boolean; edit: boolean };
     canvas: { view: boolean; edit: boolean };
     automations: { view: boolean; manage: boolean };
@@ -87,6 +95,7 @@ export const PERMISSION_SCHEMA = {
     intake: ['view', 'triage', 'manage'],
     goals: ['view', 'manage'],
     time: ['view', 'track', 'approve', 'rates'],
+    workload: ['view', 'time_off', 'manage'],
     docs: ['view', 'create', 'edit'],
     canvas: ['view', 'edit'],
     automations: ['view', 'manage'],
@@ -131,10 +140,13 @@ const ALL_DOMAINS: Grants = Object.fromEntries(
  *   MEMBER  does the work: projects view/create/edit, work items
  *           view/create/edit/assign/comment, views view/create/edit/share,
  *           cycles, intake view/triage (decision 92), goals view/manage
- *           (decision 213), time view/track (decision 265), docs view/create/edit,
+ *           (decision 213), time view/track (decision 265), workload view/time_off
+ *           (decision 298), docs view/create/edit,
  *           canvas view/edit, automations and
  *           integrations view, agents view/delegate, workspace view.
- *   VIEWER  reads every project (`view` on the work domains, goals, time and agents) and
+ *   VIEWER  reads every project (`view` on the work domains, goals, time and agents),
+ *           records its own time off (`workload.view` and `workload.time_off`,
+ *           decision 298: time off is about oneself) and
  *           saves personal views: `views.create` and `views.edit`, never
  *           `views.share`, so a shared view stays with the roles that hold it
  *           (owner decision 60, 2026-11-20).
@@ -176,6 +188,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 intake: ['view', 'triage'],
                 goals: ['view', 'manage'],
                 time: ['view', 'track'],
+                workload: ['view', 'time_off'],
                 docs: ['view', 'create', 'edit'],
                 canvas: ['view', 'edit'],
                 automations: ['view'],
@@ -219,6 +232,7 @@ function viewerPermissions(): PermissionSet {
         cycles: ['view'],
         goals: ['view'],
         time: ['view'],
+        workload: ['view', 'time_off'],
         docs: ['view'],
         canvas: ['view'],
         agents: ['view'],

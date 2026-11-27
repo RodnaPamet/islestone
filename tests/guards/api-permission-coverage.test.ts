@@ -91,6 +91,11 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
     { relPath: 'src/app/api/t/[tenantSlug]/labels', why: 'Labels.' },
     // Sub-phase 3.4b: time entries and the timer, every route under time.track.
     { relPath: 'src/app/api/t/[tenantSlug]/time-entries', why: 'Time entries and timers: a person records their own time (decisions 265 and 278).' },
+    // Sub-phase 3.5a: capacity and time off, every route under a workload key (decision 298).
+    { relPath: 'src/app/api/t/[tenantSlug]/workload', why: 'The Workload page and its members table (decisions 297 and 298).' },
+    { relPath: 'src/app/api/t/[tenantSlug]/workload-settings', why: "The workspace's default capacity (decision 284)." },
+    { relPath: 'src/app/api/t/[tenantSlug]/members', why: "A member's capacity (decisions 284 and 285)." },
+    { relPath: 'src/app/api/t/[tenantSlug]/time-off', why: 'Time off, the person or workload.manage (decisions 286 to 288).' },
     // NOT tenant-scoped, and that is exactly why it is here. `/api/account`
     // acts on the SESSION's user, so `requirePermission` — which resolves a
     // tenant role — does not apply to the route in it today. In scope so the

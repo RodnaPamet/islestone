@@ -2607,7 +2607,8 @@
             "TIMESHEET_SUBMITTED": "Timesheets submitted to you",
             "TIMESHEET_RETURNED": "Your timesheet returned",
             "TIMESHEET_APPROVED": "Your timesheet approved",
-            "TIMESHEET_REMINDER": "Timesheet reminders"
+            "TIMESHEET_REMINDER": "Timesheet reminders",
+            "TIME_OFF_CHANGED_BY_OTHER": "Time off recorded for you"
         },
         "listLabel": "Notifications",
         "unreadMark": "Unread",

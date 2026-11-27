@@ -124,6 +124,9 @@ enum NotificationType {
   /// Sub-phase 3.4c: the Monday reminder to submit last week while approval
   /// is on (decision 276).
   TIMESHEET_REMINDER
+  /// Sub-phase 3.5a: someone else added, changed or removed your time off,
+  /// in-app only, never naming the type (owner decision 300).
+  TIME_OFF_CHANGED_BY_OTHER
 }
 
 /// The kind of an outbound email in `NotificationOutbox` (sub-phase 1.6).
