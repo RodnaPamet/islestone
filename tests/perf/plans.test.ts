@@ -300,6 +300,13 @@ const RUNNERS: Record<string, Runner> = {
         await WorkItemRepository.countsByCategory(db, ctx, v, { projectId: w.bigProjectId }, null, today());
         return WorkItemRepository.idsMatchingCurrentValues(db, ctx, v, { labelId: w.labelId }, { take: 50_001, today: today() });
     },
+    // Time waiting (3.6b): the largest project's twelve weeks, as the page first reads it.
+    'analytics: waits over a project': async (w, db, ctx, v) => {
+        const window = analyticsWindow();
+        const spans = await ReviewRepository.reviewSpans(db, ctx, { start: window.from, asOf: window.asOf, itemIds: null, take: 50_001 });
+        const reviewItemIds = [...new Set(spans.map((sp) => sp.workItemId))];
+        return WorkItemTransitionRepository.waitSpans(db, ctx, recordScope(v, { projectIds: [w.bigProjectId] }), { start: window.from, asOf: window.asOf, itemLimit: 20_000, reviewItemIds });
+    },
     "cycles: the burn-up's items and rows": async (w, db, ctx) => {
         const ids = await WorkItemTransitionRepository.itemIdsEverInCycle(db, ctx, w.currentCycleId);
         return WorkItemTransitionRepository.transitionsOf(db, ctx, ids.slice(0, 5_000), new Date());

@@ -252,6 +252,13 @@ const SCENARIOS: Scenario[] = [
     { name: 'analytics: throughput, a label filter (current values)', file: `${ROUTES}/analytics/throughput/route.ts`, method: 'GET', path: (w) => `/analytics/throughput?labelId=${w.labelId}&${analyticsWindow()}`, budget: 7 },
     { name: 'cycles: the burn-up of the current cycle', file: `${ROUTES}/cycles/[cycleId]/burn-up/route.ts`, method: 'GET', path: (w) => `/cycles/${w.currentCycleId}/burn-up`, params: (w) => ({ cycleId: w.currentCycleId }), budget: 8 },
     // ── end of the 3.6a analytics block ──
+    // ── Time waiting (3.6b; the map's budget: at most 7 statements a read): the tenant binding, the scope's team when it is
+    // one project, the calendars, the one read of the items, their segments and review spans, the parties' names, and
+    // the waiting-now items' keys and titles. The workspace as the owner (every party's row), a project as the heavy
+    // member (its own row). ──
+    { name: 'analytics: time waiting, the workspace, twelve weeks', file: `${ROUTES}/analytics/waiting/route.ts`, method: 'GET', as: 'approver', path: () => `/analytics/waiting?${analyticsWindow()}`, budget: 7 },
+    { name: 'analytics: time waiting, a project', file: `${ROUTES}/analytics/waiting/route.ts`, method: 'GET', path: (w) => `/analytics/waiting?projectId=${w.bigProjectId}&${analyticsWindow()}`, budget: 7 },
+    // ── end of the 3.6b time-waiting block ──
     {
         name: 'create: one item with a description',
         file: `${ROUTES}/work-items/route.ts`,

@@ -248,6 +248,14 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'analytics: counts now and a filter on current values', methods: ['WorkItemRepository.countsByCategory', 'WorkItemRepository.idsMatchingCurrentValues'], indexes: ['WorkItemLabel_tenantId_labelId_workItemId_idx'], maxBuffers: 2500, maxBuffers100k: 25000 },
     { name: "cycles: the burn-up's items and rows", methods: ['WorkItemTransitionRepository.itemIdsEverInCycle', 'WorkItemTransitionRepository.transitionsOf'], indexes: ['WorkItemTransition_tenantId_cycleId_workItemId_idx', 'WorkItemTransition_tenantId_workItemId_at_idx|WorkItemTransition_tenantId_cycleId_workItemId_idx'], maxBuffers: 4500, maxBuffers100k: 45000 },
     // ── end of the 3.6a analytics block ──
+    // ── Time waiting (3.6b, decision 331): the largest project's twelve weeks: the workspace's review spans in the window
+    // (the review rows' own seam), then in one statement the items followed and their rows with each one's position
+    // and next instant ──
+    // 10k budget: ESTIMATED beside the project's flow (5,264 measured: every row of the items it follows, read once
+    // more for the segments) at about twice; 100k twenty times that, as the flow's. Replace with about twice the
+    // first measurements.
+    { name: 'analytics: waits over a project', methods: ['WorkItemTransitionRepository.waitSpans'], indexes: ['WorkItemTransition_tenantId_projectId_at_idx', 'WorkItemTransition_tenantId_workItemId_at_idx'], maxBuffers: 21000, maxBuffers100k: 420000 },
+    // ── end of the 3.6b time-waiting block ──
 ];
 
 /**
@@ -279,7 +287,7 @@ export const PLAN_CHECK_EXEMPT: Readonly<Record<string, string>> = {
     'SearchVectorRepository.descriptionTexts': 'one rebuild page of ids by primary key',
     'SearchVectorRepository.commentTexts': 'one rebuild page of ids by primary key',
     'TimeEntryRepository.get': 'one time entry by primary key (the write gate of a change or a delete, 3.4b)',
-    'WorkItemRepository.keyTitlesByIds': 'at most 2,000 given ids by primary key (the analytics points\' keys and titles, 3.6a)',
+    'WorkItemRepository.keyTitlesByIds': 'at most 2,000 given ids by primary key (the analytics points\' keys and titles, 3.6a; the waiting-now items\' keys and titles, 3.6b)',
     'TimeEntryRepository.anyInProject': "an existence probe, one row, on TimeEntry_tenantId_projectId_workDate_idx (the purge's choice of a tombstone, issue #117)",
 };
 
