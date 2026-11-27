@@ -12,7 +12,9 @@
  * names the version it edited); the development-only response validation
  * (`validateIfDev`, which logged through `console`) is cut. A 409's
  * `details` carry `reason`, and for a version conflict the current `version`
- * and `item`, which the work-item mutations read.
+ * and `item`, which the work-item mutations read. `apiGetFile` (3.4d) reads a
+ * download (the time export) as a blob with its file name, refusals through
+ * the same envelope.
  */
 import { noteUnauthorized } from '@/lib/auth/session-expiry';
 
@@ -78,6 +80,15 @@ export async function apiGet<T>(url: string, init?: RequestInit): Promise<T> {
     const res = await fetch(url, { method: 'GET', ...init });
     if (!res.ok) await handleErrorResponse(res);
     return (await res.json()) as T;
+}
+
+/** GET a file (a download): its body and the name its `Content-Disposition` gives; a non-2xx answer throws `ApiClientError`. */
+export async function apiGetFile(url: string): Promise<{ blob: Blob; filename: string | null }> {
+    const res = await fetch(url, { method: 'GET' });
+    if (!res.ok) await handleErrorResponse(res);
+    const disposition = res.headers.get('Content-Disposition') ?? '';
+    const match = /filename="([^"]+)"/.exec(disposition);
+    return { blob: await res.blob(), filename: match ? match[1]! : null };
 }
 
 export interface ApiSendOptions {

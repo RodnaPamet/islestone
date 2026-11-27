@@ -30,7 +30,7 @@ import type { TimeAffordances } from '@/lib/time/types';
 
 import { installFetch, renderWorkspace } from '../helpers/work-items-harness';
 
-const RECORDER: TimeAffordances = { view: true, track: true, approve: false, record: true };
+const RECORDER: TimeAffordances = { view: true, track: true, approve: false, rates: false, record: true };
 const visible = { kind: 'visible' as const, id: 'wi-1', key: 'ISL-1', title: 'Write the brief', projectId: 'p-1', closed: false };
 
 function entry(over: Partial<TimeEntryData> = {}): TimeEntryData {

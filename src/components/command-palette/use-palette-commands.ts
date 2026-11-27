@@ -119,6 +119,7 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
     const mayOpenSettings = access?.mayOpenSettings === true;
     // Sub-phase 3.4b: the Time entry and the timer's actions, registered by the shell.
     const mayOpenTime = access?.mayOpenTime === true;
+    const timeLanding = access?.timeLanding ?? NAV_PATHS.time;
     const timer = usePaletteTimerActions(tenantSlug);
     const doSignOut = useCallback(() => {
         void signOutToLogin();
@@ -152,10 +153,10 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
                       {
                           id: 'nav:time',
                           group: 'Navigation' as const,
-                          label: t('goToMyTime'),
-                          matchLabel: 'My time',
+                          label: timeLanding === NAV_PATHS.timeTotals ? t('goToTimeTotals') : t('goToMyTime'),
+                          matchLabel: timeLanding === NAV_PATHS.timeTotals ? 'Time totals' : 'My time',
                           icon: Timer,
-                          href: href(NAV_PATHS.time),
+                          href: href(timeLanding),
                           keywords: ['time', 'timesheet', 'hours'],
                       },
                   ]
@@ -288,7 +289,7 @@ export function usePaletteCommands(tenantSlug: string | null): PaletteCommand[] 
             },
         );
         return commands;
-    }, [t, tenantSlug, mayOpenSettings, mayOpenTime, timer, toggleTheme, doSignOut, assistantAvailable, openAssistant]);
+    }, [t, tenantSlug, mayOpenSettings, mayOpenTime, timeLanding, timer, toggleTheme, doSignOut, assistantAvailable, openAssistant]);
 }
 
 /**

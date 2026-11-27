@@ -22,6 +22,7 @@ import * as fs from 'node:fs';
 import { NextRequest } from 'next/server';
 import type { PrismaClient } from '@prisma/client';
 
+import { flushAllAuditStreams } from '@/app-layer/events/audit-stream';
 import type { RequestContext } from '@/app-layer/types';
 
 const getTenantCtxMock = jest.fn<Promise<RequestContext>, [unknown, unknown]>();
@@ -72,6 +73,20 @@ function monthGrid(): string {
 /** The Monday `n` weeks after `from` (a Monday), date-only. */
 function mondayAfter(from: string, n: number): string {
     return new Date(Date.parse(`${from}T00:00:00Z`) + n * 7 * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Time totals' quarter ending with the Sunday of the week starting `monday` (3.4d). */
+function quarterQuery(monday: string): string {
+    const to = Date.parse(`${monday}T00:00:00Z`) + 6 * 86_400_000;
+    const key = (t: number) => new Date(t).toISOString().slice(0, 10);
+    return `from=${key(to - 90 * 86_400_000)}&to=${key(to)}`;
+}
+
+/** The export's month ending with the Sunday of the week starting `monday` (3.4d). */
+function monthQuery(monday: string): string {
+    const to = Date.parse(`${monday}T00:00:00Z`) + 6 * 86_400_000;
+    const key = (t: number) => new Date(t).toISOString().slice(0, 10);
+    return `from=${key(to - 29 * 86_400_000)}&to=${key(to)}`;
 }
 
 /** Weeks of this process's timesheet scenarios start here, so a run against the same database never meets an earlier run's week. */
@@ -154,6 +169,14 @@ const SCENARIOS: Scenario[] = [
     // the person's calendar. None is per person.
     { name: 'workload: capacity of every member, twelve weeks', file: `${ROUTES}/workload/route.ts`, method: 'GET', path: () => '/workload?weeks=12', budget: 8 },
     { name: "time off: the caller's month", file: `${ROUTES}/time-off/route.ts`, method: 'GET', path: () => `/time-off?${monthWindow()}`, budget: 6 },
+    // Time totals and the export (3.4d), as measured on the 10k seed: the totals of a quarter by project, as the
+    // heavy member (no money: the tenant binding, the aggregate, the projects' names: 3) and as the owner (also the
+    // currency, the rate book, the approved weeks and the priced lines: 7); the export of a month as CSV by the
+    // owner (the binding, the entries, the projects, the people, the items, the pricing reads and the audit
+    // entry's statements: 13). None is per row.
+    { name: 'time totals: a quarter by project, no money', file: `${ROUTES}/time-totals/route.ts`, method: 'GET', path: (w) => `/time-totals?${quarterQuery(w.timeWeek)}&groupBy=project`, budget: 3 },
+    { name: 'time totals: a quarter by project, priced', file: `${ROUTES}/time-totals/route.ts`, method: 'GET', as: 'approver', path: (w) => `/time-totals?${quarterQuery(w.timeWeek)}&groupBy=project`, budget: 7 },
+    { name: "time export: a month's entries as CSV", file: `${ROUTES}/time-totals/export/route.ts`, method: 'GET', as: 'approver', path: (w) => `/time-totals/export?${monthQuery(w.timeWeek)}&format=csv`, budget: 13 },
     { name: 'calendar: the workspace, a month grid', file: `${ROUTES}/work-items/calendar/route.ts`, method: 'GET', path: () => `/work-items/calendar?${monthGrid()}`, budget: 8 },
     { name: 'calendar: one project, a month grid', file: `${ROUTES}/work-items/calendar/route.ts`, method: 'GET', path: (w) => `/work-items/calendar?projectId=${w.projectId}&${monthGrid()}`, budget: 8 },
     {
@@ -233,6 +256,10 @@ describe(`statements per request on the seeded database (PERF_SHAPE=${process.en
     async function statementsPer(fn: (run: number) => Promise<Response>): Promise<number> {
         // Warm once (the Prisma client's first connection, cached reads), then count.
         expect((await fn(-1)).status).toBeLessThan(300);
+        // An audited request leaves its entry in the audit stream's buffer, flushed five seconds later with a read
+        // of the workspace's stream settings: flushed here, outside every count, so that read never lands in a
+        // later scenario's window (3.4d's export is the first audited read among the reads).
+        await flushAllAuditStreams();
         await direct.$queryRawUnsafe('SELECT pg_stat_statements_reset()');
         for (let run = 0; run < RUNS; run++) {
             const res = await fn(run);
@@ -244,6 +271,7 @@ describe(`statements per request on the seeded database (PERF_SHAPE=${process.en
               WHERE s."dbid" = (SELECT oid FROM pg_database WHERE datname = current_database())
                 AND s."query" NOT ILIKE '%pg_stat_statements%'`,
         );
+        await flushAllAuditStreams();
         return Number(rows[0]!.calls ?? 0) / RUNS;
     }
 

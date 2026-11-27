@@ -175,6 +175,14 @@ async function firstCards(project, states) {
     );
 }
 
+const DAY_MS = 86_400_000;
+const dayOf = (t) => new Date(t).toISOString().slice(0, 10);
+/** The Monday of the week holding `t` (UTC date parts, as the seed's weeks). */
+function mondayOf(t) {
+    const d = new Date(dayOf(t) + 'T00:00:00Z');
+    return dayOf(d.getTime() - ((d.getUTCDay() + 6) % 7) * DAY_MS);
+}
+
 // ── Discovery: the scenarios' targets, read through the API ────────────
 async function discover(userId) {
     const projects = (await getJson('/projects')).filter((p) => !p.archivedAt && !p.deletedAt);
@@ -211,7 +219,12 @@ async function discover(userId) {
     ].filter((c) => c.count <= TIMELINE_ITEM_LIMIT);
     const timeline = candidates.sort((a, b) => b.count - a.count)[0];
     const columns = await firstCards(big, bigStates);
-    return { userId, projects: sized, project, big, bigStates, todo, selectField, item, open, backlog, unstarted, started, typeId: types[0].id, timeline, columns };
+    // Time (3.4d's scenarios): last week, the heavy member's full one, and its item with an entry (My time, an item's time).
+    const timeWeek = mondayOf(Date.now() - 7 * DAY_MS);
+    const week = await getJson(`/time-entries?week=${timeWeek}`);
+    const timeItem = week.entries.find((e) => e.item?.kind === 'visible' && e.minutes !== null)?.item;
+    if (!timeItem) usage(`the heavy member has no time on a visible item in the week of ${timeWeek}`);
+    return { userId, projects: sized, project, big, bigStates, todo, selectField, item, open, backlog, unstarted, started, typeId: types[0].id, timeline, columns, timeWeek, timeItem };
 }
 
 // ── Scenarios ──────────────────────────────────────────────────────────
@@ -292,6 +305,16 @@ function scenarioRunners(w) {
             roadmapExtra = { projects: b.projects.length, initiatives: b.initiatives.length, milestones: b.milestones?.length ?? 0, gzipBytes: r.gzipped ? r.raw.length : null, bytes: (r.gzipped ? gunzipSync(r.raw) : r.raw).length };
             return null;
         }),
+        // Time (3.4d's scenarios, budgets in the decision-167 terms the 3.4 map names): the heavy member's last
+        // week (My time), the time of an item in it, and Time totals of the quarter ending with that week, by
+        // project (as a Member: no money).
+        'time-week': single('GET', api(`/time-entries?week=${w.timeWeek}`), (b) => (Array.isArray(b?.entries) && b.entries.length > 0 ? null : 'the week answered no entries')),
+        'time-item': single('GET', api(`/work-items/${w.timeItem.id}/time`), (b) => (Array.isArray(b?.entries) && b.entries.length > 0 ? null : "the item's time answered no entries")),
+        'time-totals': single(
+            'GET',
+            api(`/time-totals?from=${dayOf(Date.parse(w.timeWeek + 'T00:00:00Z') + 6 * DAY_MS - 90 * DAY_MS)}&to=${dayOf(Date.parse(w.timeWeek + 'T00:00:00Z') + 6 * DAY_MS)}&groupBy=project`),
+            (b) => (Array.isArray(b?.groups) && b.groups.length > 0 ? null : 'Time totals answered no groups'),
+        ),
         create: single('POST', (run) => ({ path: api('/work-items'), body: { projectId: p, typeId: w.typeId, title: `Perf harness create ${run}`, description: 'Задачата на проекта and a description to index.' } }), null),
         edit: single(
             'PATCH',
@@ -302,6 +325,8 @@ function scenarioRunners(w) {
         move: single('POST', (run) => ({ path: api(`/work-items/${moveItem.id}/move`), body: { stateId: run % 2 === 0 ? w.started.id : w.unstarted.id } }), null),
         reorder: single('POST', (run) => ({ path: api(`/work-items/${reorderItem.id}/move`), body: { position: run % 2 === 0 ? { afterId: anchor.id } : { beforeId: anchor.id } } }), null),
         'bulk-state': single('POST', (run) => ({ path: api('/work-items/bulk/state'), body: { workItemIds: bulkIds, stateId: run % 2 === 0 ? w.unstarted.id : w.backlog.id } }), null),
+        // Adding time (3.4d's write scenario): one minute on a day of its own far ahead, so no day fills across runs.
+        'time-add': single('POST', (run) => ({ path: api('/time-entries'), body: { workItemId: w.timeItem.id, workDate: dayOf(Date.UTC(2099, 0, 1) + (Math.abs(run) % 1000) * DAY_MS), minutes: 1 } }), null),
         _timelineExtra: () => timelineExtra,
         _roadmapExtra: () => roadmapExtra,
     };

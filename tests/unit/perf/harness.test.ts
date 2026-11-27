@@ -21,8 +21,11 @@ const runSource = fs.readFileSync(path.join(ROOT, 'scripts/perf/run.mjs'), 'utf8
 /**
  * Decision 167's table (docs/porting/maps/H2.md part 1.4), and for the
  * timeline H3's (docs/porting/maps/3.1.md, "Performance"), and for the
- * roadmap 3.2c's (docs/porting/maps/3.2.md, "The read"): the ceiling of
- * every budget. A budget may go down; it never goes above these.
+ * roadmap 3.2c's (docs/porting/maps/3.2.md, "The read"), and for time 3.4's
+ * in decision 167's terms (docs/porting/maps/3.4.md, "Performance": a week
+ * at the list's first page, an item's time p95 200, the totals at the board
+ * load's, adding time at a write's): the ceiling of every budget. A budget
+ * may go down; it never goes above these.
  */
 const DECIDED: Record<string, Record<'10k' | '100k', { p50?: number; p95: number }>> = {
     'list-project': { '10k': { p50: 80, p95: 200 }, '100k': { p50: 100, p95: 250 } },
@@ -42,6 +45,10 @@ const DECIDED: Record<string, Record<'10k' | '100k', { p50?: number; p95: number
     move: { '10k': { p95: 400 }, '100k': { p95: 400 } },
     reorder: { '10k': { p95: 400 }, '100k': { p95: 400 } },
     'bulk-state': { '10k': { p95: 2000 }, '100k': { p95: 2000 } },
+    'time-week': { '10k': { p50: 80, p95: 200 }, '100k': { p50: 100, p95: 250 } },
+    'time-item': { '10k': { p50: 80, p95: 200 }, '100k': { p50: 80, p95: 200 } },
+    'time-totals': { '10k': { p50: 250, p95: 500 }, '100k': { p50: 300, p95: 700 } },
+    'time-add': { '10k': { p95: 400 }, '100k': { p95: 400 } },
 };
 const DECIDED_BROWSER: Record<string, number> = { list: 1300, board: 2000, detail: 600, timeline: 2000 };
 
@@ -99,7 +106,7 @@ describe('budgets.json', () => {
     });
 
     it('marks the writes, which run after every read so their rows and vacuum never sit under a read', () => {
-        expect(Object.entries(budgets.scenarios).filter(([, b]) => b.write).map(([id]) => id).sort()).toEqual(['bulk-state', 'create', 'edit', 'move', 'reorder']);
+        expect(Object.entries(budgets.scenarios).filter(([, b]) => b.write).map(([id]) => id).sort()).toEqual(['bulk-state', 'create', 'edit', 'move', 'reorder', 'time-add']);
         const main = runSource.slice(runSource.indexOf('// ── Main'));
         expect(main.indexOf('await runApi(world, false)')).toBeGreaterThan(0);
         expect(main.indexOf('await runApi(world, false)')).toBeLessThan(main.indexOf('await runBrowser('));

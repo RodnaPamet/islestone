@@ -84,7 +84,10 @@ model WorkflowState {
 model Project {
   id              String    @id @default(cuid())
   tenantId        String
-  teamId          String
+  /// The project's team. NULL only on a tombstone (issue #120, owner decision
+  /// 305): the purge clears it, so the team can be deleted (CHECK
+  /// `Project_team_unless_tombstone`). A live or deleted project always has one.
+  teamId          String?
   name            String
   /// The current prefix of the project's keys (`ISL` in `ISL-123`). Every
   /// prefix it has had is in `ProjectKeyPrefix`; no prefix is ever reused.
@@ -107,11 +110,15 @@ model Project {
   /// names no due date or initiative and is never restored (CHECK
   /// `Project_purged_is_tombstone`); only time totals read it.
   purgedAt        DateTime?
+  /// New time entries on this project are billable unless the person unticks
+  /// one (sub-phase 3.4d, owner decision 271); off unless set. Set under
+  /// `time.rates`.
+  timeBillableByDefault Boolean @default(false)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  team                 Team                  @relation(fields: [teamId, tenantId], references: [id, tenantId])
+  team                 Team?                 @relation(fields: [teamId, tenantId], references: [id, tenantId], onDelete: Restrict)
   initiative           Initiative?           @relation(fields: [initiativeId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
   workItems            WorkItem[]
   customFields         CustomField[]
@@ -128,6 +135,8 @@ model Project {
   recipientLists       RecipientList[]
   /// Time recorded in this project (3.4b); kept when its item moves (decision 261).
   timeEntries          TimeEntry[]
+  /// The project's billable rates (3.4d; decision 272).
+  billableRates        BillableRate[]
 
   @@unique([id, tenantId])
   /// Target of WorkItem's composite FK: an item's team is its project's team.

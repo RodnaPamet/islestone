@@ -53,6 +53,7 @@ const SITE_CONTRACTS: Record<string, string> = {
     'src/components/time/data/use-time.ts': "deleting one's own time entry and discarding a running timer (My time and an item's Time panel, 3.4b, decision 277)",
     'src/components/workload/data/use-time-off.ts': "removing dates of time off, one's own or (workload.manage) anyone's (the Workload page and Settings → Workload, 3.5a, decision 289)",
     'src/components/workload/data/use-workload.ts': 'removing a future capacity change (Settings → Workload, 3.5a, decision 284)',
+    'src/components/time/data/use-time-totals.ts': 'removing a billable rate whose date has not come (Settings → Time tracking and a project\'s rates, 3.4d, decision 273)',
     'src/components/work-items/data/use-timeline-writes.ts': 'a change of dates with the items it pushes later, held before it is sent, and removing a dependency (the timeline, 3.1c, decision 194)',
 };
 

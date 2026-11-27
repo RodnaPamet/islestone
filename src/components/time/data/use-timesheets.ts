@@ -126,7 +126,7 @@ export function useTimesheetWrites() {
         [apiUrl, send],
     );
     const saveSettings = useCallback(
-        (input: { approvalRequired?: boolean; approvalRecipientListId?: string | null }, version: number) =>
+        (input: { approvalRequired?: boolean; approvalRecipientListId?: string | null; currency?: string | null }, version: number) =>
             send(() => apiSend<TimeSettingsData>('PUT', apiUrl(TIME_SETTINGS_PATH), input, version > 0 ? { ifMatch: version } : undefined)),
         [apiUrl, send],
     );

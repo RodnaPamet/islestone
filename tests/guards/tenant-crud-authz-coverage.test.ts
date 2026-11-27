@@ -20,7 +20,7 @@ import { gitFiles } from '../helpers/git-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const T = 'src/app/api/t/[tenantSlug]';
-const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates', 'intake', 'search', 'recipient-lists', 'working-calendar', 'goals', 'initiatives', 'roadmap', 'time-entries', 'time-settings', 'timesheets', 'workload', 'workload-settings', 'members', 'time-off'].map((r) => `${T}/${r}/`);
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates', 'intake', 'search', 'recipient-lists', 'working-calendar', 'goals', 'initiatives', 'roadmap', 'time-entries', 'time-settings', 'timesheets', 'workload', 'workload-settings', 'members', 'time-off', 'billable-rates', 'time-totals'].map((r) => `${T}/${r}/`);
 
 type Spec = Partial<Record<'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', string>>;
 const W = `${T}/work-items`;
@@ -114,6 +114,15 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${T}/time-off/route.ts`]: { GET: 'workload.view' },
     [`${T}/time-off/days/route.ts`]: { PUT: 'workload.time_off' },
     [`${T}/time-off/days/remove/route.ts`]: { POST: 'workload.time_off' },
+    // Sub-phase 3.4d: rates, a project's billable default, Time totals and the export.
+    [`${T}/billable-rates/route.ts`]: { GET: 'time.rates' },
+    [`${T}/billable-rates/workspace/route.ts`]: { PUT: 'time.rates' },
+    [`${T}/billable-rates/[rateId]/route.ts`]: { DELETE: 'time.rates' },
+    [`${T}/projects/[projectId]/billable-rates/route.ts`]: { PUT: 'time.rates' },
+    [`${T}/projects/[projectId]/billable-default/route.ts`]: { PUT: 'time.rates' },
+    [`${T}/members/[userId]/billable-rates/route.ts`]: { PUT: 'time.rates' },
+    [`${T}/time-totals/route.ts`]: { GET: 'time.view' },
+    [`${T}/time-totals/export/route.ts`]: { GET: 'time.view' },
     [`${W}/[workItemId]/time/route.ts`]: { GET: 'work_items.view' },
     [`${T}/initiatives/route.ts`]: { GET: 'goals.view', POST: 'goals.manage' },
     [`${T}/initiatives/[initiativeId]/route.ts`]: { GET: 'goals.view', PATCH: 'goals.manage', DELETE: 'goals.manage' },

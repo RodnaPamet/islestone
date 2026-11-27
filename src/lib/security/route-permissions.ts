@@ -970,6 +970,56 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'workload.time_off',
         note: "Remove dates of one's own time off; another member's also asks workload.manage (decision 288).",
     },
+    // ── Rates, totals and the export (sub-phase 3.4d; owner decisions 271 to 275) ──
+    {
+        path: new RegExp(`^${T}\\/billable-rates$`),
+        methods: ['GET'],
+        permission: 'time.rates',
+        note: 'Every billable rate of the workspace and its currency: money is the rate holders\' (decision 274).',
+    },
+    // The workspace's path sits above a rate's, which would match `workspace` as an id.
+    {
+        path: new RegExp(`^${T}\\/billable-rates\\/workspace$`),
+        methods: ['PUT'],
+        permission: 'time.rates',
+        note: "The workspace's rate from a date, a date's row replaced (decisions 272 and 273).",
+    },
+    {
+        path: new RegExp(`^${T}\\/billable-rates\\/[^\\/]+$`),
+        methods: ['DELETE'],
+        permission: 'time.rates',
+        note: 'Remove a rate whose date has not come (decision 273).',
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/billable-rates$`),
+        methods: ['PUT'],
+        permission: 'time.rates',
+        note: "A project's rate from a date (decision 272).",
+    },
+    {
+        path: new RegExp(`^${T}\\/projects\\/[^\\/]+\\/billable-default$`),
+        methods: ['PUT'],
+        permission: 'time.rates',
+        note: "Whether a project's new time entries are billable by default (decision 271).",
+    },
+    {
+        path: new RegExp(`^${T}\\/members\\/[^\\/]+\\/billable-rates$`),
+        methods: ['PUT'],
+        permission: 'time.rates',
+        note: "A member's rate from a date (decision 272).",
+    },
+    {
+        path: new RegExp(`^${T}\\/time-totals$`),
+        methods: ['GET'],
+        permission: 'time.view',
+        note: 'Time totals over a window, grouped; amounts only for time.rates (decisions 266 and 274).',
+    },
+    {
+        path: new RegExp(`^${T}\\/time-totals\\/export$`),
+        methods: ['GET'],
+        permission: 'time.view',
+        note: 'The entries behind Time totals as CSV or Excel, at most 50,000, audited (decision 275).',
+    },
     // ── Estimates (sub-phase 3.4a; owner decision 257) ───────────────
     {
         path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/estimate$`),

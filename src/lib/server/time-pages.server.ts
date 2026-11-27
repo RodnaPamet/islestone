@@ -9,11 +9,13 @@
  *
  * Written fresh for Islestone.
  */
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 
 import { getTenantCtx } from '@/app-layer/context';
 import { dayKeyInTz } from '@/app-layer/notifications/work-item-due';
-import { mayApproveTime, mayTrackTime, timeAffordances } from '@/app-layer/policies/time.policies';
+import { mayApproveTime, mayTrackTime, mayViewTime, timeAffordances } from '@/app-layer/policies/time.policies';
+import { listProjects } from '@/app-layer/usecases/project';
+import { NAV_PATHS } from '@/components/layout/nav-config';
 import { notificationsTz } from '@/app-layer/usecases/work-item-shared';
 import { todayClock } from '@/lib/clock';
 import { isCalendarDate } from '@/lib/calendar-date';
@@ -22,7 +24,11 @@ import { weekStartOf } from '@/lib/time/week';
 
 export async function myTimePageContext(tenantSlug: string, week: string | undefined): Promise<{ affordances: TimeAffordances; today: string; weekStart: string }> {
     const ctx = await getTenantCtx({ tenantSlug });
-    if (!mayTrackTime(ctx) && !mayApproveTime(ctx)) notFound();
+    if (!mayTrackTime(ctx) && !mayApproveTime(ctx)) {
+        // A `time.view` holder alone opens the Time entry on Time totals (3.4d).
+        if (mayViewTime(ctx)) redirect(`/t/${tenantSlug}${NAV_PATHS.timeTotals}`);
+        notFound();
+    }
     const zone = notificationsTz();
     const today = dayKeyInTz(todayClock(zone), zone);
     return { affordances: timeAffordances(ctx), today, weekStart: weekStartOf(week && isCalendarDate(week) ? week : today) };
@@ -36,4 +42,17 @@ export async function timesheetsPageContext(tenantSlug: string): Promise<{ affor
     const ctx = await getTenantCtx({ tenantSlug });
     if (!mayApproveTime(ctx)) notFound();
     return { affordances: timeAffordances(ctx) };
+}
+
+/**
+ * Time totals (3.4d): `time.view` (decision 266); anybody else gets a 404.
+ * The projects the filter offers are the live ones the caller sees (time in a
+ * deleted project still counts, unfiltered); today is in `NOTIFICATIONS_TZ`.
+ */
+export async function timeTotalsPageContext(tenantSlug: string): Promise<{ affordances: TimeAffordances; today: string; projects: Array<{ id: string; name: string; keyPrefix: string }> }> {
+    const ctx = await getTenantCtx({ tenantSlug });
+    if (!mayViewTime(ctx)) notFound();
+    const zone = notificationsTz();
+    const projects = (await listProjects(ctx, { includeArchived: true })).map((p) => ({ id: p.id, name: p.name, keyPrefix: p.keyPrefix }));
+    return { affordances: timeAffordances(ctx), today: dayKeyInTz(todayClock(zone), zone), projects };
 }

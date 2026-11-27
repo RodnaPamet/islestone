@@ -45,6 +45,8 @@ export interface WorkspaceReport {
     watchers: number;
     /** Sub-phase 3.4b. */
     timeEntries: number;
+    /** Sub-phase 3.4d. */
+    approvedWeeks: number;
     auditEntries: number;
     decryptedChecked: number;
 }
@@ -113,6 +115,17 @@ async function verifyWorkspace(bulk: PrismaClient, shape: Shape, slug: string): 
         `SELECT count(*) AS n FROM (SELECT 1 FROM "TimeEntry" WHERE "tenantId" = $1 GROUP BY "userId", "workDate" HAVING sum("minutes") > 1440) d`,
     );
     const liveDescribed = await q(`SELECT count(*) AS n FROM "WorkItem" WHERE "tenantId" = $1 AND "description" IS NOT NULL AND "deletedAt" IS NULL`);
+    // Sub-phase 3.4d: the rates at three levels, approved weeks, and every stamp in an approved week.
+    const rateLevels = await q(`SELECT count(DISTINCT "level") AS n FROM "BillableRate" WHERE "tenantId" = $1`);
+    const approvedWeeks = await q(`SELECT count(*) AS n FROM "Timesheet" WHERE "tenantId" = $1 AND "status" = 'APPROVED'`);
+    const stamped = await q(`SELECT count(*) AS n FROM "TimeEntry" WHERE "tenantId" = $1 AND "frozenRateMinor" IS NOT NULL`);
+    const strayStamps = await q(
+        `SELECT count(*) AS n FROM "TimeEntry" t
+          WHERE t."tenantId" = $1 AND t."frozenRateMinor" IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM "Timesheet" s WHERE s."tenantId" = t."tenantId" AND s."userId" = t."userId" AND s."status" = 'APPROVED'
+                              AND s."weekStart" = t."workDate" - (extract(isodow FROM t."workDate")::integer - 1))`,
+    );
+    const currencySet = await q(`SELECT count(*) AS n FROM "TenantTimeSettings" WHERE "tenantId" = $1 AND "currency" = 'EUR'`);
 
     check(items === shapeItemCount(shape), `${slug} holds ${items} items, the shape ${shapeItemCount(shape)}`);
     check(liveItems > items * 0.95 && liveItems < items, `${slug}: ${liveItems} of ${items} items live (about 1 % are deleted)`);
@@ -124,6 +137,11 @@ async function verifyWorkspace(bulk: PrismaClient, shape: Shape, slug: string): 
     check(timeEntries > liveItems * 2 && timeEntries < liveItems * 4 + 600, `${slug}: ${timeEntries} time entries for ${liveItems} live items (about three each, and the heavy member's weeks)`);
     check(timeBadEnvelopes === 0, `${slug}: ${timeBadEnvelopes} time entry descriptions not in the workspace key's envelope`);
     check(overfullDays === 0, `${slug}: ${overfullDays} person-days hold more than 24 hours`);
+    check(currencySet === 1, `${slug}: the workspace's currency is not EUR`);
+    check(rateLevels === 3, `${slug}: rates at ${rateLevels} levels, not the three`);
+    check(approvedWeeks > 20, `${slug}: ${approvedWeeks} approved weeks`);
+    check(stamped > 0, `${slug}: no entry of an approved week carries a frozen rate`);
+    check(strayStamps === 0, `${slug}: ${strayStamps} frozen rates outside an approved week`);
 
     const chain = await verifyAuditChain(tenantId);
     check(chain.valid, `${slug}: the audit chain is broken at ${chain.firstBreakAt ?? '?'}`);
@@ -166,6 +184,7 @@ async function verifyWorkspace(bulk: PrismaClient, shape: Shape, slug: string): 
         customFieldValues,
         watchers,
         timeEntries,
+        approvedWeeks,
         auditEntries: chain.totalEntries,
         decryptedChecked,
     };

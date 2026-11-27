@@ -108,7 +108,7 @@ export interface Recorded {
     ifMatch: string | null;
 }
 
-type Reply = { status?: number; body?: unknown };
+type Reply = { status?: number; body?: unknown; headers?: Record<string, string> };
 export type Answer = Reply | ((req: Recorded) => Reply | Promise<Reply>);
 
 /** A routing `fetch`: `routes['GET /work-items']` answers by method and path (search ignored). */
@@ -138,6 +138,9 @@ export function installFetch(routes: Record<string, Answer>) {
             url: url.toString(),
             json: async () => body,
             text: async () => JSON.stringify(body),
+            // A download (3.4d's export): its headers and its body as a blob.
+            headers: { get: (name: string) => answer?.headers?.[name] ?? null },
+            blob: async () => new Blob([typeof body === 'string' ? body : JSON.stringify(body)]),
         };
     });
     (global as unknown as { fetch: typeof fetch }).fetch = fn as unknown as typeof fetch;

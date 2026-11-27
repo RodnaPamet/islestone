@@ -11,8 +11,9 @@
  *     and everything it holds (fields, milestones, templates, intake, saved
  *     views, recipient lists: their cascades). A project time entries name
  *     leaves a tombstone instead (issue #117, owner decision 281): the same
- *     row, emptied of its children, keeping its key, name, team and deletion,
- *     marked `purgedAt` (`WorkItemRepository.tombstoneProject`), so an entry
+ *     row, emptied of its children, keeping its key, name and deletion,
+ *     marked `purgedAt`, its team cleared so the team can be deleted (issue
+ *     #120, decision 305; `WorkItemRepository.tombstoneProject`), so an entry
  *     keeps its project (decisions 261 and 277) and the key is never reused.
  *     An item purged on its own leaves its entries, which then name no item
  *     ("Deleted item").

@@ -43,6 +43,11 @@ export function mayApproveTime(ctx: TimeViewer): boolean {
     return ctx.permissions.canRead && key(ctx, 'approve', ctx.permissions.canAdmin);
 }
 
+/** See and set billable rates, project billable defaults and amounts (3.4d; decision 274). */
+export function mayManageRates(ctx: TimeViewer): boolean {
+    return ctx.permissions.canRead && key(ctx, 'rates', ctx.permissions.canAdmin);
+}
+
 /**
  * Time is a person's own statement (decision 278, ADR 0003 §4): never an API
  * key or an agent (`apiKeyId`), a job (`actorType`) or the workspace's system
@@ -59,9 +64,14 @@ export function timeAffordances(ctx: TimeViewer): TimeAffordances {
         view: mayViewTime(ctx),
         track,
         approve: mayApproveTime(ctx),
+        rates: mayManageRates(ctx),
         // Recording is a person's act: a context that is not one sees My time read-only.
         record: track && recordsTimeAsPerson(ctx),
     };
+}
+
+export function assertCanManageRates(ctx: RequestContext): void {
+    if (!mayManageRates(ctx)) throw forbidden('You do not have permission to see or set billable rates.');
 }
 
 export function assertCanTrackTime(ctx: RequestContext): void {

@@ -37,7 +37,7 @@ import { buildWeekGrid, type WeekRow } from './week-grid-model';
 
 type View = 'SUBMITTED' | 'DECIDED';
 
-export function TimesheetsView({ title }: { title: string }) {
+export function TimesheetsView({ title, totals = false }: { title: string; totals?: boolean }) {
     const t = useTranslations('time.timesheets');
     const [view, setView] = useState<View>('SUBMITTED');
     const list = useTimesheetList(view);
@@ -73,7 +73,7 @@ export function TimesheetsView({ title }: { title: string }) {
                     </div>
                 ),
             }}
-            kpis={<TimeTabs approve />}
+            kpis={<TimeTabs approve totals={totals} />}
             table={{
                 data: list.rows,
                 columns,

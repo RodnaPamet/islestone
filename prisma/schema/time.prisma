@@ -27,6 +27,23 @@
 // the CHECKs, the recipient list's link `ON DELETE SET NULL
 // ("approvalRecipientListId")`, and the trigger `time_entry_week_frozen`,
 // which refuses any write to the entries of a submitted or approved week.
+//
+// Sub-phase 3.4d: billable rates, totals and the export (docs/porting/maps/3.4.md,
+// "Rates, totals and export (3.4d)"; ADR 0012 §6 and §7; owner decisions 271
+// to 275).
+//
+//   `BillableRate` — a rate at one level (the workspace, a project, a member)
+//   in force from a date until the level's next row; NULL "no rate at this
+//   level from this date". An entry's rate is its project's, else its
+//   person's, else the workspace's (`resolveRate`, decision 272).
+//   `TimeEntry.frozenRateMinor` / `frozenRateLevel` — the rate an entry of an
+//   approved week was approved at (decision 273), cleared when it is reopened.
+//   `TenantTimeSettings.currency` — the workspace's one ISO 4217 code.
+//
+// What Prisma cannot declare lives in migration
+// `20261224120100_billable_rates`: the CHECKs, the unique rate per level,
+// scope and date (`NULLS NOT DISTINCT`), and the freeze trigger's admission
+// of the approval's stamp.
 
 model TimeEntry {
   id              String          @id @default(cuid())
@@ -56,6 +73,12 @@ model TimeEntry {
   /// ENCRYPTED (manifest), sanitised, at most 2,000 characters (checked on the
   /// plaintext in the usecase).
   description     String?
+  /// The hourly rate, in minor units of the workspace's currency, the entry
+  /// was approved at (3.4d, decision 273): set by the approval for a billable
+  /// entry that had a rate, cleared when the week is reopened; both or
+  /// neither (CHECK). An entry of an approved week without one has no rate.
+  frozenRateMinor Int?
+  frozenRateLevel BillableRateLevel?
   /// Optimistic concurrency for edits (`If-Match`).
   version         Int             @default(1)
   /// Who wrote it: always the person whose time it is (decision 267; a CHECK
@@ -113,7 +136,7 @@ model Timesheet {
 }
 
 /// A workspace's time tracking settings (3.4c; ADR 0006 "Time tracking
-/// settings"): no row is the defaults. 3.4d adds the currency.
+/// settings"): no row is the defaults.
 model TenantTimeSettings {
   tenantId                String   @id
   /// "Timesheets need approval" (decision 268): off until an Owner or Admin turns it on.
@@ -122,6 +145,10 @@ model TenantTimeSettings {
   /// every holder of `time.approve`. `(approvalRecipientListId, tenantId)` →
   /// `RecipientList(id, tenantId)`, `ON DELETE SET NULL ("approvalRecipientListId")` in SQL.
   approvalRecipientListId String?
+  /// The workspace's one currency, ISO 4217 (three upper-case letters, CHECK;
+  /// 3.4d, decision 273): required before the first rate, not changed while
+  /// any rate exists. Rates and amounts are whole minor units of it.
+  currency                String?
   version                 Int      @default(1)
   updatedAt               DateTime @updatedAt
 
@@ -129,4 +156,42 @@ model TenantTimeSettings {
   approvalRecipientList RecipientList? @relation(fields: [approvalRecipientListId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([tenantId, approvalRecipientListId])
+}
+
+/// A billable rate (sub-phase 3.4d; ADR 0012 §6; owner decisions 272 and
+/// 273): at one level, in force from `effectiveFrom` until the next row of the
+/// same level and scope. Rates are plaintext integers protected by the
+/// `time.rates` key, not by encryption, so totals sum them in the database.
+model BillableRate {
+  id              String            @id @default(cuid())
+  tenantId        String
+  level           BillableRateLevel
+  /// Set for PROJECT only (CHECK); `(projectId, tenantId)` → `Project`, cascading.
+  projectId       String?
+  /// Set for MEMBER only (CHECK); FK → User, RESTRICT (users are not deleted
+  /// before 8.3). No FK to the membership: a rate's history outlives it.
+  userId          String?
+  /// Minor units of the workspace's currency per hour, 0 to 2,000,000,000
+  /// (CHECK); NULL is "no rate at this level from this date".
+  hourlyRateMinor Int?
+  /// The day the rate starts to apply, date-only.
+  effectiveFrom   DateTime          @db.Date
+  /// An actor stamp: who set it. No FK.
+  createdByUserId String
+  createdAt       DateTime          @default(now())
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  user    User?    @relation("BillableRateMember", fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([id, tenantId])
+  /// One rate per level, scope and date; created `NULLS NOT DISTINCT` in the
+  /// migration (a workspace row names neither scope, so NULLs must collide).
+  @@unique([tenantId, level, projectId, userId, effectiveFrom])
+  /// The workspace's rates by level and date (the cascade's reads).
+  @@index([tenantId, level, effectiveFrom])
+  /// A project's rates; the project's FK.
+  @@index([tenantId, projectId, effectiveFrom])
+  /// A member's rates; the user's FK.
+  @@index([tenantId, userId, effectiveFrom])
 }

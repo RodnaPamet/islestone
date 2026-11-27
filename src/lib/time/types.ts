@@ -11,6 +11,8 @@ export interface TimeAffordances {
     track: boolean;
     /** Others' weeks (`time.approve`; 3.4c's Timesheets). */
     approve: boolean;
+    /** Money: billable rates, project billable defaults and amounts (`time.rates`; 3.4d, decision 274). */
+    rates: boolean;
     /** May add, change and delete one's own entries and use the timer: `track`, as a person. */
     record: boolean;
 }

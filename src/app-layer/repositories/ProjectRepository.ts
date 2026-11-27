@@ -21,6 +21,8 @@ export const projectSelect = {
     keyPrefix: true,
     dueDate: true,
     initiativeId: true,
+    /** New time entries billable unless unticked (3.4d, decision 271): a flag, not money, so every reader sees it. */
+    timeBillableByDefault: true,
     version: true,
     archivedAt: true,
     deletedAt: true,
@@ -58,6 +60,17 @@ function roadmapProjectWhere(ctx: RequestContext, v: ProjectVisibility, scope: R
         ...(scope.teamId ? { teamId: scope.teamId } : {}),
         AND: [projectRowVisibilityWhere(v, { includeArchived: true }), { OR: or }],
     };
+}
+
+/**
+ * A project that is not a tombstone always has a team (CHECK
+ * `Project_team_unless_tombstone`, issue #120, owner decision 305): only a
+ * tombstone's team is cleared. Every read here that leaves tombstones out
+ * returns its rows through this, so callers keep a `string` team.
+ */
+export function withTeam<T extends { teamId: string | null }>(row: T): T & { teamId: string } {
+    if (row.teamId === null) throw new Error('A project that is not a tombstone has no team (Project_team_unless_tombstone)');
+    return row as T & { teamId: string };
 }
 
 export class ProjectRepository {
@@ -108,7 +121,7 @@ export class ProjectRepository {
         v: ProjectVisibility,
         opts: { teamId?: string; includeArchived?: boolean } = {},
     ) {
-        return db.project.findMany({
+        const rows = await db.project.findMany({
             where: {
                 tenantId: ctx.tenantId,
                 ...(opts.teamId ? { teamId: opts.teamId } : {}),
@@ -118,31 +131,50 @@ export class ProjectRepository {
             take: PROJECT_LIST_TAKE,
             select: projectSelect,
         });
+        return rows.map(withTeam);
     }
 
     /** A visible project (archived ones included: they stay readable). */
     static async getVisible(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, id: string) {
-        return db.project.findFirst({
+        const row = await db.project.findFirst({
             where: { id, tenantId: ctx.tenantId, AND: [projectRowVisibilityWhere(v, { includeArchived: true })] },
             select: projectSelect,
         });
+        return row ? withTeam(row) : null;
     }
 
     /** The visible projects among `ids` (archived ones included: the calendar's markers, 3.3a). */
     static async visibleByIds(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, ids: readonly string[]) {
         if (ids.length === 0) return [];
-        return db.project.findMany({
+        const rows = await db.project.findMany({
             where: { id: { in: [...ids] }, tenantId: ctx.tenantId, AND: [projectRowVisibilityWhere(v, { includeArchived: true })] },
             orderBy: { id: 'asc' },
             take: ids.length,
             select: projectSelect,
         });
+        return rows.map(withTeam);
     }
 
     /** Any project row of the workspace, deleted included (restore, purge). */
     static async getAny(db: PrismaTx, ctx: RequestContext, id: string) {
         // Never a tombstone (issue #117): only time totals read one.
-        return db.project.findFirst({ where: { id, tenantId: ctx.tenantId, purgedAt: null }, select: projectSelect });
+        const row = await db.project.findFirst({ where: { id, tenantId: ctx.tenantId, purgedAt: null }, select: projectSelect });
+        return row ? withTeam(row) : null;
+    }
+
+    /**
+     * The projects time totals and the export name (3.4d): any row of the
+     * workspace among `ids`, deleted ones and tombstones included (time is kept
+     * with the project it was recorded in, decisions 261 and 281). A
+     * tombstone's team is NULL (issue #120).
+     */
+    static async labelsForTime(db: PrismaTx, ctx: RequestContext, ids: readonly string[]) {
+        if (ids.length === 0) return [];
+        return db.project.findMany({
+            where: { tenantId: ctx.tenantId, id: { in: [...ids] } },
+            take: ids.length,
+            select: { id: true, name: true, keyPrefix: true, teamId: true, deletedAt: true, purgedAt: true },
+        });
     }
 
     /** Lock the project row for the rest of the transaction. */
@@ -208,6 +240,19 @@ export class ProjectRepository {
     }
 
     /**
+     * Whether new time entries on the project are billable by default (3.4d,
+     * decision 271): a versioned write; 0 rows when the version moved or the
+     * project is deleted.
+     */
+    static async setTimeBillableByDefault(db: PrismaTx, ctx: RequestContext, id: string, expectedVersion: number | undefined, value: boolean): Promise<number> {
+        const result = await db.project.updateMany({
+            where: { id, tenantId: ctx.tenantId, deletedAt: null, ...(expectedVersion !== undefined ? { version: expectedVersion } : {}) },
+            data: { timeBillableByDefault: value, version: { increment: 1 } },
+        });
+        return result.count;
+    }
+
+    /**
      * The due date a project template gives the project it makes (3.1,
      * decision 188), in `createProject`'s own transaction: part of the
      * create, so the version does not move.
@@ -269,12 +314,13 @@ export class ProjectRepository {
     ) {
         const where = roadmapProjectWhere(ctx, v, scope);
         if (!where) return [];
-        return db.project.findMany({
+        const rows = await db.project.findMany({
             where,
             orderBy: [{ name: 'asc' }, { id: 'asc' }],
             take,
             select: { id: true, name: true, keyPrefix: true, teamId: true, initiativeId: true, dueDate: true, archivedAt: true },
         });
+        return rows.map(withTeam);
     }
 
     /** How many projects `roadmapProjects` would read with no limit: the count a refusal names. */
@@ -290,12 +336,13 @@ export class ProjectRepository {
 
     /** An initiative's live, visible projects (archived ones included), by name. */
     static async listOfInitiative(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, initiativeId: string) {
-        return db.project.findMany({
+        const rows = await db.project.findMany({
             where: { tenantId: ctx.tenantId, initiativeId, AND: [projectRowVisibilityWhere(v, { includeArchived: true })] },
             orderBy: [{ name: 'asc' }, { id: 'asc' }],
             take: PROJECT_LIST_TAKE,
             select: projectSelect,
         });
+        return rows.map(withTeam);
     }
 
     /** How many projects (deleted ones included) name the given initiatives: what a purge unlinks. */

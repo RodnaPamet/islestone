@@ -13,7 +13,7 @@
  *
  * Written fresh for Islestone.
  */
-import { Prisma, type TimeEntrySource } from '@prisma/client';
+import { Prisma, type BillableRateLevel, type TimeEntrySource } from '@prisma/client';
 
 import type { PrismaTx } from '@/lib/db-context';
 import { buildKeysetWhere, keysetOrderBy, type CursorPayload, type KeysetOrder } from '@/lib/pagination';
@@ -38,6 +38,8 @@ export const timeEntrySelect = {
     source: true,
     billable: true,
     description: true,
+    frozenRateMinor: true,
+    frozenRateLevel: true,
     version: true,
     createdAt: true,
     updatedAt: true,
@@ -58,6 +60,52 @@ export interface TimeEntryInsert {
 }
 
 export type TimeEntryPatch = Partial<Pick<TimeEntryRow, 'workItemId' | 'projectId' | 'workDate' | 'minutes' | 'billable' | 'description'>>;
+
+/** Time totals' and the export's filter (3.4d): a window of dates, both ends included. */
+export interface TotalsFilter {
+    from: Date;
+    to: Date;
+    projectId?: string;
+    userId?: string;
+    billable?: boolean;
+    /**
+     * The caller's granted projects, when they do not see the whole workspace
+     * (a guest after 8.4); the usecase passes it only with no `projectId`.
+     */
+    projectIds?: readonly string[];
+}
+
+export type TotalsGroupBy = 'project' | 'person' | 'item' | 'week';
+
+/** The group's expression; a week is its Monday (date-only arithmetic, as the freeze trigger's). */
+function groupExpr(groupBy: TotalsGroupBy): Prisma.Sql {
+    switch (groupBy) {
+        case 'project':
+            return Prisma.sql`t."projectId"`;
+        case 'person':
+            return Prisma.sql`t."userId"`;
+        case 'item':
+            return Prisma.sql`t."workItemId"`;
+        case 'week':
+            return Prisma.sql`(t."workDate" - (extract(isodow FROM t."workDate")::integer - 1))`;
+    }
+}
+
+function totalsWhere(ctx: Ctx, f: TotalsFilter): Prisma.Sql {
+    return Prisma.sql`t."tenantId" = ${ctx.tenantId}
+               AND t."workDate" BETWEEN ${f.from}::date AND ${f.to}::date
+               AND t."minutes" IS NOT NULL
+               ${f.projectId ? Prisma.sql`AND t."projectId" = ${f.projectId}` : Prisma.empty}
+               ${f.userId ? Prisma.sql`AND t."userId" = ${f.userId}` : Prisma.empty}
+               ${f.billable !== undefined ? Prisma.sql`AND t."billable" = ${f.billable}` : Prisma.empty}
+               ${f.projectIds ? Prisma.sql`AND t."projectId" = ANY(${[...f.projectIds]}::text[])` : Prisma.empty}`;
+}
+
+/** A group key as text: a date key for a week. */
+function keyText(key: string | Date | null): string | null {
+    if (key === null) return null;
+    return key instanceof Date ? key.toISOString().slice(0, 10) : key;
+}
 
 export class TimeEntryRepository {
     /** One entry of the workspace, or null. */
@@ -200,6 +248,80 @@ export class TimeEntryRepository {
         return rows.map((r) => r.userId);
     }
 
+    // ── Time totals and the export (3.4d) ──────────────────────────────
+
+    /**
+     * Time totals' one aggregate (3.4d): finished entries dated in the
+     * filter's window, grouped by project, person, item (NULL: a deleted
+     * item) or week (its Monday), with minutes, billable minutes and entries
+     * per group; at most `take` groups, by key. `projectIds` (the caller's
+     * granted projects when visibility is not the whole workspace) narrows it.
+     */
+    static async totals(db: PrismaTx, ctx: Ctx, filter: TotalsFilter, groupBy: TotalsGroupBy, take: number): Promise<Array<{ key: string | null; minutes: number; billable: number; entries: number }>> {
+        const g = groupExpr(groupBy);
+        const rows = await db.$queryRaw<Array<{ key: string | Date | null; minutes: bigint; billable: bigint | null; entries: bigint }>>(Prisma.sql`
+            SELECT ${g} AS key,
+                   SUM(t."minutes") AS minutes,
+                   SUM(t."minutes") FILTER (WHERE t."billable") AS billable,
+                   COUNT(*) AS entries
+              FROM "TimeEntry" t
+             WHERE ${totalsWhere(ctx, filter)}
+             GROUP BY 1
+             ORDER BY 1 NULLS LAST
+             LIMIT ${take}`);
+        return rows.map((r) => ({ key: keyText(r.key), minutes: Number(r.minutes), billable: Number(r.billable ?? 0), entries: Number(r.entries) }));
+    }
+
+    /** How many groups `totals` would answer with no limit: the count a refusal names. */
+    static async countTotalsGroups(db: PrismaTx, ctx: Ctx, filter: TotalsFilter, groupBy: TotalsGroupBy): Promise<number> {
+        const rows = await db.$queryRaw<Array<{ n: bigint }>>(Prisma.sql`
+            SELECT COUNT(DISTINCT ${groupExpr(groupBy)}) + MAX(CASE WHEN ${groupExpr(groupBy)} IS NULL THEN 1 ELSE 0 END) AS n
+              FROM "TimeEntry" t
+             WHERE ${totalsWhere(ctx, filter)}`);
+        return Number(rows[0]?.n ?? 0);
+    }
+
+    /**
+     * The billable lines amounts are priced from (3.4d, a rates holder only):
+     * the filter's billable finished entries, alike ones counted together per
+     * group, person, project, date, minutes and frozen rate, so each entry is
+     * read once and rounded once (decision 273) by `timeAmounts`.
+     */
+    static async amountLines(db: PrismaTx, ctx: Ctx, filter: TotalsFilter, groupBy: TotalsGroupBy) {
+        const rows = await db.$queryRaw<
+            Array<{ key: string | Date | null; projectId: string; userId: string; workDate: Date; minutes: number; frozenRateMinor: number | null; frozenRateLevel: BillableRateLevel | null; count: bigint }>
+        >(Prisma.sql`
+            SELECT ${groupExpr(groupBy)} AS key, t."projectId", t."userId", t."workDate", t."minutes", t."frozenRateMinor", t."frozenRateLevel", COUNT(*) AS count
+              FROM "TimeEntry" t
+             WHERE ${totalsWhere(ctx, { ...filter, billable: true })}
+             GROUP BY 1, 2, 3, 4, 5, 6, 7`);
+        return rows.map((r) => ({ ...r, key: keyText(r.key), count: Number(r.count) }));
+    }
+
+    /**
+     * The export's entries (3.4d): the filter's finished entries, by date,
+     * person and id, at most `take` (the usecase reads one past its cap and
+     * refuses above). The description is read (decrypted) and shown only
+     * where the caller may read it.
+     */
+    static async forExport(db: PrismaTx, ctx: Ctx, filter: TotalsFilter, take: number) {
+        return db.timeEntry.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                workDate: { gte: filter.from, lte: filter.to },
+                minutes: { not: null },
+                ...(filter.projectId ? { projectId: filter.projectId } : {}),
+                ...(filter.userId ? { userId: filter.userId } : {}),
+                ...(filter.billable !== undefined ? { billable: filter.billable } : {}),
+                // The usecase passes the grants only when it names no project (a named one is checked against them first).
+                ...(filter.projectIds && !filter.projectId ? { projectId: { in: [...filter.projectIds] } } : {}),
+            },
+            orderBy: [{ workDate: 'asc' }, { userId: 'asc' }, { id: 'asc' }],
+            take,
+            select: { id: true, userId: true, projectId: true, workItemId: true, workDate: true, minutes: true, billable: true, description: true, frozenRateMinor: true, frozenRateLevel: true },
+        });
+    }
+
     /** Whether any entry names the project (the purge's choice between a tombstone and a delete, issue #117). */
     static async anyInProject(db: PrismaTx, ctx: Ctx, projectId: string): Promise<boolean> {
         const row = await db.timeEntry.findFirst({ where: { tenantId: ctx.tenantId, projectId }, select: { id: true } });
@@ -231,6 +353,41 @@ export class TimeEntryRepository {
         const result = await db.timeEntry.updateMany({
             where: { id, tenantId: ctx.tenantId, userId, minutes: null },
             data: { minutes, version: { increment: 1 } },
+        });
+        return result.count;
+    }
+
+    /**
+     * Stamp the rates an approved week's billable entries were approved at
+     * (3.4d, decision 273), in one statement; only the person's entries in
+     * `[from, to]`. The freeze trigger admits this write: the frozen columns
+     * change and nothing else (no version bump: it is not the person's change).
+     */
+    static async stampFrozenRates(
+        db: PrismaTx,
+        ctx: Ctx,
+        userId: string,
+        from: Date,
+        to: Date,
+        stamps: ReadonlyArray<{ id: string; hourlyRateMinor: number; level: BillableRateLevel }>,
+    ): Promise<number> {
+        if (stamps.length === 0) return 0;
+        return db.$executeRaw(Prisma.sql`
+            UPDATE "TimeEntry" t
+               SET "frozenRateMinor" = s.rate, "frozenRateLevel" = s.level::"BillableRateLevel", "updatedAt" = now()
+              FROM unnest(${stamps.map((x) => x.id)}::text[], ${stamps.map((x) => x.hourlyRateMinor)}::int[], ${stamps.map((x) => x.level)}::text[]) AS s(id, rate, level)
+             WHERE t."id" = s.id
+               AND t."tenantId" = ${ctx.tenantId}
+               AND t."userId" = ${userId}
+               AND t."workDate" BETWEEN ${from}::date AND ${to}::date
+               AND t."billable"`);
+    }
+
+    /** Clear the person's frozen rates in `[from, to]` (a reopened week, 3.4d). */
+    static async clearFrozenRates(db: PrismaTx, ctx: Ctx, userId: string, from: Date, to: Date): Promise<number> {
+        const result = await db.timeEntry.updateMany({
+            where: { tenantId: ctx.tenantId, userId, workDate: { gte: from, lte: to }, frozenRateMinor: { not: null } },
+            data: { frozenRateMinor: null, frozenRateLevel: null },
         });
         return result.count;
     }
