@@ -229,9 +229,12 @@ export async function setTimeOffDays(ctx: RequestContext, input: { userId?: stri
                 }),
             },
         });
-        const stored = await TimeOffRepository.listDays(db, ctx, userId, dateOnlyValue(days[0]!.day), dateOnlyValue(days[days.length - 1]!.day), WORKLOAD_LIMITS.timeOffReadRows, true);
-        const named = new Set(days.map((d) => d.day));
-        return { userId, days: stored.filter((r) => named.has(dateKeyOf(r.day))).map((r) => toDayData(r, true)), removed: [] };
+        // The dates as now stored, under the person's lock: the writer may read the type it wrote.
+        const stored: TimeOffDayData[] = days.map((d) => {
+            const before = byDay.get(d.day);
+            return { userId, day: d.day, minutes: d.minutes, version: before ? before.version + 1 : 1, updatedByUserId: ctx.userId, type: d.type };
+        });
+        return { userId, days: stored, removed: [] };
     });
     await ringIfOther(ctx, userId, 'set', result.days.map((d) => d.day));
     return result;

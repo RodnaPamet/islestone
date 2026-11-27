@@ -198,14 +198,14 @@ const SCENARIOS: Scenario[] = [
         budget: 23,
     },
     // Time off (3.5a): one's own date recorded, a write of its own (the person's lock, the membership FOR KEY SHARE,
-    // the dates it names, the insert, its hash-chained audit entry and the dates read back). Each run a date of its own.
+    // the dates it names, the insert and two hash-chained audit entries). Each run a date of its own.
     {
         name: 'time off: record one date',
         file: `${ROUTES}/time-off/days/route.ts`,
         method: 'PUT',
         path: () => '/time-off/days',
         body: (_w, run) => ({ days: [{ day: timeOffDay(run), minutes: null, type: 'VACATION' }] }),
-        budget: 12,
+        budget: 11,
     },
 ];
 

@@ -93,7 +93,7 @@ Measured on the development machine (4 CPUs, 16 GB, Docker), with PgBouncer in f
 | Timesheets: approve a week (3.4c) | — | 23 | the row, the week's lock, the row lock and the claim, the week's sums, the audit entries; after the commit the person's bell |
 | Workload: capacity of every member, twelve weeks (3.5a) | 9 (with 3.5b's allocation) | 8 | the tenant binding, every calendar of the workspace and their holidays (one read gives today's zone and the people's calendars), the people and their names, the settings, the capacity rows, the time-off dates; none per person; 3.5b adds the items and the time totals |
 | Time off: the caller's month (3.5a) | — | 6 | the tenant binding, the person, the dates, the calendars and their holidays, the person's capacity rows (their calendar) |
-| Time off: record one date (3.5a) | — | 12 | the tenant binding, the person's lock, the membership `FOR KEY SHARE`, the dates it names, the insert, two hash-chained audit entries (the row's and `TIME_OFF_SET`), the dates read back |
+| Time off: record one date (3.5a) | — | 11 | the tenant binding, the person's lock, the membership `FOR KEY SHARE`, the dates it names, the insert, two hash-chained audit entries (the row's and `TIME_OFF_SET`) |
 | Create with a description | 25 | 32 | three hash-chained audit entries (lock, chain head, insert: nine statements), the number claim, the vector, the field set, the type's review defaults, the read back |
 
 A budget only goes down. A count that grows with the page size or the workspace is a query in a loop the lexical guard (`query-shape-guardrails.test.ts`, D1) missed.
