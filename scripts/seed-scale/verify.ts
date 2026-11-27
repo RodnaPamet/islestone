@@ -47,6 +47,10 @@ export interface WorkspaceReport {
     timeEntries: number;
     /** Sub-phase 3.4d. */
     approvedWeeks: number;
+    /** Sub-phase 3.5b. */
+    estimatedItems: number;
+    capacityRows: number;
+    timeOffDates: number;
     auditEntries: number;
     decryptedChecked: number;
 }
@@ -126,6 +130,19 @@ async function verifyWorkspace(bulk: PrismaClient, shape: Shape, slug: string): 
                               AND s."weekStart" = t."workDate" - (extract(isodow FROM t."workDate")::integer - 1))`,
     );
     const currencySet = await q(`SELECT count(*) AS n FROM "TenantTimeSettings" WHERE "tenantId" = $1 AND "currency" = 'EUR'`);
+    // Sub-phase 3.5b: estimates in each team's unit only, capacity from Mondays, time off's type padded and encrypted.
+    const hoursItems = await q(`SELECT count(*) AS n FROM "WorkItem" w JOIN "Team" t ON t."id" = w."teamId" WHERE w."tenantId" = $1 AND t."estimateUnit" = 'HOURS'`);
+    const estimatedItems = await q(`SELECT count(*) AS n FROM "WorkItem" WHERE "tenantId" = $1 AND ("estimateMinutes" IS NOT NULL OR "estimatePoints" IS NOT NULL)`);
+    const hoursEstimated = await q(`SELECT count(*) AS n FROM "WorkItem" w JOIN "Team" t ON t."id" = w."teamId" WHERE w."tenantId" = $1 AND t."estimateUnit" = 'HOURS' AND w."estimateMinutes" IS NOT NULL`);
+    const wrongUnit = await q(
+        `SELECT count(*) AS n FROM "WorkItem" w JOIN "Team" t ON t."id" = w."teamId"
+          WHERE w."tenantId" = $1 AND ((w."estimateMinutes" IS NOT NULL AND t."estimateUnit" IS DISTINCT FROM 'HOURS')
+                                    OR (w."estimatePoints" IS NOT NULL AND t."estimateUnit" IS DISTINCT FROM 'POINTS'))`,
+    );
+    const capacityRows = await q(`SELECT count(*) AS n FROM "MemberCapacity" WHERE "tenantId" = $1`);
+    const timeOffDates = await q(`SELECT count(*) AS n FROM "TimeOff" WHERE "tenantId" = $1`);
+    const timeOffShapes = await q(`SELECT count(DISTINCT length("type")) AS n FROM "TimeOff" WHERE "tenantId" = $1`);
+    const timeOffPlain = await q(`SELECT count(*) AS n FROM "TimeOff" WHERE "tenantId" = $1 AND "type" NOT LIKE 'v2:%'`);
 
     check(items === shapeItemCount(shape), `${slug} holds ${items} items, the shape ${shapeItemCount(shape)}`);
     check(liveItems > items * 0.95 && liveItems < items, `${slug}: ${liveItems} of ${items} items live (about 1 % are deleted)`);
@@ -142,6 +159,10 @@ async function verifyWorkspace(bulk: PrismaClient, shape: Shape, slug: string): 
     check(approvedWeeks > 20, `${slug}: ${approvedWeeks} approved weeks`);
     check(stamped > 0, `${slug}: no entry of an approved week carries a frozen rate`);
     check(strayStamps === 0, `${slug}: ${strayStamps} frozen rates outside an approved week`);
+    check(hoursEstimated > hoursItems * 0.5 && hoursEstimated < hoursItems * 0.7, `${slug}: ${hoursEstimated} of ${hoursItems} hours-team items estimated (about 60 %)`);
+    check(wrongUnit === 0, `${slug}: ${wrongUnit} items hold an estimate outside their team's unit`);
+    check(capacityRows > 0 && timeOffDates > 0, `${slug}: ${capacityRows} capacity rows and ${timeOffDates} dates of time off`);
+    check(timeOffShapes === 1 && timeOffPlain === 0, `${slug}: time off's types are not one padded ciphertext length (${timeOffShapes} lengths, ${timeOffPlain} not in the envelope)`);
 
     const chain = await verifyAuditChain(tenantId);
     check(chain.valid, `${slug}: the audit chain is broken at ${chain.firstBreakAt ?? '?'}`);
@@ -185,6 +206,9 @@ async function verifyWorkspace(bulk: PrismaClient, shape: Shape, slug: string): 
         watchers,
         timeEntries,
         approvedWeeks,
+        estimatedItems,
+        capacityRows,
+        timeOffDates,
         auditEntries: chain.totalEntries,
         decryptedChecked,
     };

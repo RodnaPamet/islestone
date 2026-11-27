@@ -1,8 +1,8 @@
-# Workload: capacity and time off
+# Workload: capacity, time off and allocation
 
-Sub-phase 3.5a: capacity and time off, with a capacity-only grid. The decisions are owner decisions 282 to 303 (`docs/HANDOFF.md`), recorded in [ADR 0013](adr/0013-workload-and-capacity.md) and the porting map [`docs/porting/maps/3.5.md`](porting/maps/3.5.md), whose "Rules no decision names (3.5a, as built)" lists the choices the build made. Allocation, the over-capacity flags, the cell sheet and My Work's line (3.5b) and the ways to rebalance (3.5c) are not built yet.
+Sub-phases 3.5a (capacity and time off) and 3.5b (allocation and the Workload view). The decisions are owner decisions 282 to 303 (`docs/HANDOFF.md`), recorded in [ADR 0013](adr/0013-workload-and-capacity.md) and the porting map [`docs/porting/maps/3.5.md`](porting/maps/3.5.md), whose "Rules no decision names (3.5a, as built)" and "(3.5b, as built)" list the choices the builds made. The ways to rebalance (3.5c) are not built yet.
 
-The words are ADR 0006's: Capacity, Time off, Time off type, Workload, Workload settings; "Add time off". Never Availability, Leave, Day off, Absence, PTO, Allowance, Quota or Utilisation, and "Holiday" is only a working calendar's day off for everyone (decision 303): time off's types are Vacation, Sick and Other.
+The words are ADR 0006's: Capacity, Time off, Time off type, Workload, Allocated, Over capacity, Free, Workload settings; "Add time off", "Over by 6h". Never Availability, Leave, Day off, Absence, PTO, Allowance, Quota, Utilisation, Booked, Overbooked, Overloaded or Overtime, and "Holiday" is only a working calendar's day off for everyone (decision 303): time off's types are Vacation, Sick and Other.
 
 ## Capacity
 
@@ -44,6 +44,48 @@ The calendars come from `resolveWorkingCalendars` and every working-day test fro
 - **Never audited, logged, indexed, searched, notified, exported or counted.** The Prisma audit extension names the field on a row write and never records its value; the audit entries carry dates and hours.
 - **Absent from every read for a caller who may not see it** (`mayReadTimeOffType`: the person, or a holder of `workload.manage`, signed in): the workload read never selects it, and `GET /time-off` omits the key, never sending `null`. Everyone holding `workload.view` sees the dates and hours.
 
+## Allocation (3.5b)
+
+Allocation is computed on every read and never stored (decisions 292 to 296; ADR 0013 §6 and §7).
+
+### What counts
+
+An item counts toward its **assignee** when it is live, open (Backlog, Unstarted or Started), in a visible, unarchived project, and its team estimates in hours with an estimate (decision 292). Each item counts its own estimate: a parent and its sub-items each count what they hold. Waiting on and reviewers carry no allocation. Beside the hours each row names what could not be placed:
+
+- **No dates**: counted items with neither date (their count and remaining hours);
+- **Not estimated**: open assigned items with no hours estimate, in hours teams and in teams that do not estimate (their count);
+- **Points work**: open assigned items of points teams (their count and points). Points are never converted to hours (decision 294, ADR 0012).
+- **Later**: hours placed in weeks after the ones shown.
+
+Work assigned to nobody is a row of its own, **Unassigned**, never compared with a capacity. A deactivated member who still holds open work is a row with no capacity, so their work shows as over capacity and can be handed on.
+
+### Placing hours into weeks
+
+`src/app-layer/domain/workload/allocation.ts` (pure, client-safe, property-tested), each item on **its own** calendar (its team's, else the workspace's; ADR 0010 §5), "today" in that calendar's zone:
+
+1. **Remaining**: the estimate less the finished time recorded on the item, never below zero, when the viewer holds `time.view` (decision 295: the total every holder of `time.view` already sees on the item); otherwise the whole estimate, and the page says so.
+2. **The span** is the engine's `plannedSpanOf`: start to due; one date, one working day on it; start after due, one day at the due date.
+3. **From today**: the hours run from the later of the span's start and today's next working day to the span's end. An item whose span ended before today is **overdue**: all of it falls on today's next working day, marked. A span with no working day left in it falls on the first working day after.
+4. **Into weeks**: week `k` gets `⌈R·C(k)/D⌉ − ⌈R·C(k−1)/D⌉`, `D` the working days and `C(k)` those up to week `k`'s Sunday. Every week is within one minute of its exact share, the odd minute goes to the earlier week, the weeks sum to the remaining minutes exactly, a later due date never moves minutes earlier, and a week's figure does not depend on which weeks are shown.
+
+Weeks are Monday to Sunday by date. An item's hours land on its own calendar's working days even when its assignee is off: the week then shows over capacity (decision 290). `src/app-layer/domain/workload/workload.ts` sums the placements per person and week beside their capacity.
+
+### Over capacity
+
+A week is **over capacity** when its allocated hours exceed its capacity, shown as "Over by 6h"; any allocation in a week with no capacity (all time off, a deactivated member) is over (decision 296). Nothing is enforced: assigning work into a full week is never refused, and nobody is notified.
+
+### The read
+
+`GET /workload?from&weeks&userId&projectId&teamId&recipientListId&over` (`workload.view`, `getWorkload` in `src/app-layer/usecases/workload.ts`):
+
+- `from` a Monday, not before the current week (400 `WORKLOAD_RANGE`); 1 to 26 weeks, twelve by default.
+- **The people**: every active member but guests (at most 500, 422 `WORKLOAD_TOO_LARGE`, never cut) and the deactivated members who still hold open work.
+- **The filters narrow the people, never their figures** (decision 297): named people (`userId`, comma-separated, `me` the caller, at most 50), the people a workspace recipient list resolves to (`resolveListRecipients` at read time), those with counted work of a project or team in the weeks shown (their cells then also show that share, "12h of 38h in Website"), and those over capacity in some week shown (`over=true`). The Unassigned row shows when no people filter is set.
+- **The work**: one read of the counted items (`WorkItemRepository.listForWorkload`, the unit read through the project's team in the same statement; at most 20,000, 422 `WORKLOAD_TOO_LARGE`, never cut), one aggregate of the unplaced work per assignee with each item's team's unit (`workloadUnplacedCounts`, raw SQL), one grouped read of the time on the counted items (`TimeEntryRepository.totalsForItems`) for a holder of `time.view`. A window that starts after the current week reads only what is due in it or later (overdue work is on today, in the current week). No description, comment or field value.
+- **Never** a time-off type, a person's recorded week (decision 266) or anything stored, audited or logged per person.
+
+`GET /workload/cell?userId&week` (`workload.view`; `userId` a person, `me`, or `unassigned`): one week's capacity, allocation, over-capacity minutes and time-off dates with their hours (never a type), and the items that fill it, most minutes first, at most 200, each with its minutes there, its dates, its remaining hours and why it is there (spread over N working days, on one day, overdue). The items are listed only for a caller who may read work items (`itemsShown`); the figures are shown either way.
+
 ## Who may do what
 
 The `workload` permission domain (decision 298):
@@ -58,7 +100,8 @@ The granular key decides (`src/app-layer/policies/workload.policies.ts`); a cust
 
 | Act | Route | Key |
 |---|---|---|
-| Capacity per person per week | `GET /workload?from&weeks&userId` | `workload.view` |
+| Capacity and allocation per person per week | `GET /workload?from&weeks&userId&projectId&teamId&recipientListId&over` | `workload.view` |
+| A week's items | `GET /workload/cell?userId&week` | `workload.view` |
 | Settings → Workload's members | `GET /workload/members` | `workload.manage` |
 | The default | `GET` / `PUT /workload-settings` | `workload.view` / `workload.manage` |
 | A member's capacity | `GET` / `PUT /members/:userId/capacity` | `workload.view` / `workload.manage` |
@@ -68,22 +111,36 @@ The granular key decides (`src/app-layer/policies/workload.policies.ts`); a cust
 
 None sits under `/admin/`, which the edge refuses to non-admins.
 
-## The Workload page (3.5a)
+## The Workload page
 
 The Workload sidebar entry (`workload.view`) opens `/workload`:
 
 - **My capacity and time off**: the person's capacity in force ("40h a week · Workspace calendar", or the workspace's default) and their time off as a month of dates (a `role=grid` with a roving tabindex), each date showing its hours or "Whole day" and its type; "Add time off"; a date opened to change it in place or remove it through the undo toast.
-- **Capacity by week**: one row per active member (every role but Guest), one column per week, twelve weeks from the current one (at most 26 per read; never before the current week, 400 `WORKLOAD_RANGE`; at most 500 people, 422 `WORKLOAD_TOO_LARGE`, never cut). Each cell is the week's capacity after holidays and time off, with "Time off 8h" when time off removed some; its label says it in words. Never a type.
+- **Workload by week** (`WorkloadGrid`, a `role=grid` with a roving tabindex): one row per person, then the Unassigned row, one column per week, twelve weeks from the current one with "Previous weeks", "This week" and "Next weeks". Each cell shows "34h / 40h", a bar whose width and colour follow allocated ÷ capacity (`useHeatScale`), a red edge and "Over by 6h" when over, a filter's share, and "Time off 8h" when time off removed some; its label says all of it in words, so colour never carries meaning alone. A row ends with No dates, Not estimated, Points work and Later. The filters (people, project, team, recipient list, over capacity only) are the shared filter toolbar, kept in the address.
+- **A week's items**: Enter, Space or a click on a cell opens `WorkloadCellSheet`: the week's figures and time off, then its items in the shared `DataTable` (key, title, hours this week and remaining, dates, why), each opening the item's sheet.
+- **My Work's line** (decision 300): above My Work's sections, for a holder of `workload.view`, "This week 34h of 40h · next week over by 6h" with a link to the Workload page filtered to the person (`MyWorkloadLine`, the workload read for the caller's two weeks); hidden when they have no counted work in either week.
+
+A work-item write anywhere re-reads every mounted workload read (`registerWorkload` in `work-item-cache.ts`): a change of assignee, dates, estimate or state moves hours between rows and weeks that only the server recomputes.
 
 Settings → Workload (`/settings/workload`): the default weekly hours, the members table (capacity in force, its calendar, the next change; "Change capacity" from a Monday; removing a future change), and any member's time off with its types.
 
 The data is `src/components/workload/data/` (`use-workload.ts`, `use-time-off.ts`).
 
+## Performance
+
+Measured on the 10k seed (which writes estimates on 60 % of the hours team's items, capacity for a quarter of the members and about 25 dates of time off for half of them; `scripts/seed-scale/workload.ts`):
+
+- **Statements per request**: the view 8 (the context; the calendars with their holidays' dates in one statement; the unplaced counts with each item's team's unit in one aggregate, which also names who holds open work; the people, active and deactivated holders, and their names; the default, the capacity rows and the time-off dates in one statement; the counted items; their time), My Work's line 8, a cell 8. None is per person or per item.
+- **Plan checks**: "workload: open assigned items of every member over 12 weeks" (the counts on the partial `WorkItem_progress_project_path`; the hours teams' items reached through their projects, which the planner prefers to the assignee index when every assignee is asked for), "workload: one person, two weeks" (the assignee index), "time: totals for a set of items" (the item index of `TimeEntry`) and "workload: time-off dates in a window" (the one capacity statement, the time-off part on `TimeOff_tenantId_userId_day_key`).
+- **The pure modules**: 500 people, 20,000 items, about 12,500 dates of time off and 26 weeks within 100 ms p95 in Node (`tests/unit/domain/workload-performance.test.ts`, failing at four times the budget), byte-equal under five process time zones.
+- **Latency**: the `workload` scenario (twelve weeks, every member; p50 250 ms, p95 600 ms at 10k; 400 and 900 at 100k) is reported, not enforced until the nightly 100k run has measured it; `time-off-set` is a write, run last.
+
 ## Privacy
 
-| Concern | 3.5a |
+| Concern | 3.5a and 3.5b |
 |---|---|
-| Records | Hours a week, dates and hours away, and a three-word reason, one of which is health data. Nothing is inferred from activity. |
+| Records | Hours a week, dates and hours away, and a three-word reason, one of which is health data. Nothing is inferred from activity. Allocation is computed on every read from items' estimates and dates and never stored. |
+| Recorded time | Shrinks an item's remaining hours only for a viewer who already sees its total (`time.view`); a person's recorded week is never shown (decision 266). |
 | Retention | The workspace's life; the person or a manager deletes any date; a removed member's rows go with the membership. |
-| Logs | Never a person's capacity, time off or type; ids and counts. |
+| Logs | Never a person's capacity, time off, allocation or type; ids and counts. |
 | Search, export, calendar sync | None. |

@@ -397,4 +397,26 @@ export class TimeEntryRepository {
         const result = await db.timeEntry.deleteMany({ where: { id, tenantId: ctx.tenantId, userId } });
         return result.count;
     }
+
+    // ─── Workload (3.5b) ────────────────────────────────────────────
+
+    /**
+     * Every person's finished minutes on each of several items, in one grouped
+     * statement on `TimeEntry_tenantId_workItemId_workDate_idx` (sub-phase
+     * 3.5b: recorded time shrinks each item's remaining hours, decision 295).
+     * Timers are left out, as in every total. Items with no time are absent.
+     */
+    static async totalsForItems(db: PrismaTx, ctx: Ctx, workItemIds: readonly string[]): Promise<Map<string, number>> {
+        const out = new Map<string, number>();
+        if (workItemIds.length === 0) return out;
+        const rows = await db.$queryRaw<Array<{ workItemId: string; minutes: bigint | null }>>(Prisma.sql`
+            SELECT t."workItemId", SUM(t."minutes") AS minutes
+              FROM "TimeEntry" t
+             WHERE t."tenantId" = ${ctx.tenantId}
+               AND t."workItemId" = ANY(${[...workItemIds]}::text[])
+               AND t."minutes" IS NOT NULL
+             GROUP BY t."workItemId"`);
+        for (const r of rows) out.set(r.workItemId, Number(r.minutes ?? 0));
+        return out;
+    }
 }

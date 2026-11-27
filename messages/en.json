@@ -3382,7 +3382,7 @@
     },
     "workload": {
         "title": "Workload",
-        "description": "Each person's capacity by week: their hours a week, less holidays and time off.",
+        "description": "Each person's work by week against the hours they can work: their hours a week, less holidays and time off.",
         "mine": {
             "heading": "My capacity and time off",
             "capacity": "{hours} a week · {calendar}",
@@ -3448,12 +3448,12 @@
             "remove": "Remove"
         },
         "grid": {
-            "heading": "Capacity by week",
-            "gridLabel": "Capacity by week, {range}",
+            "heading": "Workload by week",
+            "gridLabel": "Workload by week, {range}",
             "person": "Person",
             "weekOf": "Week of {date}",
-            "cellLabel": "{name}, week of {week}: {capacity} capacity of {weekly} a week",
-            "cellLabelOff": "{name}, week of {week}: {capacity} capacity of {weekly} a week; time off on {count, plural, one {# day} other {# days}}, {off}",
+            "cellLabel": "{name}, week of {week}: {allocated} allocated of {capacity}",
+            "cellLabelOff": "; time off on {count, plural, one {# day} other {# days}}, {off}",
             "timeOffMark": "Time off {off}",
             "inactive": "Deactivated",
             "unnamed": "Unnamed member",
@@ -3461,14 +3461,81 @@
             "previous": "Previous weeks",
             "thisWeek": "This week",
             "next": "Next weeks",
-            "loading": "Loading capacity…",
-            "loadFailed": "Capacity could not be loaded."
+            "loading": "Loading workload…",
+            "loadFailed": "Workload could not be loaded.",
+            "cellLabelOver": ", over by {over}",
+            "cellLabelShare": "; {share} in {scope}",
+            "cellLabelUnassigned": "Unassigned, week of {week}: {allocated} allocated",
+            "cellText": "{allocated} / {capacity}",
+            "overBy": "Over by {over}",
+            "share": "{share} of {allocated} in {scope}",
+            "unassigned": "Unassigned",
+            "unassignedNote": "Work assigned to nobody",
+            "figures": "Not placed",
+            "noDates": "No dates: {count} · {hours}",
+            "notEstimated": "Not estimated: {count}",
+            "pointsWork": "Points work: {count} · {points, plural, one {# point} other {# points}}",
+            "later": "Later: {hours}",
+            "open": "Open the items of {name}, week of {week}",
+            "timeSpentNotCounted": "Each item counts its whole estimate: you cannot see the time recorded on items.",
+            "filteredEmpty": "Nobody matches these filters.",
+            "tooLarge": "Too much to show at once: narrow it with the filters."
         },
         "writes": {
             "capacityRemoved": "Capacity change removed",
             "timeOffRemoved": "{count, plural, one {Time off removed} other {# dates of time off removed}}",
             "undo": "Undo",
             "failed": "That did not work. Try again."
+        },
+        "filters": {
+            "people": "People",
+            "project": "Project",
+            "team": "Team",
+            "recipientList": "Recipient list",
+            "over": "Capacity",
+            "overOnly": "Over capacity only"
+        },
+        "cell": {
+            "title": "{name}, week of {week}",
+            "titleUnassigned": "Unassigned work, week of {week}",
+            "summary": "{allocated} allocated of {capacity}",
+            "summaryOver": "{allocated} allocated of {capacity}, over by {over}",
+            "summaryUnassigned": "{allocated} allocated",
+            "timeOff": "Time off: {dates}",
+            "timeOffDay": "{date} ({value})",
+            "wholeDay": "whole day",
+            "inactive": "Deactivated: no capacity until reactivated.",
+            "itemsHeading": "Items filling this week",
+            "empty": "No counted work in this week.",
+            "moreItems": "{count, plural, one {# more item} other {# more items}} not listed.",
+            "itemsHidden": "You cannot see work items, so the items are not listed.",
+            "loading": "Loading the week…",
+            "loadFailed": "The week could not be loaded.",
+            "resource": "item",
+            "resourcePlural": "items",
+            "col": {
+                "key": "Key",
+                "title": "Title",
+                "hours": "This week",
+                "dates": "Dates",
+                "why": "Why"
+            },
+            "why": {
+                "OVERDUE": "Overdue: on the next working day",
+                "ONE_DAY": "On {date}",
+                "SPREAD": "Spread over {count, plural, one {# working day} other {# working days}}, {from} to {to}"
+            },
+            "remaining": "{remaining} left of {estimate}",
+            "noDate": "—",
+            "close": "Close"
+        },
+        "myWork": {
+            "label": "Your workload",
+            "thisWeek": "This week {allocated} of {capacity}",
+            "thisWeekOver": "This week over by {over}",
+            "nextWeek": "next week {allocated} of {capacity}",
+            "nextWeekOver": "next week over by {over}",
+            "open": "Open Workload"
         }
     }
 }

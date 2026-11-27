@@ -27,6 +27,7 @@ import { ReviewRepository } from '@/app-layer/repositories/ReviewRepository';
 import { SearchVectorRepository } from '@/app-layer/repositories/SearchVectorRepository';
 import { TeamRepository } from '@/app-layer/repositories/TeamRepository';
 import { TimeEntryRepository } from '@/app-layer/repositories/TimeEntryRepository';
+import { WorkloadRepository } from '@/app-layer/repositories/WorkloadRepository';
 import { CommentRepository, listSortSpec, WorkItemRepository, type WorkItemFilters } from '@/app-layer/repositories/WorkItemRepository';
 import type { RequestContext } from '@/app-layer/types';
 import { resolveWorkingCalendars } from '@/app-layer/usecases/working-calendar';
@@ -204,6 +205,33 @@ const RUNNERS: Record<string, Runner> = {
     "time export: a month's entries": (w, db, ctx) => {
         const to = new Date(`${w.timeWeek}T00:00:00Z`).getTime() + 6 * DAY;
         return TimeEntryRepository.forExport(db, ctx, { from: new Date(to - 29 * DAY), to: new Date(to) }, 50_001);
+    },
+    // Workload (3.5b): the Workload page's counted work and the counts beside it, for every member over twelve
+    // weeks from this week (overdue work included) and for the heavy member alone (My Work's line); the time on the
+    // counted items; the members' time-off dates in the window.
+    'workload: open assigned items of every member over 12 weeks': async (w, db, ctx, v) => {
+        await WorkItemRepository.workloadUnplacedCounts(db, ctx, v, { take: 50_000 });
+        return WorkItemRepository.listForWorkload(db, ctx, v, { take: 20_001 });
+    },
+    'workload: one person, two weeks': async (w, db, ctx, v) => {
+        await WorkItemRepository.workloadUnplacedCounts(db, ctx, v, { assigneeIds: [w.heavyUserId], take: 50_000 });
+        return WorkItemRepository.listForWorkload(db, ctx, v, { assigneeIds: [w.heavyUserId], take: 20_001 });
+    },
+    'time: totals for a set of items': async (w, db, ctx, v) => {
+        const items = await WorkItemRepository.listForWorkload(db, ctx, v, { take: 20_001 });
+        return TimeEntryRepository.totalsForItems(db, ctx, items.map((i) => i.id));
+    },
+    'workload: time-off dates in a window': async (w, db, ctx) => {
+        // The workload read's one statement for capacity (the default, the capacity rows, the time-off window).
+        const people = await WorkloadRepository.activePeople(db, ctx, 501);
+        const from = today();
+        return WorkloadRepository.capacityInputs(db, ctx, {
+            userIds: people.map((p) => p.userId),
+            from: from.toISOString().slice(0, 10),
+            to: new Date(from.getTime() + 83 * DAY).toISOString().slice(0, 10),
+            rowsTake: 20_000,
+            timeOffTake: 100_000,
+        });
     },
     'timeline: working calendars': async (w, db, ctx) => {
         await resolveWorkingCalendars(db, ctx, [w.teamId]);

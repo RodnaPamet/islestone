@@ -12,7 +12,7 @@
  * that ended before today cannot be made by the usecase (a new cycle must end
  * today or later), so the bulk writer adds those, completed.
  */
-import type { PrismaClient, Role, WorkflowStateCategory } from '@prisma/client';
+import type { EstimateUnit, PrismaClient, Role, WorkflowStateCategory } from '@prisma/client';
 
 import { resolveMemberContext } from '../../src/app-layer/context-system';
 import type { RequestContext } from '../../src/app-layer/types';
@@ -21,7 +21,7 @@ import { createCycle } from '../../src/app-layer/usecases/cycle';
 import { createLabel } from '../../src/app-layer/usecases/label';
 import { createMilestone } from '../../src/app-layer/usecases/milestone';
 import { createProject } from '../../src/app-layer/usecases/project';
-import { createTeam } from '../../src/app-layer/usecases/team';
+import { createTeam, updateTeam } from '../../src/app-layer/usecases/team';
 import { createInviteToken, redeemInvite } from '../../src/app-layer/usecases/tenant-invites';
 import { listWorkItemTypes } from '../../src/app-layer/usecases/work-item-type';
 import { addTeamHolidays, addWorkspaceHolidays, setTeamWorkingCalendar, setWorkspaceWorkingCalendar } from '../../src/app-layer/usecases/working-calendar';
@@ -36,6 +36,7 @@ import type { Rng } from './random';
 import { stream } from './random';
 import { prefixFor, RATIOS, type Shape } from './shapes';
 import { BULGARIAN_WORDS, ENGLISH_WORDS } from './words';
+import { seedEstimateUnit } from './workload';
 
 /**
  * The password of the two seeded accounts that sign in (the owner and the
@@ -60,6 +61,8 @@ export interface SeedState {
 
 export interface SeedTeam {
     id: string;
+    /** Sub-phase 3.5b: the team's estimate unit (`seedEstimateUnit`), set through `updateTeam`. */
+    estimateUnit: EstimateUnit | null;
     states: Record<string, SeedState>;
     /** Fortnightly windows, oldest first; `id` set once the cycle exists. */
     cycles: Array<{ id: string | null; startsOn: string; endsOn: string; past: boolean }>;
@@ -205,7 +208,10 @@ export async function seedConfiguration(env: SeedEnv, bulk: PrismaClient, shape:
         const team = await createTeam(owner, { name: `Team ${t + 1}` });
         const states: Record<string, SeedState> = {};
         for (const s of team.workflowStates) states[s.name] = { id: s.id, category: s.category };
-        teams.push({ id: team.id, states, cycles: cycleWindows(env.anchor) });
+        // Sub-phase 3.5b: the team's estimate unit, before any item takes an estimate.
+        const estimateUnit = seedEstimateUnit(shape, t);
+        if (estimateUnit) await updateTeam(owner, team.id, { estimateUnit });
+        teams.push({ id: team.id, estimateUnit, states, cycles: cycleWindows(env.anchor) });
     }
     const typeIds = (await listWorkItemTypes(owner)).map((t) => t.id);
 

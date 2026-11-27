@@ -7,8 +7,14 @@
  *     dates, recorded as a whole day of Vacation through the dialog's
  *     preview, on the server with its type, then shown in the grid's week;
  *   - Settings → Workload: the default changed to 37h 30m, and the owner's
- *     own capacity from next Monday, on the server.
+ *     own capacity from next Monday, on the server;
+ *   - allocation (3.5b): an hours team's item of 50 hours over next week,
+ *     assigned to the owner, fills that week over capacity in the grid; the
+ *     cell opens its items in a sheet and the item opens its own sheet; My
+ *     Work's line says next week is over.
  */
+import type { APIRequestContext } from '@playwright/test';
+
 import { e2eDay, e2eToday } from './e2e-utils';
 import { expect, test } from './fixtures';
 
@@ -31,7 +37,7 @@ test.describe('workload', () => {
         await page.goto(`/t/${slug}/my-work`);
         await page.getByTestId('nav-workload').click();
         await expect(page).toHaveURL(new RegExp(`/t/${slug}/workload$`));
-        const grid = page.getByRole('grid', { name: /Capacity by week/ });
+        const grid = page.getByRole('grid', { name: /Workload by week/ });
         await expect(grid).toBeVisible();
 
         // The next working day (Monday to Friday) from tomorrow.
@@ -81,4 +87,51 @@ test.describe('workload', () => {
         expect(history.rows).toEqual([expect.objectContaining({ weeklyMinutes: 1440 })]);
         expect(isoWeekday(history.rows[0]!.effectiveFrom)).toBe(1);
     });
+
+    test("an item's hours fill its assignee's week over capacity, the week opens its items, and My Work says so", async ({ authedPage: page, isolatedTenant }) => {
+        const slug = isolatedTenant.tenantSlug;
+        const me = await meOf(page.request, slug);
+        // Next week's Monday to Friday: 50 hours there are over the default 40.
+        const nextMonday = mondayOf(e2eDay(7));
+        const friday = new Date(Date.parse(`${nextMonday}T00:00:00Z`) + 4 * 86_400_000).toISOString().slice(0, 10);
+        const item = await seedHoursItem(page.request, slug, { assigneeId: me, startDate: nextMonday, dueDate: friday, estimateMinutes: 3000 });
+
+        await page.goto(`/t/${slug}/workload`);
+        const cell = page.getByTestId(`workload-cell-${me}-${nextMonday}`);
+        await expect(cell).toContainText('50h / 40h');
+        await expect(cell).toContainText('Over by 10h');
+        await expect(cell).toHaveAttribute('data-over', 'true');
+
+        await cell.click();
+        const sheet = page.getByTestId('workload-cell-sheet');
+        await expect(sheet.getByTestId('workload-cell-summary')).toContainText('50h allocated of 40h, over by 10h');
+        const table = sheet.getByTestId('workload-cell-table');
+        await expect(table).toContainText(item.key);
+        await expect(table).toContainText('Spread over 5 working days');
+        await table.getByText('Plan the launch').click();
+        await expect(page.getByRole('dialog').getByRole('heading', { name: /Plan the launch/ }).first()).toBeVisible();
+
+        await page.goto(`/t/${slug}/my-work`);
+        await expect(page.getByTestId('my-workload-line')).toContainText('next week over by 10h');
+    });
 });
+
+async function meOf(api: APIRequestContext, slug: string): Promise<string> {
+    const workload = (await (await api.get(`/api/t/${slug}/workload?weeks=1&userId=me`)).json()) as { people: Array<{ userId: string }> };
+    return workload.people[0]!.userId;
+}
+
+async function seedHoursItem(api: APIRequestContext, slug: string, fields: { assigneeId: string; startDate: string; dueDate: string; estimateMinutes: number }) {
+    const base = `/api/t/${slug}`;
+    const team = await api.post(`${base}/teams`, { data: { name: 'Hours team' } });
+    expect(team.status()).toBe(201);
+    const teamId = ((await team.json()) as { id: string }).id;
+    const unit = await api.patch(`${base}/teams/${teamId}`, { data: { estimateUnit: 'HOURS' } });
+    expect(unit.status()).toBe(200);
+    const project = await api.post(`${base}/projects`, { data: { teamId, name: 'Launch', keyPrefix: 'LCH' } });
+    expect(project.status()).toBe(201);
+    const types = (await (await api.get(`${base}/work-item-types`)).json()) as Array<{ id: string }>;
+    const item = await api.post(`${base}/work-items`, { data: { projectId: ((await project.json()) as { id: string }).id, typeId: types[0]!.id, title: 'Plan the launch', ...fields } });
+    expect(item.status()).toBe(201);
+    return (await item.json()) as { id: string; key: string };
+}

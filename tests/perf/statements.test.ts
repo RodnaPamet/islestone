@@ -122,14 +122,24 @@ async function heavyMemberSubmittedWeeks(direct: PrismaClient, w: PerfWorld): Pr
     }
 }
 
+/** The Monday of next week (3.5b): a workload cell's week, never before the current week in the workspace's zone. */
+function nextMonday(): string {
+    const now = new Date();
+    const back = (now.getUTCDay() + 6) % 7;
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - back + 7)).toISOString().slice(0, 10);
+}
+
 /** A month of time off around today (3.5a): the window "My capacity and time off" reads. */
 function monthWindow(): string {
     const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
     return `from=${day(-6)}&to=${day(35)}`;
 }
 
-/** A date of time off no earlier run on this database recorded (3.5a): far in the future, from this process's start. */
-const TIME_OFF_BASE = Date.UTC(2100, 0, 1) + (Math.floor(Date.now() / 60_000) % 200_000) * 86_400_000 * 2;
+/**
+ * A date of time off no earlier run on this database recorded (3.5a): far in the future, from this process's start.
+ * Each minute owns six days (the warm-up and five runs), so runs a minute apart never meet each other's dates.
+ */
+const TIME_OFF_BASE = Date.UTC(2100, 0, 1) + (Math.floor(Date.now() / 60_000) % 200_000) * 86_400_000 * 6;
 function timeOffDay(run: number): string {
     return new Date(TIME_OFF_BASE + (run + 1) * 86_400_000).toISOString().slice(0, 10);
 }
@@ -146,12 +156,14 @@ const SCENARIOS: Scenario[] = [
         path: (w) => `/work-items?assigneeId=${w.heavyUserId}&stateCategory=BACKLOG,UNSTARTED,STARTED&limit=50`,
         budget: 8,
     },
-    // The roadmap (3.2c): the map's budget is at most 7 statements whatever the workspace's size.
-    { name: 'roadmap: the whole workspace', file: `${ROUTES}/roadmap/route.ts`, method: 'GET', path: () => '/roadmap', budget: 7 },
-    { name: 'roadmap: grouped by goal', file: `${ROUTES}/roadmap/route.ts`, method: 'GET', path: () => '/roadmap?groupBy=goal', budget: 7 },
+    // The roadmap (3.2c): the map's budget is at most 7 statements whatever the workspace's size; 6 since 3.5b read
+    // the calendars and their holidays' dates in one statement.
+    { name: 'roadmap: the whole workspace', file: `${ROUTES}/roadmap/route.ts`, method: 'GET', path: () => '/roadmap', budget: 6 },
+    { name: 'roadmap: grouped by goal', file: `${ROUTES}/roadmap/route.ts`, method: 'GET', path: () => '/roadmap?groupBy=goal', budget: 6 },
     // The calendar (3.3a): a month grid around today (42 days), the workspace's and one project's: the
     // tenant binding, the visible projects, the window's items, the undated count, the cycles, the
-    // milestones and the working calendar (8 measured on the 10k seed, either way).
+    // milestones and the working calendar with its holidays' dates (8 measured on the 10k seed, either way; 7 since
+    // 3.5b read the calendars and their holidays in one statement).
     // Time entries (3.4b), as measured on the 10k seed: the week reads the context's settings, the entries and
     // their items (with their projects and types, Prisma's own statements); an item's time the context, the item and
     // its project, the total, the page and the people's names. The map proposed 4 and 3 counting neither the
@@ -163,12 +175,17 @@ const SCENARIOS: Scenario[] = [
     // with its people's names, its sums in one statement; the deciders' names when a row was decided).
     { name: "timesheets: a week's status", file: `${ROUTES}/timesheets/week/route.ts`, method: 'GET', path: (w) => `/timesheets/week?week=${w.timeWeek}`, budget: 4 },
     { name: 'timesheets: the waiting weeks', file: `${ROUTES}/timesheets/route.ts`, method: 'GET', as: 'approver', setup: heavyMemberSubmittedWeeks, path: () => '/timesheets?status=SUBMITTED', budget: 4 },
-    // Capacity and time off (3.5a), as measured on the 10k seed (which writes no capacity or time off before 3.5b's
-    // seed): the context's statement, today's calendar, the people (and their names), the settings, the capacity rows,
-    // the time-off dates and the calendars the rows name; a time-off month the person, its dates, today's calendar and
-    // the person's calendar. None is per person.
+    // Capacity and time off (3.5a) and allocation (3.5b), as measured on the 10k seed (capacity, time off and
+    // estimates seeded since 3.5b): the context's statement, the calendars with their holidays' dates (one statement),
+    // the counts of unplaced work with each item's team's unit (one aggregate, which also names who holds open work),
+    // the people (active, and deactivated holders) and their names, the default with the capacity rows and the
+    // time-off dates (one statement), the counted items and the time recorded on them; a cell reads one person (and
+    // their name) in place of the counts and the people, and the listed items' projects. A time-off month: the person,
+    // its dates, the calendars and the person's capacity rows. None is per person or per item.
     { name: 'workload: capacity of every member, twelve weeks', file: `${ROUTES}/workload/route.ts`, method: 'GET', path: () => '/workload?weeks=12', budget: 8 },
-    { name: "time off: the caller's month", file: `${ROUTES}/time-off/route.ts`, method: 'GET', path: () => `/time-off?${monthWindow()}`, budget: 6 },
+    { name: "workload: My Work's line, the caller's two weeks", file: `${ROUTES}/workload/route.ts`, method: 'GET', path: () => '/workload?userId=me&weeks=2', budget: 8 },
+    { name: "workload: the heavy member's next week, its items", file: `${ROUTES}/workload/cell/route.ts`, method: 'GET', path: () => `/workload/cell?userId=me&week=${nextMonday()}`, budget: 8 },
+    { name: "time off: the caller's month", file: `${ROUTES}/time-off/route.ts`, method: 'GET', path: () => `/time-off?${monthWindow()}`, budget: 5 },
     // Time totals and the export (3.4d), as measured on the 10k seed: the totals of a quarter by project, as the
     // heavy member (no money: the tenant binding, the aggregate, the projects' names: 3) and as the owner (also the
     // currency, the rate book, the approved weeks and the priced lines: 7); the export of a month as CSV by the
@@ -177,8 +194,8 @@ const SCENARIOS: Scenario[] = [
     { name: 'time totals: a quarter by project, no money', file: `${ROUTES}/time-totals/route.ts`, method: 'GET', path: (w) => `/time-totals?${quarterQuery(w.timeWeek)}&groupBy=project`, budget: 3 },
     { name: 'time totals: a quarter by project, priced', file: `${ROUTES}/time-totals/route.ts`, method: 'GET', as: 'approver', path: (w) => `/time-totals?${quarterQuery(w.timeWeek)}&groupBy=project`, budget: 7 },
     { name: "time export: a month's entries as CSV", file: `${ROUTES}/time-totals/export/route.ts`, method: 'GET', as: 'approver', path: (w) => `/time-totals/export?${monthQuery(w.timeWeek)}&format=csv`, budget: 13 },
-    { name: 'calendar: the workspace, a month grid', file: `${ROUTES}/work-items/calendar/route.ts`, method: 'GET', path: () => `/work-items/calendar?${monthGrid()}`, budget: 8 },
-    { name: 'calendar: one project, a month grid', file: `${ROUTES}/work-items/calendar/route.ts`, method: 'GET', path: (w) => `/work-items/calendar?projectId=${w.projectId}&${monthGrid()}`, budget: 8 },
+    { name: 'calendar: the workspace, a month grid', file: `${ROUTES}/work-items/calendar/route.ts`, method: 'GET', path: () => `/work-items/calendar?${monthGrid()}`, budget: 7 },
+    { name: 'calendar: one project, a month grid', file: `${ROUTES}/work-items/calendar/route.ts`, method: 'GET', path: (w) => `/work-items/calendar?projectId=${w.projectId}&${monthGrid()}`, budget: 7 },
     {
         name: 'create: one item with a description',
         file: `${ROUTES}/work-items/route.ts`,

@@ -268,6 +268,15 @@ export function pastWeek(n: number): string {
 export function monday(n: number): string {
     return day(2 + 7 * n);
 }
+/**
+ * The Monday of the week after this one (date-only, UTC): a workload cell's week (3.5b), never before the current
+ * week in any zone a workspace calendar may be read in.
+ */
+export function nextWeekMonday(): string {
+    const now = new Date();
+    const back = (now.getUTCDay() + 6) % 7;
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - back + 7)).toISOString().slice(0, 10);
+}
 /** Letters for a key prefix from a number (A, B, …, Z, BA, …). */
 export function letters(n: number): string {
     let out = '';
@@ -796,6 +805,10 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
     // JSON key, so `empty` asserts the key's absence.
     workload: [
         { route: 'workload/route.ts', method: 'GET', key: 'workload.view', subject: 'capacity per person per week', reveals: (s) => s.annId!, expect: WORKLOAD },
+        {
+            route: 'workload/cell/route.ts', method: 'GET', key: 'workload.view', subject: "the items that fill a member's week (3.5b); never a type",
+            query: (s) => ({ userId: s.annId!, week: nextWeekMonday() }), reveals: (s) => s.annId!, expect: WORKLOAD,
+        },
         { route: 'workload/members/route.ts', method: 'GET', key: 'workload.manage', subject: "Settings → Workload's members", expect: WORKLOAD_MANAGE },
         { route: 'workload-settings/route.ts', method: 'GET', key: 'workload.view', subject: 'the default weekly capacity', expect: WORKLOAD },
         { route: 'workload-settings/route.ts', method: 'PUT', key: 'workload.manage', subject: 'the default weekly capacity, changed', body: () => ({ defaultWeeklyMinutes: 2400 }), expect: WORKLOAD_MANAGE },

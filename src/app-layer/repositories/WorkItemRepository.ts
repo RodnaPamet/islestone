@@ -332,6 +332,21 @@ export const workItemCalendarSelect = {
 
 export type WorkItemCalendarRow = Prisma.WorkItemGetPayload<{ select: typeof workItemCalendarSelect }>;
 
+/** What the Workload page reads of a counted item (3.5b): no description, comment or field value, no relation. */
+export const workItemWorkloadSelect = {
+    id: true,
+    number: true,
+    title: true,
+    projectId: true,
+    teamId: true,
+    assigneeId: true,
+    startDate: true,
+    dueDate: true,
+    estimateMinutes: true,
+} satisfies Prisma.WorkItemSelect;
+
+export type WorkItemWorkloadRow = Prisma.WorkItemGetPayload<{ select: typeof workItemWorkloadSelect }>;
+
 /** The fields every gated write reads first. */
 export const workItemGateSelect = {
     id: true,
@@ -768,6 +783,85 @@ export class WorkItemRepository {
         return db.workItem.count({
             where: WorkItemRepository._withCondition(WorkItemRepository._buildWhere(ctx, v, filters, page.keyHit ?? null, page.today), { dueDate: null }),
         });
+    }
+
+    // ─── Workload (3.5b) ────────────────────────────────────────────
+
+    /**
+     * The counted work of the Workload page (sub-phase 3.5b; decision 292):
+     * live, open, assigned or unassigned items in visible, unarchived
+     * projects of teams that estimate in hours (read through the team in the
+     * same statement), with a counted estimate. `assigneeIds` narrows to those
+     * people (no unassigned work), `unassignedOnly` to the unassigned;
+     * neither, every assignee and the unassigned. `dueOnOrAfter` (a window
+     * that starts after the current week) leaves out items due earlier, which
+     * only the current week can show; undated and start-only items are always
+     * read. By id, at most `take` (the caller reads one past its limit). No
+     * description, comment or field value.
+     */
+    static async listForWorkload(
+        db: PrismaTx,
+        ctx: RequestContext,
+        v: ProjectVisibility,
+        query: { assigneeIds?: readonly string[]; unassignedOnly?: boolean; dueOnOrAfter?: Date | null; take: number },
+    ): Promise<WorkItemWorkloadRow[]> {
+        if (query.assigneeIds && query.assigneeIds.length === 0) return [];
+        // The item's team is its project's (the composite key), so the project's team carries the unit.
+        const and: Prisma.WorkItemWhereInput[] = [projectVisibilityWhere(v), { project: { team: { estimateUnit: 'HOURS' } } }];
+        if (query.dueOnOrAfter) and.push({ OR: [{ dueDate: { gte: query.dueOnOrAfter } }, { dueDate: null }] });
+        return db.workItem.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                deletedAt: null,
+                stateCategory: OPEN_CATEGORY_FILTER,
+                estimateMinutes: { not: null },
+                ...(query.unassignedOnly ? { assigneeId: null } : query.assigneeIds ? { assigneeId: { in: [...query.assigneeIds] } } : {}),
+                AND: and,
+            },
+            orderBy: { id: 'asc' },
+            take: query.take,
+            select: workItemWorkloadSelect,
+        });
+    }
+
+    /**
+     * What the Workload page names beside the hours (sub-phase 3.5b; decisions
+     * 292 and 294), per assignee of live, open items in visible, unarchived
+     * projects, in ONE statement with each item's team's unit: "Not
+     * estimated" (an hours team's items without an hours estimate, and every
+     * item of a team that does not estimate) and "Points work" (a points
+     * team's items and their points, never converted). Every assignee with an
+     * open item is a row, so the caller also learns who holds open work (a
+     * deactivated member is shown). Raw SQL so the unit is read by a join,
+     * not a second statement; `tenantId`, `deletedAt` (the item's and the
+     * project's), the archived filter and the caller's visibility are in its
+     * own `WHERE`.
+     */
+    static async workloadUnplacedCounts(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, query: { assigneeIds?: readonly string[]; take: number }) {
+        if (query.assigneeIds && query.assigneeIds.length === 0) return [];
+        const all = v.kind === 'ALL';
+        const granted = v.kind === 'GRANTED' ? [...v.projectIds] : [];
+        // A named set is its own condition (never `$everyone OR …`), so a generic plan can still use the assignee index.
+        const narrowed = query.assigneeIds ? Prisma.sql`AND w."assigneeId" = ANY(${[...query.assigneeIds]}::text[])` : Prisma.empty;
+        const t = ctx.tenantId;
+        const rows = await db.$queryRaw<Array<{ assigneeId: string; notEstimated: number; pointsCount: number; points: number }>>(Prisma.sql`
+            SELECT w."assigneeId",
+                   (count(*) FILTER (WHERE tm."estimateUnit" IS NULL OR (tm."estimateUnit" = 'HOURS' AND w."estimateMinutes" IS NULL)))::int AS "notEstimated",
+                   (count(*) FILTER (WHERE tm."estimateUnit" = 'POINTS'))::int AS "pointsCount",
+                   (COALESCE(sum(w."estimatePoints") FILTER (WHERE tm."estimateUnit" = 'POINTS'), 0))::int AS "points"
+              FROM "WorkItem" w
+              JOIN "Project" p ON p."id" = w."projectId" AND p."tenantId" = ${t} AND p."deletedAt" IS NULL AND p."archivedAt" IS NULL
+              JOIN "Team" tm ON tm."id" = w."teamId" AND tm."tenantId" = ${t}
+             WHERE w."tenantId" = ${t}
+               AND w."deletedAt" IS NULL
+               AND w."stateCategory" IN ('BACKLOG', 'UNSTARTED', 'STARTED')
+               AND w."assigneeId" IS NOT NULL
+               ${narrowed}
+               AND (${all}::boolean OR w."projectId" = ANY(${granted}::text[]))
+             GROUP BY w."assigneeId"
+             ORDER BY w."assigneeId"
+             LIMIT ${query.take}`);
+        return rows.map((r) => ({ assigneeId: r.assigneeId, notEstimated: Number(r.notEstimated), pointsWork: { count: Number(r.pointsCount), points: Number(r.points) } }));
     }
 
     /**

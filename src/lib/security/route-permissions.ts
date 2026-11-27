@@ -920,7 +920,13 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         path: new RegExp(`^${T}\\/workload$`),
         methods: ['GET'],
         permission: 'workload.view',
-        note: 'The Workload page: capacity per person per week (3.5a; 3.5b adds allocation); never a time-off type (decision 287).',
+        note: 'The Workload page: capacity, allocation and over capacity per person per week (3.5a, 3.5b); never a time-off type (decision 287).',
+    },
+    {
+        path: new RegExp(`^${T}\\/workload\\/cell$`),
+        methods: ['GET'],
+        permission: 'workload.view',
+        note: "The items that fill one person's week, listed only for a reader of work items (3.5b); never a time-off type.",
     },
     {
         path: new RegExp(`^${T}\\/workload-settings$`),

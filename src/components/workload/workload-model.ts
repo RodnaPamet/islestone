@@ -11,35 +11,101 @@
 import { addDays, isoWeekday, weekStartOf } from '@/lib/time/week';
 import type { TimeOffDayData, WorkloadData } from '@/lib/workload/types';
 
-export interface CapacityCell {
+export interface WorkloadCell {
     week: string;
     capacityMinutes: number;
     weeklyMinutes: number;
     timeOffMinutes: number;
     timeOffDays: string[];
+    /** Minutes of counted work placed in the week (3.5b). */
+    allocatedMinutes: number;
+    /** Minutes over capacity; 0 within (decision 296). */
+    overMinutes: number;
+    /** The filtered project's or team's share; NULL without such a filter. */
+    shareMinutes: number | null;
 }
 
-export interface CapacityRow {
+export interface WorkloadRow {
+    /** The person, or `unassigned` for the work assigned to nobody. */
     userId: string;
     name: string;
     active: boolean;
-    cells: CapacityCell[];
+    /** The "Unassigned" row: no capacity, never over. */
+    unassigned: boolean;
+    cells: WorkloadCell[];
+    later: number;
+    noDates: { count: number; minutes: number };
+    notEstimated: number;
+    pointsWork: { count: number; points: number };
 }
 
-/** The grid's rows: people in the server's order, one cell per week. */
-export function capacityRows(data: Pick<WorkloadData, 'weeks' | 'people'>, unnamed: string): CapacityRow[] {
-    return data.people.map((p) => ({
+/** The `userId` of the "Unassigned" row (the cell route's too). */
+export const UNASSIGNED_ROW = 'unassigned';
+
+/** The grid's rows: people in the server's order, one cell per week, then the "Unassigned" row when there is one. */
+export function workloadRows(data: Pick<WorkloadData, 'weeks' | 'people'> & Partial<Pick<WorkloadData, 'unassigned'>>, labels: { unnamed: string; unassigned: string }): WorkloadRow[] {
+    const rows: WorkloadRow[] = data.people.map((p) => ({
         userId: p.userId,
-        name: p.name?.trim() || unnamed,
+        name: p.name?.trim() || labels.unnamed,
         active: p.active,
+        unassigned: false,
         cells: data.weeks.map((week, i) => ({
             week,
             capacityMinutes: p.capacity[i] ?? 0,
             weeklyMinutes: p.weeklyMinutes[i] ?? 0,
             timeOffMinutes: p.timeOffMinutes[i] ?? 0,
             timeOffDays: p.timeOffDays[i] ?? [],
+            allocatedMinutes: p.allocated[i] ?? 0,
+            overMinutes: p.over[i] ?? 0,
+            shareMinutes: p.share ? (p.share[i] ?? 0) : null,
         })),
+        later: p.later,
+        noDates: p.noDates,
+        notEstimated: p.notEstimated,
+        pointsWork: p.pointsWork,
     }));
+    const u = data.unassigned;
+    if (u) {
+        rows.push({
+            userId: UNASSIGNED_ROW,
+            name: labels.unassigned,
+            active: true,
+            unassigned: true,
+            cells: data.weeks.map((week, i) => ({
+                week,
+                capacityMinutes: 0,
+                weeklyMinutes: 0,
+                timeOffMinutes: 0,
+                timeOffDays: [],
+                allocatedMinutes: u.allocated[i] ?? 0,
+                overMinutes: 0,
+                shareMinutes: u.share ? (u.share[i] ?? 0) : null,
+            })),
+            later: u.later,
+            noDates: u.noDates,
+            notEstimated: 0,
+            pointsWork: { count: 0, points: 0 },
+        });
+    }
+    return rows;
+}
+
+/** How full a week is, 0 to 1 (a bar's width and its colour); a week with no capacity and work is full. */
+export function fillRatio(cell: Pick<WorkloadCell, 'allocatedMinutes' | 'capacityMinutes'>): number {
+    if (cell.allocatedMinutes <= 0) return 0;
+    if (cell.capacityMinutes <= 0) return 1;
+    return Math.min(1, cell.allocatedMinutes / cell.capacityMinutes);
+}
+
+/**
+ * My Work's one line (decision 300): this week's allocation against capacity
+ * and next week's, the first over-capacity week said as such; `null` when the
+ * person has no counted work in either week (the line is hidden).
+ */
+export function workloadLine(cells: readonly Pick<WorkloadCell, 'allocatedMinutes' | 'capacityMinutes' | 'overMinutes'>[]): Array<{ week: 'this' | 'next'; allocated: number; capacity: number; over: number }> | null {
+    const two = cells.slice(0, 2);
+    if (two.every((c) => c.allocatedMinutes === 0)) return null;
+    return two.map((c, i) => ({ week: i === 0 ? 'this' : 'next', allocated: c.allocatedMinutes, capacity: c.capacityMinutes, over: c.overMinutes }));
 }
 
 /** Where focus moves in a grid of `rows` × `cols` for a key, or null for a key it does not handle. */

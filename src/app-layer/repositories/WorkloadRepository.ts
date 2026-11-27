@@ -9,7 +9,7 @@
  *
  * Written fresh for Islestone.
  */
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import type { PrismaTx } from '@/lib/db-context';
 import type { RequestContext } from '../types';
@@ -30,6 +30,13 @@ export const memberCapacitySelect = {
 } satisfies Prisma.MemberCapacitySelect;
 
 export type MemberCapacityRow = Prisma.MemberCapacityGetPayload<{ select: typeof memberCapacitySelect }>;
+
+/** What `capacityInputs` returns: dates as `YYYY-MM-DD`; `defaultWeeklyMinutes` NULL while no settings row is saved. */
+export interface CapacityInputs {
+    defaultWeeklyMinutes: number | null;
+    rows: Array<{ userId: string; effectiveFrom: string; weeklyMinutes: number; calendarTeamId: string | null }>;
+    timeOff: Array<{ userId: string; day: string; minutes: number | null }>;
+}
 
 export interface WorkloadPersonRecord {
     userId: string;
@@ -139,6 +146,66 @@ export class WorkloadRepository {
             select: { userId: true, user: { select: { name: true } } },
         });
         return rows.map((r) => ({ userId: r.userId, name: r.user.name, active: true }));
+    }
+
+    /**
+     * The people of the Workload page in one read (3.5b): the ACTIVE members of
+     * every role but GUEST (decision 204), narrowed to `userIds` when given,
+     * and the DEACTIVATED members among `holders` (those who still hold open
+     * work: rows with no capacity, so their work shows as over and can be
+     * handed on, ADR 0003 §1). Oldest membership first, at most `take` (the
+     * caller reads one past its limit of active people and refuses above).
+     */
+    static async people(db: PrismaTx, ctx: Ctx, query: { take: number; userIds?: readonly string[]; holders: readonly string[] }): Promise<WorkloadPersonRecord[]> {
+        const active: Prisma.TenantMembershipWhereInput = { status: 'ACTIVE', ...(query.userIds ? { userId: { in: [...query.userIds] } } : {}) };
+        const rows = await db.tenantMembership.findMany({
+            where: {
+                tenantId: ctx.tenantId,
+                role: { not: 'GUEST' },
+                OR: query.holders.length > 0 ? [active, { status: 'DEACTIVATED', userId: { in: [...query.holders] } }] : [active],
+            },
+            orderBy: { createdAt: 'asc' },
+            take: query.take,
+            select: { userId: true, status: true, user: { select: { name: true } } },
+        });
+        return rows.map((r) => ({ userId: r.userId, name: r.user.name, active: r.status === 'ACTIVE' }));
+    }
+
+    /**
+     * Everything capacity is read from for several people, in ONE statement
+     * (3.5b): the workspace's default, the people's capacity rows, and their
+     * time-off dates in `[from, to]` with the hours off (never a type: the
+     * column is not read). Each part bounded by its own `LIMIT`.
+     */
+    static async capacityInputs(
+        db: PrismaTx,
+        ctx: Ctx,
+        query: { userIds: readonly string[]; from: string; to: string; rowsTake: number; timeOffTake: number },
+    ): Promise<CapacityInputs> {
+        const t = ctx.tenantId;
+        const ids = [...query.userIds];
+        const rows = await db.$queryRaw<Array<{ part: string; userId: string | null; day: string | null; minutes: number | null; teamId: string | null }>>(Prisma.sql`
+            (SELECT 's' AS "part", NULL::text AS "userId", NULL::text AS "day", s."defaultWeeklyMinutes" AS "minutes", NULL::text AS "teamId"
+               FROM "TenantWorkloadSettings" s WHERE s."tenantId" = ${t})
+            UNION ALL
+            (SELECT 'c', c."userId", to_char(c."effectiveFrom", 'YYYY-MM-DD'), c."weeklyMinutes", c."calendarTeamId"
+               FROM "MemberCapacity" c
+              WHERE c."tenantId" = ${t} AND c."userId" = ANY(${ids}::text[])
+              ORDER BY c."userId", c."effectiveFrom"
+              LIMIT ${query.rowsTake})
+            UNION ALL
+            (SELECT 'o', o."userId", to_char(o."day", 'YYYY-MM-DD'), o."minutes", NULL::text
+               FROM "TimeOff" o
+              WHERE o."tenantId" = ${t} AND o."userId" = ANY(${ids}::text[]) AND o."day" BETWEEN ${query.from}::date AND ${query.to}::date
+              ORDER BY o."userId", o."day"
+              LIMIT ${query.timeOffTake})`);
+        const out: CapacityInputs = { defaultWeeklyMinutes: null, rows: [], timeOff: [] };
+        for (const r of rows) {
+            if (r.part === 's') out.defaultWeeklyMinutes = r.minutes;
+            else if (r.part === 'c') out.rows.push({ userId: r.userId!, effectiveFrom: r.day!, weeklyMinutes: r.minutes!, calendarTeamId: r.teamId });
+            else out.timeOff.push({ userId: r.userId!, day: r.day!, minutes: r.minutes });
+        }
+        return out;
     }
 
     /** One person's membership in the workspace (any status but GUEST's is a person of the page). */

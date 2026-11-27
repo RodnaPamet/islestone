@@ -186,6 +186,34 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
         maxBuffers: 1250,
         maxBuffers100k: 12500,
     },
+    // ── Workload (3.5b): every member's counted work over 12 weeks, one person's two weeks (My Work's line), the
+    // time recorded on the counted items, and the people's time-off dates in the window (3.5a's deferred check).
+    // 10k measured: 2,675 buffers for every member (the counts beside the hours one aggregate on the partial
+    // `WorkItem_progress_project_path`, joined to each item's team for its unit; the hours teams' live items reached
+    // through their projects on the projects' number key), 3,770 for the heavy member (1,004 open items on the
+    // assignee index, each a heap fetch), 3,139 for the time on the 2,717 counted items, 37 for the default, the
+    // capacity rows and the members' time-off dates in one statement. 100k: NOT MEASURED (no disk for the 100k seed
+    // here): the hours teams hold about half of 100,000 items, so about ten times the workspace reads and two to three
+    // times the heavy member's; each budget about twice that. Replace with about twice the nightly's first 100k
+    // measurement.
+    {
+        name: 'workload: open assigned items of every member over 12 weeks',
+        methods: ['WorkItemRepository.listForWorkload', 'WorkItemRepository.workloadUnplacedCounts'],
+        indexes: ['WorkItem_tenantId_projectId_number_key|WorkItem_tenantId_teamId_stateCategory_sortKey_idx|WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx'],
+        maxBuffers: 4200,
+        maxBuffers100k: 42000,
+    },
+    {
+        name: 'workload: one person, two weeks',
+        methods: ['WorkItemRepository.listForWorkload', 'WorkItemRepository.workloadUnplacedCounts'],
+        indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx'],
+        maxBuffers: 7600,
+        maxBuffers100k: 25000,
+    },
+    { name: 'time: totals for a set of items', methods: ['TimeEntryRepository.totalsForItems'], indexes: ['TimeEntry_tenantId_workItemId_workDate_idx'], maxBuffers: 5100, maxBuffers100k: 51000 },
+    // `TimeOff` is not a guarded table, so the check names no method (the registry's methods are the guarded readers);
+    // its runner reads `WorkloadRepository.capacityInputs`, the workload read's one statement for capacity.
+    { name: 'workload: time-off dates in a window', methods: [], indexes: ['TimeOff_tenantId_userId_day_key'], maxBuffers: 100, maxBuffers100k: 500 },
     // ── Writes' reads: placement, moves, a member's removal ────────────────
     { name: 'placement: sort keys around a position', methods: ['WorkItemRepository.lastSortKey', 'WorkItemRepository.nextSortKeyAfter', 'WorkItemRepository.prevSortKeyBefore', 'WorkItemRepository.liveSortKeysAmong'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 100, maxBuffers100k: 100 },
     { name: 'removal: a member\'s items', methods: ['WorkItemRepository.lockItemsOfPerson'], indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx|WorkItem_tenantId_assigneeId_sortKey_id_idx', 'WorkItem_tenantId_waitingOnUserId_stateCategory_dueDate_idx', 'CustomFieldValue_tenantId_userId_idx|CustomFieldValue_tenantId_fieldId_userId_idx'], maxBuffers: 7500, maxBuffers100k: 88000 },

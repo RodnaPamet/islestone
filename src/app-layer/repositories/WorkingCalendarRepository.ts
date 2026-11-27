@@ -12,7 +12,7 @@
  *
  * Written fresh for Islestone.
  */
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 import type { PrismaTx } from '@/lib/db-context';
 import { WORKING_CALENDAR_LIMITS } from '@/lib/scheduling/working-calendar';
@@ -39,30 +39,44 @@ export const workingCalendarSelect = {
 
 export type WorkingCalendarRow = Prisma.WorkingCalendarGetPayload<{ select: typeof workingCalendarSelect }>;
 
+/** A calendar as arithmetic reads it: its weekdays, zone and holidays' dates (`YYYY-MM-DD`), no names. */
+export interface WorkingCalendarArithmeticRow {
+    id: string;
+    teamId: string | null;
+    timeZone: string;
+    workingWeekdays: number[];
+    holidayDays: string[];
+}
+
 export class WorkingCalendarRepository {
     /** Serialise every change to this workspace's calendars (taken first in each write). */
     static async lockWorkspaceCalendars(db: PrismaTx, ctx: Ctx): Promise<void> {
         await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`working-calendar:${ctx.tenantId}`}))`;
     }
 
-    /** Every calendar of the workspace with its holidays (the workspace's has `teamId` NULL). */
-    static async listAll(db: PrismaTx, ctx: Ctx): Promise<WorkingCalendarRow[]> {
-        return db.workingCalendar.findMany({
-            where: { tenantId: ctx.tenantId },
-            orderBy: [{ teamId: 'asc' }, { id: 'asc' }],
-            take: CALENDARS_TAKE,
-            select: workingCalendarSelect,
-        });
-    }
-
-    /** The workspace's calendar and the named teams' (each with its holidays). */
-    static async listForTeams(db: PrismaTx, ctx: Ctx, teamIds: readonly string[]): Promise<WorkingCalendarRow[]> {
-        return db.workingCalendar.findMany({
-            where: { tenantId: ctx.tenantId, OR: [{ teamId: null }, ...(teamIds.length > 0 ? [{ teamId: { in: [...teamIds] } }] : [])] },
-            orderBy: [{ teamId: 'asc' }, { id: 'asc' }],
-            take: CALENDARS_TAKE,
-            select: workingCalendarSelect,
-        });
+    /**
+     * The calendars of the workspace for arithmetic, each with its holidays'
+     * dates, in ONE statement (the holidays an aggregate per calendar, at most
+     * `holidaysPerCalendar` each): the workspace's (`teamId` NULL) and the
+     * named teams' (every team's when `teamIds` is omitted). Names are not
+     * read: arithmetic needs the dates only (`resolveWorkingCalendars`).
+     */
+    static async listForArithmetic(db: PrismaTx, ctx: Ctx, teamIds?: readonly string[]): Promise<WorkingCalendarArithmeticRow[]> {
+        const all = teamIds === undefined;
+        const named = [...(teamIds ?? [])];
+        return db.$queryRaw<WorkingCalendarArithmeticRow[]>(Prisma.sql`
+            SELECT c."id", c."teamId", c."timeZone", c."workingWeekdays",
+                   COALESCE((SELECT array_agg(h."day" ORDER BY h."day")
+                               FROM (SELECT to_char(x."day", 'YYYY-MM-DD') AS "day"
+                                       FROM "WorkingCalendarHoliday" x
+                                      WHERE x."tenantId" = ${ctx.tenantId} AND x."calendarId" = c."id"
+                                      ORDER BY x."day", x."id"
+                                      LIMIT ${WORKING_CALENDAR_LIMITS.holidaysPerCalendar}) h), '{}'::text[]) AS "holidayDays"
+              FROM "WorkingCalendar" c
+             WHERE c."tenantId" = ${ctx.tenantId}
+               AND (${all}::boolean OR c."teamId" IS NULL OR c."teamId" = ANY(${named}::text[]))
+             ORDER BY c."teamId" NULLS FIRST, c."id"
+             LIMIT ${CALENDARS_TAKE}`);
     }
 
     /** The workspace's calendar (`teamId` null) or a team's. */
