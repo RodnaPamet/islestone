@@ -43,3 +43,69 @@ export function completionsAsOf<T extends RecordFact>(items: ReadonlyMap<string,
     }
     return out;
 }
+
+/**
+ * One item's rows as the forecast's record read gives them (sub-phase 3.6c):
+ * from its first completion in the read's range on, each with the category it
+ * came from (`fromStateCategory`, decision 310) and whether, as a completion
+ * row, it lies in the history's scope.
+ */
+export interface SpanRow {
+    at: Date;
+    seq: number;
+    stateCategory: RecordFact['stateCategory'];
+    fromStateCategory: RecordFact['stateCategory'] | null;
+    deleted: boolean;
+    /** A completion row whose recorded project is in the history's scope (and visible). */
+    inScope: boolean;
+}
+
+/** A completion and the instants between which it counted: from `from` (inclusive) to `to` (exclusive; null: still now). */
+export interface CompletionSpan {
+    completedAt: Date;
+    from: Date;
+    to: Date | null;
+}
+
+/**
+ * When each of one item's completions counted (decision 311, over time): it
+ * counts while the item's picture is in Done and not deleted, on the day of
+ * its last entry into Done; a reopen ends it for good (a later entry is a new
+ * completion), a deletion ends it and a restore begins it again. Only
+ * completions whose row is in scope are returned. `completionAsOf(rows, R)`
+ * finds a completion exactly when one of these spans holds `R`.
+ */
+export function completionSpans(rows: readonly SpanRow[]): CompletionSpan[] {
+    const out: CompletionSpan[] = [];
+    let last: SpanRow | null = null;
+    let open: { completedAt: Date; inScope: boolean; from: Date } | null = null;
+    for (const r of rows) {
+        if (r.stateCategory === 'DONE' && r.fromStateCategory !== 'DONE') last = r;
+        const counted = last !== null && r.stateCategory === 'DONE' && !r.deleted;
+        if (counted && !open) open = { completedAt: last!.at, inScope: last!.inScope, from: r.at };
+        else if (!counted && open) {
+            if (open.inScope) out.push({ completedAt: open.completedAt, from: open.from, to: r.at });
+            open = null;
+        }
+    }
+    if (open?.inScope) out.push({ completedAt: open.completedAt, from: open.from, to: null });
+    return out;
+}
+
+/**
+ * Spans as civil days (the back-test's `DaySpan`): the completion's day, and
+ * the days at whose start it counted. A row at an instant counts for a
+ * reading after it, so a span from `f` to `t` counts at the start of every
+ * day from the day after `f` to the day of `t` (midnight belongs to the day
+ * it begins). A span seen at no day's start is dropped.
+ */
+export function daySpansOf(spans: readonly CompletionSpan[], dayOf: (at: Date) => number): Array<{ day: number; seenFrom: number; seenUntil: number | null }> {
+    const out: Array<{ day: number; seenFrom: number; seenUntil: number | null }> = [];
+    for (const s of spans) {
+        const seenFrom = dayOf(s.from) + 1;
+        const seenUntil = s.to === null ? null : dayOf(s.to);
+        if (seenUntil !== null && seenUntil < seenFrom) continue;
+        out.push({ day: dayOf(s.completedAt), seenFrom, seenUntil });
+    }
+    return out;
+}
