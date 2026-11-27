@@ -1507,6 +1507,16 @@
                 "failed": "The dependency could not be added.",
                 "wrongType": "Draw a dependency from the end of one bar to the start of the next, between items you can change.",
                 "notHere": "This dependency cannot be removed here."
+            },
+            "fromProject": {
+                "changeTitle": "Change dates for {key}",
+                "openItem": "Open the item",
+                "close": "Close",
+                "loading": "Reading the schedule of {key}…",
+                "loadFailed": "The schedule could not be read, so the change cannot be previewed. Try again.",
+                "tooLarge": "Its project has {count, plural, one {# item} other {# items}}, more than the {limit} a preview reads: change the dates on the item.",
+                "summaryRow": "The dates of {key} follow its sub-items: change theirs.",
+                "notHere": "The dates of {key} cannot be changed here."
             }
         },
         "goal": {
@@ -1588,15 +1598,7 @@
                 "date": "New due date",
                 "hint": "Its start date, if it has one, moves by the same number of days.",
                 "cancel": "Cancel",
-                "continue": "Continue",
-                "changeTitle": "Change dates for {key}",
-                "openItem": "Open the item",
-                "close": "Close",
-                "loading": "Reading the schedule of {key}…",
-                "loadFailed": "The schedule could not be read, so the change cannot be previewed. Try again.",
-                "tooLarge": "Its project has {count, plural, one {# item} other {# items}}, more than the {limit} a preview reads: change the dates on the item.",
-                "summaryRow": "The dates of {key} follow its sub-items: change theirs.",
-                "notHere": "The dates of {key} cannot be changed here."
+                "continue": "Continue"
             }
         },
         "estimate": {
