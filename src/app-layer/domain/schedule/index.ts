@@ -6,3 +6,4 @@ export * from './calendar';
 export * from './types';
 export { computeSchedule } from './engine';
 export * from './span';
+export { movePlannedDates } from './move';
