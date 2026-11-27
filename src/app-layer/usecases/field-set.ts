@@ -82,15 +82,23 @@ export async function loadFieldSets(
     ctx: RequestContext,
     typeIds: readonly string[],
     projectId: string,
-    /** The project's team's estimate unit (3.4a), when the caller has read it; read here otherwise. */
-    estimateUnit?: EstimateUnit | null,
+    /**
+     * The project's team's estimate unit (3.4a), when the caller has read it;
+     * read here otherwise. `ESTIMATE_UNIT_IF_RULED` reads it only when a rule
+     * names the estimate: for a caller whose values carry no estimate, the
+     * unit decides nothing else (a create without one, which stays within its
+     * statement budget, `tests/perf/statements.test.ts`).
+     */
+    estimateUnit?: EstimateUnit | null | typeof ESTIMATE_UNIT_IF_RULED,
 ): Promise<Map<string, LoadedFieldSet>> {
     const unique = [...new Set(typeIds)];
-    const [rules, fields, unit] = await Promise.all([
+    const ifRuled = estimateUnit === ESTIMATE_UNIT_IF_RULED;
+    const [rules, fields, given] = await Promise.all([
         FieldSetRepository.listForTypesInProject(db, ctx, unique, projectId),
         CustomFieldRepository.listFields(db, ctx, projectId),
-        estimateUnit !== undefined ? Promise.resolve(estimateUnit) : TeamRepository.estimateUnitOfProject(db, ctx, projectId),
+        ifRuled ? Promise.resolve(null) : estimateUnit !== undefined ? Promise.resolve(estimateUnit) : TeamRepository.estimateUnitOfProject(db, ctx, projectId),
     ]);
+    const unit = ifRuled && rules.some((r) => r.builtInField === 'estimate') ? await TeamRepository.estimateUnitOfProject(db, ctx, projectId) : given;
     const rows = rules.map(toEntry);
     const live = fields.map((f) => f.id);
     const names = new Map(fields.map((f) => [f.id, f.name]));
@@ -98,7 +106,10 @@ export async function loadFieldSets(
     return new Map(unique.map((typeId) => [typeId, { set: resolveFieldSet(rows, typeId, opts), names }]));
 }
 
-export async function loadFieldSet(db: PrismaTx, ctx: RequestContext, typeId: string, projectId: string, estimateUnit?: EstimateUnit | null): Promise<LoadedFieldSet> {
+/** See `loadFieldSets`: read the team's estimate unit only when a rule names the estimate. */
+export const ESTIMATE_UNIT_IF_RULED: unique symbol = Symbol('estimate-unit-if-ruled');
+
+export async function loadFieldSet(db: PrismaTx, ctx: RequestContext, typeId: string, projectId: string, estimateUnit?: EstimateUnit | null | typeof ESTIMATE_UNIT_IF_RULED): Promise<LoadedFieldSet> {
     return (await loadFieldSets(db, ctx, [typeId], projectId, estimateUnit)).get(typeId)!;
 }
 

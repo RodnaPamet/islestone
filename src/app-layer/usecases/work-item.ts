@@ -139,7 +139,7 @@ import { normaliseSearchQuery } from '@/lib/search/query';
 import { isClosedCategory, requirementOf, type FieldKey, type FieldValues, type ResolvedFieldSet } from '@/lib/work-items/field-sets';
 import { countedEstimate, estimateColumnOf } from '@/lib/work-items/estimate';
 import { isTenantSystemUserId } from '@/lib/tenant-system-user';
-import { assertFieldWrite, checkCreate, checkTypeChange, checkWrite, loadFieldSet, loadFieldSets, type LoadedFieldSet } from './field-set';
+import { assertFieldWrite, checkCreate, checkTypeChange, checkWrite, loadFieldSet, loadFieldSets, ESTIMATE_UNIT_IF_RULED, type LoadedFieldSet } from './field-set';
 import { todayClock } from '@/lib/clock';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────
@@ -775,8 +775,12 @@ export async function createWorkItemInTx(
     assertProjectWritable(project);
     // The team's estimate unit (3.4a, decision 257): it decides the column,
     // refuses a value in the other one, and the field set's estimate rule.
-    const estimateUnit = (await TeamRepository.estimateUnitOf(db, ctx, project.teamId)) ?? null;
-    const asked = requestedEstimate(input, estimateUnit);
+    // Read only when the create names an estimate (a template's context
+    // brings its own read): a create without one stays within its statement
+    // budget (`tests/perf/statements.test.ts`).
+    const namesEstimate = input.estimatePoints !== undefined || input.estimateMinutes !== undefined;
+    let estimateUnit: EstimateUnit | null | undefined = namesEstimate ? ((await TeamRepository.estimateUnitOf(db, ctx, project.teamId)) ?? null) : undefined;
+    const asked = namesEstimate ? requestedEstimate(input, estimateUnit ?? null) : undefined;
 
     // A template is projected into the create (the ONE projection,
     // `templateToCreateInput`), then the create runs as any other.
@@ -785,7 +789,9 @@ export async function createWorkItemInTx(
     if (input.templateId) {
         const template = await loadUsableTemplate(db, ctx, project.id, input.templateId);
         const source = templateSource(template);
-        fromTemplate = templateToCreateInput(source, overridesOf(input), await templateUseContextInTx(db, ctx, project, peopleNamedBy(source)));
+        const use = await templateUseContextInTx(db, ctx, project, peopleNamedBy(source));
+        if (estimateUnit === undefined) estimateUnit = use.estimateUnit;
+        fromTemplate = templateToCreateInput(source, overridesOf(input), use);
         plan = {
             ...input,
             title: fromTemplate.title,
@@ -802,7 +808,7 @@ export async function createWorkItemInTx(
         };
     }
     // The projection keeps only the unit's column; a request's value was checked above.
-    let estimate: number | null = asked !== undefined ? asked : countedEstimate(estimateUnit, plan);
+    let estimate: number | null = asked !== undefined ? asked : estimateUnit !== undefined ? countedEstimate(estimateUnit, plan) : null;
     const title = sanitizePlainText(plan.title ?? '').trim();
     if (!title) throw badRequest('A work item needs a title.');
     if (!plan.typeId) throw badRequest('A work item needs a type.');
@@ -824,7 +830,7 @@ export async function createWorkItemInTx(
     // The type's field set (2.4b-b, decisions 109 to 111): a hidden value a
     // template or a source brought is skipped and named; one the request
     // named is refused; an open item fills every required field.
-    const fieldSet = await loadFieldSet(db, ctx, type.id, project.id, estimateUnit);
+    const fieldSet = await loadFieldSet(db, ctx, type.id, project.id, estimateUnit !== undefined ? estimateUnit : ESTIMATE_UNIT_IF_RULED);
     const projected = (key: FieldKey): boolean =>
         opts.projected === 'all' || (opts.projected === 'customFields' && key.startsWith('cf:')) || (fromTemplate !== null && !requestNames(input, key));
     const checked = checkCreate(fieldSet, createValues({ ...plan, estimate }), { open: !isClosedCategory(state.category), projected });
