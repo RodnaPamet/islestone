@@ -166,7 +166,7 @@ export type FixtureName =
     | 'futureCapacity';
 
 /** The matrix's route roots: one integration file each (map part 3, "Shape"). */
-export type MatrixRoot = 'work-items' | 'reviews' | 'projects' | 'configuration' | 'intake' | 'notifications' | 'admin-security' | 'time' | 'workload';
+export type MatrixRoot = 'work-items' | 'reviews' | 'projects' | 'configuration' | 'intake' | 'notifications' | 'admin-security' | 'time' | 'workload' | 'analytics';
 
 export interface MatrixRow {
     /** Relative to `src/app/api/t/[tenantSlug]/`. */
@@ -250,6 +250,9 @@ const OTHERS_TYPE = c('ok', 'ok', 'empty', 'empty', g('denied'), 'empty', 'empty
 
 /** `time.rates` (decisions 265 and 274): OWNER and ADMIN; never a Member or Viewer, nor either custom role. */
 const RATES = c('ok', 'ok', 'denied', 'denied', g('denied'), 'denied', 'denied');
+/** `analytics.view` (decision 329): every built-in role but a guest, and both custom roles (their bases, MEMBER and VIEWER, hold it). */
+const ANALYTICS = c('ok', 'ok', 'ok', 'ok', g('denied'), 'ok', 'ok');
+
 /** A write into an archived project by a caller the key admits. */
 const ARCHIVED_ITEM_EDIT = c('archived', 'archived', 'archived', 'denied', g('denied'), 'denied', 'denied');
 
@@ -841,6 +844,24 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         {
             route: 'time-off/days/remove/route.ts', method: 'POST', key: 'workload.time_off', subject: "another member's time off, removed (decision 288: workload.manage)", fixture: 'annTimeOff',
             body: (s) => ({ userId: s.timeOffUserId, days: [{ day: s.timeOffDay, version: 1 }] }), expect: OTHERS_TIME_OFF,
+        },
+    ],
+
+    // Sub-phase 3.6a (decisions 329 to 331): the analytics reads over the transition record, analytics.view for
+    // every built-in role but a guest; each reads only the projects the caller sees.
+    analytics: [
+        { route: 'analytics/counts/route.ts', method: 'GET', key: 'analytics.view', subject: 'open, started, done and created counts', query: () => ({ from: '2026-01-05', to: '2026-03-01' }), expect: ANALYTICS },
+        {
+            route: 'analytics/throughput/route.ts', method: 'GET', key: 'analytics.view', subject: 'throughput per week',
+            query: () => ({ from: '2026-01-05', to: '2026-03-01', bin: 'week' }), expect: ANALYTICS,
+        },
+        {
+            route: 'analytics/durations/route.ts', method: 'GET', key: 'analytics.view', subject: 'cycle time with age',
+            query: () => ({ from: '2026-01-05', to: '2026-03-01', measure: 'cycle' }), expect: ANALYTICS,
+        },
+        {
+            route: 'analytics/flow/route.ts', method: 'GET', key: 'analytics.view', subject: 'cumulative flow and the burn-up',
+            query: () => ({ from: '2026-01-05', to: '2026-03-01', burnUp: '1' }), expect: ANALYTICS,
         },
     ],
 };

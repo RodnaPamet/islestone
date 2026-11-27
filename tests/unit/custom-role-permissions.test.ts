@@ -50,13 +50,13 @@ describe('getPermissionsForRole', () => {
         const roles = ['OWNER', 'ADMIN', 'MEMBER', 'VIEWER', 'GUEST'] as const;
         for (const role of roles) {
             const perms = getPermissionsForRole(role);
-            // Every PermissionSet must have all sixteen domains (intake, 2.6a; goals, 3.2a; time, 3.4b; workload, 3.5a). Spelled out
+            // Every PermissionSet must have all seventeen domains (intake, 2.6a; goals, 3.2a; time, 3.4b; workload, 3.5a; analytics, 3.6a). Spelled out
             // rather than derived from PERMISSION_SCHEMA on purpose: derived,
             // it would compare the runtime bag against a list the same commit
             // edits, and agree with itself. A widening of the permission model
             // has to be written here too, which is what makes it deliberate.
             expect(Object.keys(perms).sort()).toEqual([
-                'admin', 'agents', 'automations', 'billing', 'canvas', 'cycles',
+                'admin', 'agents', 'analytics', 'automations', 'billing', 'canvas', 'cycles',
                 'docs', 'goals', 'intake', 'integrations', 'projects', 'time', 'views', 'work_items', 'workload', 'workspace',
             ]);
         }

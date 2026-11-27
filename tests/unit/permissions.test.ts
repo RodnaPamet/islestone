@@ -43,6 +43,7 @@ describe('the PermissionSet schema', () => {
             'goals',
             'time',
             'workload',
+            'analytics',
             'docs',
             'canvas',
             'automations',
@@ -108,6 +109,8 @@ describe('the role matrix', () => {
                 'time.track',
                 'workload.view',
                 'workload.time_off',
+                'analytics.view',
+                'analytics.share',
                 'docs.view',
                 'docs.create',
                 'docs.edit',
@@ -135,6 +138,7 @@ describe('the role matrix', () => {
                 'time.view',
                 'workload.view',
                 'workload.time_off',
+                'analytics.view',
                 'docs.view',
                 'canvas.view',
                 'agents.view',
@@ -206,6 +210,22 @@ describe('the role matrix', () => {
         expect(parsePermissionsJson(before, 'ADMIN').workload).toEqual({ view: true, time_off: true, manage: true });
     });
 
+    it('analytics (decision 329): Owners and Admins all three keys, Members view and share, Viewers view, Guests nothing', () => {
+        const analyticsKeys = (role: Role) => granted(getPermissionsForRole(role)).filter((k) => k.startsWith('analytics.'));
+        expect(analyticsKeys('OWNER')).toEqual(['analytics.people', 'analytics.share', 'analytics.view']);
+        expect(analyticsKeys('ADMIN')).toEqual(['analytics.people', 'analytics.share', 'analytics.view']);
+        expect(analyticsKeys('MEMBER')).toEqual(['analytics.share', 'analytics.view']);
+        expect(analyticsKeys('VIEWER')).toEqual(['analytics.view']);
+        expect(analyticsKeys('GUEST')).toEqual([]);
+    });
+
+    it('a custom role stored before 3.6 has no analytics domain and takes its base role analytics keys', () => {
+        const before = Object.fromEntries(Object.entries(getPermissionsForRole('MEMBER')).filter(([d]) => d !== 'analytics'));
+        expect(parsePermissionsJson(before, 'MEMBER').analytics).toEqual({ view: true, share: true, people: false });
+        expect(parsePermissionsJson(before, 'VIEWER').analytics).toEqual({ view: true, share: false, people: false });
+        expect(parsePermissionsJson(before, 'ADMIN').analytics).toEqual({ view: true, share: true, people: true });
+    });
+
     it('no role but OWNER and ADMIN holds an admin or billing key', () => {
         for (const role of ['MEMBER', 'VIEWER', 'GUEST'] as const) {
             const keys = granted(getPermissionsForRole(role));
@@ -267,6 +287,12 @@ describe('hasPermission over the matrix', () => {
         ['ADMIN', 'workload.manage', true],
         ['GUEST', 'workload.view', false],
         ['GUEST', 'workload.time_off', false],
+        ['MEMBER', 'analytics.view', true],
+        ['MEMBER', 'analytics.people', false],
+        ['VIEWER', 'analytics.view', true],
+        ['VIEWER', 'analytics.share', false],
+        ['ADMIN', 'analytics.people', true],
+        ['GUEST', 'analytics.view', false],
     ] as const)('%s → %s is %s', (role, key, expected) => {
         expect(hasPermission(getPermissionsForRole(role), key)).toBe(expected);
     });

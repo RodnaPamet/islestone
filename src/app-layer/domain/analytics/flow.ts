@@ -159,3 +159,45 @@ export function cumulativeFlowOf(day: FlowDay): { backlog: number; unstarted: nu
     const c = day.counts;
     return { backlog: c.BACKLOG, unstarted: c.UNSTARTED, started: c.STARTED, done: c.DONE };
 }
+
+/** One aggregated change of the database's sweep: on `day` (the window's first day − 1 for "before"), `bucket` gained or lost. */
+export interface FlowDelta {
+    day: EpochDay;
+    bucket: FlowBucket;
+    count: number;
+    weight: number;
+    unestimated: number;
+}
+
+/**
+ * The same series as {@link flowSweep}, from the deltas the database's
+ * sweep aggregated (`WorkItemTransitionRepository.flowDeltas`): a running sum
+ * from the day before the window.
+ */
+export function flowFromDeltas(fromDay: EpochDay, toDay: EpochDay, deltas: readonly FlowDelta[]): FlowDay[] {
+    const days = toDay - fromDay + 1;
+    if (days <= 0) return [];
+    const dCount = Array.from({ length: days + 1 }, zeroes);
+    const dWeight = Array.from({ length: days + 1 }, zeroes);
+    const dUnest = new Array<number>(days + 1).fill(0);
+    for (const d of deltas) {
+        if (d.day > toDay) continue;
+        const i = Math.max(0, d.day - fromDay + 1);
+        dCount[i]![d.bucket] += d.count;
+        dWeight[i]![d.bucket] += d.weight;
+        dUnest[i]! += d.unestimated;
+    }
+    const out: FlowDay[] = [];
+    const counts = zeroes();
+    const weights = zeroes();
+    let unestimated = 0;
+    for (let i = 0; i <= days; i++) {
+        for (const b of FLOW_BUCKETS) {
+            counts[b] += dCount[i]![b];
+            weights[b] += dWeight[i]![b];
+        }
+        unestimated += dUnest[i]!;
+        if (i > 0) out.push({ day: fromDay + i - 1, counts: { ...counts }, weights: { ...weights }, unestimated });
+    }
+    return out;
+}

@@ -20,7 +20,7 @@ import { gitFiles } from '../helpers/git-files';
 
 const ROOT = path.resolve(__dirname, '../..');
 const T = 'src/app/api/t/[tenantSlug]';
-const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates', 'intake', 'search', 'recipient-lists', 'working-calendar', 'goals', 'initiatives', 'roadmap', 'time-entries', 'time-settings', 'timesheets', 'workload', 'workload-settings', 'members', 'time-off', 'billable-rates', 'time-totals'].map((r) => `${T}/${r}/`);
+const ROOTS = ['work-items', 'projects', 'teams', 'work-item-types', 'labels', 'views', 'cycles', 'project-templates', 'intake', 'search', 'recipient-lists', 'working-calendar', 'goals', 'initiatives', 'roadmap', 'time-entries', 'time-settings', 'timesheets', 'workload', 'workload-settings', 'members', 'time-off', 'billable-rates', 'time-totals', 'analytics'].map((r) => `${T}/${r}/`);
 
 type Spec = Partial<Record<'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', string>>;
 const W = `${T}/work-items`;
@@ -124,6 +124,11 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${T}/members/[userId]/billable-rates/route.ts`]: { PUT: 'time.rates' },
     [`${T}/time-totals/route.ts`]: { GET: 'time.view' },
     [`${T}/time-totals/export/route.ts`]: { GET: 'time.view' },
+    // Sub-phase 3.6a (decision 329).
+    [`${T}/analytics/counts/route.ts`]: { GET: 'analytics.view' },
+    [`${T}/analytics/throughput/route.ts`]: { GET: 'analytics.view' },
+    [`${T}/analytics/durations/route.ts`]: { GET: 'analytics.view' },
+    [`${T}/analytics/flow/route.ts`]: { GET: 'analytics.view' },
     [`${W}/[workItemId]/time/route.ts`]: { GET: 'work_items.view' },
     [`${T}/initiatives/route.ts`]: { GET: 'goals.view', POST: 'goals.manage' },
     [`${T}/initiatives/[initiativeId]/route.ts`]: { GET: 'goals.view', PATCH: 'goals.manage', DELETE: 'goals.manage' },
