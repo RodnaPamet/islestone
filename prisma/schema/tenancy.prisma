@@ -108,6 +108,10 @@ model Tenant {
   // Sub-phase 3.4c: timesheets and their settings (ADR 0012 §5).
   timesheets                      Timesheet[]
   timeSettings                    TenantTimeSettings?
+  // Sub-phase 3.5a: capacity and time off (ADR 0013).
+  workloadSettings                TenantWorkloadSettings?
+  memberCapacities                MemberCapacity[]
+  timeOff                         TimeOff[]
 
   teams                  Team[]
   workflowStates         WorkflowState[]
@@ -188,6 +192,9 @@ model TenantMembership {
   /// Goals and initiatives this member leads (3.2, decision 209; RESTRICT).
   ledGoals          Goal[]                           @relation("GoalLead")
   ledInitiatives    Initiative[]                     @relation("InitiativeLead")
+  /// Capacity and time off (3.5a); both cascade with the membership.
+  capacities        MemberCapacity[]                 @relation("MemberCapacityMembership")
+  timeOff           TimeOff[]                        @relation("TimeOffMembership")
 
   @@unique([tenantId, userId])
   /// The composite an FK from a tenant-scoped child references. `id` alone is

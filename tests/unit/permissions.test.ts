@@ -42,6 +42,7 @@ describe('the PermissionSet schema', () => {
             'intake',
             'goals',
             'time',
+            'workload',
             'docs',
             'canvas',
             'automations',
@@ -105,6 +106,8 @@ describe('the role matrix', () => {
                 'goals.manage',
                 'time.view',
                 'time.track',
+                'workload.view',
+                'workload.time_off',
                 'docs.view',
                 'docs.create',
                 'docs.edit',
@@ -118,7 +121,7 @@ describe('the role matrix', () => {
         );
     });
 
-    it('VIEWER reads every project and agent, and writes nothing but its own personal views (decision 60)', () => {
+    it('VIEWER reads every project and agent, and writes nothing but its own personal views (decision 60) and its own time off (decision 298)', () => {
         expect(granted(getPermissionsForRole('VIEWER'))).toEqual(
             [
                 'workspace.view',
@@ -130,6 +133,8 @@ describe('the role matrix', () => {
                 'cycles.view',
                 'goals.view',
                 'time.view',
+                'workload.view',
+                'workload.time_off',
                 'docs.view',
                 'canvas.view',
                 'agents.view',
@@ -186,6 +191,21 @@ describe('the role matrix', () => {
         expect(parsePermissionsJson(before, 'VIEWER').time).toEqual({ view: true, track: false, approve: false, rates: false });
     });
 
+    it('workload (decision 298): Owners and Admins all three keys, Members and Viewers view and time_off, Guests nothing', () => {
+        const workloadKeys = (role: Role) => granted(getPermissionsForRole(role)).filter((k) => k.startsWith('workload.'));
+        expect(workloadKeys('OWNER')).toEqual(['workload.manage', 'workload.time_off', 'workload.view']);
+        expect(workloadKeys('ADMIN')).toEqual(['workload.manage', 'workload.time_off', 'workload.view']);
+        expect(workloadKeys('MEMBER')).toEqual(['workload.time_off', 'workload.view']);
+        expect(workloadKeys('VIEWER')).toEqual(['workload.time_off', 'workload.view']);
+        expect(workloadKeys('GUEST')).toEqual([]);
+    });
+
+    it('a custom role stored before 3.5 has no workload domain and takes its base role workload keys', () => {
+        const before = Object.fromEntries(Object.entries(getPermissionsForRole('MEMBER')).filter(([d]) => d !== 'workload'));
+        expect(parsePermissionsJson(before, 'MEMBER').workload).toEqual({ view: true, time_off: true, manage: false });
+        expect(parsePermissionsJson(before, 'ADMIN').workload).toEqual({ view: true, time_off: true, manage: true });
+    });
+
     it('no role but OWNER and ADMIN holds an admin or billing key', () => {
         for (const role of ['MEMBER', 'VIEWER', 'GUEST'] as const) {
             const keys = granted(getPermissionsForRole(role));
@@ -239,6 +259,14 @@ describe('hasPermission over the matrix', () => {
         ['ADMIN', 'time.rates', true],
         ['GUEST', 'time.view', false],
         ['GUEST', 'time.track', false],
+        ['MEMBER', 'workload.time_off', true],
+        ['MEMBER', 'workload.manage', false],
+        ['VIEWER', 'workload.view', true],
+        ['VIEWER', 'workload.time_off', true],
+        ['VIEWER', 'workload.manage', false],
+        ['ADMIN', 'workload.manage', true],
+        ['GUEST', 'workload.view', false],
+        ['GUEST', 'workload.time_off', false],
     ] as const)('%s → %s is %s', (role, key, expected) => {
         expect(hasPermission(getPermissionsForRole(role), key)).toBe(expected);
     });

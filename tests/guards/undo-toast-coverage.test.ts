@@ -51,15 +51,17 @@ const SITE_CONTRACTS: Record<string, string> = {
     'src/components/goals/use-goals.ts': 'goal and initiative delete, and taking a project off an initiative (the Goals and Initiatives pages and their pages, 3.2b)',
     'src/components/calendar-sync/use-calendar-sync.ts': "disconnecting a member's own calendar and withdrawing Microsoft 365's consent, both removing synced events (the member's Calendar sync section and Settings → Calendar sync, 3.3b)",
     'src/components/time/data/use-time.ts': "deleting one's own time entry and discarding a running timer (My time and an item's Time panel, 3.4b, decision 277)",
+    'src/components/workload/data/use-time-off.ts': "removing dates of time off, one's own or (workload.manage) anyone's (the Workload page and Settings → Workload, 3.5a, decision 289)",
+    'src/components/workload/data/use-workload.ts': 'removing a future capacity change (Settings → Workload, 3.5a, decision 284)',
     'src/components/work-items/data/use-timeline-writes.ts': 'a change of dates with the items it pushes later, held before it is sent, and removing a dependency (the timeline, 3.1c, decision 194)',
 };
 
 const HOOK_FILE = 'src/components/ui/hooks/use-toast-with-undo.ts';
 const UNDO_CALLEES = new Set(['triggerUndo', 'removeWithUndo']);
 /** A DELETE through `apiSend`, or through the Settings pages' `send` wrapper, or a bulk delete. */
-const DESTRUCTIVE = /(?:apiSend|(?<![\w.$])send)\s*(?:<[^>]*>)?\s*\(\s*'DELETE'|\/bulk\/delete/g;
+const DESTRUCTIVE = /(?:apiSend|(?<![\w.$])send)\s*(?:<[^>]*>)?\s*\(\s*'DELETE'|\/bulk\/delete|\/time-off\/days\/remove/g;
 /** The folders whose deletes must leave through the undo toast. */
-const UNDO_ROOTS = ['src/components/work-items/', 'src/components/settings/', 'src/components/cycles/', 'src/components/milestones/', 'src/components/recipient-lists/', 'src/components/goals/', 'src/components/calendar-sync/', 'src/components/time/'];
+const UNDO_ROOTS = ['src/components/work-items/', 'src/components/settings/', 'src/components/cycles/', 'src/components/milestones/', 'src/components/recipient-lists/', 'src/components/goals/', 'src/components/calendar-sync/', 'src/components/time/', 'src/components/workload/'];
 
 function ownSources(root: string): Array<{ rel: string; code: string }> {
     const mirrorFile = path.join(root, 'ui-mirror.json');

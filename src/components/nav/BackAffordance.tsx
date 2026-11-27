@@ -43,6 +43,7 @@ const SECTION_LABELS: Record<string, string> = {
     '/my-work': 'myWork',
     '/inbox': 'inbox',
     '/time': 'time',
+    '/workload': 'workload',
     '/work-items': 'workItems',
     '/views': 'views',
     '/projects': 'projects',

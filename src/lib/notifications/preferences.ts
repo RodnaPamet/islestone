@@ -50,6 +50,7 @@ export const PREFERENCE_TYPES = [
     'TIMESHEET_RETURNED',
     'TIMESHEET_APPROVED',
     'TIMESHEET_REMINDER',
+    'TIME_OFF_CHANGED_BY_OTHER',
 ] as const satisfies readonly NotificationType[];
 
 export type PreferenceType = (typeof PREFERENCE_TYPES)[number];
@@ -80,11 +81,13 @@ export function offersImmediateEmail(type: NotificationType): boolean {
 
 /**
  * The types offered in the bell only, never by email (3.3c, owner decision
- * 230: "in-app only, no email"): a calendar change that was not applied. The
- * CHECK `NotificationPreference_in_app_only_types` (migration
- * `20261219120100_calendar_read_back`) holds the same list.
+ * 230: "in-app only, no email"): a calendar change that was not applied; and
+ * from 3.5a (decision 300) time off someone else changed for you. The CHECK
+ * `NotificationPreference_in_app_only_types` (migrations
+ * `20261219120100_calendar_read_back`, `20261223120100_workload`) holds the
+ * same list.
  */
-export const IN_APP_ONLY_TYPES = ['CALENDAR_CHANGE_NOT_APPLIED'] as const satisfies readonly PreferenceType[];
+export const IN_APP_ONLY_TYPES = ['CALENDAR_CHANGE_NOT_APPLIED', 'TIME_OFF_CHANGED_BY_OTHER'] as const satisfies readonly PreferenceType[];
 
 export function offersEmail(type: NotificationType): boolean {
     return !(IN_APP_ONLY_TYPES as readonly string[]).includes(type);
@@ -142,6 +145,7 @@ export const PREFERENCE_DEFAULTS: Record<NotificationType, PreferenceChoice> = {
     TIMESHEET_RETURNED: { inApp: true, email: 'IMMEDIATE' },
     TIMESHEET_APPROVED: { inApp: true, email: 'OFF' },
     TIMESHEET_REMINDER: { inApp: true, email: 'OFF' },
+    TIME_OFF_CHANGED_BY_OTHER: { inApp: true, email: 'OFF' },
 };
 
 /** What the workspace's settings say (`TenantNotificationSettings`). */

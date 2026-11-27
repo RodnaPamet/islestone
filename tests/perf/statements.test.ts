@@ -42,7 +42,7 @@ const RUNS = 5;
 interface Scenario {
     name: string;
     file: string;
-    method: 'GET' | 'POST';
+    method: 'GET' | 'POST' | 'PUT';
     path: (w: PerfWorld, run: number) => string;
     params?: (w: PerfWorld, run: number) => Record<string, string>;
     body?: (w: PerfWorld, run: number) => unknown;
@@ -107,6 +107,18 @@ async function heavyMemberSubmittedWeeks(direct: PrismaClient, w: PerfWorld): Pr
     }
 }
 
+/** A month of time off around today (3.5a): the window "My capacity and time off" reads. */
+function monthWindow(): string {
+    const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+    return `from=${day(-6)}&to=${day(35)}`;
+}
+
+/** A date of time off no earlier run on this database recorded (3.5a): far in the future, from this process's start. */
+const TIME_OFF_BASE = Date.UTC(2100, 0, 1) + (Math.floor(Date.now() / 60_000) % 200_000) * 86_400_000 * 2;
+function timeOffDay(run: number): string {
+    return new Date(TIME_OFF_BASE + (run + 1) * 86_400_000).toISOString().slice(0, 10);
+}
+
 const SCENARIOS: Scenario[] = [
     { name: 'list: one project, first page', file: `${ROUTES}/work-items/route.ts`, method: 'GET', path: (w) => `/work-items?projectId=${w.projectId}&limit=50`, budget: 8 },
     { name: 'board: one column of the large project', file: `${ROUTES}/work-items/route.ts`, method: 'GET', path: (w) => `/work-items?projectId=${w.bigProjectId}&stateId=${w.stateId}&limit=50`, budget: 8 },
@@ -136,6 +148,12 @@ const SCENARIOS: Scenario[] = [
     // with its people's names, its sums in one statement; the deciders' names when a row was decided).
     { name: "timesheets: a week's status", file: `${ROUTES}/timesheets/week/route.ts`, method: 'GET', path: (w) => `/timesheets/week?week=${w.timeWeek}`, budget: 4 },
     { name: 'timesheets: the waiting weeks', file: `${ROUTES}/timesheets/route.ts`, method: 'GET', as: 'approver', setup: heavyMemberSubmittedWeeks, path: () => '/timesheets?status=SUBMITTED', budget: 4 },
+    // Capacity and time off (3.5a), as measured on the 10k seed (which writes no capacity or time off before 3.5b's
+    // seed): the context's statement, today's calendar, the people (and their names), the settings, the capacity rows,
+    // the time-off dates and the calendars the rows name; a time-off month the person, its dates, today's calendar and
+    // the person's calendar. None is per person.
+    { name: 'workload: capacity of every member, twelve weeks', file: `${ROUTES}/workload/route.ts`, method: 'GET', path: () => '/workload?weeks=12', budget: 8 },
+    { name: "time off: the caller's month", file: `${ROUTES}/time-off/route.ts`, method: 'GET', path: () => `/time-off?${monthWindow()}`, budget: 6 },
     { name: 'calendar: the workspace, a month grid', file: `${ROUTES}/work-items/calendar/route.ts`, method: 'GET', path: () => `/work-items/calendar?${monthGrid()}`, budget: 8 },
     { name: 'calendar: one project, a month grid', file: `${ROUTES}/work-items/calendar/route.ts`, method: 'GET', path: (w) => `/work-items/calendar?projectId=${w.projectId}&${monthGrid()}`, budget: 8 },
     {
@@ -178,6 +196,16 @@ const SCENARIOS: Scenario[] = [
         path: (_w, run) => `/timesheets/${submittedSheets.get(run)}/approve`,
         params: (_w, run) => ({ timesheetId: submittedSheets.get(run)! }),
         budget: 23,
+    },
+    // Time off (3.5a): one's own date recorded, a write of its own (the person's lock, the membership FOR KEY SHARE,
+    // the dates it names, the insert and two hash-chained audit entries). Each run a date of its own.
+    {
+        name: 'time off: record one date',
+        file: `${ROUTES}/time-off/days/route.ts`,
+        method: 'PUT',
+        path: () => '/time-off/days',
+        body: (_w, run) => ({ days: [{ day: timeOffDay(run), minutes: null, type: 'VACATION' }] }),
+        budget: 11,
     },
 ];
 

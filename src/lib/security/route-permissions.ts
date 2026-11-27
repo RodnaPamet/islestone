@@ -907,6 +907,69 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'time.approve',
         note: "A member's submitted or decided week with its entries, read-only (decision 266).",
     },
+    // ── Capacity and time off (sub-phase 3.5a; owner decisions 284 to 300) ──
+    // None under /admin/, which the edge refuses to non-admins. The members
+    // table's path sits above the view's, which matches only `/workload`.
+    {
+        path: new RegExp(`^${T}\\/workload\\/members$`),
+        methods: ['GET'],
+        permission: 'workload.manage',
+        note: "Settings → Workload's members table: capacity in force and the next change (decision 284).",
+    },
+    {
+        path: new RegExp(`^${T}\\/workload$`),
+        methods: ['GET'],
+        permission: 'workload.view',
+        note: 'The Workload page: capacity per person per week (3.5a; 3.5b adds allocation); never a time-off type (decision 287).',
+    },
+    {
+        path: new RegExp(`^${T}\\/workload-settings$`),
+        methods: ['GET'],
+        permission: 'workload.view',
+        note: "The workspace's default weekly capacity (decision 284).",
+    },
+    {
+        path: new RegExp(`^${T}\\/workload-settings$`),
+        methods: ['PUT'],
+        permission: 'workload.manage',
+        note: 'Change the default weekly capacity, a person only.',
+    },
+    {
+        path: new RegExp(`^${T}\\/members\\/[^\\/]+\\/capacity$`),
+        methods: ['GET'],
+        permission: 'workload.view',
+        note: "A member's capacity rows, newest first.",
+    },
+    {
+        path: new RegExp(`^${T}\\/members\\/[^\\/]+\\/capacity$`),
+        methods: ['PUT'],
+        permission: 'workload.manage',
+        note: "Set a member's capacity from a Monday (decisions 284 and 285), a person only.",
+    },
+    {
+        path: new RegExp(`^${T}\\/members\\/[^\\/]+\\/capacity\\/[^\\/]+$`),
+        methods: ['DELETE'],
+        permission: 'workload.manage',
+        note: 'Remove a future capacity change (409 CAPACITY_IN_EFFECT for one in effect).',
+    },
+    {
+        path: new RegExp(`^${T}\\/time-off$`),
+        methods: ['GET'],
+        permission: 'workload.view',
+        note: "A person's time-off dates and hours; the type only for the person and workload.manage (decision 287).",
+    },
+    {
+        path: new RegExp(`^${T}\\/time-off\\/days$`),
+        methods: ['PUT'],
+        permission: 'workload.time_off',
+        note: "Record dates of one's own time off; another member's also asks workload.manage in the usecase (decision 288).",
+    },
+    {
+        path: new RegExp(`^${T}\\/time-off\\/days\\/remove$`),
+        methods: ['POST'],
+        permission: 'workload.time_off',
+        note: "Remove dates of one's own time off; another member's also asks workload.manage (decision 288).",
+    },
     // ── Estimates (sub-phase 3.4a; owner decision 257) ───────────────
     {
         path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/estimate$`),

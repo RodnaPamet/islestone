@@ -175,7 +175,8 @@
             "roadmap": "Roadmap",
             "goals": "Goals",
             "initiatives": "Initiatives",
-            "time": "Time"
+            "time": "Time",
+            "workload": "Workload"
         }
     },
     "ui": {
@@ -519,7 +520,8 @@
         "forms": "Forms",
         "intakeBadge": "{count, plural, one {# new request} other {# new requests}}",
         "roadmap": "Roadmap",
-        "time": "Time"
+        "time": "Time",
+        "workload": "Workload"
     },
     "commandPalette": {
         "title": "Command palette",
@@ -1687,6 +1689,11 @@
                 "title": "Time tracking",
                 "body": "Whether members submit their weeks of time for approval, and who is told when they do.",
                 "open": "Open time tracking"
+            },
+            "workload": {
+                "title": "Workload",
+                "body": "The default hours a week a member can work, each member's capacity and its changes, and anyone's time off.",
+                "open": "Open workload settings"
             }
         },
         "firstProject": {
@@ -2197,6 +2204,64 @@
             "listArchived": "An archived list (nobody is told through it)",
             "saved": "Time tracking settings saved.",
             "failed": "The settings could not be saved."
+        },
+        "workload": {
+            "title": "Workload",
+            "description": "The hours a week members can work, their changes, and anyone's time off.",
+            "readOnly": "Only whoever manages workload changes capacity and other members' time off.",
+            "default": {
+                "heading": "Default capacity",
+                "body": "The hours a week of a member with no capacity of their own, shared over the working days of the workspace calendar.",
+                "label": "Hours a week",
+                "hint": "For example 40h or 37h 30m; at most 100h.",
+                "save": "Save default",
+                "saved": "Default capacity saved.",
+                "value": "{hours} a week",
+                "invalid": "Enter 0h to 100h.",
+                "failed": "The default could not be saved."
+            },
+            "members": {
+                "heading": "Members' capacity",
+                "body": "Each change applies from a Monday; earlier weeks keep theirs.",
+                "name": "Member",
+                "capacity": "Capacity this week",
+                "calendar": "Working calendar",
+                "next": "Next change",
+                "actions": "Actions",
+                "usesDefault": "Default ({hours})",
+                "workspaceCalendar": "Workspace calendar",
+                "teamGone": "A removed team",
+                "nextValue": "{hours} from {date}",
+                "none": "None",
+                "removeNext": "Remove",
+                "removeNextNamed": "Remove the next capacity change of {name}",
+                "change": "Change capacity",
+                "changeNamed": "Change the capacity of {name}",
+                "unnamed": "Unnamed member"
+            },
+            "capacity": {
+                "title": "Change capacity: {name}",
+                "description": "From a Monday until the next change.",
+                "unnamed": "Unnamed member",
+                "from": "From",
+                "fromHint": "A Monday.",
+                "hours": "Hours a week",
+                "hoursHint": "For example 24h; 0h for no hours.",
+                "calendar": "Working calendar",
+                "calendarHint": "The calendar whose working days and holidays the hours are shared over.",
+                "workspaceCalendar": "Workspace calendar",
+                "notMonday": "Choose a Monday.",
+                "invalid": "Enter 0h to 100h.",
+                "failed": "The capacity could not be saved.",
+                "save": "Save",
+                "cancel": "Cancel"
+            },
+            "timeOff": {
+                "heading": "Time off",
+                "body": "Record or change a member's time off. They are told when someone else does.",
+                "member": "Member",
+                "unnamed": "Unnamed member"
+            }
         }
     },
     "views": {
@@ -2607,7 +2672,8 @@
             "TIMESHEET_SUBMITTED": "Timesheets submitted to you",
             "TIMESHEET_RETURNED": "Your timesheet returned",
             "TIMESHEET_APPROVED": "Your timesheet approved",
-            "TIMESHEET_REMINDER": "Timesheet reminders"
+            "TIMESHEET_REMINDER": "Timesheet reminders",
+            "TIME_OFF_CHANGED_BY_OTHER": "Time off recorded for you"
         },
         "listLabel": "Notifications",
         "unreadMark": "Unread",
@@ -3207,6 +3273,97 @@
             "explanationHint": "Up to 2,000 characters.",
             "explanationRequired": "Say why: an explanation is required.",
             "cancel": "Cancel",
+            "failed": "That did not work. Try again."
+        }
+    },
+    "workload": {
+        "title": "Workload",
+        "description": "Each person's capacity by week: their hours a week, less holidays and time off.",
+        "mine": {
+            "heading": "My capacity and time off",
+            "capacity": "{hours} a week · {calendar}",
+            "capacityDefault": "{hours} a week (the workspace's default)",
+            "calendarWorkspace": "Workspace calendar",
+            "calendarTeam": "A team's working calendar",
+            "next": "From {date}: {hours} a week"
+        },
+        "timeOff": {
+            "add": "Add time off",
+            "previousMonth": "Previous month",
+            "nextMonth": "Next month",
+            "gridLabel": "Time off in {month}",
+            "cellLabel": "{date}: time off, {value}",
+            "cellLabelTyped": "{date}: time off, {value}, {type}",
+            "cellNone": "{date}: no time off",
+            "wholeDay": "Whole day",
+            "addedForPerson": "Recorded by someone else",
+            "loading": "Loading time off…",
+            "loadFailed": "Time off could not be loaded.",
+            "weekday": {
+                "mon": "Mon",
+                "tue": "Tue",
+                "wed": "Wed",
+                "thu": "Thu",
+                "fri": "Fri",
+                "sat": "Sat",
+                "sun": "Sun"
+            },
+            "type": {
+                "VACATION": "Vacation",
+                "SICK": "Sick",
+                "OTHER": "Other"
+            }
+        },
+        "dialog": {
+            "title": "Add time off",
+            "description": "Choose the dates and whether you are off all day or for some hours. Each working day is recorded on its own, so you can change one later.",
+            "editTitle": "Time off on {date}",
+            "from": "From",
+            "to": "To",
+            "type": "Type",
+            "typeNote": "Only you and whoever manages workload see the type.",
+            "extent": "How much of each day",
+            "whole": "Whole days",
+            "hoursChoice": "Some hours each day",
+            "hours": "Hours off each day",
+            "hoursHint": "For example 4h or 2h 30m.",
+            "preview": "{count, plural, =0 {No working days chosen} one {# working day} other {# working days}}",
+            "previewNone": "No working days in these dates.",
+            "replaces": "{count, plural, one {Replaces the time off already on # date.} other {Replaces the time off already on # dates.}}",
+            "replacesDay": "replaces {value}",
+            "wholeDay": "Whole day",
+            "removeDate": "Leave out",
+            "keepDate": "Keep",
+            "removeDateNamed": "Leave out {date}",
+            "keepDateNamed": "Keep {date}",
+            "pickRange": "Choose the dates, at most a year.",
+            "invalidHours": "Enter 1 minute to 23h 59m, or choose whole days.",
+            "failed": "That did not work. Try again.",
+            "save": "Save",
+            "cancel": "Cancel",
+            "remove": "Remove"
+        },
+        "grid": {
+            "heading": "Capacity by week",
+            "gridLabel": "Capacity by week, {range}",
+            "person": "Person",
+            "weekOf": "Week of {date}",
+            "cellLabel": "{name}, week of {week}: {capacity} capacity of {weekly} a week",
+            "cellLabelOff": "{name}, week of {week}: {capacity} capacity of {weekly} a week; time off on {count, plural, one {# day} other {# days}}, {off}",
+            "timeOffMark": "Time off {off}",
+            "inactive": "Deactivated",
+            "unnamed": "Unnamed member",
+            "empty": "Nobody to show.",
+            "previous": "Previous weeks",
+            "thisWeek": "This week",
+            "next": "Next weeks",
+            "loading": "Loading capacity…",
+            "loadFailed": "Capacity could not be loaded."
+        },
+        "writes": {
+            "capacityRemoved": "Capacity change removed",
+            "timeOffRemoved": "{count, plural, one {Time off removed} other {# dates of time off removed}}",
+            "undo": "Undo",
             "failed": "That did not work. Try again."
         }
     }

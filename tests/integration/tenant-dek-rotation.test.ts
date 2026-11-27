@@ -260,6 +260,8 @@ describeFn('rotateTenantDek and the sweep (integration — real DB)', () => {
             'TenantSecuritySettings.auditStreamSecretEncrypted',
             // Sub-phase 3.4b: a time entry's description.
             'TimeEntry.description',
+            // Sub-phase 3.5a: time off's padded type (decision 287).
+            'TimeOff.type',
             // Sub-phase 3.4c: why a week was returned (the freeze trigger watches TimeEntry, not this row).
             'Timesheet.returnExplanation',
             'WorkItem.description',

@@ -158,10 +158,13 @@ export type FixtureName =
     | 'approvalOn'
     | 'annSubmittedTimesheet'
     | 'annApprovedTimesheet'
-    | 'ownSubmittedTimesheet';
+    | 'ownSubmittedTimesheet'
+    | 'ownTimeOff'
+    | 'annTimeOff'
+    | 'futureCapacity';
 
 /** The matrix's route roots: one integration file each (map part 3, "Shape"). */
-export type MatrixRoot = 'work-items' | 'reviews' | 'projects' | 'configuration' | 'intake' | 'notifications' | 'admin-security' | 'time';
+export type MatrixRoot = 'work-items' | 'reviews' | 'projects' | 'configuration' | 'intake' | 'notifications' | 'admin-security' | 'time' | 'workload';
 
 export interface MatrixRow {
     /** Relative to `src/app/api/t/[tenantSlug]/`. */
@@ -228,6 +231,21 @@ const SELF = c('ok', 'ok', 'ok', 'ok', g('ok'), 'ok', 'ok');
 const TRACK = c('ok', 'ok', 'ok', 'denied', g('denied'), 'ok', 'denied');
 /** `time.approve` (decision 265): OWNER and ADMIN; no built-in Member or Viewer, nor either custom role. */
 const APPROVE = c('ok', 'ok', 'denied', 'denied', g('denied'), 'denied', 'denied');
+/** `workload.view` and `workload.time_off` (decision 298): every built-in role but a guest, and both custom roles. */
+const WORKLOAD = c('ok', 'ok', 'ok', 'ok', g('denied'), 'ok', 'ok');
+/** `workload.manage` (decision 298): OWNER and ADMIN. */
+const WORKLOAD_MANAGE = c('ok', 'ok', 'denied', 'denied', g('denied'), 'denied', 'denied');
+/**
+ * Another member's time off under `workload.time_off` (decision 288): the route admits every holder, and the
+ * usecase refuses all but `workload.manage` with an audited 403.
+ */
+const OTHERS_TIME_OFF = c('ok', 'ok', 'refused', 'refused', g('denied'), 'refused', 'refused');
+/**
+ * Another member's time-off type (decision 287): the response carries `"type"` only for a holder of
+ * `workload.manage`; every other reader gets the dates and hours with the key absent (`empty`).
+ */
+const OTHERS_TYPE = c('ok', 'ok', 'empty', 'empty', g('denied'), 'empty', 'empty');
+
 /** A write into an archived project by a caller the key admits. */
 const ARCHIVED_ITEM_EDIT = c('archived', 'archived', 'archived', 'denied', g('denied'), 'denied', 'denied');
 
@@ -240,6 +258,11 @@ export function day(n: number): string {
 /** The Monday `n` weeks after 2001-01-01 (a Monday): a week long past, so it may be submitted (3.4c). */
 export function pastWeek(n: number): string {
     return new Date(Date.UTC(2001, 0, 1) + n * 7 * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** The Monday `n` weeks after 2050-01-03, a Monday (date-only). */
+export function monday(n: number): string {
+    return day(2 + 7 * n);
 }
 /** Letters for a key prefix from a number (A, B, …, Z, BA, …). */
 export function letters(n: number): string {
@@ -738,6 +761,47 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         {
             route: 'timesheets/[timesheetId]/reopen/route.ts', method: 'POST', key: 'time.approve', subject: "a member's approved week, reopened", fixture: 'annApprovedTimesheet',
             body: () => ({ explanation: 'Wrong project on Tuesday.' }), expect: APPROVE,
+        },
+    ],
+
+    // Sub-phase 3.5a (decisions 284 to 300): workload.view and workload.time_off for every built-in role but a
+    // guest (a Viewer records its own time off, decision 298), workload.manage for Owners and Admins. The
+    // time-off type (decision 287) is in a response only for the person and workload.manage: `reveals` is the
+    // JSON key, so `empty` asserts the key's absence.
+    workload: [
+        { route: 'workload/route.ts', method: 'GET', key: 'workload.view', subject: 'capacity per person per week', reveals: (s) => s.annId!, expect: WORKLOAD },
+        { route: 'workload/members/route.ts', method: 'GET', key: 'workload.manage', subject: "Settings → Workload's members", expect: WORKLOAD_MANAGE },
+        { route: 'workload-settings/route.ts', method: 'GET', key: 'workload.view', subject: 'the default weekly capacity', expect: WORKLOAD },
+        { route: 'workload-settings/route.ts', method: 'PUT', key: 'workload.manage', subject: 'the default weekly capacity, changed', body: () => ({ defaultWeeklyMinutes: 2400 }), expect: WORKLOAD_MANAGE },
+        { route: 'members/[userId]/capacity/route.ts', method: 'GET', key: 'workload.view', subject: "a member's capacity rows", params: (s) => ({ userId: s.annId! }), expect: WORKLOAD },
+        {
+            route: 'members/[userId]/capacity/route.ts', method: 'PUT', key: 'workload.manage', subject: "a member's capacity from a Monday",
+            params: (s) => ({ userId: s.annId! }), body: (s) => ({ effectiveFrom: monday(Number(s.seq)), weeklyMinutes: 1800, calendarTeamId: null }), expect: WORKLOAD_MANAGE,
+        },
+        { route: 'members/[userId]/capacity/[capacityId]/route.ts', method: 'DELETE', key: 'workload.manage', subject: 'a future capacity change, removed', fixture: 'futureCapacity', expect: WORKLOAD_MANAGE },
+        {
+            route: 'time-off/route.ts', method: 'GET', key: 'workload.view', subject: "the caller's own time off, with its type", fixture: 'ownTimeOff',
+            query: (s) => ({ from: s.timeOffDay!, to: s.timeOffDay! }), reveals: () => '"type":', expect: WORKLOAD,
+        },
+        {
+            route: 'time-off/route.ts', method: 'GET', key: 'workload.view', subject: "another member's time off: the type only for workload.manage (decision 287)", fixture: 'annTimeOff',
+            query: (s) => ({ from: s.timeOffDay!, to: s.timeOffDay!, userId: s.timeOffUserId! }), reveals: () => '"type":', expect: OTHERS_TYPE,
+        },
+        {
+            route: 'time-off/days/route.ts', method: 'PUT', key: 'workload.time_off', subject: "the caller's own time off, recorded",
+            body: (s) => ({ days: [{ day: day(Number(s.seq)), minutes: null, type: 'VACATION' }] }), expect: WORKLOAD,
+        },
+        {
+            route: 'time-off/days/route.ts', method: 'PUT', key: 'workload.time_off', subject: "another member's time off, recorded (decision 288: workload.manage)",
+            body: (s) => ({ userId: s.annId, days: [{ day: day(Number(s.seq)), minutes: 120, type: 'OTHER' }] }), expect: OTHERS_TIME_OFF,
+        },
+        {
+            route: 'time-off/days/remove/route.ts', method: 'POST', key: 'workload.time_off', subject: "the caller's own time off, removed", fixture: 'ownTimeOff',
+            body: (s) => ({ days: [{ day: s.timeOffDay, version: 1 }] }), expect: WORKLOAD,
+        },
+        {
+            route: 'time-off/days/remove/route.ts', method: 'POST', key: 'workload.time_off', subject: "another member's time off, removed (decision 288: workload.manage)", fixture: 'annTimeOff',
+            body: (s) => ({ userId: s.timeOffUserId, days: [{ day: s.timeOffDay, version: 1 }] }), expect: OTHERS_TIME_OFF,
         },
     ],
 };

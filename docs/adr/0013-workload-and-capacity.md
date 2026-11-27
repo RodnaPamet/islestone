@@ -1,0 +1,52 @@
+# 0013 — Workload and capacity
+
+Status: Accepted (owner decisions 282 to 302, 2026-11-27; the type's values amended by decision 303, 2026-11-27): a member's capacity in hours a week from a Monday, the workspace's default otherwise, shared over the working weekdays of their working calendar; time off as hours off (or the whole day) on each date, with a type (Vacation, Sick, Other; decision 303) stored encrypted and seen only by the person and holders of `workload.manage` (286 and 287, departures), kept for the workspace's life (289, a departure), never approved and never shaping a schedule; allocation computed on every read from remaining hours estimates spread on each item's own calendar, points never converted; over capacity reported, never enforced; ways to rebalance computed in code and opened by a person into confirmations that already exist; a new `workload` permission domain; never written by an agent, an API key or a job
+
+## Context
+
+Roadmap 3.5 asks to "add member capacity (hours per week, time off) and a workload view showing allocation against capacity per person per week, with over-allocation flagged. Read-only suggestions for now; no automatic levelling." The porting map is `docs/porting/maps/3.5.md`; its open questions 1 to 21 were decided by the owner as decisions 282 to 302 (`docs/HANDOFF.md`; question N is decision 281 + N).
+
+- **Verified** (inflect-compliance at `5528464fc54a8681956f3b9ce23ca9c075f0420e`). Inflect has no capacity, time off, absence, workload or allocation (`grep` over `src` and `prisma`; its HRIS sync mirrors employment status, not absence). Nothing is ported.
+- **Verified** (Cal.diy at `ae027bb70e694e2d2c44569f398d6cbcee0389b1`, MIT, through `docs/porting/oss/cal-diy.md` §4.3 and §4.6). Weekly hours on working weekdays, with holidays and time off replacing a day's hours, and a per-period duration rule. Pattern only; no file of the clone read, no code copied.
+- **Verified** (Islestone at `15a9abb`). `Team` has no members, so a person has no team calendar; working calendars are the workspace's and teams' (ADR 0010 §5), and `resolveWorkingCalendars` is the one read of them for arithmetic. ADR 0012 forbids converting points and hours ("a later capacity view reads one unit"). Decision 266 shows a person's whole week of recorded time only to `time.approve`. ADR 0006 reserves "Time off" for a person's (the Holiday row) and bans "Suggestion" (the Proposal, Change dates and Intake request rows), "Leave" and "Day off" (the Holiday row). The Prisma audit extension names an encrypted field in an update's `undiffableFields` and never records its value (`buildDiffJson` in `src/lib/prisma.ts`). AES-GCM ciphertext has the plaintext's length.
+- Worklenz, OpenProject and the other inspiration-only projects (roadmap §2.2) were not read.
+
+## Decision
+
+1. **Capacity** (decisions 284, 285). Every member has a capacity: the workspace's default (40 hours a week unless an Owner or Admin changes it, `TenantWorkloadSettings`), or their own from a chosen Monday with its history (`MemberCapacity`). A week's hours are shared evenly over the working weekdays of the person's working calendar, which is the workspace's unless their capacity names a team's; a holiday on that calendar removes its day's share; time off removes its hours. A deactivated member has no capacity while deactivated. All working-day arithmetic goes through the scheduling module's calendar functions (ADR 0010 §1); there is no second working-day count.
+2. **Time off** (decisions 286, 288). Time off is hours off, or the whole day, on each date: one row per person and date (`TimeOff`, unique per person and date). A range is entered as a range and stored date by date on the working days of the person's calendar, each date changeable on its own. A whole day is stored as such, so a later change of capacity keeps it whole. A row on a day the person's calendar does not work removes nothing. The person records their own (`workload.time_off`); a holder of `workload.manage` may record anyone's, and the person then gets one bell naming who and the dates. Nobody approves time off.
+3. **Its type** (decision 287, the owner's choice B over the recommended A). Each date carries a type, Vacation, Sick or Other (codes `VACATION`, `SICK`, `OTHER`; decision 303 renamed the owner's first value from Holiday so that "Holiday" keeps its one meaning, a working calendar's day off), seen only by the person and by holders of `workload.manage`. "Sick" is health data, a special category of personal data, and is handled so:
+   - stored encrypted under the workspace's data key (an encrypted text column in the manifest holding the code, never a Postgres enum), the code padded to a fixed width before encryption so every ciphertext has the same length, required on every row, and held by a CHECK to a ciphertext shape so no path writes it in plaintext;
+   - never audited, logged, indexed, searched, notified or exported, and never in a metric (an update's audit row names the field and never its value);
+   - absent from every read for a caller who may not see it: the workload read never selects it, and a time-off read selects it only for the person and holders of `workload.manage`, omitting the key otherwise.
+   Everyone holding `workload.view` sees the dates and hours, never the type.
+4. **Retention** (decision 289, the owner's choice B over the recommended A). Time off is kept for the workspace's life; no job deletes it. The person, or a holder of `workload.manage`, changes or deletes any date. A removed member's capacity and time off go with their membership (the membership key cascades): planning data about someone who has left serves no reader, and the type may be health data.
+5. **Time off shapes no schedule** (decision 290). It lowers capacity only; the scheduling engine, the timeline, the calendar view and review steps' due days keep counting team and workspace calendars (ADR 0010 unchanged). Time off reaches no external calendar (decision 291; ADR 0011 unchanged).
+6. **Allocation** (decisions 292 to 295). Computed on every read, never stored. An item counts toward its assignee when it is live, open (Backlog, Unstarted, Started), in a visible, unarchived project, and its team estimates in hours; each item counts its own estimate. Its remaining hours (the estimate less the time recorded on it, at least zero) are spread evenly over its remaining working days on its own calendar, from today or its start to its due date, by the engine's span rule (one date, one working day); overdue work falls on today, marked. Weeks are Monday to Sunday by date. Points are never converted: a person's points work is named beside the hours. Undated and unestimated work is counted and named, never placed. Recorded time only shrinks an item's remaining hours; the view never shows a person's recorded week (decision 266).
+7. **Over capacity** (decision 296). A week is over capacity when its allocated hours exceed its capacity, shown as "Over by Nh"; any allocation in a week with no capacity is over. Nothing is enforced.
+8. **The view** (decisions 297, 299, 300). A "Workload" sidebar page over the whole workspace, one row per person and one column per week; filters narrow who is shown, while a person's cell always counts all their visible work. For an over-capacity week, "Ways to rebalance" lists the items filling it and, for the largest five, "Assign to …" (people already working on the item's project who would stay within capacity) and "Move dates" (the earliest later dates that fit), each opening the existing assign picker or 3.1c's "Change dates" confirmation; nothing is written until a person confirms there. My Work shows one line of the person's load. No over-capacity notification.
+9. **Who** (decision 298). A `workload` permission domain: `view` (the Workload page) and `time_off` (record one's own time off) for Owners, Admins, Members and Viewers, `manage` (the default, anyone's capacity and time off, and every time-off type) for Owners and Admins; Guests nothing (decision 204). Only a signed-in person writes capacity or time off, never an API key, an agent or a job (ADR 0003 §4).
+10. **Words** (decisions 282, 283): Capacity, Time off, Time off type, Workload, Allocated, Over capacity, Free, Ways to rebalance, Workload settings (ADR 0006, "Workload words of sub-phase 3.5").
+11. **Sources and delivery** (decisions 301, 302). Cal.diy as a pattern only, through its study; three pull requests, 3.5a capacity and time off, 3.5b allocation and the Workload view, 3.5c the ways to rebalance.
+
+## Consequences
+
+- Islestone holds health data for the first time, when a person or a manager marks a date "Sick". It is encrypted, padded, unaudited and visible only to the person and workload managers, but it is in every backup as ciphertext and is readable by anyone holding `workload.manage` (Owners and Admins, or a custom role). `docs/workload.md` tells a workspace so.
+- "Holiday" keeps one meaning, a working calendar's day off for everyone (ADR 0010): decision 303 named time off's first type Vacation, so no type shares a calendar's word. The longest code, `VACATION`, is exactly the padding width of 8 characters.
+- Time off grows for the workspace's life (a few dozen rows per person per year); 8.3's retention settings may later bound it.
+- A capacity change of a past week is history; the view looks forward, so a past week's capacity is read by no page in 3.5.
+- 7.4's over-allocation risk signal and 7.5's levelling evaluation read the same pure modules; any agent change they lead to is a proposal.
+
+## What would change this decision
+
+- Time off must shape schedules (ADR 0010 then gains per-person calendars).
+- Workspaces want to turn the Sick type off, or law or a customer requires time off to be purged after a period.
+- Points teams want capacity flags (a conversion, and an ADR 0012 amendment).
+- Imports of time off from HR systems need an API key to write it (roadmap 5.2).
+
+## References
+
+- `docs/porting/maps/3.5.md` (the map, open questions 1 to 21); `docs/HANDOFF.md` decisions 282 to 302.
+- ADR 0003 §4 (no agent records capacity or time off); ADR 0006 (the workload words of sub-phase 3.5); ADR 0010 (working calendars; unchanged by time off); ADR 0011 (unchanged); ADR 0012 (points never converted; decision 266).
+- Roadmap (`docs/ROADMAP.md`) 3.5, 3.6, 7.4, 7.5, 8.3, 8.4.
+- Cal.diy at `ae027bb70e694e2d2c44569f398d6cbcee0389b1`, `docs/porting/oss/cal-diy.md` §4.3 and §4.6 (pattern only, no code copied).

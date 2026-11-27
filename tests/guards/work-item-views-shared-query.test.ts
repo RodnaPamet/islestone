@@ -28,10 +28,12 @@ import * as path from 'node:path';
 import { gitEnvFor, gitFiles, REPO_ROOT } from '../helpers/git-files';
 import { codeOf } from '../helpers/source-blocks';
 
-const VIEW_ROOTS = ['src/components/work-items/', 'src/components/time/', 'src/app/t/[tenantSlug]/(app)/time/', 'src/app/t/[tenantSlug]/(app)/work-items/', 'src/app/t/[tenantSlug]/(app)/projects/', 'src/app/t/[tenantSlug]/(app)/my-work/'];
+const VIEW_ROOTS = ['src/components/work-items/', 'src/components/time/', 'src/app/t/[tenantSlug]/(app)/time/', 'src/components/workload/', 'src/app/t/[tenantSlug]/(app)/workload/', 'src/app/t/[tenantSlug]/(app)/work-items/', 'src/app/t/[tenantSlug]/(app)/projects/', 'src/app/t/[tenantSlug]/(app)/my-work/'];
 const DATA_ROOT = 'src/components/work-items/data/';
 /** The Time pages' data folder (3.4b): reads and writes of time entries and the timer. */
 const TIME_DATA_ROOT = 'src/components/time/data/';
+/** The Workload pages' data folder (3.5a): capacity, time off and the workload read. */
+const WORKLOAD_DATA_ROOT = 'src/components/workload/data/';
 
 function viewSources(root: string) {
     return gitFiles(root)
@@ -47,14 +49,14 @@ export function rawFetches(root: string): string[] {
 
 export function strayReads(root: string): string[] {
     return viewSources(root)
-        .filter(({ rel, code }) => !rel.startsWith(DATA_ROOT) && !rel.startsWith(TIME_DATA_ROOT) && /\buseSWR(?:Infinite)?\s*\(/.test(code))
+        .filter(({ rel, code }) => !rel.startsWith(DATA_ROOT) && !rel.startsWith(TIME_DATA_ROOT) && !rel.startsWith(WORKLOAD_DATA_ROOT) && /\buseSWR(?:Infinite)?\s*\(/.test(code))
         .map(({ rel }) => rel);
 }
 
 /** `apiSend(...)` calls to a versioned route that carry no `ifMatch`. */
 export function unversionedWrites(root: string): string[] {
     const out: string[] = [];
-    for (const { rel, code } of viewSources(root).filter((f) => f.rel.startsWith(DATA_ROOT) || f.rel.startsWith(TIME_DATA_ROOT))) {
+    for (const { rel, code } of viewSources(root).filter((f) => f.rel.startsWith(DATA_ROOT) || f.rel.startsWith(TIME_DATA_ROOT) || f.rel.startsWith(WORKLOAD_DATA_ROOT))) {
         for (const m of code.matchAll(/apiSend\s*(?:<[^>]*>)?\s*\(/g)) {
             let depth = 1;
             let i = (m.index ?? 0) + m[0].length;
@@ -76,6 +78,10 @@ export function unversionedWrites(root: string): string[] {
             if ((versioned || reviewVersioned || timeVersioned || timesheetVersioned) && !/\bifMatch\b/.test(args)) out.push(rel);
             // A change of dates from the timeline (3.1c, decision 194) carries each item's version in its body.
             if (/\/work-items\/bulk\/dates['`]/.test(args) && !/\bversion\s*:/.test(args)) out.push(rel);
+            // A member's capacity and the workload default (3.5a) name the version read.
+            if (/^\s*'PUT'/.test(args) && (/\/capacity`/.test(args) || /\/workload-settings['`]/.test(args)) && !/\bifMatch\b/.test(args)) out.push(rel);
+            // Setting or removing dates of time off (3.5a) carries each date's version in its body.
+            if (/\/time-off\/days/.test(args) && !/\bversion\b/.test(args)) out.push(rel);
         }
     }
     return out;
@@ -128,6 +134,9 @@ describe('the detectors, against a planted repository', () => {
                 "apiSend('POST', apiUrl(`/timesheets/${id}/approve`), undefined);",
                 "apiSend('POST', apiUrl(`/timesheets/${id}/return`), { explanation }, { ifMatch: v });",
             ].join('\n'),
+            'src/components/workload/data/capacity.ts': "apiSend('PUT', apiUrl(`/members/${u}/capacity`), body);\n",
+            'src/components/workload/data/time-off.ts': "apiSend('PUT', apiUrl('/time-off/days'), { days: rows.map((d) => ({ day: d.day })) });\n",
+            'src/components/workload/data/ok.ts': "apiSend('PUT', apiUrl(`/members/${u}/capacity`), body, { ifMatch: v });\napiSend('POST', apiUrl('/time-off/days/remove'), { days: rows.map((d) => ({ day: d.day, version: d.version })) });\n",
             'src/app/t/[tenantSlug]/(app)/work-items/page.tsx': "const x = window.fetch('/y');\n",
         };
         for (const [rel, content] of Object.entries(plant)) {
@@ -146,12 +155,14 @@ describe('the detectors, against a planted repository', () => {
         expect(strayReads(root)).toEqual(['src/components/work-items/reads.tsx']);
     });
 
-    it('finds a versioned write without If-Match (a withdraw of the round among them, a change of dates without versions, an approval of a timesheet), not a restore or a response', () => {
+    it('finds a versioned write without If-Match (a withdraw of the round among them, a change of dates without versions, an approval of a timesheet, a capacity or time-off write), not a restore or a response', () => {
         expect(unversionedWrites(root).sort()).toEqual([
             'src/components/time/data/sheets.ts',
             'src/components/work-items/data/dates.ts',
             'src/components/work-items/data/hook.ts',
             'src/components/work-items/data/review.ts',
+            'src/components/workload/data/capacity.ts',
+            'src/components/workload/data/time-off.ts',
         ]);
     });
 });
