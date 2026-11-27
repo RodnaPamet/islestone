@@ -73,6 +73,10 @@ const WORK_ITEM_TYPES: ReadonlySet<NotificationType> = new Set<NotificationType>
 ]);
 /** The intake types, read only by a member who holds `intake.view`. */
 const INTAKE_TYPES: ReadonlySet<NotificationType> = new Set<NotificationType>(['INTAKE_REQUEST_RECEIVED', 'INTAKE_REQUEST_WOKEN']);
+/** A submitted week (3.4c), read only by a member who still approves weeks (`time.approve`). */
+const TIMESHEET_APPROVER_TYPES: ReadonlySet<NotificationType> = new Set<NotificationType>(['TIMESHEET_SUBMITTED']);
+/** The person's own week (3.4c), read only by a member who still records time (`time.track`). */
+const TIMESHEET_PERSON_TYPES: ReadonlySet<NotificationType> = new Set<NotificationType>(['TIMESHEET_RETURNED', 'TIMESHEET_APPROVED', 'TIMESHEET_REMINDER']);
 
 export interface NotificationDigestOptions {
     tenantId?: string;
@@ -130,6 +134,8 @@ interface MemberPlan {
     rowTypes: ReadonlySet<NotificationType>;
     visibility: ReturnType<typeof resolveProjectVisibility>;
     intakeView: boolean;
+    timeApprove: boolean;
+    timeTrack: boolean;
 }
 
 function canSeeProject(plan: MemberPlan, projectId: string): boolean {
@@ -169,6 +175,8 @@ async function digestPage(
             rowTypes: new Set(daily.filter((t) => t !== 'WORK_ITEM_DUE')),
             visibility: resolveProjectVisibility({ role: authority.role, membershipRole: m.role }),
             intakeView: authority.appPermissions.intake?.view === true,
+            timeApprove: authority.appPermissions.time?.approve === true,
+            timeTrack: authority.appPermissions.time?.track === true,
         });
     }
     if (plans.length === 0) return 0;
@@ -208,6 +216,8 @@ async function digestPage(
                 return projectId !== undefined && canSeeProject(plan, projectId);
             }
             if (INTAKE_TYPES.has(r.type)) return plan.intakeView;
+            if (TIMESHEET_APPROVER_TYPES.has(r.type)) return plan.timeApprove;
+            if (TIMESHEET_PERSON_TYPES.has(r.type)) return plan.timeTrack;
             return false;
         });
         const due = plan.dueDaily

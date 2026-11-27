@@ -127,6 +127,64 @@ export class TimeEntryRepository {
         });
     }
 
+    /**
+     * The person's week in one statement (3.4c): finished minutes, billable
+     * minutes and entries dated in `[from, to]`, and whether a timer counts on
+     * one of its days (decision 263: such a week is not submitted).
+     */
+    static async weekSums(db: PrismaTx, ctx: Ctx, userId: string, from: Date, to: Date): Promise<{ minutes: number; billableMinutes: number; entries: number; timerOn: boolean }> {
+        const rows = await db.$queryRaw<Array<{ minutes: bigint | null; billable: bigint | null; entries: bigint; timer: boolean | null }>>(Prisma.sql`
+            SELECT SUM(t."minutes") AS minutes,
+                   SUM(t."minutes") FILTER (WHERE t."billable") AS billable,
+                   COUNT(t."minutes") AS entries,
+                   BOOL_OR(t."minutes" IS NULL) AS timer
+              FROM "TimeEntry" t
+             WHERE t."tenantId" = ${ctx.tenantId}
+               AND t."userId" = ${userId}
+               AND t."workDate" BETWEEN ${from}::date AND ${to}::date`);
+        const row = rows[0];
+        return { minutes: Number(row?.minutes ?? 0), billableMinutes: Number(row?.billable ?? 0), entries: Number(row?.entries ?? 0), timerOn: row?.timer === true };
+    }
+
+    /**
+     * The sums of several people's weeks in one statement (the Timesheets
+     * page, 3.4c): finished minutes, billable minutes and entries per
+     * `(userId, weekStart)` pair, each week seven days from its Monday.
+     */
+    static async sumsForWeeks(db: PrismaTx, ctx: Ctx, weeks: ReadonlyArray<{ userId: string; weekStart: Date }>): Promise<Map<string, { minutes: number; billableMinutes: number; entries: number }>> {
+        const out = new Map<string, { minutes: number; billableMinutes: number; entries: number }>();
+        if (weeks.length === 0) return out;
+        const rows = await db.$queryRaw<Array<{ userId: string; weekStart: Date; minutes: bigint | null; billable: bigint | null; entries: bigint }>>(Prisma.sql`
+            SELECT w."userId", w."weekStart",
+                   SUM(t."minutes") AS minutes,
+                   SUM(t."minutes") FILTER (WHERE t."billable") AS billable,
+                   COUNT(t."minutes") AS entries
+              FROM unnest(${weeks.map((w) => w.userId)}::text[], ${weeks.map((w) => w.weekStart)}::date[]) AS w("userId", "weekStart")
+              JOIN "TimeEntry" t
+                ON t."tenantId" = ${ctx.tenantId}
+               AND t."userId" = w."userId"
+               AND t."workDate" BETWEEN w."weekStart" AND w."weekStart" + 6
+               AND t."minutes" IS NOT NULL
+             GROUP BY w."userId", w."weekStart"`);
+        for (const r of rows) {
+            out.set(`${r.userId}:${r.weekStart.toISOString().slice(0, 10)}`, { minutes: Number(r.minutes ?? 0), billableMinutes: Number(r.billable ?? 0), entries: Number(r.entries) });
+        }
+        return out;
+    }
+
+    /** The people who recorded finished time dated in `[from, to]`, at most `take` (the Monday reminder, 3.4c). */
+    static async peopleWithTimeIn(db: PrismaTx, ctx: Ctx, from: Date, to: Date, take: number): Promise<string[]> {
+        const rows = await db.$queryRaw<Array<{ userId: string }>>(Prisma.sql`
+            SELECT DISTINCT t."userId"
+              FROM "TimeEntry" t
+             WHERE t."tenantId" = ${ctx.tenantId}
+               AND t."workDate" BETWEEN ${from}::date AND ${to}::date
+               AND t."minutes" IS NOT NULL
+             ORDER BY t."userId"
+             LIMIT ${take}`);
+        return rows.map((r) => r.userId);
+    }
+
     static async create(db: PrismaTx, ctx: Ctx, data: TimeEntryInsert): Promise<TimeEntryRow> {
         return db.timeEntry.create({
             data: { tenantId: ctx.tenantId, createdByUserId: data.userId, ...data },

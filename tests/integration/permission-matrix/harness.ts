@@ -49,6 +49,7 @@ import { createSavedView } from '@/app-layer/usecases/saved-view';
 import { createTeam, updateTeam } from '@/app-layer/usecases/team';
 import { createInviteToken } from '@/app-layer/usecases/tenant-invites';
 import { addTimeEntry, startTimer } from '@/app-layer/usecases/time-entry';
+import { approveTimesheet, submitTimesheet } from '@/app-layer/usecases/timesheet';
 import { assignWorkItem, createWorkItem, deleteWorkItem } from '@/app-layer/usecases/work-item';
 import { markWorkItemAnswer } from '@/app-layer/usecases/work-item-answer';
 import { addComment, addWatcher, addWorkItemLabels, addWorkItemLink } from '@/app-layer/usecases/work-item-collab';
@@ -66,7 +67,7 @@ import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { prismaTestClient, resetDatabase } from '../../helpers/db';
 import { makeRequestContext } from '../../helpers/make-context';
 
-import { MATRIX, MATRIX_ROLES, TENANT_API_ROOT, day, outcomeOf, type FixtureName, type MatrixRole, type MatrixRoot, type MatrixRow, type Subject } from './table';
+import { MATRIX, MATRIX_ROLES, TENANT_API_ROOT, day, outcomeOf, pastWeek, type FixtureName, type MatrixRole, type MatrixRoot, type MatrixRow, type Subject } from './table';
 
 type Handler = (req: NextRequest, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>;
 
@@ -238,6 +239,11 @@ async function openStep(w: World, itemId: string, memberIds: string[], sender: R
     return (await getWorkItemReview(owner, itemId)).rounds[0]!.steps[0]!.id;
 }
 
+/** "Timesheets need approval" on for the matrix's workspace (3.4c). */
+async function approvalOn(w: World, prisma: PrismaClient): Promise<void> {
+    await prisma.tenantTimeSettings.upsert({ where: { tenantId: w.tenantId }, create: { tenantId: w.tenantId, approvalRequired: true }, update: { approvalRequired: true } });
+}
+
 /** Build a row's fresh subject for one caller. */
 async function buildFixture(name: FixtureName, w: World, prisma: PrismaClient, caller: MatrixRole): Promise<Record<string, string>> {
     const owner = ctxAs(w, 'OWNER');
@@ -287,6 +293,23 @@ async function buildFixture(name: FixtureName, w: World, prisma: PrismaClient, c
         case 'othersTimeEntry': {
             const entry = await addTimeEntry(ctxAs(w, 'ANN'), { workItemId: s.sharedItemId!, workDate: day(Number(nextSeq())), minutes: 10 });
             return { timeEntryId: entry.id };
+        }
+        // Sub-phase 3.4c: approval on, and a fresh week long past, submitted (and approved) as the fixture says.
+        case 'approvalOn': {
+            await approvalOn(w, prisma);
+            return {};
+        }
+        case 'annSubmittedTimesheet':
+        case 'annApprovedTimesheet': {
+            await approvalOn(w, prisma);
+            const sheet = await submitTimesheet(ctxAs(w, 'ANN'), { week: pastWeek(Number(nextSeq())) });
+            if (name === 'annApprovedTimesheet') await approveTimesheet(owner, sheet.timesheet!.id);
+            return { timesheetId: sheet.timesheet!.id };
+        }
+        case 'ownSubmittedTimesheet': {
+            await approvalOn(w, prisma);
+            const sheet = await submitTimesheet(ctxAs(w, caller, 'MEMBER'), { week: pastWeek(Number(nextSeq())) });
+            return { timesheetId: sheet.timesheet!.id };
         }
         case 'ownTimer': {
             await startTimer(ctxAs(w, caller, 'MEMBER'), { workItemId: s.sharedItemId!, timeZone: 'Europe/Sofia' });

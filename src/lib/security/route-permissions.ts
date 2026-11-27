@@ -857,6 +857,56 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'work_items.view',
         note: "An item's time: everyone's with time.view, one's own with time.track (decision 266), asked in the usecase.",
     },
+    // ── Timesheets and their approval (sub-phase 3.4c; owner decisions 256, 268 to 270) ──
+    {
+        path: new RegExp(`^${T}\\/time-settings$`),
+        methods: ['GET'],
+        permission: 'time.view',
+        note: 'The time tracking settings: "Timesheets need approval" and who is told of submitted weeks.',
+    },
+    {
+        path: new RegExp(`^${T}\\/time-settings$`),
+        methods: ['PUT'],
+        permission: 'admin.manage',
+        note: 'An Owner or Admin turns approval on or off and names the recipient list (decisions 268 and 269).',
+    },
+    // The week's path sits above a timesheet's, which would match `week` as an id.
+    {
+        path: new RegExp(`^${T}\\/timesheets\\/week$`),
+        methods: ['GET'],
+        permission: 'time.track',
+        note: "One's week's status (another member's also asks time.approve, decision 266).",
+    },
+    {
+        path: new RegExp(`^${T}\\/timesheets$`),
+        methods: ['GET'],
+        permission: 'time.approve',
+        note: 'The weeks waiting for a decision, or decided in the last 12 weeks.',
+    },
+    {
+        path: new RegExp(`^${T}\\/timesheets$`),
+        methods: ['POST'],
+        permission: 'time.track',
+        note: "Submit one's own week, a person only (decisions 256 and 278).",
+    },
+    {
+        path: new RegExp(`^${T}\\/timesheets\\/[^\\/]+\\/withdraw$`),
+        methods: ['POST'],
+        permission: 'time.track',
+        note: "Take one's own submitted week back before it is decided (decision 270).",
+    },
+    {
+        path: new RegExp(`^${T}\\/timesheets\\/[^\\/]+\\/(approve|return|reopen)$`),
+        methods: ['POST'],
+        permission: 'time.approve',
+        note: "Approve or return a member's submitted week, or reopen an approved one, never one's own (decisions 269 and 270).",
+    },
+    {
+        path: new RegExp(`^${T}\\/timesheets\\/[^\\/]+$`),
+        methods: ['GET'],
+        permission: 'time.approve',
+        note: "A member's submitted or decided week with its entries, read-only (decision 266).",
+    },
     // ── Estimates (sub-phase 3.4a; owner decision 257) ───────────────
     {
         path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/estimate$`),

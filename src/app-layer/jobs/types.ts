@@ -278,6 +278,14 @@ export interface NotificationPurgePayload {
 }
 
 /**
+ * The Monday timesheet reminder (sub-phase 3.4c, owner decision 276): every
+ * live workspace with approval on, or the one named.
+ */
+export interface TimesheetReminderPayload {
+    tenantId?: string;
+}
+
+/**
  * Search vectors (sub-phase 2.7f, ADR 0008): nightly, the sources whose vector
  * is missing or older than `SEARCH_VECTOR_REVISION` in every live workspace;
  * on demand (an admin's request) every source of one workspace (`force`), run
@@ -354,6 +362,7 @@ export interface JobPayloadMap {
     'work-item-recurrence': WorkItemRecurrencePayload;
     'notification-digest': NotificationDigestPayload;
     'notification-purge': NotificationPurgePayload;
+    'timesheet-reminder': TimesheetReminderPayload;
     'search-index-rebuild': SearchIndexRebuildPayload;
     'calendar-sync-dispatch': CalendarSyncDispatchPayload;
     'calendar-sync-connection': CalendarSyncConnectionPayload;
@@ -482,6 +491,14 @@ export const JOB_DEFAULTS: Record<JobName, {
     },
     'notification-purge': {
         // Two attempts: a retry deletes only what is still past its window.
+        attempts: 2,
+        backoff: { type: 'fixed', delay: 300_000 },
+        removeOnComplete: 30,
+        removeOnFail: 100,
+    },
+    'timesheet-reminder': {
+        // Two attempts: a retry writes only the bells still missing (each is
+        // deduplicated per person and week).
         attempts: 2,
         backoff: { type: 'fixed', delay: 300_000 },
         removeOnComplete: 30,

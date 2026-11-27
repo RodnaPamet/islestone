@@ -38,6 +38,7 @@ import {
 import { PRODUCT_NAME } from './email/layout';
 import { WorkItemAssignedEmail, workItemLabel } from './email/work-item-assigned';
 import { WorkItemWaitingOnEmail, waitingOnLede } from './email/work-item-waiting-on';
+import { TimesheetReturnedEmail, timesheetReturnedHeading, timesheetReturnedLede } from './email/timesheet-returned';
 import { WorkItemMentionedEmail, mentionedLede } from './email/work-item-mentioned';
 import { REVIEW_EMAIL_HEADING, WorkItemReviewEmail, reviewEmailLede, type WorkItemReviewEmailKind } from './email/work-item-review';
 
@@ -226,6 +227,28 @@ export async function buildWorkItemReviewEmail(kind: WorkItemReviewEmailKind, pa
             `— ${PRODUCT_NAME}`,
         ].join('\n'),
         bodyHtml: await render(createElement(WorkItemReviewEmail, { ...payload, kind, link })),
+    };
+}
+
+// ─── Timesheets (3.4c) ───
+
+export interface TimesheetReturnedPayload {
+    recipientName: string;
+    actorName?: string;
+    /** "23 November 2026". */
+    weekLabel: string;
+    reopened: boolean;
+    /** The person's week in the app (`/t/<slug>/time?week=…`). */
+    linkPath: string;
+}
+
+/** A returned or reopened week: the week and who; never the explanation (decision 276). */
+export async function buildTimesheetReturnedEmail(payload: TimesheetReturnedPayload): Promise<EmailTemplateResult> {
+    const link = appLink(payload.linkPath);
+    return {
+        subject: `${timesheetReturnedHeading(payload.reopened)}: the week of ${payload.weekLabel}`,
+        bodyText: [`Hi ${payload.recipientName},`, '', timesheetReturnedLede(payload), '', `Open your week: ${link}`, '', `— ${PRODUCT_NAME}`].join('\n'),
+        bodyHtml: await render(createElement(TimesheetReturnedEmail, { ...payload, link })),
     };
 }
 

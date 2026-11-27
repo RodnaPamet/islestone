@@ -154,7 +154,11 @@ export type FixtureName =
     | 'dekRotationJob'
     | 'ownTimeEntry'
     | 'othersTimeEntry'
-    | 'ownTimer';
+    | 'ownTimer'
+    | 'approvalOn'
+    | 'annSubmittedTimesheet'
+    | 'annApprovedTimesheet'
+    | 'ownSubmittedTimesheet';
 
 /** The matrix's route roots: one integration file each (map part 3, "Shape"). */
 export type MatrixRoot = 'work-items' | 'reviews' | 'projects' | 'configuration' | 'intake' | 'notifications' | 'admin-security' | 'time';
@@ -222,6 +226,8 @@ const SELF = c('ok', 'ok', 'ok', 'ok', g('ok'), 'ok', 'ok');
  * `work_items.edit`); a VIEWER views time but records none, and the widened viewer neither.
  */
 const TRACK = c('ok', 'ok', 'ok', 'denied', g('denied'), 'ok', 'denied');
+/** `time.approve` (decision 265): OWNER and ADMIN; no built-in Member or Viewer, nor either custom role. */
+const APPROVE = c('ok', 'ok', 'denied', 'denied', g('denied'), 'denied', 'denied');
 /** A write into an archived project by a caller the key admits. */
 const ARCHIVED_ITEM_EDIT = c('archived', 'archived', 'archived', 'denied', g('denied'), 'denied', 'denied');
 
@@ -230,6 +236,10 @@ const ARCHIVED_ITEM_EDIT = c('archived', 'archived', 'archived', 'denied', g('de
 /** A date `n` days after 2050-01-01 (date-only). */
 export function day(n: number): string {
     return new Date(Date.UTC(2050, 0, 1) + n * 86_400_000).toISOString().slice(0, 10);
+}
+/** The Monday `n` weeks after 2001-01-01 (a Monday): a week long past, so it may be submitted (3.4c). */
+export function pastWeek(n: number): string {
+    return new Date(Date.UTC(2001, 0, 1) + n * 7 * 86_400_000).toISOString().slice(0, 10);
 }
 /** Letters for a key prefix from a number (A, B, …, Z, BA, …). */
 export function letters(n: number): string {
@@ -697,6 +707,38 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         { route: 'time-entries/timer/stop/route.ts', method: 'POST', key: 'time.track', subject: "the caller's running timer, stopped", fixture: 'ownTimer', body: () => ({}), expect: TRACK },
         // An item's time (decision 266): read under work_items.view; time.view (every built-in role but a guest) or time.track.
         { route: `${W}/time/route.ts`, method: 'GET', key: 'work_items.view', subject: "an item's time", expect: READ },
+        // Sub-phase 3.4c (decisions 256, 266, 268 to 270): the settings read under time.view, changed under
+        // admin.manage; a person submits and takes back their own week (time.track); time.approve decides a
+        // member's week, never one's own (refused past the key, audited).
+        { route: 'time-settings/route.ts', method: 'GET', key: 'time.view', subject: 'the time tracking settings', expect: READ },
+        { route: 'time-settings/route.ts', method: 'PUT', key: 'admin.manage', subject: 'approval turned on', body: () => ({ approvalRequired: true }), expect: ADMIN },
+        { route: 'timesheets/route.ts', method: 'GET', key: 'time.approve', subject: 'the weeks waiting for a decision', fixture: 'annSubmittedTimesheet', reveals: (s) => s.timesheetId, expect: APPROVE },
+        { route: 'timesheets/route.ts', method: 'POST', key: 'time.track', subject: "the caller's own past week, submitted", fixture: 'approvalOn', body: (s) => ({ week: pastWeek(n(s)) }), expect: TRACK },
+        { route: 'timesheets/week/route.ts', method: 'GET', key: 'time.track', subject: "the caller's own week's status", query: (s) => ({ week: pastWeek(n(s)) }), expect: TRACK },
+        {
+            route: 'timesheets/week/route.ts', method: 'GET', key: 'time.track', subject: "another member's week's status (decision 266: time.approve)",
+            query: (s) => ({ week: pastWeek(n(s)), userId: s.annId }),
+            expect: c('ok', 'ok', 'refused', 'denied', g('denied'), 'refused', 'denied'),
+        },
+        { route: 'timesheets/[timesheetId]/route.ts', method: 'GET', key: 'time.approve', subject: "a member's submitted week", fixture: 'annSubmittedTimesheet', expect: APPROVE },
+        { route: 'timesheets/[timesheetId]/withdraw/route.ts', method: 'POST', key: 'time.track', subject: "the caller's own submitted week, taken back", fixture: 'ownSubmittedTimesheet', expect: TRACK },
+        {
+            route: 'timesheets/[timesheetId]/withdraw/route.ts', method: 'POST', key: 'time.track', subject: "another member's submitted week (a 404)", fixture: 'annSubmittedTimesheet',
+            expect: c('hidden', 'hidden', 'hidden', 'denied', g('denied'), 'hidden', 'denied'),
+        },
+        { route: 'timesheets/[timesheetId]/approve/route.ts', method: 'POST', key: 'time.approve', subject: "a member's submitted week, approved", fixture: 'annSubmittedTimesheet', expect: APPROVE },
+        {
+            route: 'timesheets/[timesheetId]/approve/route.ts', method: 'POST', key: 'time.approve', subject: "the caller's own submitted week (decision 269: never one's own)", fixture: 'ownSubmittedTimesheet',
+            expect: c('refused', 'refused', 'denied', 'denied', g('denied'), 'denied', 'denied'),
+        },
+        {
+            route: 'timesheets/[timesheetId]/return/route.ts', method: 'POST', key: 'time.approve', subject: "a member's submitted week, returned", fixture: 'annSubmittedTimesheet',
+            body: () => ({ explanation: 'Monday is missing.' }), expect: APPROVE,
+        },
+        {
+            route: 'timesheets/[timesheetId]/reopen/route.ts', method: 'POST', key: 'time.approve', subject: "a member's approved week, reopened", fixture: 'annApprovedTimesheet',
+            body: () => ({ explanation: 'Wrong project on Tuesday.' }), expect: APPROVE,
+        },
     ],
 };
 

@@ -32,7 +32,10 @@
  * Every write takes the per-person timer lock (timer acts) and the week's
  * advisory lock (`timesheet:<tenant>:<person>:<Monday>`, both weeks in date
  * order for a move) before it reads a total or a timer, so 3.4c's submit and
- * approval, which take the same lock, see a settled week.
+ * approval, which take the same lock, see a settled week. A write into a
+ * submitted or approved week is refused by the trigger
+ * `time_entry_week_frozen` (3.4c, decision 270), answered 409
+ * `TIMESHEET_FROZEN` (`frozenRefusal`).
  *
  * Written fresh for Islestone.
  */
@@ -79,6 +82,27 @@ function entryNotFound(): never {
     throw notFound('Time entry not found');
 }
 
+/**
+ * The freeze (3.4c, decision 270): the trigger `time_entry_week_frozen`
+ * refuses any write to a SUBMITTED or APPROVED week's entries, raising
+ * `TIMESHEET_FROZEN:`. The usecases read no timesheet before a write (the
+ * trigger is the one rule); its refusal becomes a 409 here.
+ */
+export function frozenRefusal(err: unknown): ConflictError | null {
+    const message = err instanceof Error ? err.message : '';
+    if (!message.includes('TIMESHEET_FROZEN:')) return null;
+    return new ConflictError('This week is submitted or approved: its time changes once it is taken back or returned.', { reason: 'TIMESHEET_FROZEN' });
+}
+
+/** Run a write, turning the freeze trigger's refusal into a 409 `TIMESHEET_FROZEN`. */
+async function freezeAware<T>(write: Promise<T>): Promise<T> {
+    try {
+        return await write;
+    } catch (err) {
+        throw frozenRefusal(err) ?? err;
+    }
+}
+
 function isUniqueViolation(err: unknown): boolean {
     return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'P2002';
 }
@@ -88,7 +112,7 @@ function isUniqueViolation(err: unknown): boolean {
  * hash-chained `AUTHZ_DENIED` entry a `requirePermission` denial writes, then
  * a 403 `NOT_A_PERSON`.
  */
-async function refuseNotAPerson(ctx: RequestContext, verb: string): Promise<never> {
+export async function refuseNotAPerson(ctx: RequestContext, verb: string): Promise<never> {
     await appendAuditEntryOrQueue({
         tenantId: ctx.tenantId,
         userId: ctx.userId,
@@ -105,13 +129,13 @@ async function refuseNotAPerson(ctx: RequestContext, verb: string): Promise<neve
 }
 
 /** The gate of every write: `time.track`, then a person (decisions 265 and 278). */
-async function assertRecordsTime(ctx: RequestContext, verb: string): Promise<void> {
+export async function assertRecordsTime(ctx: RequestContext, verb: string): Promise<void> {
     assertCanTrackTime(ctx);
     if (!recordsTimeAsPerson(ctx)) await refuseNotAPerson(ctx, verb);
 }
 
 /** A refusal past the route's key: the caller asked for another member's week without `time.approve`. */
-async function refuseOthersWeek(ctx: RequestContext, userId: string): Promise<never> {
+export async function refuseOthersWeek(ctx: RequestContext, userId: string): Promise<never> {
     await appendAuditEntryOrQueue({
         tenantId: ctx.tenantId,
         userId: ctx.userId,
@@ -135,7 +159,7 @@ export function timeWeekLockKey(tenantId: string, userId: string, weekStart: str
 }
 
 /** Lock the weeks holding `dates` for `userId`, each once, in date order. */
-async function lockWeeks(db: PrismaTx, ctx: RequestContext, userId: string, dates: readonly string[]): Promise<void> {
+export async function lockWeeks(db: PrismaTx, ctx: RequestContext, userId: string, dates: readonly string[]): Promise<void> {
     const weeks = [...new Set(dates.map(weekStartOf))].sort();
     for (const week of weeks) {
         // guardrail-allow: n+1 — at most two weeks (an entry moved from one to another), in date order.
@@ -150,7 +174,7 @@ async function lockTimer(db: PrismaTx, ctx: RequestContext, userId: string): Pro
 
 // ─── Shapes ─────────────────────────────────────────────────────────
 
-function toEntryData(row: TimeEntryRow): TimeEntryData {
+export function toEntryData(row: TimeEntryRow): TimeEntryData {
     return {
         id: row.id,
         userId: row.userId,
@@ -167,7 +191,7 @@ function toEntryData(row: TimeEntryRow): TimeEntryData {
     };
 }
 
-function itemOf(row: Pick<WorkItemGateRow, 'id' | 'number' | 'title' | 'projectId' | 'stateCategory' | 'project'>): TimeEntryItem {
+export function itemOf(row: Pick<WorkItemGateRow, 'id' | 'number' | 'title' | 'projectId' | 'stateCategory' | 'project'>): TimeEntryItem {
     return {
         kind: 'visible',
         id: row.id,
@@ -179,7 +203,7 @@ function itemOf(row: Pick<WorkItemGateRow, 'id' | 'number' | 'title' | 'projectI
 }
 
 /** What an entry's item reads as: visible, or deleted (purged or soft-deleted), or out of the reader's sight. */
-function itemFor(workItemId: string | null, items: ReadonlyMap<string, TimeEntryItem>, v: ProjectVisibility): TimeEntryItem {
+export function itemFor(workItemId: string | null, items: ReadonlyMap<string, TimeEntryItem>, v: ProjectVisibility): TimeEntryItem {
     if (!workItemId) return { kind: 'deleted' };
     return items.get(workItemId) ?? (v.kind === 'ALL' ? { kind: 'deleted' } : { kind: 'hidden' });
 }
@@ -257,7 +281,7 @@ export interface AddTimeEntryInput {
 export async function addTimeEntry(ctx: RequestContext, input: AddTimeEntryInput): Promise<TimeEntryData> {
     await assertRecordsTime(ctx, 'add');
     const description = descriptionOf(input.description);
-    const row = await runInTenantContext(ctx, async (db) => {
+    const row = await freezeAware(runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         await lockWeeks(db, ctx, ctx.userId, [input.workDate]);
         const item = await loadTrackableItem(db, ctx, v, input.workItemId);
@@ -276,7 +300,7 @@ export async function addTimeEntry(ctx: RequestContext, input: AddTimeEntryInput
         });
         await auditEntry(db, ctx, 'TIME_ENTRY_CREATED', created, `Added ${formatDuration(input.minutes)} on ${keyOf(item)} for ${input.workDate}`);
         return created;
-    });
+    }));
     recordTimeEntryRecorded({ source: 'manual' });
     return toEntryData(row);
 }
@@ -293,7 +317,7 @@ export interface UpdateTimeEntryInput {
 export async function updateTimeEntry(ctx: RequestContext, id: string, input: UpdateTimeEntryInput, expectedVersion?: number): Promise<TimeEntryData> {
     await assertRecordsTime(ctx, 'change');
     const description = input.description === undefined ? undefined : descriptionOf(input.description);
-    return runInTenantContext(ctx, async (db) => {
+    return freezeAware(runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         const before = await TimeEntryRepository.get(db, ctx, id);
         // Another person's entry is not the caller's to change (decision 267): the same 404 as a missing one.
@@ -349,7 +373,7 @@ export async function updateTimeEntry(ctx: RequestContext, id: string, input: Up
             metadata: { fromWorkDate: fromDate, fromMinutes: before.minutes },
         });
         return toEntryData(after);
-    });
+    }));
 }
 
 function versionConflict(current: TimeEntryRow): ConflictError {
@@ -362,7 +386,7 @@ function versionConflict(current: TimeEntryRow): ConflictError {
  */
 export async function deleteTimeEntry(ctx: RequestContext, id: string): Promise<void> {
     await assertRecordsTime(ctx, 'delete');
-    await runInTenantContext(ctx, async (db) => {
+    await freezeAware(runInTenantContext(ctx, async (db) => {
         const before = await TimeEntryRepository.get(db, ctx, id);
         if (!before || before.userId !== ctx.userId) entryNotFound();
         if (before.minutes === null) await lockTimer(db, ctx, ctx.userId);
@@ -372,7 +396,7 @@ export async function deleteTimeEntry(ctx: RequestContext, id: string): Promise<
         await auditEntry(db, ctx, 'TIME_ENTRY_DELETED', before, before.minutes === null ? 'Discarded a timer' : `Deleted ${formatDuration(before.minutes)} of time for ${dateKeyOf(before.workDate)}`, {
             metadata: before.minutes === null ? { discarded: true } : {},
         });
-    });
+    }));
 }
 
 // ─── The timer ──────────────────────────────────────────────────────
@@ -431,7 +455,7 @@ export async function startTimer(ctx: RequestContext, input: { workItemId: strin
     const now = new Date();
     const today = dayKeyInTz(todayClock(zone, now), zone);
     let replaced = false;
-    const result = await runInTenantContext(ctx, async (db) => {
+    const result = await freezeAware(runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
         await lockTimer(db, ctx, ctx.userId);
         const item = await loadTrackableItem(db, ctx, v, input.workItemId);
@@ -461,7 +485,7 @@ export async function startTimer(ctx: RequestContext, input: { workItemId: strin
         }
         await auditEntry(db, ctx, 'TIME_ENTRY_CREATED', created, `Started a timer on ${keyOf(item)}`);
         return { created, item };
-    });
+    }));
     if (replaced) recordTimeEntryRecorded({ source: 'timer' });
     return runningData(result.created, itemOf(result.item), now);
 }
@@ -484,12 +508,12 @@ function runningData(row: TimeEntryRow, item: TimeEntryItem, now: Date): Running
 export async function stopTimer(ctx: RequestContext, input: { minutes?: number } = {}): Promise<{ entry: TimeEntryData | null; discarded: boolean }> {
     await assertRecordsTime(ctx, 'stop_timer');
     const now = new Date();
-    const finished = await runInTenantContext(ctx, async (db) => {
+    const finished = await freezeAware(runInTenantContext(ctx, async (db) => {
         await lockTimer(db, ctx, ctx.userId);
         const running = await TimeEntryRepository.running(db, ctx, ctx.userId);
         if (!running) throw new ConflictError('Your timer is not on.', { reason: 'TIMER_OFF' });
         return stopRunningInTx(db, ctx, running, { stated: input.minutes, now, reason: 'stopped' });
-    });
+    }));
     if (finished) recordTimeEntryRecorded({ source: 'timer' });
     return { entry: finished ? toEntryData(finished) : null, discarded: finished === null };
 }
@@ -554,7 +578,8 @@ export async function getTimeWeek(ctx: RequestContext, input: { week: string; us
             entries: rows.map((r) => ({ ...toEntryData(r), item: itemFor(r.workItemId, items, v) })),
             dayTotals,
             totalMinutes: dayTotals.reduce((s, d) => s + d.minutes, 0),
-            // 3.4c freezes a submitted week; until then one's own week is open.
+            // Whether the week is frozen (3.4c) is the timesheet read's (`GET /timesheets/week`):
+            // this read stays the statements it was, and the trigger refuses a write regardless.
             viewer: { edit: own && mayTrackTime(ctx) && recordsTimeAsPerson(ctx) },
         };
     });

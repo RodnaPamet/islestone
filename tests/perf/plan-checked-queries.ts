@@ -155,6 +155,10 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
         maxBuffers100k: 150,
     },
     { name: "time: an item's total and first page", methods: ['TimeEntryRepository.itemTotals', 'TimeEntryRepository.itemPage'], indexes: ['TimeEntry_tenantId_workItemId_workDate_idx'], maxBuffers: 50, maxBuffers100k: 100 },
+    // Sub-phase 3.4c: a week's sums (submit, a decision, the status line) and the Timesheets page's sums of a
+    // page of weeks (each week on the person's index). Estimated as 3.4b's week, the page as 50 such weeks.
+    { name: "timesheets: a week's sums", methods: ['TimeEntryRepository.weekSums'], indexes: ['TimeEntry_tenantId_userId_workDate_idx'], maxBuffers: 50, maxBuffers100k: 150 },
+    { name: "timesheets: a page of weeks' sums", methods: ['TimeEntryRepository.sumsForWeeks'], indexes: ['TimeEntry_tenantId_userId_workDate_idx'], maxBuffers: 600, maxBuffers100k: 1800 },
     // ── Writes' reads: placement, moves, a member's removal ────────────────
     { name: 'placement: sort keys around a position', methods: ['WorkItemRepository.lastSortKey', 'WorkItemRepository.nextSortKeyAfter', 'WorkItemRepository.prevSortKeyBefore', 'WorkItemRepository.liveSortKeysAmong'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 100, maxBuffers100k: 100 },
     { name: 'removal: a member\'s items', methods: ['WorkItemRepository.lockItemsOfPerson'], indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx|WorkItem_tenantId_assigneeId_sortKey_id_idx', 'WorkItem_tenantId_waitingOnUserId_stateCategory_dueDate_idx', 'CustomFieldValue_tenantId_userId_idx|CustomFieldValue_tenantId_fieldId_userId_idx'], maxBuffers: 7500, maxBuffers100k: 88000 },
@@ -167,6 +171,8 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'job: the purge sweep', methods: ['WorkItemRepository.purgeableIds'], indexes: ['WorkItem_deletedAt_idx'], maxBuffers: 150, maxBuffers100k: 1500 },
     { name: 'job: a purged project', methods: ['WorkItemRepository.countLiveInProject', 'WorkItemRepository.projectItemIds'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx|WorkItem_tenantId_projectId_number_key|WorkItem_tenantId_projectId_createdAt_id_idx'], maxBuffers: 400, maxBuffers100k: 1600 },
     { name: 'job: the sort-key rebalance', methods: ['WorkItemRepository.projectsNeedingRebalance', 'WorkItemRepository.orderedPageIncludingDeleted'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 500, maxBuffers100k: 3100 },
+    // Sub-phase 3.4c: the Monday reminder's people who recorded time last week (one workspace's week).
+    { name: 'job: the timesheet reminder', methods: ['TimeEntryRepository.peopleWithTimeIn'], indexes: ['TimeEntry_tenantId_userId_workDate_idx|TimeEntry_tenantId_projectId_workDate_idx'], maxBuffers: 400, maxBuffers100k: 4000 },
     { name: 'job: the search-index rebuild', methods: ['SearchVectorRepository.staleDescriptionPage', 'SearchVectorRepository.staleCommentPage'], indexes: ['SearchVector_one_per_description', 'SearchVector_one_per_comment', 'Comment_search_live_ids'], maxBuffers: 10000, maxBuffers100k: 10000 },
 ];
 

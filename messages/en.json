@@ -2583,7 +2583,11 @@
             "WORK_ITEM_DUE": "Due dates",
             "INTAKE_REQUEST_RECEIVED": "New intake requests",
             "INTAKE_REQUEST_WOKEN": "Snoozed intake requests back",
-            "CALENDAR_CHANGE_NOT_APPLIED": "Calendar changes not applied"
+            "CALENDAR_CHANGE_NOT_APPLIED": "Calendar changes not applied",
+            "TIMESHEET_SUBMITTED": "Timesheets submitted to you",
+            "TIMESHEET_RETURNED": "Your timesheet returned",
+            "TIMESHEET_APPROVED": "Your timesheet approved",
+            "TIMESHEET_REMINDER": "Timesheet reminders"
         },
         "listLabel": "Notifications",
         "unreadMark": "Unread",
