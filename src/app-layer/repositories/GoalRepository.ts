@@ -173,6 +173,14 @@ export class GoalRepository {
         return db.goal.findFirst({ where: { id, tenantId: ctx.tenantId }, select: goalSelect });
     }
 
+    /**
+     * A live goal's due date, and nothing else (3.6c: a forecast's due date;
+     * never the description). Null when it is missing or deleted.
+     */
+    static async liveDueDate(db: PrismaTx, ctx: Ctx, id: string): Promise<{ dueDate: Date | null } | null> {
+        return db.goal.findFirst({ where: { id, tenantId: ctx.tenantId, deletedAt: null }, select: { dueDate: true } });
+    }
+
     /** Several goals by id, full rows (any state; the caller filters). */
     static async getMany(db: PrismaTx, ctx: Ctx, ids: readonly string[]): Promise<GoalRow[]> {
         if (ids.length === 0) return [];

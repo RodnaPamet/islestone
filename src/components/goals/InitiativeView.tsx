@@ -22,6 +22,7 @@ import { useTranslations } from 'next-intl';
 import { useCallback, useMemo, useState } from 'react';
 import { useSWRConfig } from 'swr';
 
+import { ForecastSection } from '@/components/analytics/forecast/ForecastSection';
 import { Button } from '@inflect/ui/components/ui/button';
 import { Plus } from '@inflect/ui/components/ui/icons/nucleo';
 import { EntityDetailLayout } from '@/components/layout/EntityDetailLayout';
@@ -105,6 +106,7 @@ export function InitiativeView({
     projects,
     teams,
     affordances,
+    forecast = false,
 }: {
     initialDetail: InitiativeDetail;
     goalOptions: ViewGoal[];
@@ -112,6 +114,8 @@ export function InitiativeView({
     projects: ViewProject[];
     teams: Array<{ id: string; name: string }>;
     affordances: RoadmapAffordances;
+    /** The Forecast section of the initiative's open items (3.6c, decision 324; `mayViewAnalytics`, asked on the server). */
+    forecast?: boolean;
 }) {
     const t = useTranslations('initiatives');
     const tRoadmap = useTranslations('roadmap');
@@ -286,6 +290,8 @@ export function InitiativeView({
                 <p className="text-xs text-content-muted">{t('detail.progressHint')}</p>
                 <ProgressCell name={initiative.name} summary={initiative} />
             </section>
+
+            {forecast && !initiative.archived && <ForecastSection filters={{ initiativeId: initiative.id }} />}
 
             <section aria-labelledby="initiative-projects" className="space-y-default">
                 <div className="flex flex-wrap items-center justify-between gap-tight">

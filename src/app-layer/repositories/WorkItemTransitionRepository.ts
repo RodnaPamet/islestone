@@ -144,6 +144,25 @@ export interface AgeRow {
     total: number;
 }
 
+/** One row of an item with a completion in a forecast's record read (3.6c). */
+export interface CompletionSpanDbRow {
+    workItemId: string;
+    seq: number;
+    at: Date;
+    stateCategory: WorkflowStateCategory;
+    fromStateCategory: WorkflowStateCategory | null;
+    deleted: boolean;
+    /** A completion row whose recorded project is in the read's scope (and visible). */
+    inScope: boolean;
+}
+
+/** Which projects a forecast's history reads (3.6c): visibility, and these projects or this team's. */
+export interface HistoryProjects {
+    visibility: ProjectVisibility;
+    projectIds: readonly string[] | null;
+    teamId: string | null;
+}
+
 export class WorkItemTransitionRepository {
     // ── The cycle burn-up (2.5a; moved here from CycleRepository in 3.6a) ──
 
@@ -455,5 +474,63 @@ export class WorkItemTransitionRepository {
              ORDER BY x."startedAt" ASC, x."id" ASC
              LIMIT ${take}`);
         return rows.map((r) => ({ ...r, number: Number(r.number), total: Number(r.total) }));
+    }
+
+    // ── Forecasting (3.6c) ────────────────────────────────────────────
+
+    /**
+     * The first recorded row of a forecast's history: the earliest row of each
+     * of its live, visible projects (archived ones included: their history
+     * counts), read per project on `WorkItemTransition_tenantId_projectId_at_idx`.
+     * A team's history is its CURRENT projects' (a project moved between teams
+     * keeps its rows' recorded team, which the completions read judges).
+     */
+    static async firstRecordedAt(db: PrismaTx, ctx: Ctx, h: HistoryProjects): Promise<Date | null> {
+        const t = ctx.tenantId;
+        const all = h.visibility.kind === 'ALL';
+        const granted = h.visibility.kind === 'GRANTED' ? [...h.visibility.projectIds] : [];
+        const projects = h.projectIds ? Prisma.sql`AND p."id" = ANY(${[...h.projectIds]}::text[])` : Prisma.empty;
+        const team = h.teamId ? Prisma.sql`AND p."teamId" = ${h.teamId}` : Prisma.empty;
+        const [row] = await db.$queryRaw<Array<{ at: Date | null }>>(Prisma.sql`
+            SELECT min(m."at") AS "at"
+              FROM "Project" p
+              CROSS JOIN LATERAL (
+                  SELECT f."at" FROM "WorkItemTransition" f
+                   WHERE f."tenantId" = ${t} AND f."projectId" = p."id"
+                   ORDER BY f."at" LIMIT 1) m
+             WHERE p."tenantId" = ${t} AND p."deletedAt" IS NULL
+               AND (${all}::boolean OR p."id" = ANY(${granted}::text[]))
+               ${projects}
+               ${team}`);
+        return row?.at ?? null;
+    }
+
+    /**
+     * The forecast's record read (3.6c; decision 325, "the scope's own
+     * record"): every item with a completion in scope from `from` to `asOf`,
+     * at most `take` items (the caller reads one past its bound), and each such
+     * item's rows from its first such completion to `asOf`, in the record's
+     * order. `completionSpans` turns them into when each completion counted.
+     */
+    static async completionSpanRows(db: PrismaTx, ctx: Ctx, s: RecordScope, window: { from: Date; asOf: Date }, take: number): Promise<CompletionSpanDbRow[]> {
+        const t = ctx.tenantId;
+        const rows = await db.$queryRaw<Array<CompletionSpanDbRow & { seq: bigint | number }>>(Prisma.sql`
+            WITH c AS (
+                SELECT c."workItemId", min(c."at") AS "firstAt"
+                  FROM "WorkItemTransition" c
+                 WHERE c."tenantId" = ${t}
+                   AND c."stateCategory" = 'DONE' AND c."fromStateCategory" IS DISTINCT FROM 'DONE'
+                   AND c."at" >= ${ts(window.from)} AND c."at" <= ${ts(window.asOf)}
+                   AND ${scopeSql(ctx, 'c', s)}
+                   ${itemSql('c', s)}
+                 GROUP BY c."workItemId"
+                 LIMIT ${take}
+            )
+            SELECT r."workItemId", r."id" AS "seq", r."at", r."stateCategory", r."fromStateCategory", r."deleted",
+                   (r."stateCategory" = 'DONE' AND r."fromStateCategory" IS DISTINCT FROM 'DONE' AND COALESCE((${scopeSql(ctx, 'r', s)}), false)) AS "inScope"
+              FROM c
+              JOIN "WorkItemTransition" r ON r."tenantId" = ${t} AND r."workItemId" = c."workItemId" AND r."at" >= c."firstAt" AND r."at" <= ${ts(window.asOf)}
+             ORDER BY r."workItemId", r."at", r."id"`);
+        return rows.map((r) => ({ ...r, seq: Number(r.seq) }));
     }
 }

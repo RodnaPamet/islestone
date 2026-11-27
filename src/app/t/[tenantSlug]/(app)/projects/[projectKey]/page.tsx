@@ -7,6 +7,8 @@ import { ProjectTimeButton } from '@/components/time/ProjectTimeButton';
 import { ProjectTemplatesButton } from '@/components/work-items/templates/ProjectTemplatesButton';
 import { WorkConfigProvider } from '@/components/work-items/data/use-work-config';
 import { WorkItemsView } from '@/components/work-items/WorkItemsView';
+import { ForecastSection } from '@/components/analytics/forecast/ForecastSection';
+import { mayViewAnalytics } from '@/app-layer/policies/analytics.policies';
 import { templateAffordances } from '@/app-layer/policies/template.policies';
 import { mayManageRates } from '@/app-layer/policies/time.policies';
 import { workItemPageContext } from '@/lib/server/work-item-pages.server';
@@ -22,6 +24,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ tenant
     const { ctx, config, savedViews, workConfig } = await workItemPageContext(tenantSlug, { projectKeyPrefix: prefix });
     const project = config.projects.find((p) => p.keyPrefix === prefix);
     if (!project) notFound();
+    // The Forecast section of the project's open items and the toolbar's action for its filters (3.6c, decision 324).
+    const forecast = mayViewAnalytics(ctx);
     return (
         <WorkConfigProvider config={config}>
             <WorkItemsView
@@ -30,6 +34,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ tenant
                 description={project.keyPrefix}
                 viewKey={`project:${project.id}`}
                 savedViews={savedViews}
+                forecast={forecast}
+                belowFilters={forecast && !project.archived ? <ForecastSection filters={{ projectId: project.id }} compact /> : undefined}
                 manageCustomFields={workConfig.manageCustomFields && !project.archived}
                 headerLinks={
                     <>

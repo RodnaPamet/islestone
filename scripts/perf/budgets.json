@@ -210,6 +210,12 @@
       "enforced": false,
       "reportedBecause": "decision 337: the flow's budget, reported and not enforced until the nightly 100k run has measured it, as 3.6a's analytics scenarios"
     },
+    "analytics-forecast": {
+      "label": "Analytics: the forecast of the largest project's open items, with its own record (GET /analytics/forecast)",
+      "budgets": { "10k": { "p50": 250, "p95": 500 }, "100k": { "p50": 250, "p95": 500 } },
+      "enforced": false,
+      "reportedBecause": "3.6c's budget (docs/porting/maps/3.6.md, 'Performance'): reported and not enforced until the nightly 100k run has measured it, as the timeline's and the roadmap's were"
+    },
     "create": {
       "write": true,
       "label": "Write: create with a description",

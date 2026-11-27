@@ -1,6 +1,6 @@
 # Analytics
 
-Sub-phase 3.6a: the transition record's `fromStateCategory`, the measures and the Analytics page; sub-phase 3.6b: time waiting. The decisions are owner decisions 309 to 334 (`docs/HANDOFF.md`), recorded in [ADR 0014](adr/0014-analytics-and-forecasting.md) and the porting map [`docs/porting/maps/3.6.md`](porting/maps/3.6.md), whose "Rules no decision names (3.6a, as built)" and "(3.6b, as built)" list the choices the build made. Forecasting and its calibration (3.6c) and dashboards (3.6d) are not built yet.
+Sub-phase 3.6a: the transition record's `fromStateCategory`, the measures and the Analytics page; sub-phase 3.6b: time waiting; sub-phase 3.6c: forecasting and its calibration (see "Forecasting", below). The decisions are owner decisions 309 to 334 (`docs/HANDOFF.md`), recorded in [ADR 0014](adr/0014-analytics-and-forecasting.md) and the porting map [`docs/porting/maps/3.6.md`](porting/maps/3.6.md), whose "Rules no decision names (3.6a, as built)", "(3.6b, as built)" and "(3.6c, as built)" list the choices the build made. Dashboards (3.6d) are not built yet.
 
 The words are ADR 0006's (decision 309): Analytics, Throughput, Cycle time, Lead time, Age, Cumulative flow, Burn-up, Time waiting, Dashboard, Widget; "Lead time" and "Cycle time" are always written whole. Never Velocity, Burn-down, Insights, Reports, Stats, Confidence, Projection, Card, Stage or Pipeline for these, and never Idle time, Blocked time, Response time or Wait (as a model) for time waiting.
 
@@ -83,12 +83,69 @@ Time waiting reads in two statements beside the scope's: `ReviewRepository.revie
 
 The **Analytics** sidebar entry (Workspace section, `analytics.view`; Viewers too, never a guest) opens `/analytics`: the counts and five fixed charts over a scope set with the list's shared filter toolbar (the status filters not offered) and a window of the last 4, 8, 12, 26 or 52 weeks (12 by default, ending today in the workspace calendar's zone). Throughput as weekly bars and cumulative flow as stacked areas on the mirrored chart platform; cycle time as a scatter of the newest completions with the 50th, 85th and 95th percentile lines and open items' age on today's column, and lead time as a distribution in whole working days, both small visx components on the same tokens; the burn-up through the cycle page's `BurnUpChart` with its measure switch. Below them, **Time waiting** (3.6b, `TimeWaitingChart`): the totals in its summary line when the server gives them, and a bar per party the server gave, split into waiting on and as a reviewer, with the table of the same figures and of what waits now; a reader without `analytics.people` sees their own row, zeros included, and a sentence saying other people's figures and the totals are shown to those allowed to see them (decision 335). The component draws the rows it was given and never asks who may see what. Every chart has its table (the accessible fallback, always in the document), is its own read (`src/components/analytics/data/use-analytics.ts`), and says when it is over its bound, with the count, while the others draw. From 3.6d these charts are the dashboard's default composition.
 
+## Forecasting
+
+Sub-phase 3.6c (owner decisions 318 to 325; ADR 0014 §3 to §5). "When will these open items be done?" A forecast gives the dates by which a scope's open items are **50, 85 and 95 % likely** to be finished (never "confidence", ADR 0006), the chance of finishing by the scope's due date, the distribution and a "Chance finished by" curve, or a refusal with its counts. Schedules and forecasts come from code (principle 4): nothing is stored, cached, audited or logged per scope, and no description, comment, field value or estimate is read.
+
+### The scope and the history
+
+- **The scope** is the list's filters (`resolveListFiltersInTx`; the status filters set aside and named, as every analytics read does). Its **remaining** items are its live, open (Backlog, Unstarted, Started) items in visible, unarchived projects, counted now; units are items only (decision 320).
+- **Whose completions** (decision 321): those of the projects the remaining items belong to (a cycle's: its team's), named on the answer and changeable to a subset of them, to the team when every scope project is one team's (a cycle: its own), or to the workspace. A team asked for a scope over two teams, or a history project outside the scope, is 400 `FORECAST_HISTORY`. A team's history is its rows' recorded team; its first recorded row is read over the team's current projects.
+- **The window** (decision 318): the last 4, 8, 12 (the default) or 26 weeks ending yesterday (today's partial day is left out), never starting before the history's first recorded row.
+- **The sample**: the completions (decision 311, as of now, through the 3.6a completions read) on each working day of the scope's calendar in the window, in date order. A completion on a non-working day is added to the next working day in the window, or, at the window's end, to its last working day: nothing is lost.
+- **The calendar and today** follow decision 316: one team, project, cycle or milestone, the team's calendar; anything wider, the workspace's; today in its zone through `todayClock`.
+- **The share** (decision 322): all of that throughput unless the person picks 75, 50 or 25 %; no new items are assumed. Both are printed with the dates.
+- **The due date**: a cycle's end, a milestone's, goal's, initiative's or (with none of those) one project's due date. A due date of today or earlier has passed (the forecast's first day is tomorrow) and gets no chance.
+
+### The simulation
+
+`forecastCompletion` (`src/app-layer/domain/forecast/simulate.ts`), pure and client-safe (no database, clock, zone or environment):
+
+1. **Refusals first** (decision 319), each returning no date: nothing open ("Nothing left to forecast: no open items."), fewer than 20 completions in the window, fewer than 20 working days of recorded history (each sentence names the counts), and a 50th percentile past the cap ("No forecast within two years at the recent pace"). Below 50 completions the answer carries "Based on few items; the range is wide."
+2. **10,000 trials.** Each trial walks the working days after today; on each it draws one day of the sample uniformly and subtracts its count times the share, in whole hundredths of an item (a 50 % share of 3 is 150), so no floating-point sum enters a count. A trial ends on the day nothing is left, or beyond the cap of 520 working days (about two years).
+3. **Random numbers**: mulberry32 (`rng.ts`, copied from inflect-compliance), each trial its own stream seeded by the forecast's seed and the trial's number (`trialSeed`, murmur3's finaliser), so with one seed more remaining items never finish earlier and a larger count never later.
+4. **The seed** (decision 323) is FNV-1a (32-bit) over the canonical JSON of the scope's key (its filters, the history's projects or team, the window), the day it is read on, the sample, the remaining count, the share and the trial count (`seed.ts`). The same data on the same day gives the same dates on every reload and machine; it is shown under "How this was computed".
+5. **Percentiles** are nearest rank over the outcomes, counted per day (no sort). A percentile beyond the cap is "Later than" the cap's date. **Dates** are the `d`-th working day after today (`addWorkingDays`), holidays ahead skipped (ADR 0010 §1). **The chance by the due date** is the share of trials finished on or before it, shown as a whole percent that reads 0 or 100 only when none or all finished.
+6. **The distribution** is a histogram of finishing days, by ISO week when the first and last lie more than 92 days apart, and the cumulative curve; trials beyond the cap are counted, not drawn.
+
+The worst case (10,000 trials to the cap, 5.2 million draws) is about 20 ms in Node (`tests/unit/domain/forecast-performance.test.ts`, budget 150 ms, failing at four times it). The trial loop reads `Math.imul` and `Math.floor` through module constants: a global read in a sandboxed context (Jest's `vm`) is about twenty times slower.
+
+### The read
+
+`GET /analytics/forecast?<the list's filters>&historyWeeks=4|8|12|26&share=25|50|75|100&basedOn=projects|team|workspace&historyProjectIds=<ids>` (`analytics.view`; `getForecast` in `usecases/analytics-forecast.ts`). A refusal is a 200 with `refused: { reason, … }` and no dates; more than 50,000 completions in the history is 422 `ANALYTICS_TOO_LARGE` (`what: 'completions'`). The answer carries the frame (today, the zone, the calendar's team, the filters set aside), the scope's kind and due date, the remaining count, what it is based on and what else is offered, the window with its completions and working days, the share, the trials and the seed, the dates, the chance, the histogram, the curve and the scope's own record. Eight statements a read (a cycle's nine).
+
+### Calibration
+
+**The back-test** (`backtest.ts`, pure; decision 325, H3): from weekly origins (the first working day of each ISO week, from the first day with a full window), forecast "the date of the next N completions" for N of 10, 25 and 50 with the history as it stood when the origin began (completions as `completionSpans`: a reopen or a deletion after the origin is not seen), and score it against the day the N-th completion from the origin on happened, as the record stands now. Each percentile is scorable at an origin when the actual day is known, or when its date has passed without it (a miss); a hit is an actual day on or before the date; each rate has its scorable count and a 95 % Wilson band. Actuals never feed a forecast.
+
+**The scope's own record** (decision 325): beside every forecast that gives dates, the same question replayed over the last 52 weeks from the same history, window and calendar, at the whole share for the history's own next `ceil(remaining × 100 / share)` completions (a forecast of R items at share s is the forecast of R × 100 / s of the history's), 2,000 trials an origin. Shown with at least 10 scorable origins of the 85th percentile ("Of 34 earlier forecasts here, the 85% date held 29 times"); below that, "Not enough history to show how forecasts held here"; more than 20,000 completed items in its 64 weeks, not shown (the forecast still is).
+
+**Published** (H3): `npm run forecast:calibration -- --shape <10k|100k> --write` runs the back-test over every project of the seeded workspace (`backtestWorkspaceForecasts`, `usecases/forecast-calibration.ts`) and writes the table below. `tests/perf/forecast-calibration.test.ts` holds the 85 % date's hit rate, pooled over the three sizes, between **80 and 90 %** over at least 200 scorable origins on the 10k seed, and the percentiles ordered; the band is never widened to pass. The seed's history is synthetic and non-stationary on purpose (growth across the year, a slow quarter, a holiday dip), so the forecasts run late at the 50th percentile; the real calibration is 9.1's weekly review of real workspaces.
+
+<!-- forecast-calibration:begin -->
+Back-tested on 2026-11-27 over the 10k scale seed's synthetic, back-dated record (`scripts/seed-scale/history.ts`): 10 projects, each forecast from its own completions over the last 12 weeks as the record stood at each weekly origin, 10,000 trials, share 100 %. A hit is the actual day on or before the percentile's date; the band is the 95 % Wilson interval.
+
+| Next completions | Origins | 50 % date held | 85 % date held | 95 % date held |
+|---|---|---|---|---|
+| 10 | 435 | 60.4 % (262 of 434; band 55.7 % to 64.9 %) | 89.0 % (379 of 426; band 85.6 % to 91.6 %) | 98.1 % (418 of 426; band 96.3 % to 99.0 %) |
+| 25 | 435 | 66.7 % (279 of 418; band 62.1 % to 71.1 %) | 88.5 % (368 of 416; band 85.0 % to 91.2 %) | 94.0 % (391 of 416; band 91.3 % to 95.9 %) |
+| 50 | 430 | 69.8 % (279 of 400; band 65.1 % to 74.0 %) | 81.5 % (325 of 399; band 77.3 % to 85.0 %) | 89.7 % (358 of 399; band 86.4 % to 92.3 %) |
+<!-- forecast-calibration:end -->
+
+### Where forecasts appear
+
+A **Forecast** section on a project's, a milestone's, a cycle's (beside the burn-up), a goal's and an initiative's page, and a **Forecast** action in the Work items page's and a project page's toolbar that opens the sheet for the current filters (decision 324), each offered on the server to a caller `mayViewAnalytics` admits. The section shows the three dates, the chance by the due date, what it is based on and assumes, and the caution or the refusal (on a project's and a milestone's page, one line under the filter toolbar: the dates and the chance, or the refusal, so the board keeps its height); "Details" opens the sheet with the window, share and basis a person may change, the distribution and the curve each with its table, and "How this was computed" with the seed and the record. The charts are inflect-compliance's ALE histogram (its accessible buckets) and loss-exceedance curve, copied and adapted (`ForecastHistogram`, `ChanceByDateCurve`; `@visx/curve` 4.0.0). Copy is `forecast.*`.
+
+### Agents
+
+An agent reads a forecast only through 6.4's read tools within its authority, and states no date the module did not compute (decision 332, ADR 0003 §4); 7.5's explanation reads the result and its inputs (the sample, the share, the seed).
+
 ## Privacy
 
 Time waiting per person is the one figure about a person (decision 76), a measure of how quickly someone responds: each person sees their own row, and others' rows and the totals only `analytics.people` holders (decisions 329 and 335, the totals because in a small scope they less one's own row are another person's figure); removed members are one anonymous row. No measure is grouped by assignee (decision 330). An agent never reads per-person time waiting, whatever its authorising person holds (decision 332): the read gives a caller that is not a person no row and no totals (decision 335). Nothing new about people is stored: waits are computed from the record (kept for the workspace's life, decision 66) and the review rows on every read, never cached, logged or audited. Logs carry ids and counts only, never a person's figures, a scope's numbers or filter values.
 
 ## Performance
 
-Live reads with stated bounds (decision 331); pre-aggregation is the fallback only if the nightly 100k run misses the flow budget. The plan checks, statements per request and latency scenarios are in [`docs/performance.md`](performance.md), "Analytics (3.6a)" and "Time waiting (3.6b)".
+Live reads with stated bounds (decision 331); the forecast's reads are in [`docs/performance.md`](performance.md), "Forecasting (3.6c)"; pre-aggregation is the fallback only if the nightly 100k run misses the flow budget. The plan checks, statements per request and latency scenarios are in [`docs/performance.md`](performance.md), "Analytics (3.6a)" and "Time waiting (3.6b)".
 
 The scale seed writes a back-dated year into the record (`scripts/seed-scale/history.ts`): every item is created, leaves the backlog, is mostly estimated after creation, may wait on a member (about 30 %, a quarter of those twice), joins its cycle, is started, goes to review (about 60 % of done items, a quarter of those sent back once), is reopened once (about 8 % of done items) and moves from another project (about 3 %), and ends on its current picture, which the verifier checks for every item, with each row's `fromStateCategory` its item's previous row's category. About 44,000 rows per 10k workspace. Closings follow a non-stationary year (growth across the year, a slow quarter, a holiday dip in late December), so a back-test (3.6c) is not calibrated by construction.

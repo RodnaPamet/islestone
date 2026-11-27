@@ -260,6 +260,13 @@ const SCENARIOS: Scenario[] = [
     { name: 'analytics: time waiting, the workspace, twelve weeks', file: `${ROUTES}/analytics/waiting/route.ts`, method: 'GET', as: 'approver', path: () => `/analytics/waiting?${analyticsWindow()}`, budget: 7 },
     { name: 'analytics: time waiting, a project', file: `${ROUTES}/analytics/waiting/route.ts`, method: 'GET', path: (w) => `/analytics/waiting?projectId=${w.bigProjectId}&${analyticsWindow()}`, budget: 7 },
     // ── end of the 3.6b time-waiting block ──
+    // ── Forecasting (3.6c; the map's budget: at most 9 statements), as measured on a fresh 10k seed: the tenant
+    // binding, the open items per project, the scope's projects, its team's name, the calendars, the first
+    // recorded row, the completions per day and the record's rows: 8 (a cycle also reads its cycle: 9). ──
+    { name: 'forecast: a project', file: `${ROUTES}/analytics/forecast/route.ts`, method: 'GET', path: (w) => `/analytics/forecast?projectId=${w.bigProjectId}`, budget: 8, answers: (b) => b.includes('"likely":{') },
+    { name: 'forecast: the workspace', file: `${ROUTES}/analytics/forecast/route.ts`, method: 'GET', path: () => '/analytics/forecast?basedOn=workspace', budget: 8 },
+    { name: 'forecast: the current cycle, from its team', file: `${ROUTES}/analytics/forecast/route.ts`, method: 'GET', path: (w) => `/analytics/forecast?teamId=${w.teamId}&cycleId=${w.currentCycleId}`, budget: 9 },
+    // ── end of the 3.6c forecasting block ──
     {
         name: 'create: one item with a description',
         file: `${ROUTES}/work-items/route.ts`,

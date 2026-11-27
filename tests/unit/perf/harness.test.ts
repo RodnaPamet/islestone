@@ -50,6 +50,8 @@ const DECIDED: Record<string, Record<'10k' | '100k', { p50?: number; p95: number
     'analytics-flow': { '10k': { p50: 350, p95: 700 }, '100k': { p50: 350, p95: 700 } },
     // Decision 337 (3.6b): time waiting in the largest project, at the flow's budget.
     'analytics-waiting': { '10k': { p50: 350, p95: 700 }, '100k': { p50: 350, p95: 700 } },
+    // 3.6c's: the largest project's forecast.
+    'analytics-forecast': { '10k': { p50: 250, p95: 500 }, '100k': { p50: 250, p95: 500 } },
     create: { '10k': { p95: 400 }, '100k': { p95: 400 } },
     edit: { '10k': { p95: 400 }, '100k': { p95: 400 } },
     move: { '10k': { p95: 400 }, '100k': { p95: 400 } },

@@ -130,6 +130,8 @@ const SPEC: Readonly<Record<string, Spec>> = {
     [`${T}/analytics/durations/route.ts`]: { GET: 'analytics.view' },
     [`${T}/analytics/flow/route.ts`]: { GET: 'analytics.view' },
     [`${T}/analytics/waiting/route.ts`]: { GET: 'analytics.view' },
+    // 3.6c: the forecast.
+    [`${T}/analytics/forecast/route.ts`]: { GET: 'analytics.view' },
     [`${W}/[workItemId]/time/route.ts`]: { GET: 'work_items.view' },
     [`${T}/initiatives/route.ts`]: { GET: 'goals.view', POST: 'goals.manage' },
     [`${T}/initiatives/[initiativeId]/route.ts`]: { GET: 'goals.view', PATCH: 'goals.manage', DELETE: 'goals.manage' },

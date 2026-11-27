@@ -15,6 +15,7 @@ import { useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 import { Button } from '@inflect/ui/components/ui/button';
+import { ForecastSection } from '@/components/analytics/forecast/ForecastSection';
 import { WorkItemsView } from '@/components/work-items/WorkItemsView';
 import { useTenantHref } from '@/lib/tenant-context-provider';
 import type { BurnUpMeasure, CycleAffordances, CycleData, SavedViewAffordances } from '@/lib/work-items/types';
@@ -33,7 +34,7 @@ function Stat({ label, value }: { label: string; value: string | number }) {
     );
 }
 
-function CycleSummary({ cycle, affordances }: { cycle: CycleData; affordances: CycleAffordances }) {
+function CycleSummary({ cycle, affordances, forecast }: { cycle: CycleData; affordances: CycleAffordances; forecast: boolean }) {
     const tSummary = useTranslations('cycles');
     const router = useRouter();
     const tenantHref = useTenantHref();
@@ -83,6 +84,8 @@ function CycleSummary({ cycle, affordances }: { cycle: CycleData; affordances: C
                 onMeasure={setMeasure}
                 unavailable={burnUp.error !== undefined && measure !== 'items'}
             />
+            {/* Beside the burn-up: the chance of finishing its open items by its end (3.6c, decision 324). */}
+            {forecast && cycle.status !== 'completed' && <ForecastSection filters={{ teamId: cycle.teamId, cycleId: cycle.id }} />}
             {canEdit && <CycleFormDialog open={editing} onOpenChange={setEditing} teamId={cycle.teamId} cycle={cycle} />}
         </div>
     );
@@ -93,11 +96,14 @@ export function CycleView({
     teamName,
     affordances,
     savedViews,
+    forecast = false,
 }: {
     initialCycle: CycleData;
     teamName: string;
     affordances: CycleAffordances;
     savedViews: SavedViewAffordances;
+    /** The Forecast section (3.6c; `mayViewAnalytics`, asked on the server). */
+    forecast?: boolean;
 }) {
     const tCycle = useTranslations('cycles');
     const { data } = useCycle(initialCycle.id, initialCycle);
@@ -109,7 +115,7 @@ export function CycleView({
             description={tCycle('subtitle', { team: teamName, start: cycle.startsOn, end: cycle.endsOn, status: tCycle(`status.${cycle.status}`) })}
             viewKey={`cycle:${cycle.id}`}
             savedViews={savedViews}
-            summary={<CycleSummary cycle={cycle} affordances={affordances} />}
+            summary={<CycleSummary cycle={cycle} affordances={affordances} forecast={forecast} />}
         />
     );
 }

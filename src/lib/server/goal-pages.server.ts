@@ -14,6 +14,7 @@
 import { notFound } from 'next/navigation';
 
 import { getTenantCtx } from '@/app-layer/context';
+import { mayViewAnalytics } from '@/app-layer/policies/analytics.policies';
 import { goalAffordances, mayReadGoals } from '@/app-layer/policies/goal.policies';
 import { mayCreateProject, mayReadWorkConfig } from '@/app-layer/policies/work-config.policies';
 import { mayReadWorkItems } from '@/app-layer/policies/work-item.policies';
@@ -69,11 +70,11 @@ export async function initiativesPageContext(tenantSlug: string): Promise<{ init
     });
 }
 
-export async function goalPageContext(tenantSlug: string, goalId: string): Promise<{ detail: GoalDetail; options: { goals: ViewGoal[] }; affordances: RoadmapAffordances }> {
+export async function goalPageContext(tenantSlug: string, goalId: string): Promise<{ detail: GoalDetail; options: { goals: ViewGoal[] }; affordances: RoadmapAffordances; forecast: boolean }> {
     return or404(async () => {
         const ctx = await goalsCtx(tenantSlug);
         const [detail, view] = await Promise.all([getGoal(ctx, goalId), listViewGoals(ctx)]);
-        return { detail, options: { goals: view.goals }, affordances: affordancesOf(ctx) };
+        return { detail, options: { goals: view.goals }, affordances: affordancesOf(ctx), forecast: mayViewAnalytics(ctx) };
     });
 }
 
@@ -84,11 +85,12 @@ export async function initiativePageContext(
     detail: InitiativeDetail;
     options: { goals: ViewGoal[]; initiatives: ViewInitiative[]; projects: ViewProject[]; teams: Array<{ id: string; name: string }> };
     affordances: RoadmapAffordances;
+    forecast: boolean;
 }> {
     return or404(async () => {
         const ctx = await goalsCtx(tenantSlug);
         const [detail, view, workspace] = await Promise.all([getInitiative(ctx, initiativeId), listViewGoals(ctx), projectsAndTeams(ctx)]);
-        return { detail, options: { goals: view.goals, initiatives: view.initiatives, ...workspace }, affordances: affordancesOf(ctx) };
+        return { detail, options: { goals: view.goals, initiatives: view.initiatives, ...workspace }, affordances: affordancesOf(ctx), forecast: mayViewAnalytics(ctx) };
     });
 }
 
