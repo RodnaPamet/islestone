@@ -5,8 +5,10 @@
  * analytics appear"; ADR 0014): over a scope set with the list's shared
  * filter toolbar and a window of the last 4, 8, 12, 26 or 52 weeks, the
  * counts and five fixed charts, each with its table: throughput, cycle time
- * with age, lead time, cumulative flow and the burn-up. From 3.6d these are
- * the dashboard's default composition.
+ * with age, lead time, cumulative flow and the burn-up, then time waiting
+ * (3.6b): the totals, and the rows the server gave (every party's for a
+ * holder of `analytics.people`, else the reader's own; decision 329). From
+ * 3.6d these are the dashboard's default composition.
  *
  * Each chart is its own read (`data/use-analytics.ts`). The status filters
  * are not offered (each measure owns status; decision 315); one carried in
@@ -37,6 +39,7 @@ import {
 import { CycleTimeChart, LeadTimeChart } from './charts/DurationCharts';
 import { FlowChart } from './charts/FlowChart';
 import { ThroughputChart } from './charts/ThroughputChart';
+import { TimeWaitingChart } from './charts/TimeWaitingChart';
 import { useAnalytics, type AnalyticsWindow } from './data/use-analytics';
 
 const SET_ASIDE: readonly string[] = ANALYTICS_SET_ASIDE_FILTERS;
@@ -78,6 +81,7 @@ function AnalyticsBody({ today }: { today: string }) {
     const cycle = useAnalytics('durations', filters, window, { measure: 'cycle' });
     const flow = useAnalytics('flow', filters, window);
     const burnUpRead = useAnalytics('flow', filters, window, { burnUp: '1', measure });
+    const waiting = useAnalytics('waiting', filters, window);
     const setAside = throughput.data?.setAside ?? [];
     const burnUp = burnUpRead.data?.burnUp ?? null;
 
@@ -121,6 +125,7 @@ function AnalyticsBody({ today }: { today: string }) {
                     />
                 )}
             </div>
+            <TimeWaitingChart read={waiting} />
             <p className="text-xs text-content-muted">{t('currentValues')}</p>
         </DashboardLayout>
     );

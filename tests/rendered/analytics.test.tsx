@@ -6,7 +6,9 @@
  * five fixed charts each with its table (the accessible fallback), the
  * window and the set-aside status filters named, a chart over its bound
  * saying so with the count (never a cut chart) while the others draw, each
- * read its own request with the window, and no axe violations. visx's
+ * read its own request with the window, and no axe violations; time waiting
+ * (3.6b) with every party's rows when the server gives them, the reader's own
+ * row alone otherwise, and a chart over its review bound. visx's
  * `ParentSize` measures nothing in jsdom, so the tables are what is read.
  *
  * Written fresh for Islestone.
@@ -22,7 +24,7 @@ jest.mock('next/navigation', () => ({
 }));
 
 import { AnalyticsView } from '@/components/analytics/AnalyticsView';
-import type { CountsResponse, DurationsResponse, FlowResponse, ThroughputResponse } from '@/lib/analytics/types';
+import type { CountsResponse, DurationsResponse, FlowResponse, ThroughputResponse, WaitingPartyRow, WaitingResponse } from '@/lib/analytics/types';
 
 import { installFetch, renderWorkspace } from '../helpers/work-items-harness';
 
@@ -56,12 +58,29 @@ const durations: DurationsResponse = {
     ageTotal: 1,
 };
 
+const ZERO_ENDED = { count: 0, p50: null, p85: null };
+const anaRow: WaitingPartyRow = {
+    party: { kind: 'member', userId: 'u-ana', name: 'Ana', active: true },
+    waited: 3.5,
+    asReviewer: 2,
+    items: 2,
+    ended: { count: 2, p50: 1, p85: 2.5 },
+    waitingNow: 1,
+    waitingNowItems: [{ workItemId: 'w9', key: 'PLT-9', title: 'Sign it off', asReviewer: true, age: 4.2 }],
+};
+const debRow: WaitingPartyRow = { party: { kind: 'member', userId: 'u-deb', name: 'Deb', active: false }, waited: 1, asReviewer: 0, items: 1, ended: { count: 1, p50: 1, p85: 1 }, waitingNow: 0, waitingNowItems: [] };
+const formerRow: WaitingPartyRow = { party: { kind: 'former' }, waited: 0.5, asReviewer: 0, items: 1, ended: ZERO_ENDED, waitingNow: 0, waitingNowItems: [] };
+const totals: WaitingResponse['totals'] = { waited: 5, asReviewer: 2, itemTimeWaiting: 4.5, openItemTime: 18, share: 0.25, items: 4, ended: { count: 3, p50: 1, p85: 2.5 }, waitingNow: 1 };
+const waitingAll: WaitingResponse = { ...frame, totals, self: anaRow, people: [anaRow, debRow, formerRow], waitingNowCut: false, items: 9 };
+const waitingOwn: WaitingResponse = { ...frame, totals, self: anaRow, waitingNowCut: false, items: 9 };
+
 describe('the Analytics page', () => {
     it('shows the counts and every chart with its table, names the set-aside filters, and has no axe violations', async () => {
         const fetch = installFetch({
             'GET /analytics/counts': { body: counts },
             'GET /analytics/throughput': { body: throughput },
             'GET /analytics/durations': { body: durations },
+            'GET /analytics/waiting': { body: waitingAll },
             'GET /analytics/flow': (rec) => ({
                 body: {
                     ...frame,
@@ -99,7 +118,7 @@ describe('the Analytics page', () => {
 
         // Each read is its own request, over the twelve weeks ending today.
         const reads = fetch.calls.filter((c) => c.path.startsWith('/analytics/'));
-        expect(new Set(reads.map((c) => c.path))).toEqual(new Set(['/analytics/counts', '/analytics/throughput', '/analytics/durations', '/analytics/flow']));
+        expect(new Set(reads.map((c) => c.path))).toEqual(new Set(['/analytics/counts', '/analytics/throughput', '/analytics/durations', '/analytics/flow', '/analytics/waiting']));
         for (const r of reads) expect([r.search.get('from'), r.search.get('to')]).toEqual(['2026-09-05', '2026-11-27']);
         expect(await axe(container)).toHaveNoViolations();
     });
@@ -123,5 +142,42 @@ describe('the Analytics page', () => {
         fireEvent.click(await screen.findByRole('radio', { name: '4 weeks' }));
         await screen.findByTestId('analytics-count-open');
         expect(fetch.calls.some((c) => c.path === '/analytics/throughput' && c.search.get('from') === '2026-10-31')).toBe(true);
+    });
+
+    it("shows time waiting per party when the server gives every row: a deactivated member marked, removed members as one row, what waits now", async () => {
+        installFetch({ 'GET /analytics/counts': { body: counts }, 'GET /analytics/waiting': { body: waitingAll } });
+        renderWorkspace(<AnalyticsView affordances={ALL} today="2026-11-27" />);
+        const section = await screen.findByRole('region', { name: 'Time waiting' });
+        expect(await within(section).findByText(/Open items spent 25% of their open time waiting on someone \(4.5 of 18 working days\)/)).toBeInTheDocument();
+        expect(within(section).getByText(/3 waits ended: a median of 1 days, 85% within 2.5/)).toBeInTheDocument();
+        expect(within(section).queryByText(/You see your own row/)).not.toBeInTheDocument();
+        const table = within(section).getByRole('table', { name: 'Time waited per person in the window, in working days' });
+        expect(within(table).getByRole('rowheader', { name: 'Ana' })).toBeInTheDocument();
+        expect(within(table).getByRole('rowheader', { name: 'Deb (deactivated)' })).toBeInTheDocument();
+        expect(within(table).getByRole('rowheader', { name: 'Former members' })).toBeInTheDocument();
+        expect(within(table).getByRole('cell', { name: '2: median 1 days, 85% within 2.5' })).toBeInTheDocument();
+        const now = within(section).getByRole('table', { name: 'What waits now, the oldest first' });
+        expect(within(now).getByRole('cell', { name: 'PLT-9' })).toBeInTheDocument();
+        expect(within(now).getByRole('cell', { name: 'Reviewer' })).toBeInTheDocument();
+        expect(within(section).getByRole('img', { name: /Waited on Ana 3.5 days, 2 of them as a reviewer/ })).toBeInTheDocument();
+    });
+
+    it("shows the reader's own row alone, and says so, when the server gives no one else's", async () => {
+        installFetch({ 'GET /analytics/counts': { body: counts }, 'GET /analytics/waiting': { body: waitingOwn } });
+        renderWorkspace(<AnalyticsView affordances={{ ...ALL, people: false }} today="2026-11-27" />);
+        const section = await screen.findByRole('region', { name: 'Time waiting' });
+        expect(await within(section).findByText(/You see your own row; other people's rows are shown to those allowed to see them/)).toBeInTheDocument();
+        const table = within(section).getByRole('table', { name: 'Time waited per person in the window, in working days' });
+        expect(within(table).getAllByRole('rowheader').map((h) => h.textContent)).toEqual(['Ana']);
+    });
+
+    it('says time waiting is too large when its review bound is crossed', async () => {
+        installFetch({
+            'GET /analytics/counts': { body: counts },
+            'GET /analytics/waiting': { status: 422, body: { error: { code: 'ANALYTICS_TOO_LARGE', message: 'Too many', details: { reason: 'ANALYTICS_TOO_LARGE', what: 'reviews', count: 50001, limit: 50000 } } } },
+        });
+        renderWorkspace(<AnalyticsView affordances={ALL} today="2026-11-27" />);
+        const section = await screen.findByRole('region', { name: 'Time waiting' });
+        expect(await within(section).findByText('More than 50000 reviewers were asked in this scope and window (50001). Narrow the filter or the window.')).toBeInTheDocument();
     });
 });

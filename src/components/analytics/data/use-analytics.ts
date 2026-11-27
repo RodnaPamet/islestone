@@ -19,6 +19,7 @@ import {
     type DurationsResponse,
     type FlowResponse,
     type ThroughputResponse,
+    type WaitingResponse,
 } from '@/lib/analytics/types';
 
 export interface AnalyticsWindow {
@@ -26,7 +27,7 @@ export interface AnalyticsWindow {
     to: string;
 }
 
-type Reads = { counts: CountsResponse; throughput: ThroughputResponse; durations: DurationsResponse; flow: FlowResponse };
+type Reads = { counts: CountsResponse; throughput: ThroughputResponse; durations: DurationsResponse; flow: FlowResponse; waiting: WaitingResponse };
 
 /** An analytics read's tenant-relative path: the list's filters (its order does not apply), the window and the read's own parameters. */
 export function analyticsPath(read: keyof Reads, filters: WorkItemListFilters, window: AnalyticsWindow, extra: Record<string, string | undefined> = {}): string {
