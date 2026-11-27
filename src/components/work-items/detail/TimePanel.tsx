@@ -99,7 +99,7 @@ export function TimePanel({ itemId, itemKey, estimateMinutes }: { itemId: string
     const spent = data.totalMinutes ?? data.ownMinutes;
 
     const save = async (draft: TimeEntryDraft & { minutes: number }, entry?: TimeEntryData): Promise<string | null> => {
-        const body = { workDate: draft.workDate, minutes: draft.minutes, billable: draft.billable, description: draft.description.trim() || null };
+        const body = { workDate: draft.workDate, minutes: draft.minutes, ...(draft.billable !== null ? { billable: draft.billable } : {}), description: draft.description.trim() || null };
         const out = entry ? await writes.change(entry, body) : await writes.add({ workItemId: itemId, ...body });
         return out instanceof Error ? (out.reason ?? tTime('failed')) : null;
     };
@@ -165,7 +165,7 @@ export function TimePanel({ itemId, itemKey, estimateMinutes }: { itemId: string
                     open
                     onOpenChange={setAdding}
                     title={tTime('addTitle', { key: itemKey })}
-                    initial={{ workItem: null, workDate: todayKey(), minutes: null, billable: false, description: '' }}
+                    initial={{ workItem: null, workDate: todayKey(), minutes: null, billable: data.billableByDefault, description: '' }}
                     onSave={(d) => save(d)}
                 />
             )}

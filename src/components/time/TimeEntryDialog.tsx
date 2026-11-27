@@ -5,6 +5,9 @@
  * 267): the date, the time spent (typed as "1h 30m", "1.5h" or "90m" through
  * the estimate's one parser, never rounded), billable and a description. On
  * My time the item is picked too; on an item's Time panel it is the item.
+ * Billable starts at the project's default (3.4d, decision 271) where the
+ * caller knows it; where it does not (an item just picked), it is `null`
+ * until the person ticks or unticks it, and the server applies the default.
  * The server's refusal (a full day, an archived project) is shown in the
  * dialog.
  *
@@ -29,7 +32,8 @@ export interface TimeEntryDraft {
     workItem: { id: string; label: string } | null;
     workDate: string;
     minutes: number | null;
-    billable: boolean;
+    /** `null`: the project's default, decided by the server (3.4d, decision 271). */
+    billable: boolean | null;
     description: string;
 }
 
@@ -103,10 +107,13 @@ export function TimeEntryDialog({
                                 <Input id="time-entry-spent" value={spent} onChange={(e) => setSpent(e.target.value)} autoComplete="off" />
                             </FormField>
                         </div>
-                        <label className="flex items-center gap-tight text-sm" htmlFor="time-entry-billable">
-                            <Checkbox id="time-entry-billable" checked={billable} onCheckedChange={(c) => setBillable(c === true)} />
-                            {t('billable')}
-                        </label>
+                        <div>
+                            <label className="flex items-center gap-tight text-sm" htmlFor="time-entry-billable">
+                                <Checkbox id="time-entry-billable" checked={billable === true} onCheckedChange={(c) => setBillable(c === true)} />
+                                {t('billable')}
+                            </label>
+                            {billable === null && <p className="mt-tight text-xs text-content-muted">{t('billableDefault')}</p>}
+                        </div>
                         <FormField label={t('descriptionLabel')}>
                             <Textarea id="time-entry-description" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} maxLength={TIME_LIMITS.descriptionMax} />
                         </FormField>

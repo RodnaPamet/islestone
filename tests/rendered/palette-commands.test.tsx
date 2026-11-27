@@ -301,7 +301,7 @@ function TimerActions({ stop, start }: { stop?: () => void; start?: () => void }
 describe('Command Palette — time (3.4b)', () => {
     const timeRow = () => document.querySelector('[data-testid="command-palette-nav-nav:time"]');
 
-    it('lists My time for a member who records time, and not for a Viewer', async () => {
+    it('lists My time for a member who records time, and Time totals for a Viewer (3.4d)', async () => {
         const { unmount } = render(
             <Shell>
                 <MemberAccess role="MEMBER" />
@@ -316,7 +316,10 @@ describe('Command Palette — time (3.4b)', () => {
             </Shell>,
         );
         await waitFor(() => expect(document.querySelector('[data-testid="command-palette-nav-nav:projects"]')).not.toBeNull());
-        expect(timeRow()).toBeNull();
+        // A Viewer holds time.view alone: the Time entry opens on Time totals.
+        await waitFor(() => expect(timeRow()).not.toBeNull());
+        expect(timeRow()!.getAttribute('data-href')).toBe('/t/acme-corp/time/totals');
+        expect(timeRow()).toHaveTextContent('Go to Time totals');
     });
 
     it('offers Stop timer and Start timer on the open item while they are registered, and runs them', async () => {

@@ -21,6 +21,7 @@ import { mayManageNotificationSettings } from '@/app-layer/policies/notification
 import { isCalendarSyncOpen } from '@/lib/calendar-sync/switch';
 import { recipientListAffordances } from '@/app-layer/policies/recipient-list.policies';
 import { templateAffordances } from '@/app-layer/policies/template.policies';
+import { mayManageRates } from '@/app-layer/policies/time.policies';
 import { workConfigAffordances } from '@/app-layer/policies/work-config.policies';
 import { mayOpenSettings } from '@/components/layout/nav-config';
 import { getSessionOrThrow } from '@/lib/auth/session';
@@ -39,6 +40,8 @@ export async function settingsPageAccess(
     goals: GoalAffordances;
     calendarSync: { manage: boolean; open: boolean };
     workload: WorkloadAffordances;
+    /** Rates and a project's billable default (3.4d, `time.rates`, decision 274). */
+    manageRates: boolean;
 }> {
     const session = await getSessionOrThrow();
     let ctx;
@@ -69,5 +72,7 @@ export async function settingsPageAccess(
         calendarSync: { manage: mayManageCalendarSync(ctx), open: isCalendarSyncOpen() },
         // Settings → Workload (3.5a): the usecases' own predicates.
         workload: workloadAffordances(ctx),
+        // Settings → Time tracking's rates and a project's (3.4d): the usecases' own predicate.
+        manageRates: mayManageRates(ctx),
     };
 }

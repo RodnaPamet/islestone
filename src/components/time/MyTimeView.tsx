@@ -44,7 +44,7 @@ import { formatDay } from './time-format';
 import { buildWeekGrid, type WeekCell, type WeekRow } from './week-grid-model';
 
 type DialogState =
-    | { kind: 'add'; workItem: { id: string; label: string } | null; date: string }
+    | { kind: 'add'; workItem: { id: string; label: string } | null; date: string; billable: boolean | null }
     | { kind: 'edit'; entry: TimeEntryData; label: string };
 
 export function MyTimeView({ affordances, today, weekStart }: { affordances: TimeAffordances; today: string; weekStart: string }) {
@@ -80,7 +80,7 @@ export function MyTimeView({ affordances, today, weekStart }: { affordances: Tim
         if (cell.entries.length === 0) {
             // A deleted item, or one out of sight, takes no new time.
             if (row.item.kind !== 'visible') return;
-            setDialog({ kind: 'add', workItem: { id: row.item.id, label: itemLabel(row) }, date: cell.date });
+            setDialog({ kind: 'add', workItem: { id: row.item.id, label: itemLabel(row) }, date: cell.date, billable: row.item.billableByDefault ?? null });
         } else if (cell.entries.length === 1) {
             setDialog({ kind: 'edit', entry: cell.entries[0]!, label: itemShort(row) });
         } else {
@@ -116,7 +116,8 @@ export function MyTimeView({ affordances, today, weekStart }: { affordances: Tim
     };
 
     const save = async (draft: TimeEntryDraft & { minutes: number }, entry?: TimeEntryData): Promise<string | null> => {
-        const body = { workDate: draft.workDate, minutes: draft.minutes, billable: draft.billable, description: draft.description.trim() || null };
+        // A billable left `null` is the project's default, applied by the server (3.4d, decision 271).
+        const body = { workDate: draft.workDate, minutes: draft.minutes, ...(draft.billable !== null ? { billable: draft.billable } : {}), description: draft.description.trim() || null };
         const out = entry ? await writes.change(entry, body) : await writes.add({ workItemId: draft.workItem!.id, ...body });
         return out instanceof Error ? (out.reason ?? t('failed')) : null;
     };
@@ -131,9 +132,9 @@ export function MyTimeView({ affordances, today, weekStart }: { affordances: Tim
             <PageHeader
                 title={t('title')}
                 description={t('description')}
-                actions={canEdit ? <Button variant="primary" text={t('addTime')} onClick={() => setDialog({ kind: 'add', workItem: null, date: week <= today && today <= end ? today : week })} /> : undefined}
+                actions={canEdit ? <Button variant="primary" text={t('addTime')} onClick={() => setDialog({ kind: 'add', workItem: null, date: week <= today && today <= end ? today : week, billable: null })} /> : undefined}
             />
-            <TimeTabs approve={affordances.approve} />
+            <TimeTabs approve={affordances.approve} totals={affordances.view} />
             <div className="flex flex-wrap items-center gap-tight">
                 <Button variant="secondary" size="sm" text={t('previousWeek')} onClick={() => goTo(addDays(week, -7))} />
                 <Button variant="secondary" size="sm" text={t('thisWeek')} disabled={week === thisWeek} onClick={() => goTo(thisWeek)} />
@@ -240,7 +241,7 @@ export function MyTimeView({ affordances, today, weekStart }: { affordances: Tim
                     onOpenChange={(o) => !o && setDialog(null)}
                     title={dialog.workItem ? t('addOn', { item: dialog.workItem.label.split(' ')[0] ?? '' }) : t('addTime')}
                     pickItem={!dialog.workItem}
-                    initial={{ workItem: dialog.workItem, workDate: dialog.date, minutes: null, billable: false, description: '' }}
+                    initial={{ workItem: dialog.workItem, workDate: dialog.date, minutes: null, billable: dialog.billable, description: '' }}
                     onSave={(d) => save(d)}
                 />
             )}

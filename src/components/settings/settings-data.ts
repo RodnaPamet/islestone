@@ -64,6 +64,8 @@ export interface SettingsProject {
     /** The initiative the project serves (3.2a). */
     initiativeId?: string | null;
     version?: number;
+    /** New time entries billable unless unticked (3.4d, decision 271). */
+    timeBillableByDefault?: boolean;
     archivedAt: string | null;
 }
 

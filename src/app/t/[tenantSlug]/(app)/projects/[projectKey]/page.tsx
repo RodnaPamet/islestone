@@ -3,10 +3,12 @@ import { notFound } from 'next/navigation';
 import { ProjectMilestonesLink } from '@/components/milestones/ProjectMilestonesLink';
 import { ProjectDueDate } from '@/components/projects/ProjectDueDate';
 import { ProjectRecipientListsLink } from '@/components/recipient-lists/ProjectRecipientListsLink';
+import { ProjectTimeButton } from '@/components/time/ProjectTimeButton';
 import { ProjectTemplatesButton } from '@/components/work-items/templates/ProjectTemplatesButton';
 import { WorkConfigProvider } from '@/components/work-items/data/use-work-config';
 import { WorkItemsView } from '@/components/work-items/WorkItemsView';
 import { templateAffordances } from '@/app-layer/policies/template.policies';
+import { mayManageRates } from '@/app-layer/policies/time.policies';
 import { workItemPageContext } from '@/lib/server/work-item-pages.server';
 
 /**
@@ -37,6 +39,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ tenant
                         {templateAffordances(ctx).manageItemTemplates && !project.archived && (
                             <ProjectTemplatesButton projectId={project.id} teamId={project.teamId} projectName={project.name} />
                         )}
+                        {/* A project's billable default and rates (3.4d): a rates holder's (time.rates), asked on the server. */}
+                        {mayManageRates(ctx) && <ProjectTimeButton projectId={project.id} projectName={project.name} />}
                     </>
                 }
             />

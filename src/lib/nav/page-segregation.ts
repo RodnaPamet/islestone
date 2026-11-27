@@ -55,11 +55,12 @@ export const BACK_AFFORDANCE_COHORT_TODO: readonly string[] = [] as const;
 export const MAIN_PAGES: readonly string[] = [
     '/my-work',
     '/inbox',
-    // Sub-phase 3.4b: the Time entry's My time; 3.4c its Timesheets.
+    // Sub-phase 3.4b: the Time entry's My time; 3.4c its Timesheets; 3.4d its Time totals.
     '/time',
     '/time/timesheets',
     // Sub-phase 3.5a: the Workload page (decision 297).
     '/workload',
+    '/time/totals',
     '/work-items',
     '/views',
     '/projects',

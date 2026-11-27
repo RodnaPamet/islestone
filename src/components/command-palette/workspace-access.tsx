@@ -26,14 +26,16 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { useMayOpenSettings, useMayOpenTime } from '@/components/layout/nav-config';
-import { useTenantContext } from '@/lib/tenant-context-provider';
+import { timeLandingOf, useMayOpenSettings, useMayOpenTime } from '@/components/layout/nav-config';
+import { usePermissions, useTenantContext } from '@/lib/tenant-context-provider';
 
 export interface PaletteWorkspaceAccess {
     tenantSlug: string;
     mayOpenSettings: boolean;
-    /** The Time entry's rule (the sidebar's): `time.track` or `time.approve`. */
+    /** The Time entry's rule (the sidebar's): `time.track`, `time.approve` or (3.4d) `time.view`. */
     mayOpenTime?: boolean;
+    /** Where the Time entry opens (the sidebar's `timeLandingOf`): My time, or Time totals for a `time.view` holder alone. */
+    timeLanding?: string;
 }
 
 /** The timer's actions the shell registers (3.4b). */
@@ -78,11 +80,12 @@ export function RegisterPaletteWorkspaceAccess() {
     const { tenantSlug } = useTenantContext();
     const mayOpenSettings = useMayOpenSettings();
     const mayOpenTime = useMayOpenTime();
+    const timeLanding = timeLandingOf(usePermissions());
     useEffect(() => {
         if (!setAccess) return;
-        setAccess({ tenantSlug, mayOpenSettings, mayOpenTime });
+        setAccess({ tenantSlug, mayOpenSettings, mayOpenTime, timeLanding });
         return () => setAccess(null);
-    }, [setAccess, tenantSlug, mayOpenSettings, mayOpenTime]);
+    }, [setAccess, tenantSlug, mayOpenSettings, mayOpenTime, timeLanding]);
     return null;
 }
 

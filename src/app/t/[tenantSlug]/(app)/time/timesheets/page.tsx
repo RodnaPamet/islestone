@@ -10,7 +10,7 @@ import { timesheetsPageContext } from '@/lib/server/time-pages.server';
  */
 export default async function TimesheetsPage({ params }: { params: Promise<{ tenantSlug: string }> }) {
     const { tenantSlug } = await params;
-    await timesheetsPageContext(tenantSlug);
+    const { affordances } = await timesheetsPageContext(tenantSlug);
     const t = await getTranslations('time.timesheets');
-    return <TimesheetsView title={t('title')} />;
+    return <TimesheetsView title={t('title')} totals={affordances.view} />;
 }

@@ -561,7 +561,8 @@
             "stopTimer": "Stop timer",
             "startTimerOn": "Start timer on {key}",
             "goToGoals": "Go to Goals",
-            "goToInitiatives": "Go to Initiatives"
+            "goToInitiatives": "Go to Initiatives",
+            "goToTimeTotals": "Go to Time totals"
         }
     },
     "shortcuts": {
@@ -1910,7 +1911,9 @@
             "changeInitiative": "Change initiative",
             "changeInitiativeNamed": "Change the initiative of {name}",
             "changeInitiativeTitle": "Initiative of {name}",
-            "initiativeSaved": "Initiative of {name} saved"
+            "initiativeSaved": "Initiative of {name} saved",
+            "time": "Time",
+            "timeOf": "Time settings of {name}"
         },
         "projectTemplates": {
             "title": "Project templates",
@@ -2203,7 +2206,22 @@
             "everyApprover": "Everyone who approves weeks",
             "listArchived": "An archived list (nobody is told through it)",
             "saved": "Time tracking settings saved.",
-            "failed": "The settings could not be saved."
+            "failed": "The settings could not be saved.",
+            "rates": "Rates",
+            "ratesHint": "An entry's rate is its project's, else its member's, else the workspace's, each the one in force on the entry's date. Approving a week fixes its rates. Only people who see rates see this section.",
+            "ratesLoadFailed": "The rates could not be loaded.",
+            "currency": "Currency",
+            "currencyHint": "Every rate and amount is in this currency. Choose it before the first rate.",
+            "currencyFixed": "Rates exist in this currency, so it cannot change.",
+            "pickCurrency": "Choose a currency",
+            "workspaceRate": "Workspace rate",
+            "theWorkspace": "the workspace",
+            "memberRates": "Member rates",
+            "memberRatesHint": "A member's rate applies on projects with no rate of their own.",
+            "formerMember": "A former member",
+            "noRate": "No rate",
+            "notYet": "Not yet in force",
+            "pickMember": "Choose a member"
         },
         "workload": {
             "title": "Workload",
@@ -3164,7 +3182,8 @@
             "descriptionTooLong": "A description is at most {max} characters.",
             "cancel": "Cancel",
             "save": "Save",
-            "delete": "Delete"
+            "delete": "Delete",
+            "billableDefault": "Left as it is, the project's default applies: billable on some projects, not on others."
         },
         "timer": {
             "label": "Timer on {key}",
@@ -3207,7 +3226,8 @@
         "tabs": {
             "label": "Time",
             "myTime": "My time",
-            "timesheets": "Timesheets"
+            "timesheets": "Timesheets",
+            "totals": "Time totals"
         },
         "status": {
             "notSubmitted": "This week is not submitted.",
@@ -3274,6 +3294,90 @@
             "explanationRequired": "Say why: an explanation is required.",
             "cancel": "Cancel",
             "failed": "That did not work. Try again."
+        },
+        "totals": {
+            "title": "Time totals",
+            "description": "Time recorded over a range of dates, added up by project, person, item or week. Export the entries behind it as CSV or Excel.",
+            "deletedProject": "{name} (deleted)",
+            "unknownPerson": "A former member",
+            "deletedItem": "Deleted item",
+            "hiddenItem": "Item you cannot see",
+            "weekOf": "Week of {date}",
+            "col": {
+                "project": "Project",
+                "person": "Person",
+                "item": "Item",
+                "week": "Week",
+                "time": "Time spent",
+                "billable": "Billable",
+                "entries": "Entries",
+                "amount": "Amount",
+                "amountIn": "Amount ({currency})"
+            },
+            "noRatePart": "{time} with no rate",
+            "exportFailed": "The export did not work. Try again.",
+            "allProjects": "All projects",
+            "everyone": "Everyone",
+            "billable": {
+                "all": "Billable and non-billable",
+                "billable": "Billable only",
+                "nonBillable": "Non-billable only"
+            },
+            "from": "From",
+            "to": "To",
+            "project": "Project",
+            "person": "Person",
+            "billableLabel": "Billable",
+            "groupBy": "Add up by",
+            "groupByOption": {
+                "project": "Project",
+                "person": "Person",
+                "item": "Item",
+                "week": "Week"
+            },
+            "export": "Export",
+            "exportCsv": "Export CSV",
+            "exportXlsx": "Export Excel",
+            "loadFailed": "The totals could not be loaded.",
+            "empty": "No time was recorded in this range.",
+            "resource": "group",
+            "resourcePlural": "groups",
+            "total": "Total {time}, billable {billable}, {entries, plural, one {# entry} other {# entries}}",
+            "totalAmount": "{amount}",
+            "noRateTotal": "{time} billable with no rate",
+            "noCurrency": "No currency is set, so no amounts"
+        },
+        "rates": {
+            "removed": "Rate removed",
+            "undo": "Undo",
+            "failed": "That did not work. Try again.",
+            "currencyFirst": "Choose the workspace's currency first.",
+            "pickDate": "Pick the date the rate starts.",
+            "invalidAmount": "Enter an hourly rate, such as 120 or 120.50.",
+            "none": "No rate set.",
+            "historyOf": "Rates of {of}",
+            "fromDate": "From {date}",
+            "noRate": "No rate",
+            "perHour": "{amount} an hour",
+            "remove": "Remove",
+            "removeFrom": "Remove the rate from {date}",
+            "setFor": "Set a rate for {of}",
+            "from": "From",
+            "hourlyRateIn": "Hourly rate ({currency})",
+            "hourlyRate": "Hourly rate",
+            "noRateFrom": "No rate from this date",
+            "set": "Set rate"
+        },
+        "projectTime": {
+            "failed": "That did not work. Try again.",
+            "title": "Time on {name}",
+            "description": "Whether new time on this project is billable, and its hourly rates. Only people who see rates see this.",
+            "billableByDefault": "New time is billable",
+            "billableByDefaultHint": "New time entries on this project start ticked as billable; each person can untick one while the week is open. Time already recorded keeps its own setting.",
+            "rates": "Hourly rates",
+            "ratesHint": "A project's rate comes first; without one, the member's rate applies, then the workspace's. Each rate applies from its date until the next.",
+            "open": "Time",
+            "openNamed": "Time settings of {name}"
         }
     },
     "workload": {

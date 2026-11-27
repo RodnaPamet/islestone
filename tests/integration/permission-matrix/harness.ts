@@ -313,6 +313,17 @@ async function buildFixture(name: FixtureName, w: World, prisma: PrismaClient, c
             const sheet = await submitTimesheet(ctxAs(w, caller, 'MEMBER'), { week: pastWeek(Number(nextSeq())) });
             return { timesheetId: sheet.timesheet!.id };
         }
+        // Sub-phase 3.4d: the workspace's currency set (a rate needs it), and a rate dated in the future (removable).
+        case 'currencySet': {
+            await prisma.tenantTimeSettings.upsert({ where: { tenantId: w.tenantId }, create: { tenantId: w.tenantId, currency: 'EUR' }, update: { currency: 'EUR' } });
+            return {};
+        }
+        case 'futureRate': {
+            const rate = await prisma.billableRate.create({
+                data: { tenantId: w.tenantId, level: 'WORKSPACE', hourlyRateMinor: 12_000, effectiveFrom: new Date(Date.UTC(2099, 0, 1) + Number(nextSeq()) * 86_400_000), createdByUserId: w.users.OWNER },
+            });
+            return { rateId: rate.id };
+        }
         case 'ownTimer': {
             await startTimer(ctxAs(w, caller, 'MEMBER'), { workItemId: s.sharedItemId!, timeZone: 'Europe/Sofia' });
             return {};

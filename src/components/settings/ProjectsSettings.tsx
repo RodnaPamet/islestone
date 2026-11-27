@@ -36,6 +36,7 @@ import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
 import { ProjectCreateDialog } from './ProjectCreateDialog';
 import { refusalText, SETTINGS_PATHS, type SettingsProject, useInitiatives, useProjects, useSettingsApi, useTeams } from './settings-data';
 import { SettingsFormModal } from './SettingsFormModal';
+import { ProjectTimeDialog } from '@/components/time/ProjectTimeDialog';
 import { TypedConfirmModal } from './TypedConfirmModal';
 
 const projectPath = (id: string) => `/projects/${encodeURIComponent(id)}`;
@@ -47,11 +48,14 @@ export function ProjectsSettings({
     affordances,
     templates = NO_TEMPLATES,
     goals = NO_GOALS,
+    rates = false,
 }: {
     affordances: WorkConfigAffordances;
     templates?: TemplateAffordances;
     /** A project's initiative (3.2a): shown with `view`, changed with `linkProject`, asked on the server. */
     goals?: GoalAffordances;
+    /** A project's billable default and rates (3.4d, `time.rates`), asked on the server. */
+    rates?: boolean;
 }) {
     const t = useTranslations('settings');
     const toast = useToast();
@@ -65,6 +69,7 @@ export function ProjectsSettings({
     const [dueDate, setDueDate] = useState<string | null>(null);
     const [archiving, setArchiving] = useState<SettingsProject | null>(null);
     const [fieldsOf, setFieldsOf] = useState<SettingsProject | null>(null);
+    const [timeOf, setTimeOf] = useState<SettingsProject | null>(null);
     const [name, setName] = useState('');
     const [savingAsTemplate, setSavingAsTemplate] = useState<SettingsProject | null>(null);
     const [templateName, setTemplateName] = useState('');
@@ -85,7 +90,7 @@ export function ProjectsSettings({
                 toast.error(refusalText(err, t('common.failed')));
             }
         };
-        const showActions = affordances.editProject || affordances.archiveProject || affordances.manageCustomFields || templates.manageProjectTemplates || goals.linkProject;
+        const showActions = affordances.editProject || affordances.archiveProject || affordances.manageCustomFields || templates.manageProjectTemplates || goals.linkProject || rates;
         return createColumns<SettingsProject>([
             {
                 id: 'name',
@@ -179,6 +184,15 @@ export function ProjectsSettings({
                                               onClick={() => setFieldsOf(project)}
                                           />
                                       )}
+                                      {rates && (
+                                          <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              text={t('projects.time')}
+                                              aria-label={t('projects.timeOf', { name: project.name })}
+                                              onClick={() => setTimeOf(project)}
+                                          />
+                                      )}
                                       {templates.manageProjectTemplates && (
                                           <Button
                                               variant="ghost"
@@ -217,7 +231,7 @@ export function ProjectsSettings({
                   ]
                 : []),
         ]);
-    }, [t, tenantHref, teamName, initiativeName, affordances, templates, goals, send, revalidate, toast]);
+    }, [t, tenantHref, teamName, initiativeName, affordances, templates, goals, rates, send, revalidate, toast]);
 
     const saveInitiative = async (): Promise<string | null> => {
         const project = linking;
@@ -366,6 +380,7 @@ export function ProjectsSettings({
                     <DatePicker id="project-due-date-input" value={parseYMD(dueDate)} onChange={(d) => setDueDate(toYMD(d))} clearable />
                 </FormField>
             </SettingsFormModal>
+            {timeOf && <ProjectTimeDialog project={timeOf} open onOpenChange={(open) => !open && setTimeOf(null)} />}
             {fieldsOf && (
                 <CustomFieldsManager
                     projectId={fieldsOf.id}

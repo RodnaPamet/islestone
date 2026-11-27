@@ -137,6 +137,8 @@ export type FixtureName =
     | 'freshRequest'
     | 'declinedRequest'
     | 'freshBlocked'
+    | 'currencySet'
+    | 'futureRate'
     | 'ownNotification'
     | 'othersNotification'
     | 'freshInvite'
@@ -246,6 +248,8 @@ const OTHERS_TIME_OFF = c('ok', 'ok', 'refused', 'refused', g('denied'), 'refuse
  */
 const OTHERS_TYPE = c('ok', 'ok', 'empty', 'empty', g('denied'), 'empty', 'empty');
 
+/** `time.rates` (decisions 265 and 274): OWNER and ADMIN; never a Member or Viewer, nor either custom role. */
+const RATES = c('ok', 'ok', 'denied', 'denied', g('denied'), 'denied', 'denied');
 /** A write into an archived project by a caller the key admits. */
 const ARCHIVED_ITEM_EDIT = c('archived', 'archived', 'archived', 'denied', g('denied'), 'denied', 'denied');
 
@@ -762,6 +766,28 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
             route: 'timesheets/[timesheetId]/reopen/route.ts', method: 'POST', key: 'time.approve', subject: "a member's approved week, reopened", fixture: 'annApprovedTimesheet',
             body: () => ({ explanation: 'Wrong project on Tuesday.' }), expect: APPROVE,
         },
+        // Sub-phase 3.4d (decisions 271 to 275): money under time.rates (OWNER and ADMIN); Time totals and the
+        // export under time.view (every workspace-wide role), amounts in them only for time.rates.
+        { route: 'billable-rates/route.ts', method: 'GET', key: 'time.rates', subject: "every rate of the workspace and its currency", expect: RATES },
+        {
+            route: 'billable-rates/workspace/route.ts', method: 'PUT', key: 'time.rates', subject: "the workspace's rate from a date", fixture: 'currencySet',
+            body: (s) => ({ effectiveFrom: day(n(s)), hourlyRateMinor: 10_000 }), expect: RATES,
+        },
+        { route: 'billable-rates/[rateId]/route.ts', method: 'DELETE', key: 'time.rates', subject: 'a rate whose date has not come, removed', fixture: 'futureRate', expect: RATES },
+        {
+            route: 'projects/[projectId]/billable-rates/route.ts', method: 'PUT', key: 'time.rates', subject: "a visible project's rate from a date", fixture: 'currencySet',
+            body: (s) => ({ effectiveFrom: day(n(s)), hourlyRateMinor: 15_000 }), expect: RATES,
+        },
+        {
+            route: 'projects/[projectId]/billable-default/route.ts', method: 'PUT', key: 'time.rates', subject: "a visible project's new time made billable by default",
+            body: () => ({ billableByDefault: true }), expect: RATES,
+        },
+        {
+            route: 'members/[userId]/billable-rates/route.ts', method: 'PUT', key: 'time.rates', subject: "an active member's rate from a date", fixture: 'currencySet',
+            params: (s) => ({ userId: s.annId! }), body: (s) => ({ effectiveFrom: day(n(s)), hourlyRateMinor: 9_000 }), expect: RATES,
+        },
+        { route: 'time-totals/route.ts', method: 'GET', key: 'time.view', subject: 'the totals of a month, by project', query: () => ({ from: day(0), to: day(27), groupBy: 'project' }), expect: READ },
+        { route: 'time-totals/export/route.ts', method: 'GET', key: 'time.view', subject: 'the entries of a month as CSV', query: () => ({ from: day(0), to: day(27), format: 'csv' }), expect: READ },
     ],
 
     // Sub-phase 3.5a (decisions 284 to 300): workload.view and workload.time_off for every built-in role but a

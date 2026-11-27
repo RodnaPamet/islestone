@@ -28,9 +28,10 @@ import type { NavGlyph } from './nav-item';
 export const NAV_PATHS = {
     myWork: '/my-work',
     inbox: '/inbox',
-    // Sub-phase 3.4b: one sidebar entry, Time, over My time; 3.4c adds Timesheets (3.4d Time totals).
+    // Sub-phase 3.4b: one sidebar entry, Time, over My time; 3.4c adds Timesheets, 3.4d Time totals.
     time: '/time',
     timesheets: '/time/timesheets',
+    timeTotals: '/time/totals',
     workItems: '/work-items',
     projects: '/projects',
     cycles: '/cycles',
@@ -115,7 +116,7 @@ export function useNavSections(): NavSectionDef[] {
                 // (and, from 3.4c, those who approve weeks), current on every page under /time.
                 {
                     key: 'time',
-                    href: tenantHref(NAV_PATHS.time),
+                    href: tenantHref(timeLandingOf(perms)),
                     label: t('time'),
                     icon: Timer2,
                     visible: mayOpenTimeOf(perms),
@@ -178,9 +179,18 @@ export function useMayOpenSettings(): boolean {
     return mayOpenSettings(perms, membershipRole);
 }
 
-/** The Time entry's rule (3.4b): a holder of `time.track` or `time.approve`. The page asks the same on the server. */
+/**
+ * The Time entry's rule (3.4b): a holder of `time.track` or `time.approve`,
+ * and from 3.4d of `time.view` (Time totals). The pages ask the same on the
+ * server.
+ */
 export function mayOpenTimeOf(perms: PermissionSet): boolean {
-    return perms.time?.track === true || perms.time?.approve === true;
+    return perms.time?.track === true || perms.time?.approve === true || perms.time?.view === true;
+}
+
+/** Where the Time entry opens: My time for whoever records or approves time, else Time totals (a `time.view` holder alone, 3.4d). */
+export function timeLandingOf(perms: PermissionSet): string {
+    return perms.time?.track === true || perms.time?.approve === true ? NAV_PATHS.time : NAV_PATHS.timeTotals;
 }
 
 /** Whether the current member may open the Time entry (`mayOpenTimeOf`). */
