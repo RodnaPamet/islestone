@@ -8,6 +8,10 @@
  *     statement never cascades a whole workspace. Relations, labels,
  *     comments, watchers and links cascade from `WorkItem`.
  *   - A purged project's items go first, in batches, then the project row.
+ *     A project time was recorded in is held, items and all, while its time
+ *     entries remain (3.4b; decisions 261 and 277): an entry keeps its
+ *     project. An item purged on its own leaves its entries, which then name
+ *     no item ("Deleted item").
  *   - `ProjectKeySequence`, `ProjectKeyPrefix` and `WorkItemKeyAlias` have no
  *     foreign key to what is purged and survive: numbers and prefixes are
  *     never reused.

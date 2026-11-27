@@ -1,0 +1,63 @@
+// Sub-phase 3.4b: time entries and timers (docs/porting/maps/3.4.md, "Time
+// entries and timers (3.4b)"; ADR 0012; owner decisions 260 to 267, 277 and
+// 278; docs/time-tracking.md).
+//
+//   `TimeEntry` — a person's own statement of time spent on one work item on
+//   one date. A running timer is the person's one entry whose `minutes` is
+//   NULL (decision 262; the partial unique in the migration). Not a work item,
+//   not an activity, not search-indexed (ADR 0008 unchanged).
+//
+// What Prisma cannot declare lives in migration
+// `20261221120000_time_entries`: the partial unique of one timer per person
+// per workspace, the CHECKs, and the work item's link `ON DELETE SET NULL
+// ("workItemId")`. 3.4c adds the week's freeze, 3.4d the frozen rates.
+
+model TimeEntry {
+  id              String          @id @default(cuid())
+  tenantId        String
+  /// The person whose time it is. FK → User, RESTRICT: users are not deleted
+  /// before 8.3, whose user deletion must handle time entries. No FK to the
+  /// membership: removing a member keeps their entries (decision 277).
+  userId          String
+  /// FK `(workItemId, tenantId)` → `WorkItem`, `ON DELETE SET NULL
+  /// ("workItemId")` in SQL: a purged item leaves the entry, shown as
+  /// "Deleted item" (decision 261).
+  workItemId      String?
+  /// The project the time was recorded in, FK `(projectId, tenantId)` →
+  /// `Project`. Not moved when the item moves (decision 261).
+  projectId       String
+  /// The day the time counts on, date-only: a timer's is the day it started
+  /// in the person's time zone (decision 263). Never passed through a zone
+  /// after it is set.
+  workDate        DateTime        @db.Date
+  /// 1 to 1,440 (CHECK). NULL only while the timer is on. Never rounded
+  /// (decision 264).
+  minutes         Int?
+  /// When the timer started; set for TIMER entries only (CHECK).
+  timerStartedAt  DateTime?
+  source          TimeEntrySource
+  billable        Boolean         @default(false)
+  /// ENCRYPTED (manifest), sanitised, at most 2,000 characters (checked on the
+  /// plaintext in the usecase).
+  description     String?
+  /// Optimistic concurrency for edits (`If-Match`).
+  version         Int             @default(1)
+  /// Who wrote it: always the person whose time it is (decision 267; a CHECK
+  /// holds it equal to `userId`).
+  createdByUserId String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     User      @relation("TimeEntryPerson", fields: [userId], references: [id], onDelete: Restrict)
+  workItem WorkItem? @relation(fields: [workItemId, tenantId], references: [id, tenantId], onDelete: SetNull, onUpdate: NoAction)
+  project  Project   @relation(fields: [projectId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([id, tenantId])
+  /// A person's week (My time) and their day's total.
+  @@index([tenantId, userId, workDate])
+  /// An item's time: its total and its entries, newest first.
+  @@index([tenantId, workItemId, workDate])
+  /// A project's time (3.4d's totals).
+  @@index([tenantId, projectId, workDate])
+}

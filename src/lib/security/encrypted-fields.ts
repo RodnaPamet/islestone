@@ -112,6 +112,11 @@ export const ENCRYPTED_FIELDS: Readonly<Record<string, readonly string[]>> = {
     // DEK so both key rotations re-encrypt it. A secret, never rendered,
     // searched, logged or audited; NULL once revoked or torn down.
     CalendarConnection: ['tokenEncrypted'],
+    // Time entries (sub-phase 3.4b; ADR 0012; docs/porting/maps/3.4.md,
+    // "Privacy, audit and encryption"): what a person says they did, sanitised
+    // before it is stored, never audited, logged or search-indexed (ADR 0008).
+    // Minutes, dates and the billable flag stay plaintext (totals sum them).
+    TimeEntry: ['description'],
 } as const;
 
 /** Set of model names with at least one encrypted field. Fast-path check. */

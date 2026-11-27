@@ -76,6 +76,8 @@ const RICH_TEXT_COVERAGE: Readonly<
     IntakeFollowUp: { usecases: ['src/app-layer/usecases/intake-request.ts'], sanitizer: 'sanitizePlainText' },
     // Sub-phase 2.8a: a reviewer's response text (decision 157).
     WorkItemReviewer: { usecases: ['src/app-layer/usecases/review.ts'], sanitizer: 'sanitizePlainText' },
+    // Sub-phase 3.4b: a time entry's description, written only by its person (decision 267).
+    TimeEntry: { usecases: ['src/app-layer/usecases/time-entry.ts'], sanitizer: 'sanitizePlainText' },
 };
 
 /**
@@ -186,7 +188,7 @@ describe('rich-text sanitiser coverage — structural completeness', () => {
         // The population is the two bodies sub-phase 2.2 encrypts and the
         // two template columns of 2.5c and the intake request of 2.6a; another
         // encrypted free-text model must be classified before it lands.
-        expect(coverageEntries.map(([model]) => model).sort()).toEqual(['Comment', 'Goal', 'Initiative', 'IntakeFollowUp', 'IntakeRequest', 'ProjectTemplate', 'WorkItem', 'WorkItemReviewer', 'WorkItemTemplate']);
+        expect(coverageEntries.map(([model]) => model).sort()).toEqual(['Comment', 'Goal', 'Initiative', 'IntakeFollowUp', 'IntakeRequest', 'ProjectTemplate', 'TimeEntry', 'WorkItem', 'WorkItemReviewer', 'WorkItemTemplate']);
         expect(Object.keys(NON_RICH_TEXT_MODELS)).toEqual(['TenantSecuritySettings', 'CalendarConnection']);
     });
 

@@ -238,6 +238,13 @@ export function recordCalendarSyncInbound(attrs: { provider: 'GOOGLE' | 'MICROSO
     });
 }
 
+// ─── Time tracking (sub-phase 3.4b; ADR 0012) ───
+
+/** A time entry recorded, typed in or timed; never a workspace, a person or an amount. */
+export function recordTimeEntryRecorded(attrs: { source: 'manual' | 'timer' }): void {
+    counter('time.entries.recorded', 'Time entries recorded by how they were made').add(1, { source: attrs.source });
+}
+
 // ════════════════════════════════════════════════════════════════════
 // OBSERVABLE GAUGES — active users (DAU / MAU), grouped by plan.
 //

@@ -103,6 +103,8 @@ model Tenant {
   calendarSettings                TenantCalendarSettings?
   calendarConnections             CalendarConnection[]
   calendarSyncedEvents            CalendarSyncedEvent[]
+  // Sub-phase 3.4b: time entries (ADR 0012).
+  timeEntries                     TimeEntry[]
 
   teams                  Team[]
   workflowStates         WorkflowState[]
@@ -253,4 +255,7 @@ model User {
 
   // Roadmap 3.3b: the member's calendar connections (ADR 0011).
   calendarConnections CalendarConnection[]
+
+  // Sub-phase 3.4b: the person's own time entries (ADR 0012).
+  timeEntries TimeEntry[] @relation("TimeEntryPerson")
 }

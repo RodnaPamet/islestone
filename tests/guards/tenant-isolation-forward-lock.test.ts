@@ -56,6 +56,8 @@ const ISOLATION_TESTED: Readonly<Record<string, string>> = {
     TenantCalendarSettings: 'tests/integration/calendar-sync-isolation.test.ts',
     CalendarConnection: 'tests/integration/calendar-sync-isolation.test.ts',
     CalendarSyncedEvent: 'tests/integration/calendar-sync-isolation.test.ts',
+    // Sub-phase 3.4b.
+    TimeEntry: 'tests/integration/time-entries.test.ts',
     // Sub-phase 3.2a.
     Goal: 'tests/integration/goals.test.ts',
     Initiative: 'tests/integration/goals.test.ts',

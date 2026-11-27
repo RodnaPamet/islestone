@@ -23,15 +23,15 @@
 /// `WorkflowState` rows) and its projects. Deleting a team is refused while
 /// it has projects.
 model Team {
-  id        String   @id @default(cuid())
-  tenantId  String
-  name      String
+  id           String        @id @default(cuid())
+  tenantId     String
+  name         String
   /// The unit the team estimates in (3.4a, owner decision 257): POINTS, HOURS,
   /// or NULL when it does not estimate (the default). Its items' estimate in
   /// the other unit is kept, hidden and uncounted; changing it moves no value.
   estimateUnit EstimateUnit?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   workflowStates   WorkflowState[]
@@ -119,6 +119,8 @@ model Project {
   intakeBlockedSenders IntakeBlockedSender[]
   intakeInboundEmails  IntakeInboundEmail[]
   recipientLists       RecipientList[]
+  /// Time recorded in this project (3.4b); kept when its item moves (decision 261).
+  timeEntries          TimeEntry[]
 
   @@unique([id, tenantId])
   /// Target of WorkItem's composite FK: an item's team is its project's team.
@@ -321,6 +323,8 @@ model WorkItem {
   /// Its review rounds and reviewer rows (2.8a, ADR 0009).
   reviewRounds      WorkItemReviewRound[]
   reviewers         WorkItemReviewer[]
+  /// Time recorded on it (3.4b, ADR 0012).
+  timeEntries       TimeEntry[]
 
   @@unique([tenantId, projectId, number])
   @@unique([id, tenantId])

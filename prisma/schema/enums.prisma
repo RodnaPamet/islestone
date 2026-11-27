@@ -424,3 +424,11 @@ enum EstimateUnit {
   POINTS
   HOURS
 }
+
+/// How a time entry was made (sub-phase 3.4b; ADR 0012 §2, ADR 0006 "Time
+/// entry"; owner decisions 260 to 264): typed in, or timed. A TIMER entry
+/// whose `minutes` is NULL is the person's running timer (decision 262).
+enum TimeEntrySource {
+  MANUAL
+  TIMER
+}

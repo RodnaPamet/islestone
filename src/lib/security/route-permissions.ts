@@ -825,6 +825,38 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'work_items.edit',
         note: "Name an item's goal directly, or clear it (decision 211; naming one also asks goals.view).",
     },
+    // ── Time entries and timers (sub-phase 3.4b; owner decisions 260 to 267) ──
+    // The timer's paths sit above the entry's, which would match `timer` as an id.
+    {
+        path: new RegExp(`^${T}\\/time-entries\\/timer$`),
+        methods: ['GET', 'POST'],
+        permission: 'time.track',
+        note: "Read one's running timer, or start one (stopping and recording the timer that was on; decision 262).",
+    },
+    {
+        path: new RegExp(`^${T}\\/time-entries\\/timer\\/stop$`),
+        methods: ['POST'],
+        permission: 'time.track',
+        note: "Stop one's timer: at most 12 hours, or fewer minutes stated (decision 263).",
+    },
+    {
+        path: new RegExp(`^${T}\\/time-entries$`),
+        methods: ['GET', 'POST'],
+        permission: 'time.track',
+        note: "One's week (another member's also asks time.approve, decision 266), or add time to an item, a person only (decision 278).",
+    },
+    {
+        path: new RegExp(`^${T}\\/time-entries\\/[^\\/]+$`),
+        methods: ['PATCH', 'DELETE'],
+        permission: 'time.track',
+        note: "Change or delete one's own entry (decisions 267 and 277); another person's is a 404.",
+    },
+    {
+        path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/time$`),
+        methods: ['GET'],
+        permission: 'work_items.view',
+        note: "An item's time: everyone's with time.view, one's own with time.track (decision 266), asked in the usecase.",
+    },
     // ── Estimates (sub-phase 3.4a; owner decision 257) ───────────────
     {
         path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/estimate$`),

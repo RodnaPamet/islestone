@@ -48,6 +48,7 @@ import { getWorkItemReview, sendWorkItemReview, setWorkItemReviewSteps } from '@
 import { createSavedView } from '@/app-layer/usecases/saved-view';
 import { createTeam, updateTeam } from '@/app-layer/usecases/team';
 import { createInviteToken } from '@/app-layer/usecases/tenant-invites';
+import { addTimeEntry, startTimer } from '@/app-layer/usecases/time-entry';
 import { assignWorkItem, createWorkItem, deleteWorkItem } from '@/app-layer/usecases/work-item';
 import { markWorkItemAnswer } from '@/app-layer/usecases/work-item-answer';
 import { addComment, addWatcher, addWorkItemLabels, addWorkItemLink } from '@/app-layer/usecases/work-item-collab';
@@ -65,7 +66,7 @@ import { createTenantWithDek } from '@/lib/security/tenant-key-manager';
 import { prismaTestClient, resetDatabase } from '../../helpers/db';
 import { makeRequestContext } from '../../helpers/make-context';
 
-import { MATRIX, MATRIX_ROLES, TENANT_API_ROOT, outcomeOf, type FixtureName, type MatrixRole, type MatrixRoot, type MatrixRow, type Subject } from './table';
+import { MATRIX, MATRIX_ROLES, TENANT_API_ROOT, day, outcomeOf, type FixtureName, type MatrixRole, type MatrixRoot, type MatrixRow, type Subject } from './table';
 
 type Handler = (req: NextRequest, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>;
 
@@ -277,6 +278,19 @@ async function buildFixture(name: FixtureName, w: World, prisma: PrismaClient, c
             const id = await freshItem(w);
             await addWatcher(owner, id, w.users.ANN);
             return { workItemId: id, userId: w.users.ANN };
+        }
+        case 'ownTimeEntry': {
+            // Written while the caller could record time (a MEMBER context with their id), on a day of its own.
+            const entry = await addTimeEntry(ctxAs(w, caller, 'MEMBER'), { workItemId: s.sharedItemId!, workDate: day(Number(nextSeq())), minutes: 10 });
+            return { timeEntryId: entry.id };
+        }
+        case 'othersTimeEntry': {
+            const entry = await addTimeEntry(ctxAs(w, 'ANN'), { workItemId: s.sharedItemId!, workDate: day(Number(nextSeq())), minutes: 10 });
+            return { timeEntryId: entry.id };
+        }
+        case 'ownTimer': {
+            await startTimer(ctxAs(w, caller, 'MEMBER'), { workItemId: s.sharedItemId!, timeZone: 'Europe/Sofia' });
+            return {};
         }
         case 'ownComment': {
             // Written while the caller could comment (a MEMBER context with their id).

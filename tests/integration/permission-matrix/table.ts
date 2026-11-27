@@ -151,10 +151,13 @@ export type FixtureName =
     | 'ownCalendarConnection'
     | 'ownRemovedCalendar'
     | 'keyRotationJob'
-    | 'dekRotationJob';
+    | 'dekRotationJob'
+    | 'ownTimeEntry'
+    | 'othersTimeEntry'
+    | 'ownTimer';
 
 /** The matrix's route roots: one integration file each (map part 3, "Shape"). */
-export type MatrixRoot = 'work-items' | 'reviews' | 'projects' | 'configuration' | 'intake' | 'notifications' | 'admin-security';
+export type MatrixRoot = 'work-items' | 'reviews' | 'projects' | 'configuration' | 'intake' | 'notifications' | 'admin-security' | 'time';
 
 export interface MatrixRow {
     /** Relative to `src/app/api/t/[tenantSlug]/`. */
@@ -214,6 +217,11 @@ const INTAKE = c('ok', 'ok', 'ok', 'denied', g('denied'), 'ok', 'denied');
  * a GUEST too. Decision 204 keeps exactly these open to a guest before 8.4.
  */
 const SELF = c('ok', 'ok', 'ok', 'ok', g('ok'), 'ok', 'ok');
+/**
+ * `time.track` (decision 265): OWNER, ADMIN, MEMBER and the narrowed member (time never rides on
+ * `work_items.edit`); a VIEWER views time but records none, and the widened viewer neither.
+ */
+const TRACK = c('ok', 'ok', 'ok', 'denied', g('denied'), 'ok', 'denied');
 /** A write into an archived project by a caller the key admits. */
 const ARCHIVED_ITEM_EDIT = c('archived', 'archived', 'archived', 'denied', g('denied'), 'denied', 'denied');
 
@@ -654,6 +662,41 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
         { route: 'security/sessions/revoke-current/route.ts', method: 'POST', key: null, subject: "the caller's other sessions", expect: SELF },
         { route: 'security/sessions/revoke-all/route.ts', method: 'POST', key: 'admin.members', subject: "every member's sessions", expect: ADMIN },
         { route: 'security/sessions/revoke-user/route.ts', method: 'POST', key: 'admin.members', subject: "a member's sessions", body: (s) => ({ targetUserId: s.annId }), expect: ADMIN },
+    ],
+
+    // Sub-phase 3.4b (decisions 265 to 267 and 278): time.track records one's own time; nothing rides on
+    // work_items.edit, so the narrowed member records time and a Viewer does not.
+    time: [
+        { route: 'time-entries/route.ts', method: 'GET', key: 'time.track', subject: "the caller's own week", query: (s) => ({ week: day(Number(s.seq)) }), expect: TRACK },
+        {
+            route: 'time-entries/route.ts', method: 'GET', key: 'time.track', subject: "another member's week (decision 266: time.approve)",
+            query: (s) => ({ week: day(Number(s.seq)), userId: s.annId }),
+            expect: c('ok', 'ok', 'refused', 'denied', g('denied'), 'refused', 'denied'),
+        },
+        {
+            route: 'time-entries/route.ts', method: 'POST', key: 'time.track', subject: 'time added to a visible item',
+            body: (s) => ({ workItemId: s.sharedItemId, workDate: day(Number(s.seq)), minutes: 15 }), expect: TRACK,
+        },
+        {
+            route: 'time-entries/route.ts', method: 'POST', key: 'time.track', subject: 'time added to an item in an archived project (decision 261)',
+            body: (s) => ({ workItemId: s.archivedItemId, workDate: day(Number(s.seq)), minutes: 15 }),
+            expect: c('archived', 'archived', 'archived', 'denied', g('denied'), 'archived', 'denied'),
+        },
+        { route: 'time-entries/[timeEntryId]/route.ts', method: 'PATCH', key: 'time.track', subject: "the caller's own entry", fixture: 'ownTimeEntry', body: () => ({ minutes: 20 }), expect: TRACK },
+        {
+            route: 'time-entries/[timeEntryId]/route.ts', method: 'PATCH', key: 'time.track', subject: "another member's entry (decision 267: a 404)", fixture: 'othersTimeEntry', body: () => ({ minutes: 20 }),
+            expect: c('hidden', 'hidden', 'hidden', 'denied', g('denied'), 'hidden', 'denied'),
+        },
+        { route: 'time-entries/[timeEntryId]/route.ts', method: 'DELETE', key: 'time.track', subject: "the caller's own entry", fixture: 'ownTimeEntry', expect: TRACK },
+        {
+            route: 'time-entries/[timeEntryId]/route.ts', method: 'DELETE', key: 'time.track', subject: "another member's entry (decision 267: a 404)", fixture: 'othersTimeEntry',
+            expect: c('hidden', 'hidden', 'hidden', 'denied', g('denied'), 'hidden', 'denied'),
+        },
+        { route: 'time-entries/timer/route.ts', method: 'GET', key: 'time.track', subject: "the caller's running timer", fixture: 'ownTimer', expect: TRACK },
+        { route: 'time-entries/timer/route.ts', method: 'POST', key: 'time.track', subject: 'a timer started on a visible item', body: (s) => ({ workItemId: s.sharedItemId, timeZone: 'Europe/Sofia' }), expect: TRACK },
+        { route: 'time-entries/timer/stop/route.ts', method: 'POST', key: 'time.track', subject: "the caller's running timer, stopped", fixture: 'ownTimer', body: () => ({}), expect: TRACK },
+        // An item's time (decision 266): read under work_items.view; time.view (every built-in role but a guest) or time.track.
+        { route: `${W}/time/route.ts`, method: 'GET', key: 'work_items.view', subject: "an item's time", expect: READ },
     ],
 };
 

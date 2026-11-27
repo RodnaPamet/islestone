@@ -10,7 +10,7 @@
  */
 import type { Role } from '@prisma/client';
 
-import { PERMISSION_SCHEMA, effectiveRoleOfMembership, getPermissionsForRole, permissionsForMembership } from '@/lib/permissions';
+import { PERMISSION_SCHEMA, effectiveRoleOfMembership, getPermissionsForRole, parsePermissionsJson, permissionsForMembership } from '@/lib/permissions';
 import type { PermissionSet } from '@/lib/permissions';
 import { hasPermission } from '@/lib/security/permission-middleware';
 
@@ -41,6 +41,7 @@ describe('the PermissionSet schema', () => {
             'cycles',
             'intake',
             'goals',
+            'time',
             'docs',
             'canvas',
             'automations',
@@ -102,6 +103,8 @@ describe('the role matrix', () => {
                 'intake.triage',
                 'goals.view',
                 'goals.manage',
+                'time.view',
+                'time.track',
                 'docs.view',
                 'docs.create',
                 'docs.edit',
@@ -126,6 +129,7 @@ describe('the role matrix', () => {
                 'views.edit',
                 'cycles.view',
                 'goals.view',
+                'time.view',
                 'docs.view',
                 'canvas.view',
                 'agents.view',
@@ -165,6 +169,21 @@ describe('the role matrix', () => {
         expect(goalKeys('MEMBER')).toEqual(['goals.manage', 'goals.view']);
         expect(goalKeys('VIEWER')).toEqual(['goals.view']);
         expect(goalKeys('GUEST')).toEqual([]);
+    });
+
+    it('time (decision 265): Owners and Admins all four keys, Members view and track, Viewers view, Guests nothing', () => {
+        const timeKeys = (role: Role) => granted(getPermissionsForRole(role)).filter((k) => k.startsWith('time.'));
+        expect(timeKeys('OWNER')).toEqual(['time.approve', 'time.rates', 'time.track', 'time.view']);
+        expect(timeKeys('ADMIN')).toEqual(['time.approve', 'time.rates', 'time.track', 'time.view']);
+        expect(timeKeys('MEMBER')).toEqual(['time.track', 'time.view']);
+        expect(timeKeys('VIEWER')).toEqual(['time.view']);
+        expect(timeKeys('GUEST')).toEqual([]);
+    });
+
+    it('a custom role stored before 3.4 has no time domain and takes its base role time keys', () => {
+        const before = Object.fromEntries(Object.entries(getPermissionsForRole('MEMBER')).filter(([d]) => d !== 'time'));
+        expect(parsePermissionsJson(before, 'MEMBER').time).toEqual({ view: true, track: true, approve: false, rates: false });
+        expect(parsePermissionsJson(before, 'VIEWER').time).toEqual({ view: true, track: false, approve: false, rates: false });
     });
 
     it('no role but OWNER and ADMIN holds an admin or billing key', () => {
@@ -211,6 +230,15 @@ describe('hasPermission over the matrix', () => {
         ['VIEWER', 'goals.view', true],
         ['VIEWER', 'goals.manage', false],
         ['GUEST', 'goals.view', false],
+        ['MEMBER', 'time.track', true],
+        ['MEMBER', 'time.approve', false],
+        ['MEMBER', 'time.rates', false],
+        ['VIEWER', 'time.view', true],
+        ['VIEWER', 'time.track', false],
+        ['ADMIN', 'time.approve', true],
+        ['ADMIN', 'time.rates', true],
+        ['GUEST', 'time.view', false],
+        ['GUEST', 'time.track', false],
     ] as const)('%s → %s is %s', (role, key, expected) => {
         expect(hasPermission(getPermissionsForRole(role), key)).toBe(expected);
     });

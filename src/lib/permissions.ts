@@ -40,6 +40,14 @@ export type PermissionSet = {
      * (`work_items.edit`); naming one also asks `goals.view`.
      */
     goals: { view: boolean; manage: boolean };
+    /**
+     * Time tracking (sub-phase 3.4, owner decision 265; ADR 0012): `view`
+     * other people's time on items one can see (decision 266), `track` one's
+     * own entries, timer and week, `approve` other members' weeks and read any
+     * member's week (3.4c), `rates` see and set rates, billable defaults and
+     * amounts (3.4d). Never `billing`, which is 8.1's subscription.
+     */
+    time: { view: boolean; track: boolean; approve: boolean; rates: boolean };
     docs: { view: boolean; create: boolean; edit: boolean };
     canvas: { view: boolean; edit: boolean };
     automations: { view: boolean; manage: boolean };
@@ -78,6 +86,7 @@ export const PERMISSION_SCHEMA = {
     cycles: ['view', 'manage'],
     intake: ['view', 'triage', 'manage'],
     goals: ['view', 'manage'],
+    time: ['view', 'track', 'approve', 'rates'],
     docs: ['view', 'create', 'edit'],
     canvas: ['view', 'edit'],
     automations: ['view', 'manage'],
@@ -122,10 +131,10 @@ const ALL_DOMAINS: Grants = Object.fromEntries(
  *   MEMBER  does the work: projects view/create/edit, work items
  *           view/create/edit/assign/comment, views view/create/edit/share,
  *           cycles, intake view/triage (decision 92), goals view/manage
- *           (decision 213), docs view/create/edit,
+ *           (decision 213), time view/track (decision 265), docs view/create/edit,
  *           canvas view/edit, automations and
  *           integrations view, agents view/delegate, workspace view.
- *   VIEWER  reads every project (`view` on the work domains, goals and agents) and
+ *   VIEWER  reads every project (`view` on the work domains, goals, time and agents) and
  *           saves personal views: `views.create` and `views.edit`, never
  *           `views.share`, so a shared view stays with the roles that hold it
  *           (owner decision 60, 2026-11-20).
@@ -166,6 +175,7 @@ export function getPermissionsForRole(role: Role): PermissionSet {
                 cycles: ['view', 'manage'],
                 intake: ['view', 'triage'],
                 goals: ['view', 'manage'],
+                time: ['view', 'track'],
                 docs: ['view', 'create', 'edit'],
                 canvas: ['view', 'edit'],
                 automations: ['view'],
@@ -208,6 +218,7 @@ function viewerPermissions(): PermissionSet {
         views: ['view', 'create', 'edit'],
         cycles: ['view'],
         goals: ['view'],
+        time: ['view'],
         docs: ['view'],
         canvas: ['view'],
         agents: ['view'],
