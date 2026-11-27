@@ -29,6 +29,7 @@ Roadmap 3.1 asks for a timeline view on SVAR React Gantt's MIT core and an in-ho
 - The browser bundle carries SVAR's code without its notice (decision 199).
 - A scope over 5,000 items is refused, never truncated; the engine's own limit (20,000) protects 7.5 and other server callers.
 - A person's capacity (roadmap 3.5, ADR 0013, decision 285) counts on a working calendar too: the workspace's, or a team's named on their capacity. Time off lowers that capacity only; it moves no item's working days (decision 290), so this decision is unchanged by it.
+- Analytics (roadmap 3.6, ADR 0014, decisions 313, 316 and 318) count on working calendars too: durations as elapsed working time on each item's own calendar, day boundaries in the scope's calendar's zone, and the forecast's days on the scope's calendar through `addWorkingDays`. The cycle burn-up's day boundary moves to its team's calendar zone (it defaulted to `NOTIFICATIONS_TZ`, which a calendar's zone defaults to). No rule of the engine changes.
 
 ## What would change this decision
 

@@ -1,6 +1,6 @@
 # 0002 — Work item model
 
-Status: Accepted (owner decisions, 2026-11-19; amended by owner decisions 100 to 119, 2026-11-20: field sets in §1 and §7, waiting on in §14, the marked answer in §15; and by owner decisions 148 to 165, 2026-11-20: review steps in §1, §3 and §14, ADR 0009; and by owner decisions 183, 188 and 200, 2026-11-20: blocks read as finish-to-start in §6 and the project's due date in §16, ADR 0010; and by owner decisions 205 to 224, 2026-11-21: an item's direct goal, health and the lifecycle in §2, goals, initiatives and progress in §17; and by owner decisions 255 to 279, 2026-11-26: the team's estimate unit and the item's two estimate columns in §12, estimates and time in §18, ADR 0012)
+Status: Accepted (owner decisions, 2026-11-19; amended by owner decisions 100 to 119, 2026-11-20: field sets in §1 and §7, waiting on in §14, the marked answer in §15; and by owner decisions 148 to 165, 2026-11-20: review steps in §1, §3 and §14, ADR 0009; and by owner decisions 183, 188 and 200, 2026-11-20: blocks read as finish-to-start in §6 and the project's due date in §16, ADR 0010; and by owner decisions 205 to 224, 2026-11-21: an item's direct goal, health and the lifecycle in §2, goals, initiatives and progress in §17; and by owner decisions 255 to 279, 2026-11-26: the team's estimate unit and the item's two estimate columns in §12, estimates and time in §18, ADR 0012; and by owner decision 310, 2026-11-27: the transition record's `fromStateCategory` in §14, ADR 0014)
 
 ## Context
 
@@ -507,7 +507,7 @@ List queries also filter `deletedAt IS NULL`. If the pinned Prisma version canno
 - It is set by a person under `work_items.edit`, as a single-field change (§9); a repeat copy takes its source's. While a review round is open the item waits on its open step's pending reviewers, the column is empty and a person does not set it (409 `REVIEW_ROUND_OPEN`); the round's end names the assignee (ADR 0009 §8).
 - **From roadmap 6.3 it may name the delegate's agent session instead of a member** (owner decision 106). 6.3 adds a nullable session reference beside `waitingOnUserId`, with a CHECK that at most one of the two is set, and widens the closed-item CHECK below to both. The member column keeps its name and its data; nothing is rewritten.
 - It is cleared by every move into `DONE` or `CANCELLED`: `stateTransitionEffects` returns the clear, so every state path applies it, and a CHECK refuses a closed item that names one. A reopen does not restore it.
-- Each change is recorded in `WorkItemTransition`, so time waiting is counted from recorded changes (roadmap 3.6; owner decision 107).
+- Each change is recorded in `WorkItemTransition`, so time waiting is counted from recorded changes (roadmap 3.6; owner decision 107). From 3.6 the record also holds the state category before each change, `fromStateCategory` (`OLD."stateCategory"` on an update, NULL on the insert row), written by the same trigger and backfilled once, so a completion is one indexed row (owner decision 310); time waiting also counts review waits from the review rows (owner decision 317; ADR 0014).
 
 ### 15. Marked answer
 
