@@ -223,7 +223,7 @@ const RUNNERS: Record<string, Runner> = {
     },
     'job: the timesheet reminder': (w, db, ctx) => {
         const from = new Date(`${w.timeWeek}T00:00:00Z`);
-        return TimeEntryRepository.peopleWithTimeIn(db, ctx, from, new Date(from.getTime() + 6 * DAY), 5_000);
+        return TimeEntryRepository.activeMembersWithTimeIn(db, ctx, from, new Date(from.getTime() + 6 * DAY), 5_000);
     },
     'job: the search-index rebuild': async (w, db, ctx) => {
         // One page of each kind, through the keyset (after 'c', which sorts before every cuid): a page

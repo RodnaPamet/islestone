@@ -43,9 +43,13 @@ interface Scenario {
     name: string;
     file: string;
     method: 'GET' | 'POST';
-    path: (w: PerfWorld) => string;
-    params?: (w: PerfWorld) => Record<string, string>;
+    path: (w: PerfWorld, run: number) => string;
+    params?: (w: PerfWorld, run: number) => Record<string, string>;
     body?: (w: PerfWorld, run: number) => unknown;
+    /** Who calls: the heavy member (the default), or the workspace's owner, who approves weeks (3.4c). */
+    as?: 'approver';
+    /** Rows a write needs, written on the direct connection before the scenario is warmed (never measured). */
+    setup?: (direct: PrismaClient, w: PerfWorld) => Promise<void>;
     /** The most statements one request may run (docs/performance.md, "Statements per request"). */
     budget: number;
 }
@@ -63,6 +67,44 @@ interface Scenario {
 function monthGrid(): string {
     const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
     return `from=${day(-14)}&to=${day(27)}`;
+}
+
+/** The Monday `n` weeks after `from` (a Monday), date-only. */
+function mondayAfter(from: string, n: number): string {
+    return new Date(Date.parse(`${from}T00:00:00Z`) + n * 7 * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Weeks of this process's timesheet scenarios start here, so a run against the same database never meets an earlier run's week. */
+const WEEK_OFFSET = Date.now() % 400;
+
+/** Timesheets (3.4c): approval on in the seeded workspace. */
+async function approvalOn(direct: PrismaClient, w: PerfWorld): Promise<void> {
+    await direct.$executeRawUnsafe(
+        `INSERT INTO "TenantTimeSettings" ("tenantId", "approvalRequired", "updatedAt") VALUES ($1, true, now())
+         ON CONFLICT ("tenantId") DO UPDATE SET "approvalRequired" = true`,
+        w.tenantId,
+    );
+}
+
+/** One submitted week of the heavy member per run (and the warm-up), for the approver to decide; their ids by run. */
+const submittedSheets = new Map<number, string>();
+async function heavyMemberSubmittedWeeks(direct: PrismaClient, w: PerfWorld): Promise<void> {
+    await approvalOn(direct, w);
+    // Written once: the waiting weeks' read lists them, the approval decides them.
+    if (submittedSheets.size > 0) return;
+    for (let run = -1; run < RUNS; run++) {
+        const id = `perf-sheet-${WEEK_OFFSET}-${run + 1}`;
+        // guardrail-allow: n+1 — fixture rows written once before the scenario, never measured.
+        await direct.$executeRawUnsafe(
+            `INSERT INTO "Timesheet" ("id", "tenantId", "userId", "weekStart", "status", "submittedAt", "updatedAt")
+             VALUES ($1, $2, $3, $4::date, 'SUBMITTED', now(), now())`,
+            id,
+            w.tenantId,
+            w.heavyUserId,
+            mondayAfter('2002-01-07', run + 1 + WEEK_OFFSET),
+        );
+        submittedSheets.set(run, id);
+    }
 }
 
 const SCENARIOS: Scenario[] = [
@@ -89,6 +131,11 @@ const SCENARIOS: Scenario[] = [
     // context's statement nor Prisma's relation reads; none of these is per row.
     { name: 'time: a week of the heavy member', file: `${ROUTES}/time-entries/route.ts`, method: 'GET', path: (w) => `/time-entries?week=${w.timeWeek}`, budget: 5 },
     { name: "time: an item's time", file: `${ROUTES}/work-items/[workItemId]/time/route.ts`, method: 'GET', path: (w) => `/work-items/${w.timeItemId}/time`, params: (w) => ({ workItemId: w.timeItemId }), budget: 6 },
+    // Timesheets (3.4c), as measured on the 10k seed: a week's status line (the tenant binding, the settings, the
+    // week's row, its sums in one statement) and the Timesheets page's waiting weeks (the tenant binding, the page
+    // with its people's names, its sums in one statement; the deciders' names when a row was decided).
+    { name: "timesheets: a week's status", file: `${ROUTES}/timesheets/week/route.ts`, method: 'GET', path: (w) => `/timesheets/week?week=${w.timeWeek}`, budget: 4 },
+    { name: 'timesheets: the waiting weeks', file: `${ROUTES}/timesheets/route.ts`, method: 'GET', as: 'approver', setup: heavyMemberSubmittedWeeks, path: () => '/timesheets?status=SUBMITTED', budget: 4 },
     { name: 'calendar: the workspace, a month grid', file: `${ROUTES}/work-items/calendar/route.ts`, method: 'GET', path: () => `/work-items/calendar?${monthGrid()}`, budget: 8 },
     { name: 'calendar: one project, a month grid', file: `${ROUTES}/work-items/calendar/route.ts`, method: 'GET', path: (w) => `/work-items/calendar?projectId=${w.projectId}&${monthGrid()}`, budget: 8 },
     {
@@ -108,6 +155,29 @@ const SCENARIOS: Scenario[] = [
         path: () => '/time-entries',
         body: (w, run) => ({ workItemId: w.timeItemId, workDate: `2099-01-${String(run + 2).padStart(2, '0')}`, minutes: 30 }),
         budget: 12,
+    },
+    // Timesheets (3.4c): submitting an empty week long past (the settings, the week's lock and row, its sums, the
+    // insert, the audit entry; then, after the commit, the approvers found and their bells written), and an
+    // approval of one of the heavy member's submitted weeks by the owner (the row, the lock, the claim, the
+    // sums, the audit entry; then the person's bell). Each run a week of its own.
+    {
+        name: 'timesheets: submit a week',
+        file: `${ROUTES}/timesheets/route.ts`,
+        method: 'POST',
+        setup: approvalOn,
+        path: () => '/timesheets',
+        body: (_w, run) => ({ week: mondayAfter('2001-01-01', run + 1 + WEEK_OFFSET) }),
+        budget: 24,
+    },
+    {
+        name: 'timesheets: approve a week',
+        file: `${ROUTES}/timesheets/[timesheetId]/approve/route.ts`,
+        method: 'POST',
+        as: 'approver',
+        setup: heavyMemberSubmittedWeeks,
+        path: (_w, run) => `/timesheets/${submittedSheets.get(run)}/approve`,
+        params: (_w, run) => ({ timesheetId: submittedSheets.get(run)! }),
+        budget: 23,
     },
 ];
 
@@ -181,10 +251,14 @@ describe(`statements per request on the seeded database (PERF_SHAPE=${process.en
     for (const s of SCENARIOS) {
         it(`${s.name}: at most ${s.budget} statements`, async () => {
             const handler = await handlerFor(s.file, s.method);
+            await s.setup?.(direct, world);
+            const ctx = s.as === 'approver' ? world.approverCtx : world.ctx;
+            getTenantCtxMock.mockImplementation(async () => ({ ...ctx, requestId: `perf-${Math.random()}` }));
             const perRequest = await statementsPer((run) =>
-                handler(request(world, s.method, s.path(world), s.body?.(world, run)), { params: Promise.resolve({ tenantSlug: world.slug, ...(s.params?.(world) ?? {}) }) }),
+                handler(request(world, s.method, s.path(world, run), s.body?.(world, run)), { params: Promise.resolve({ tenantSlug: world.slug, ...(s.params?.(world, run) ?? {}) }) }),
             );
             measured.push({ name: s.name, perRequest, budget: s.budget });
+            getTenantCtxMock.mockImplementation(async () => ({ ...world.ctx, requestId: `perf-${Math.random()}` }));
             // A whole number: every request ran the same statements.
             expect({ name: s.name, perRequest, whole: Number.isInteger(perRequest) }).toEqual({ name: s.name, perRequest, whole: true });
             expect({ name: s.name, perRequest, withinBudget: perRequest <= s.budget }).toEqual({ name: s.name, perRequest, withinBudget: true });

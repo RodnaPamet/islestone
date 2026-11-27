@@ -30,7 +30,7 @@ export async function remindWorkspaceToSubmit(ctx: RequestContext, input: { tena
         const settings = await TimesheetRepository.settings(db, ctx);
         if (!settings?.approvalRequired) return { reminded: 0 };
         const from = dateOnlyValue(input.weekStart);
-        const people = await TimeEntryRepository.peopleWithTimeIn(db, ctx, from, dateOnlyValue(addDays(input.weekStart, 6)), REMINDER_PEOPLE_MAX);
+        const people = await TimeEntryRepository.activeMembersWithTimeIn(db, ctx, from, dateOnlyValue(addDays(input.weekStart, 6)), REMINDER_PEOPLE_MAX);
         if (people.length === 0) return { reminded: 0 };
         const submitted = await TimesheetRepository.submittedFor(db, ctx, from, people);
         const owing = people.filter((id) => !submitted.has(id));

@@ -42,6 +42,8 @@ export interface PerfWorld {
     timeItemId: string;
     /** Sub-phase 3.4b: last week's Monday, a full week of the heavy member's time (My time). */
     timeWeek: string;
+    /** Sub-phase 3.4c: an Owner of the workspace, who approves weeks (the Timesheets page, a decision). */
+    approverCtx: RequestContext;
 }
 
 export function perfShape(): string {
@@ -112,6 +114,9 @@ export async function loadPerfWorld(db: PrismaClient): Promise<PerfWorld> {
     const lastMonday = await one<{ monday: string }>(db, `SELECT to_char(date_trunc('week', CURRENT_DATE) - interval '7 days', 'YYYY-MM-DD') AS "monday"`);
     const ctx = await resolveMemberContext({ tenantId, userId: heavy.id, job: 'perf' });
     if (!ctx) throw new Error('perf: the heavy member does not resolve');
+    const owner = await one<{ userId: string }>(db, `SELECT "userId" FROM "TenantMembership" WHERE "tenantId" = $1 AND "role" = 'OWNER' AND "status" = 'ACTIVE' ORDER BY "userId" LIMIT 1`, tenantId);
+    const approverCtx = await resolveMemberContext({ tenantId, userId: owner.userId, job: 'perf' });
+    if (!approverCtx) throw new Error('perf: the workspace owner does not resolve');
     return {
         shape,
         tenantId,
@@ -134,5 +139,6 @@ export async function loadPerfWorld(db: PrismaClient): Promise<PerfWorld> {
         siblingItemId: sibling.id,
         timeItemId: timeItem.id,
         timeWeek: lastMonday.monday,
+        approverCtx: { ...approverCtx, requestId: 'perf-approver' },
     };
 }

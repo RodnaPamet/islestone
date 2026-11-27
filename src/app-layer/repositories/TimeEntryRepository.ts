@@ -154,33 +154,48 @@ export class TimeEntryRepository {
     static async sumsForWeeks(db: PrismaTx, ctx: Ctx, weeks: ReadonlyArray<{ userId: string; weekStart: Date }>): Promise<Map<string, { minutes: number; billableMinutes: number; entries: number }>> {
         const out = new Map<string, { minutes: number; billableMinutes: number; entries: number }>();
         if (weeks.length === 0) return out;
+        // One lateral read per week, each on the person's index (a join over every week at once let the planner
+        // walk the workspace's dates instead). The week's last day is passed, not computed: under row-level
+        // security `"weekStart" + 6` (a function that is not LEAKPROOF) stays a filter, and the scan would walk
+        // every later entry of the person.
         const rows = await db.$queryRaw<Array<{ userId: string; weekStart: Date; minutes: bigint | null; billable: bigint | null; entries: bigint }>>(Prisma.sql`
-            SELECT w."userId", w."weekStart",
-                   SUM(t."minutes") AS minutes,
-                   SUM(t."minutes") FILTER (WHERE t."billable") AS billable,
-                   COUNT(t."minutes") AS entries
-              FROM unnest(${weeks.map((w) => w.userId)}::text[], ${weeks.map((w) => w.weekStart)}::date[]) AS w("userId", "weekStart")
-              JOIN "TimeEntry" t
-                ON t."tenantId" = ${ctx.tenantId}
-               AND t."userId" = w."userId"
-               AND t."workDate" BETWEEN w."weekStart" AND w."weekStart" + 6
-               AND t."minutes" IS NOT NULL
-             GROUP BY w."userId", w."weekStart"`);
+            SELECT w."userId", w."weekStart", s.minutes, s.billable, s.entries
+              FROM unnest(${weeks.map((w) => w.userId)}::text[], ${weeks.map((w) => w.weekStart)}::date[], ${weeks.map((w) => new Date(w.weekStart.getTime() + 6 * 86_400_000))}::date[]) AS w("userId", "weekStart", "weekEnd")
+             CROSS JOIN LATERAL (
+                   SELECT SUM(t."minutes") AS minutes,
+                          SUM(t."minutes") FILTER (WHERE t."billable") AS billable,
+                          COUNT(t."minutes") AS entries
+                     FROM "TimeEntry" t
+                    WHERE t."tenantId" = ${ctx.tenantId}
+                      AND t."userId" = w."userId"
+                      AND t."workDate" BETWEEN w."weekStart" AND w."weekEnd"
+                      AND t."minutes" IS NOT NULL
+                   ) s`);
         for (const r of rows) {
             out.set(`${r.userId}:${r.weekStart.toISOString().slice(0, 10)}`, { minutes: Number(r.minutes ?? 0), billableMinutes: Number(r.billable ?? 0), entries: Number(r.entries) });
         }
         return out;
     }
 
-    /** The people who recorded finished time dated in `[from, to]`, at most `take` (the Monday reminder, 3.4c). */
-    static async peopleWithTimeIn(db: PrismaTx, ctx: Ctx, from: Date, to: Date, take: number): Promise<string[]> {
+    /**
+     * The workspace's ACTIVE members who recorded finished time dated in
+     * `[from, to]`, at most `take` (the Monday reminder, 3.4c): per member one
+     * probe on the person's index, so the read grows with the members, not the
+     * entries.
+     */
+    static async activeMembersWithTimeIn(db: PrismaTx, ctx: Ctx, from: Date, to: Date, take: number): Promise<string[]> {
         const rows = await db.$queryRaw<Array<{ userId: string }>>(Prisma.sql`
-            SELECT DISTINCT t."userId"
-              FROM "TimeEntry" t
-             WHERE t."tenantId" = ${ctx.tenantId}
-               AND t."workDate" BETWEEN ${from}::date AND ${to}::date
-               AND t."minutes" IS NOT NULL
-             ORDER BY t."userId"
+            SELECT m."userId"
+              FROM "TenantMembership" m
+             WHERE m."tenantId" = ${ctx.tenantId}
+               AND m."status" = 'ACTIVE'
+               AND EXISTS (
+                   SELECT 1 FROM "TimeEntry" t
+                    WHERE t."tenantId" = ${ctx.tenantId}
+                      AND t."userId" = m."userId"
+                      AND t."workDate" BETWEEN ${from}::date AND ${to}::date
+                      AND t."minutes" IS NOT NULL)
+             ORDER BY m."userId"
              LIMIT ${take}`);
         return rows.map((r) => r.userId);
     }
