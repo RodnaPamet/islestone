@@ -9,7 +9,7 @@
  *     whole day off (never a type);
  *   - offered only to a signed-in person who reads work items and holds
  *     `work_items.assign` or `work_items.edit`: a Viewer, a custom role with
- *     neither, an API key and an agent get none; a role with one key gets
+ *     neither, an API key and a job get none; a role with one key gets
  *     that kind only;
  *   - nothing is written by reading them (no audit entry, no item version);
  *   - a week within capacity has none, a week further than 52 weeks ahead
@@ -142,8 +142,8 @@ describeFn('the ways to rebalance (3.5c)', () => {
 
         const key = await getWorkloadCell(ctxOf('owner', 'OWNER', { apiKeyId: 'key-1' }), { userId: users.ana!, week: NEXT(0) });
         expect(key.rebalance).toBeNull();
-        const agent = await getWorkloadCell(ctxOf('owner', 'OWNER', { actorType: 'AGENT' } as Partial<RequestContext>), { userId: users.ana!, week: NEXT(0) });
-        expect(agent.rebalance).toBeNull();
+        const job = await getWorkloadCell(ctxOf('owner', 'OWNER', { actorType: 'JOB' }), { userId: users.ana!, week: NEXT(0) });
+        expect(job.rebalance).toBeNull();
 
         const noAssign = getPermissionsForRole('MEMBER');
         noAssign.work_items.assign = false;
