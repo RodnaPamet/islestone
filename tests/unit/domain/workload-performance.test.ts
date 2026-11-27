@@ -38,7 +38,7 @@ describe('the workload modules at 500 people, 20,000 items, 12,500 dates of time
         }
         times.sort((a, b) => a - b);
         const p50 = times[Math.floor(times.length * 0.5)]!;
-        const p95 = times[Math.floor(times.length * 0.95)]!;
+        const p95 = times[Math.ceil(times.length * 0.95) - 1]!;
         console.info(`buildWorkload 500 people / 20,000 items / 26 weeks: p50 ${p50.toFixed(1)} ms, p95 ${p95.toFixed(1)} ms`);
         expect(p95).toBeLessThan(BUDGET_P95_MS * 4);
     }, 60_000);
@@ -56,7 +56,7 @@ function sample(run: () => void): { p50: number; p95: number } {
         times.push(Math.min(wall, (cpu.user + cpu.system) / 1000));
     }
     times.sort((a, b) => a - b);
-    return { p50: times[Math.floor(times.length * 0.5)]!, p95: times[Math.floor(times.length * 0.95)]! };
+    return { p50: times[Math.floor(times.length * 0.5)]!, p95: times[Math.ceil(times.length * 0.95) - 1]! };
 }
 
 describe('the ways to rebalance at 500 people, 20,000 items and their widest window', () => {
