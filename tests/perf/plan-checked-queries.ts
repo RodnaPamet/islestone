@@ -257,6 +257,16 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     // project's twenty times the items), about twice that, as the flow's.
     { name: 'analytics: waits over a project', methods: ['WorkItemTransitionRepository.waitSpans'], indexes: ['WorkItemTransition_tenantId_projectId_at_idx', 'WorkItemTransition_tenantId_workItemId_at_idx'], maxBuffers: 27000, maxBuffers100k: 540000 },
     // ── end of the 3.6b time-waiting block ──
+    // ── Forecasting (3.6c, decision 331): the forecast read's own reads ──
+    // The first recorded row per project of the workspace (one probe each), the open items per project of the
+    // largest project, and the record's completions of the largest project over 64 weeks (52 and the window) with
+    // their rows. 10k measured on a fresh seed: 32, 165 and 2,333 buffers; each budget about twice that. 100k: NOT
+    // MEASURED (no disk for the 100k seed here): ten times the projects' probes, twenty times the largest project's
+    // items, each at about twice that multiple.
+    { name: "forecast: the history's first recorded row, the workspace", methods: ['WorkItemTransitionRepository.firstRecordedAt'], indexes: ['WorkItemTransition_tenantId_projectId_at_idx'], maxBuffers: 100, maxBuffers100k: 1000 },
+    { name: 'forecast: the open items per project', methods: ['WorkItemRepository.openCountsByProject'], indexes: ['WorkItem_tenantId_projectId_number_key'], maxBuffers: 350, maxBuffers100k: 7000 },
+    { name: "forecast: the record's completions of a project", methods: ['WorkItemTransitionRepository.completionSpanRows'], indexes: ['WorkItemTransition_completions', 'WorkItemTransition_tenantId_workItemId_at_idx'], maxBuffers: 5000, maxBuffers100k: 100000 },
+    // ── end of the 3.6c forecasting block ──
 ];
 
 /**

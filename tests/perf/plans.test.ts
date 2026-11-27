@@ -312,6 +312,11 @@ const RUNNERS: Record<string, Runner> = {
         const ids = await WorkItemTransitionRepository.itemIdsEverInCycle(db, ctx, w.currentCycleId);
         return WorkItemTransitionRepository.transitionsOf(db, ctx, ids.slice(0, 5_000), new Date());
     },
+    // Forecasting (3.6c): the workspace's first recorded rows, a project's open items and its record.
+    "forecast: the history's first recorded row, the workspace": (w, db, ctx, v) => WorkItemTransitionRepository.firstRecordedAt(db, ctx, { visibility: v, projectIds: null, teamId: null }),
+    'forecast: the open items per project': (w, db, ctx, v) => WorkItemRepository.openCountsByProject(db, ctx, v, { projectId: w.bigProjectId }, null, today()),
+    "forecast: the record's completions of a project": (w, db, ctx, v) =>
+        WorkItemTransitionRepository.completionSpanRows(db, ctx, recordScope(v, { projectIds: [w.bigProjectId] }), { from: new Date(Date.now() - 64 * 7 * DAY), asOf: new Date() }, 20_001),
     'job: the search-index rebuild': async (w, db, ctx) => {
         // One page of each kind, through the keyset (after 'c', which sorts before every cuid): a page
         // reads its own rows only, so its cost does not grow with the workspace (issue #79).

@@ -897,6 +897,11 @@ export const MATRIX: Readonly<Record<MatrixRoot, readonly MatrixRow[]>> = {
             route: 'analytics/waiting/route.ts', method: 'GET', key: 'analytics.view', subject: 'time waiting: the totals (decision 335: analytics.people, in any scope)',
             query: () => ({ from: '2026-01-05', to: '2026-03-01' }), reveals: () => '"totals":', expect: ANALYTICS_PEOPLE,
         },
+        // Sub-phase 3.6c (decisions 318 to 325): the forecast, the same key; a refusal is a 200 too.
+        {
+            route: 'analytics/forecast/route.ts', method: 'GET', key: 'analytics.view', subject: 'a forecast of open items',
+            query: () => ({ historyWeeks: '12', share: '100' }), expect: ANALYTICS,
+        },
     ],
 };
 

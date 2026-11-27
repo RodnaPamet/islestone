@@ -40,6 +40,10 @@
 import { addWorkingDays, isoWeekday, nextWorkingDay, workingDaysInclusive, type CompiledCalendar, type EpochDay } from '../schedule/calendar';
 
 
+// Hoisted: a global read inside the trial loop is slow wherever the global object is a sandbox's (Jest's `vm`
+// context reads each through an interceptor, about twenty times slower over 5.2 million draws).
+const { imul, floor } = Math;
+
 export const FORECAST_TRIALS = 10_000;
 /** The furthest a trial runs: 520 working days, about two years (decision 319). */
 export const FORECAST_CAP_WORKING_DAYS = 520;
@@ -123,9 +127,9 @@ export type ForecastOutcome =
  * mulberry32's sequence.
  */
 export function trialSeed(seed: number, t: number): number {
-    let h = (seed + Math.imul(t, 0x9e3779b9)) >>> 0;
-    h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
-    h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+    let h = (seed + imul(t, 0x9e3779b9)) >>> 0;
+    h = imul(h ^ (h >>> 16), 0x85ebca6b);
+    h = imul(h ^ (h >>> 13), 0xc2b2ae35);
     return (h ^ (h >>> 16)) >>> 0;
 }
 
@@ -170,9 +174,9 @@ export function forecastCompletion(input: ForecastInput): ForecastOutcome {
         while (d < FORECAST_CAP_WORKING_DAYS) {
             d += 1;
             a = (a + 0x6d2b79f5) | 0;
-            let x = Math.imul(a ^ (a >>> 15), 1 | a);
-            x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
-            left -= scaled[Math.floor((((x ^ (x >>> 14)) >>> 0) / 4294967296) * n)]!;
+            let x = imul(a ^ (a >>> 15), 1 | a);
+            x = (x + imul(x ^ (x >>> 7), 61 | x)) ^ x;
+            left -= scaled[floor((((x ^ (x >>> 14)) >>> 0) / 4294967296) * n)]!;
             if (left <= 0) break;
         }
         if (left <= 0) counts[d] = counts[d]! + 1;

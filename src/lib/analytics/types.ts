@@ -253,3 +253,83 @@ export interface AnalyticsAffordances {
     share: boolean;
     people: boolean;
 }
+
+// ─── Forecasting (3.6c; ADR 0014 §3 to §5; owner decisions 318 to 325) ────
+
+/** Whose completions feed a forecast (decision 321): the scope's projects (a cycle: its team), the team or the workspace. */
+export const FORECAST_BASED_ON = ['projects', 'team', 'workspace'] as const;
+export type ForecastBasedOn = (typeof FORECAST_BASED_ON)[number];
+export const FORECAST_HISTORY = 'FORECAST_HISTORY';
+
+/** What a forecast is over, which decides its due date: a cycle's end, a milestone's, goal's, initiative's or project's due date, or none. */
+export type ForecastScopeKind = 'cycle' | 'milestone' | 'goal' | 'initiative' | 'project' | 'filter';
+
+/** A likely date: the day, or later than it (`beyond`: past the two-year cap, the cap's day). */
+export interface ForecastLikelyDate {
+    date: string;
+    beyond: boolean;
+}
+
+/** Why a forecast gives no date (decision 319); the counts are the sentence's. */
+export type ForecastRefusalBody =
+    | { reason: 'NOTHING_REMAINING' }
+    | { reason: 'NO_SHARE' }
+    | { reason: 'TOO_FEW_COMPLETIONS'; completions: number; needed: number; weeks: number }
+    | { reason: 'TOO_FEW_WORKING_DAYS'; workingDays: number; needed: number }
+    | { reason: 'BEYOND_TWO_YEARS'; completions: number; weeks: number; capDate: string };
+
+export type ForecastCautionCode = 'FEW_COMPLETIONS';
+
+export interface ForecastProjectRef {
+    id: string;
+    name: string;
+    keyPrefix: string;
+}
+
+/**
+ * The scope's own record (decision 325): earlier forecasts of the same
+ * question here, replayed from weekly origins over the last 52 weeks with the
+ * history as it stood then. Shown with at least 10 scorable origins.
+ */
+export type ForecastRecord =
+    | {
+          status: 'SHOWN';
+          /** The completions each earlier forecast was for: these items at this share, in the history's own completions. */
+          size: number;
+          p50: { scorable: number; held: number };
+          p85: { scorable: number; held: number };
+          p95: { scorable: number; held: number };
+      }
+    | { status: 'NOT_ENOUGH'; scorable: number; needed: number }
+    | { status: 'TOO_LARGE'; count: number; limit: number }
+    | { status: 'NONE' };
+
+export interface ForecastResponse {
+    /** Today in the scope's zone: the forecast's first day is the next working day. */
+    asOf: string;
+    timeZone: string;
+    calendarTeamId: string | null;
+    setAside: AnalyticsSetAsideFilter[];
+    scope: { kind: ForecastScopeKind; dueDate: string | null };
+    /** Open items now (live, in visible, unarchived projects). */
+    remaining: number;
+    /** What the history is: the projects, the team, or the workspace (decision 321). */
+    basedOn: { kind: ForecastBasedOn; projects: ForecastProjectRef[]; team: { id: string; name: string } | null };
+    /** What the person may base it on instead: a subset of these projects, this team, or the workspace. */
+    offered: { projects: ForecastProjectRef[]; team: { id: string; name: string } | null };
+    history: { weeks: number; from: string | null; to: string | null; completions: number; workingDays: number };
+    /** The share of that throughput assumed, in percent (decision 322). No new items are assumed. */
+    share: number;
+    trials: number;
+    /** Derived from the inputs (decision 323): the same data on the same day gives the same seed. */
+    seed: number;
+    refused: ForecastRefusalBody | null;
+    cautions: ForecastCautionCode[];
+    likely: { p50: ForecastLikelyDate; p85: ForecastLikelyDate; p95: ForecastLikelyDate } | null;
+    /** The chance by the scope's due date: trials finished by it of `trials`; `passed` when it is today or earlier. */
+    due: { date: string; finished: number | null; passed: boolean } | null;
+    histogram: { resolution: 'day' | 'week'; buckets: Array<{ start: string; end: string; trials: number }>; beyond: number } | null;
+    /** "Chance finished by": trials finished on or before each working day. */
+    curve: Array<{ date: string; finished: number }> | null;
+    record: ForecastRecord;
+}

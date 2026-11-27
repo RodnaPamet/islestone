@@ -1636,6 +1636,24 @@ export class WorkItemRepository {
     }
 
     /**
+     * The open items (Backlog, Unstarted, Started) the filters select now, per
+     * project: a forecast's remaining items (3.6c; docs/porting/maps/3.6.md,
+     * "What is forecast"). Live items of visible, UNARCHIVED projects only,
+     * whatever `includeArchived` says (an archived project's open items are
+     * left out of forecasts). One grouped statement.
+     */
+    static async openCountsByProject(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, filters: WorkItemFilters, keyHit: KeyHit | null, today: Date): Promise<Array<{ projectId: string; count: number }>> {
+        const where = WorkItemRepository._buildWhere(ctx, v, { ...filters, includeArchived: false }, keyHit, today);
+        const rows = await db.workItem.groupBy({
+            by: ['projectId'],
+            where: { AND: [where, { tenantId: ctx.tenantId, deletedAt: null, stateCategory: { in: ['BACKLOG', 'UNSTARTED', 'STARTED'] } }] },
+            _count: { _all: true },
+            orderBy: { projectId: 'asc' },
+        });
+        return rows.map((r) => ({ projectId: r.projectId, count: r._count._all }));
+    }
+
+    /**
      * The key and title of live, visible items (archived projects included),
      * by id: the analytics points' labels. One statement (the project joined),
      * `tenantId`, `deletedAt` and visibility in its own `WHERE`.

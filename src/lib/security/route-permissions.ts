@@ -1034,6 +1034,13 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'analytics.view',
         note: 'Counts, throughput, cycle time and lead time with age, cumulative flow and the burn-up over the list\'s filters; time waiting, whose rows for other people the usecase gives only to analytics.people (decision 329).',
     },
+    // The forecast (sub-phase 3.6c; owner decisions 318 to 325): a read, under the caller's visibility.
+    {
+        path: new RegExp(`^${T}\\/analytics\\/forecast$`),
+        methods: ['GET'],
+        permission: 'analytics.view',
+        note: 'The 50, 85 and 95 percent likely dates of a scope\'s open items, the chance by its due date and its own record (decisions 318 to 325).',
+    },
     // ── Estimates (sub-phase 3.4a; owner decision 257) ───────────────
     {
         path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/estimate$`),

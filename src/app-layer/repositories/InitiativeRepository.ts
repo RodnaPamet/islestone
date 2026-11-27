@@ -113,6 +113,14 @@ export class InitiativeRepository {
         return db.initiative.findFirst({ where: { id, tenantId: ctx.tenantId }, select: initiativeSelect });
     }
 
+    /**
+     * A live initiative's due date, and nothing else (3.6c: a forecast's due
+     * date; never the description). Null when it is missing or deleted.
+     */
+    static async liveDueDate(db: PrismaTx, ctx: Ctx, id: string): Promise<{ dueDate: Date | null } | null> {
+        return db.initiative.findFirst({ where: { id, tenantId: ctx.tenantId, deletedAt: null }, select: { dueDate: true } });
+    }
+
     static async getManyLite(db: PrismaTx, ctx: Ctx, ids: readonly string[]): Promise<InitiativeLiteRow[]> {
         if (ids.length === 0) return [];
         return db.initiative.findMany({ where: { tenantId: ctx.tenantId, id: { in: [...ids] } }, take: INITIATIVES_LIST_TAKE, select: initiativeLiteSelect });
