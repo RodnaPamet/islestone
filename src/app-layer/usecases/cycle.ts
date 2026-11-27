@@ -21,7 +21,9 @@ import type { CycleRollover, EstimateUnit, WorkflowStateCategory } from '@prisma
 
 import { logEvent } from '../events/audit';
 import { assertFieldWrite } from './field-set';
-import { CycleRepository, BURN_UP_ITEM_CAP, type CycleRow, type CycleScheduleRow } from '../repositories/CycleRepository';
+import { CycleRepository, type CycleRow, type CycleScheduleRow } from '../repositories/CycleRepository';
+import { BURN_UP_ITEM_CAP, WorkItemTransitionRepository } from '../repositories/WorkItemTransitionRepository';
+import { resolveWorkingCalendars } from './working-calendar';
 import { ProjectRepository } from '../repositories/ProjectRepository';
 import { TeamRepository } from '../repositories/TeamRepository';
 import { WorkItemRepository } from '../repositories/WorkItemRepository';
@@ -144,7 +146,6 @@ export async function getCycle(ctx: RequestContext, id: string): Promise<CycleDa
     });
 }
 
-/** The burn-up (owner decisions 65 and 66), over the items the caller can see. */
 /**
  * The measures a cycle's burn-up offers (3.4a, decision 259): items always;
  * points or hours while the cycle's team estimates in them.
@@ -155,12 +156,19 @@ export function burnUpMeasuresFor(unit: EstimateUnit | null | undefined): BurnUp
     return ['items'];
 }
 
+/**
+ * The burn-up (owner decisions 65 and 66), over the items the caller can see;
+ * days cut in the team's working calendar's zone (3.6a, decision 316).
+ */
 export async function getCycleBurnUp(ctx: RequestContext, id: string, now: Date = new Date(), measure: BurnUpMeasure = 'items'): Promise<BurnUpData> {
     assertCanReadCycles(ctx);
-    const tz = notificationsTz();
     return runInTenantContext(ctx, async (db) => {
         const cycle = await CycleRepository.getById(db, ctx, id);
         if (!cycle) throw notFound('Cycle not found');
+        // 3.6a (owner decision 316): the day boundary is the team's working
+        // calendar's zone (the workspace's, else NOTIFICATIONS_TZ), so this
+        // chart and an Analytics burn-up of the same cycle agree.
+        const tz = (await resolveWorkingCalendars(db, ctx, [cycle.teamId])).forTeam(cycle.teamId).timeZone;
         // The team's CURRENT unit decides what may be counted (3.4a): the
         // other column is kept on the items, hidden and uncounted.
         const measures = burnUpMeasuresFor(await TeamRepository.estimateUnitOf(db, ctx, cycle.teamId));
@@ -169,9 +177,9 @@ export async function getCycleBurnUp(ctx: RequestContext, id: string, now: Date 
         }
         const on = todayInTz(todayClock(tz, now), tz);
         if (on.getTime() < cycle.startsOn.getTime()) return { points: [], truncated: false, measure, measures };
-        const ids = await CycleRepository.itemIdsEverInCycle(db, ctx, cycle.id);
+        const ids = await WorkItemTransitionRepository.itemIdsEverInCycle(db, ctx, cycle.id);
         const truncated = ids.length > BURN_UP_ITEM_CAP;
-        const rows = await CycleRepository.transitionsOf(db, ctx, ids.slice(0, BURN_UP_ITEM_CAP), now);
+        const rows = await WorkItemTransitionRepository.transitionsOf(db, ctx, ids.slice(0, BURN_UP_ITEM_CAP), now);
         // Only items in projects the caller can see count, live and
         // unarchived, as the counts read them: a deleted or archived project's
         // items leave the chart as they leave the metrics.

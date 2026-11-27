@@ -1,12 +1,12 @@
 /**
- * Cycles, cycle schedules and work-item transitions (sub-phase 2.5a,
+ * Cycles and cycle schedules (sub-phase 2.5a,
  * docs/porting/maps/2.5.md). Every query filters by `tenantId` (RLS also
  * scopes it). The `WorkItem` reads and writes cycles need live in
  * `WorkItemRepository`, beside its other predicates.
  *
  * Written fresh for Islestone.
  */
-import type { CycleRollover, Prisma, WorkflowStateCategory } from '@prisma/client';
+import type { CycleRollover, Prisma } from '@prisma/client';
 
 import type { PrismaTx } from '@/lib/db-context';
 import type { RequestContext } from '../types';
@@ -17,10 +17,6 @@ type Ctx = Pick<RequestContext, 'tenantId'>;
 export const CYCLE_LIST_TAKE = 500;
 /** The teams the rollover reads per workspace. */
 export const ROLLOVER_TEAMS_TAKE = 500;
-/** The most items a burn-up reads; one past it marks truncation. */
-export const BURN_UP_ITEM_CAP = 5_000;
-/** The most transitions a burn-up reads (several changes per item). */
-export const BURN_UP_TRANSITION_CAP = 100_000;
 
 export const cycleSelect = {
     id: true,
@@ -50,18 +46,6 @@ export const scheduleSelect = {
 
 export type CycleScheduleRow = Prisma.CycleScheduleGetPayload<{ select: typeof scheduleSelect }>;
 
-export interface TransitionRow {
-    id: bigint;
-    workItemId: string;
-    projectId: string;
-    cycleId: string | null;
-    stateCategory: WorkflowStateCategory;
-    deleted: boolean;
-    at: Date;
-    /** The estimate the row records (3.4a); NULL in rows written before. */
-    estimatePoints: number | null;
-    estimateMinutes: number | null;
-}
 
 export class CycleRepository {
     /**
@@ -213,31 +197,6 @@ export class CycleRepository {
             create: { tenantId: ctx.tenantId, teamId, ...data },
             update: data,
             select: scheduleSelect,
-        });
-    }
-
-    // ── Transitions (read only: the trigger is the writer) ───────────
-
-    /** The ids of the items with any transition naming the cycle; one past the cap marks truncation. */
-    static async itemIdsEverInCycle(db: PrismaTx, ctx: Ctx, cycleId: string): Promise<string[]> {
-        const rows = await db.workItemTransition.findMany({
-            where: { tenantId: ctx.tenantId, cycleId },
-            distinct: ['workItemId'],
-            orderBy: { workItemId: 'asc' },
-            take: BURN_UP_ITEM_CAP + 1,
-            select: { workItemId: true },
-        });
-        return rows.map((r) => r.workItemId);
-    }
-
-    /** Every transition of the items up to `until` (the burn-up's facts). */
-    static async transitionsOf(db: PrismaTx, ctx: Ctx, workItemIds: readonly string[], until: Date): Promise<TransitionRow[]> {
-        if (workItemIds.length === 0) return [];
-        return db.workItemTransition.findMany({
-            where: { tenantId: ctx.tenantId, workItemId: { in: [...workItemIds] }, at: { lte: until } },
-            orderBy: [{ at: 'asc' }, { id: 'asc' }],
-            take: BURN_UP_TRANSITION_CAP,
-            select: { id: true, workItemId: true, projectId: true, cycleId: true, stateCategory: true, deleted: true, at: true, estimatePoints: true, estimateMinutes: true },
         });
     }
 }

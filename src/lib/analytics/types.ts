@@ -1,0 +1,170 @@
+/**
+ * The analytics reads' shapes and bounds (sub-phase 3.6a;
+ * docs/porting/maps/3.6.md, "Reads, routes and keys"; ADR 0014). Client-safe:
+ * the page, the charts and the usecases import them; no server module.
+ *
+ * Dates are `YYYY-MM-DD` (epoch days on the server, never passed through a
+ * zone); durations are working days to one decimal (decision 313).
+ */
+
+/** The widest window a read takes, inclusive (400 `ANALYTICS_RANGE` above). */
+export const ANALYTICS_MAX_DAYS = 366;
+/** The most completions a throughput or durations read counts (422 `ANALYTICS_TOO_LARGE` above, never cut). */
+export const ANALYTICS_COMPLETION_LIMIT = 50_000;
+/** The most items a flow or burn-up read follows (422 above). */
+export const ANALYTICS_FLOW_ITEM_LIMIT = 20_000;
+/** The most items a filter on current values (labels, type, assignee …) may select (422 above). */
+export const ANALYTICS_FILTER_ITEM_LIMIT = 50_000;
+/** The newest completions drawn as points on the cycle-time and lead-time charts. */
+export const ANALYTICS_POINT_LIMIT = 2_000;
+/** The oldest open, started items drawn as "Age". */
+export const ANALYTICS_AGE_LIMIT = 2_000;
+/** A flow window up to this many days is drawn by day, beyond by week. */
+export const ANALYTICS_DAILY_FLOW_DAYS = 92;
+
+export const ANALYTICS_RANGE = 'ANALYTICS_RANGE';
+export const ANALYTICS_TOO_LARGE = 'ANALYTICS_TOO_LARGE';
+
+/** The windows the page offers, in weeks back from today. */
+export const ANALYTICS_WINDOW_WEEKS = [4, 8, 12, 26, 52] as const;
+export type AnalyticsWindowWeeks = (typeof ANALYTICS_WINDOW_WEEKS)[number];
+export const DEFAULT_ANALYTICS_WINDOW_WEEKS: AnalyticsWindowWeeks = 12;
+
+/**
+ * The list's filters each measure owns (status) and so sets aside; the answer
+ * names those that were set (decision 315).
+ */
+export const ANALYTICS_SET_ASIDE_FILTERS = ['stateId', 'stateCategory', 'due'] as const;
+export type AnalyticsSetAsideFilter = (typeof ANALYTICS_SET_ASIDE_FILTERS)[number];
+
+export type ThroughputBin = 'day' | 'week';
+export type DurationMeasure = 'cycle' | 'lead';
+export type AnalyticsMeasure = 'items' | 'points' | 'hours';
+
+/** What every analytics answer says about its window and its scope. */
+export interface AnalyticsFrame {
+    /** The window asked for, inclusive. */
+    from: string;
+    to: string;
+    /** Today in the scope's zone: the window ends no later. */
+    asOf: string;
+    /** The scope's working calendar's zone (decision 316): one team's for a one-team scope, else the workspace's. */
+    timeZone: string;
+    /** The team whose calendar draws the days, or null for the workspace's. */
+    calendarTeamId: string | null;
+    /** The status filters the read set aside (decision 315). */
+    setAside: AnalyticsSetAsideFilter[];
+}
+
+export interface AnalyticsTooLargeDetails {
+    reason: typeof ANALYTICS_TOO_LARGE;
+    /** What was over its bound: completions, items in the flow, or items a filter selects. */
+    what: 'completions' | 'items' | 'filter';
+    count: number;
+    limit: number;
+}
+
+export interface CountsResponse extends AnalyticsFrame {
+    /** Open items now (Backlog, Unstarted, Started). */
+    open: number;
+    /** Started items now. */
+    started: number;
+    /** Items completed in the window (decision 311). */
+    doneInWindow: number;
+    /** Items created in the window, live now. */
+    createdInWindow: number;
+}
+
+export interface ThroughputBinRow {
+    /** The bin's first day (a Monday for a week, the window's first day for a partial first week). */
+    start: string;
+    /** The bin's last day, inclusive. */
+    end: string;
+    count: number;
+    /** False for a first or last week the window cuts (left out of the median). */
+    whole: boolean;
+}
+
+export interface ThroughputResponse extends AnalyticsFrame {
+    bin: ThroughputBin;
+    bins: ThroughputBinRow[];
+    total: number;
+    /** The median bin (nearest rank), whole bins only; null with none. */
+    median: number | null;
+}
+
+export interface PercentileSummary {
+    count: number;
+    p50: number | null;
+    p85: number | null;
+    p95: number | null;
+}
+
+export interface DurationPoint {
+    workItemId: string;
+    key: string;
+    title: string;
+    completedOn: string;
+    /** Null: done without starting (decision 312). */
+    cycleTime: number | null;
+    leadTime: number;
+}
+
+export interface AgePoint {
+    workItemId: string;
+    key: string;
+    title: string;
+    startedOn: string;
+    age: number;
+}
+
+export interface DurationsResponse extends AnalyticsFrame {
+    measure: DurationMeasure;
+    /** Over every completion in the window. */
+    cycleTime: PercentileSummary;
+    leadTime: PercentileSummary;
+    /** Completions with no Started row before them (no cycle time). */
+    doneWithoutStarting: number;
+    /** The newest completions, at most `ANALYTICS_POINT_LIMIT`. */
+    points: DurationPoint[];
+    /** More completions than points: the points are the newest ones. */
+    pointsNewestOnly: boolean;
+    /** Open, started items now, the oldest first (cycle time only; empty for lead time). */
+    age: AgePoint[];
+    /** Open, started items in scope now (with a recorded start). */
+    ageTotal: number;
+}
+
+export interface FlowDayRow {
+    date: string;
+    backlog: number;
+    unstarted: number;
+    started: number;
+    /** Done since the window's first day. */
+    done: number;
+}
+
+export interface BurnUpRow {
+    date: string;
+    scope: number;
+    started: number;
+    completed: number;
+    /** In-scope items with no estimate in the measure's unit (points and hours only). */
+    unestimated?: number;
+}
+
+export interface FlowResponse extends AnalyticsFrame {
+    /** `day` up to `ANALYTICS_DAILY_FLOW_DAYS` days, `week` beyond (each week's last day drawn). */
+    resolution: 'day' | 'week';
+    days: FlowDayRow[];
+    burnUp: { measure: AnalyticsMeasure; measures: AnalyticsMeasure[]; points: BurnUpRow[] } | null;
+    /** Items followed (ever in scope up to the window's end). */
+    items: number;
+}
+
+/** What the Analytics page offers (asked on the server). */
+export interface AnalyticsAffordances {
+    view: boolean;
+    share: boolean;
+    people: boolean;
+}

@@ -1602,6 +1602,57 @@ export class WorkItemRepository {
         return { total, byCategory: counts, overdue, unassignedOpen };
     }
 
+    // ── Analytics (sub-phase 3.6a) ───────────────────────────────────
+
+    /**
+     * The items a filter on CURRENT values selects (decision 315: type,
+     * labels, assignee, waiting on, priority, custom fields, goal, created
+     * by, reviewer, watching, `q`), deleted ones included: a deletion is a
+     * recorded field, judged by the record at each instant, so a deleted
+     * item's history still counts while it was live. Only visible, live
+     * projects' items (archived included: their history counts); a purged
+     * item has no current values and is never selected. At most `take`.
+     * The caller passes no recorded or status filter.
+     */
+    static async idsMatchingCurrentValues(
+        db: PrismaTx,
+        ctx: RequestContext,
+        v: ProjectVisibility,
+        filters: WorkItemFilters,
+        opts: { take: number; keyHit?: KeyHit | null; today?: Date },
+    ): Promise<string[]> {
+        const where: Prisma.WorkItemWhereInput = { ...WorkItemRepository._buildWhere(ctx, v, { ...filters, includeArchived: true }, opts.keyHit ?? null, opts.today), deletedAt: undefined };
+        const rows = await db.workItem.findMany({ where, orderBy: { id: 'asc' }, take: opts.take, select: { id: true } });
+        return rows.map((r) => r.id);
+    }
+
+    /** Live, visible items now per category, under the list's own `where` (the Analytics counts). */
+    static async countsByCategory(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, filters: WorkItemFilters, keyHit: KeyHit | null, today: Date): Promise<Record<WorkflowStateCategory, number>> {
+        const where = WorkItemRepository._buildWhere(ctx, v, filters, keyHit, today);
+        const rows = await db.workItem.groupBy({ by: ['stateCategory'], where, _count: { _all: true } });
+        const counts = Object.fromEntries(WORKFLOW_STATE_CATEGORIES.map((c) => [c, 0])) as Record<WorkflowStateCategory, number>;
+        for (const row of rows) counts[row.stateCategory] = row._count._all;
+        return counts;
+    }
+
+    /**
+     * The key and title of live, visible items (archived projects included),
+     * by id: the analytics points' labels. One statement (the project joined),
+     * `tenantId`, `deletedAt` and visibility in its own `WHERE`.
+     */
+    static async keyTitlesByIds(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, ids: readonly string[]): Promise<Array<{ id: string; number: number; title: string; keyPrefix: string }>> {
+        if (ids.length === 0) return [];
+        const all = v.kind === 'ALL';
+        const granted = v.kind === 'GRANTED' ? [...v.projectIds] : [];
+        const rows = await db.$queryRaw<Array<{ id: string; number: number; title: string; keyPrefix: string }>>(Prisma.sql`
+            SELECT w."id", w."number", w."title", p."keyPrefix"
+              FROM "WorkItem" w
+              JOIN "Project" p ON p."id" = w."projectId" AND p."tenantId" = ${ctx.tenantId} AND p."deletedAt" IS NULL
+             WHERE w."tenantId" = ${ctx.tenantId} AND w."id" = ANY(${[...ids]}::text[]) AND w."deletedAt" IS NULL
+               AND (${all}::boolean OR w."projectId" = ANY(${granted}::text[]))`);
+        return rows.map((r) => ({ ...r, number: Number(r.number) }));
+    }
+
     // ── Cycles (sub-phase 2.5a) ──────────────────────────────────────
 
     /**

@@ -34,6 +34,7 @@ Roadmap 2.8 asks for ordered review steps on a work item: each step names review
 - Every state path ends an open round on close, and every item delete withdraws one; member removal withdraws the member's pending reviewer rows and re-evaluates their steps; the purge removes rounds with the item.
 - Waiting on has two sources while a round is open (the column, empty, and the reviewer rows); the "Waiting on me" section and the waiting-on lane keep reading the column, and My Work gains "To review" (roadmap 2.8b) over a `reviewerId` filter.
 - A review step is not a proposal and does not use the proposal queue (6.2).
+- Analytics (roadmap 3.6, ADR 0014, owner decision 317) read the review rows for time waiting: a reviewer waits from the step's opening to their latest response, their withdrawal or the step's end. The read changes no rule here; it relies on §4, that nothing ended is rewritten.
 - Conditional steps arrive with roadmap 5.1's conditions ("an automation never responds to a review step"). Working days are Monday to Friday until 3.1.
 - A reviewer who loses sight of the project after a move stays asked until 8.4's guest grants revisit it; their response is refused while they cannot read the item.
 

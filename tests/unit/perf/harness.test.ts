@@ -26,8 +26,9 @@ const runSource = fs.readFileSync(path.join(ROOT, 'scripts/perf/run.mjs'), 'utf8
  * at the list's first page, an item's time p95 200, the totals at the board
  * load's, adding time at a write's), and for the workload read and the
  * time-off write 3.5's (docs/porting/maps/3.5.md, "Performance"; the write
- * at the other writes' 400 ms): the ceiling of every budget. A budget may go
- * down; it never goes above these.
+ * at the other writes' 400 ms), and for analytics 3.6a's
+ * (docs/porting/maps/3.6.md, "Performance"): the ceiling of every budget. A
+ * budget may go down; it never goes above these.
  */
 const DECIDED: Record<string, Record<'10k' | '100k', { p50?: number; p95: number }>> = {
     'list-project': { '10k': { p50: 80, p95: 200 }, '100k': { p50: 100, p95: 250 } },
@@ -44,6 +45,9 @@ const DECIDED: Record<string, Record<'10k' | '100k', { p50?: number; p95: number
     roadmap: { '10k': { p50: 300, p95: 700 }, '100k': { p50: 300, p95: 700 } },
     workload: { '10k': { p50: 250, p95: 600 }, '100k': { p50: 400, p95: 900 } },
     'time-off-set': { '10k': { p95: 400 }, '100k': { p95: 400 } },
+    // 3.6a's (docs/porting/maps/3.6.md, "Performance"): the workspace's throughput and the largest project's flow.
+    'analytics-throughput': { '10k': { p50: 200, p95: 400 }, '100k': { p50: 200, p95: 400 } },
+    'analytics-flow': { '10k': { p50: 350, p95: 700 }, '100k': { p50: 350, p95: 700 } },
     create: { '10k': { p95: 400 }, '100k': { p95: 400 } },
     edit: { '10k': { p95: 400 }, '100k': { p95: 400 } },
     move: { '10k': { p95: 400 }, '100k': { p95: 400 } },

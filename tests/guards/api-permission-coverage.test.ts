@@ -96,6 +96,8 @@ const PRIVILEGED_ROOTS: ReadonlyArray<{
     { relPath: 'src/app/api/t/[tenantSlug]/workload-settings', why: "The workspace's default capacity (decision 284)." },
     { relPath: 'src/app/api/t/[tenantSlug]/members', why: "A member's capacity (decisions 284 and 285)." },
     { relPath: 'src/app/api/t/[tenantSlug]/time-off', why: 'Time off, the person or workload.manage (decisions 286 to 288).' },
+    // Sub-phase 3.6a: the analytics reads, every route under analytics.view (decision 329).
+    { relPath: 'src/app/api/t/[tenantSlug]/analytics', why: 'Analytics over the transition record (decisions 329 to 331).' },
     // NOT tenant-scoped, and that is exactly why it is here. `/api/account`
     // acts on the SESSION's user, so `requirePermission` — which resolves a
     // tenant role — does not apply to the route in it today. In scope so the

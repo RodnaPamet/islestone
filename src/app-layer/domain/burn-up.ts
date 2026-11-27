@@ -9,7 +9,8 @@
  * instant is its latest transition at or before that instant, ties broken by
  * the row's sequence id.
  *
- * Counted, at the end of each day (in the reminder zone; "now" for today):
+ * Counted, at the end of each day (in the cycle's team's working calendar's
+ * zone since 3.6a, owner decision 316; "now" for today):
  *   scope      in the cycle, not deleted, not CANCELLED (owner decision 65);
  *   started    in scope and STARTED or DONE;
  *   completed  in scope and DONE.
@@ -20,12 +21,19 @@
  * changed; an in-scope item with no estimate in that unit adds nothing and is
  * counted in `unestimated`. The items measure is unchanged.
  *
+ * Since 3.6a the series is computed by the event sweep of
+ * `analytics/flow.ts` (one walk of the rows), the per-day scan it replaced
+ * kept as the oracle of its property test; a day's end is every row strictly
+ * before the next day begins.
+ *
  * Written fresh for Islestone (docs/porting/maps/2.5.md, "The transitions and
  * the burn-up"). circle's synthetic curve is refused (docs/porting/oss/circle.md §4.10).
  */
 import type { WorkflowStateCategory } from '@prisma/client';
 
+import { burnUpOf, flowSweep } from './analytics/flow';
 import { addDays, dayKey, daysBetween } from './cycle';
+import { toEpochDay } from './schedule/calendar';
 
 export interface TransitionFact {
     workItemId: string;
@@ -66,41 +74,7 @@ export interface BurnUpInput {
     measure?: BurnUpMeasure;
 }
 
-/** What one in-scope item adds under `measure`: 1, its estimate, or `null` (no estimate in that unit). */
-function weightOf(state: TransitionFact, measure: BurnUpMeasure): number | null {
-    if (measure === 'items') return 1;
-    const value = measure === 'points' ? state.estimatePoints : state.estimateMinutes;
-    return value ?? null;
-}
-
-/** The offset of `tz` from UTC at the instant `at`, in milliseconds. */
-function zoneOffsetMs(at: Date, tz: string): number {
-    const parts = new Intl.DateTimeFormat('en-US', {
-        timeZone: tz,
-        hourCycle: 'h23',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-    }).formatToParts(at);
-    const n = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
-    const asUtc = Date.UTC(n('year'), n('month') - 1, n('day'), n('hour'), n('minute'), n('second'));
-    return asUtc - Math.floor(at.getTime() / 1000) * 1000;
-}
-
-/** The instant the calendar date `day` (date-only) begins in `tz`. */
-export function startOfDayInTz(day: Date, tz: string): Date {
-    const guess = day.getTime();
-    const first = guess - zoneOffsetMs(new Date(guess), tz);
-    // A second pass settles a day whose start falls across an offset change.
-    return new Date(guess - zoneOffsetMs(new Date(first), tz));
-}
-
-function later(a: TransitionFact, b: TransitionFact): boolean {
-    return a.at.getTime() !== b.at.getTime() ? a.at.getTime() > b.at.getTime() : a.seq > b.seq;
-}
+export { startOfDayInTz } from './analytics/zone';
 
 /**
  * The burn-up series: one point per day from `startsOn` to the earlier of
@@ -110,41 +84,22 @@ export function burnUp(input: BurnUpInput): BurnUpPoint[] {
     const lastDay = input.today.getTime() < input.endsOn.getTime() ? input.today : input.endsOn;
     const days = daysBetween(input.startsOn, lastDay);
     if (days < 0) return [];
-
-    const byItem = new Map<string, TransitionFact[]>();
-    for (const t of input.transitions) {
-        const list = byItem.get(t.workItemId);
-        if (list) list.push(t);
-        else byItem.set(t.workItemId, [t]);
-    }
-
-    const points: BurnUpPoint[] = [];
-    for (let i = 0; i <= days; i++) {
-        const day = addDays(input.startsOn, i);
-        const isToday = day.getTime() === input.today.getTime();
-        const cutoff = isToday ? input.now.getTime() : startOfDayInTz(addDays(day, 1), input.tz).getTime();
-        let scope = 0;
-        let started = 0;
-        let completed = 0;
-        let unestimated = 0;
-        const measure = input.measure ?? 'items';
-        for (const list of byItem.values()) {
-            let state: TransitionFact | null = null;
-            for (const t of list) {
-                if (t.at.getTime() > cutoff) continue;
-                if (!state || later(t, state)) state = t;
-            }
-            if (!state || state.cycleId !== input.cycleId || state.deleted || state.stateCategory === 'CANCELLED') continue;
-            const weight = weightOf(state, measure);
-            if (weight === null) {
-                unestimated += 1;
-                continue;
-            }
-            scope += weight;
-            if (state.stateCategory === 'STARTED' || state.stateCategory === 'DONE') started += weight;
-            if (state.stateCategory === 'DONE') completed += weight;
-        }
-        points.push(measure === 'items' ? { date: dayKey(day), scope, started, completed } : { date: dayKey(day), scope, started, completed, unestimated });
-    }
-    return points;
+    const measure = input.measure ?? 'items';
+    // 3.6a: one event sweep over the rows (`analytics/flow.ts`), the item's
+    // project and team being irrelevant to a cycle's scope.
+    const flow = flowSweep({
+        fromDay: toEpochDay(input.startsOn),
+        toDay: toEpochDay(lastDay),
+        now: input.now,
+        timeZone: input.tz,
+        facts: input.transitions.map((t) => ({ ...t, projectId: '', teamId: '' })),
+        inScope: (row) => row.cycleId === input.cycleId,
+        doneSince: null,
+        measure,
+    });
+    return flow.map((day) => {
+        const { scope, started, completed } = burnUpOf(day);
+        const date = dayKey(addDays(input.startsOn, day.day - toEpochDay(input.startsOn)));
+        return measure === 'items' ? { date, scope, started, completed } : { date, scope, started, completed, unestimated: day.unestimated };
+    });
 }

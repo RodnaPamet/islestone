@@ -1026,6 +1026,14 @@ export const ROUTE_PERMISSIONS: readonly RoutePermissionRule[] = [
         permission: 'time.view',
         note: 'The entries behind Time totals as CSV or Excel, at most 50,000, audited (decision 275).',
     },
+    // ── Analytics (sub-phase 3.6a; owner decisions 329 to 331) ───────
+    // Reads over the transition record under the caller's visibility; none under /admin/.
+    {
+        path: new RegExp(`^${T}\\/analytics\\/(counts|throughput|durations|flow)$`),
+        methods: ['GET'],
+        permission: 'analytics.view',
+        note: 'Counts, throughput, cycle time and lead time with age, cumulative flow and the burn-up over the list\'s filters (decision 329).',
+    },
     // ── Estimates (sub-phase 3.4a; owner decision 257) ───────────────
     {
         path: new RegExp(`^${T}\\/work-items\\/[^\\/]+\\/estimate$`),
