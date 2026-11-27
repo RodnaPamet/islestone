@@ -173,8 +173,17 @@ function uniqueIds(ids: readonly string[]): string[] {
     return [...new Set(ids)];
 }
 
+/**
+ * The person a write names on an item (its assignee, whom it waits on) is an
+ * ACTIVE member, their membership read `FOR KEY SHARE` for the rest of the
+ * transaction (issue #113, owner decision 280). The caller holds the item's
+ * row first, in a member's removal's order (its items, then the
+ * membership): a removal past its membership lock is waited for and the
+ * person refused, a 400, never the key's P2003; one that comes later waits
+ * for this write and clears it again before its delete.
+ */
 async function assertActiveMember(db: PrismaTx, ctx: RequestContext, userId: string, who = 'The assignee') {
-    const active = await MembershipRepository.listActiveUserIds(db, ctx, [userId]);
+    const active = await MembershipRepository.lockActiveUserIds(db, ctx, [userId]);
     if (!active.has(userId)) throw badRequest(`${who} must be an active member of this workspace.`);
 }
 
@@ -858,11 +867,7 @@ export async function createWorkItemInTx(
     const description = plan.description ? sanitizePlainText(plan.description) : null;
     const labelIds = uniqueIds(plan.labelIds ?? []);
 
-    if (plan.assigneeId) await assertActiveMember(db, ctx, plan.assigneeId);
-    if (plan.waitingOnUserId) {
-        if (isClosedCategory(state.category)) throw refuseWaitingOnClosed();
-        await assertActiveMember(db, ctx, plan.waitingOnUserId, 'The person it waits on');
-    }
+    if (plan.waitingOnUserId && isClosedCategory(state.category)) throw refuseWaitingOnClosed();
     if (plan.cycleId) await assertCycleTakesItems(db, ctx, plan.cycleId, project.teamId);
     if (plan.milestoneId) await assertMilestoneOfProject(db, ctx, plan.milestoneId, project.id);
     // The direct goal (3.2a): live, unarchived, read FOR KEY SHARE; naming one asks goals.view.
@@ -874,6 +879,12 @@ export async function createWorkItemInTx(
     // The number first: its row lock serialises creates in the project,
     // so the append below reads a settled last key.
     const number = await ProjectRepository.claimNumber(db, ctx, project.id);
+    // The people it names, after the rows the insert's keys will hold
+    // (issue #113): the parent first, after the sequence row, then each
+    // person's membership.
+    if (input.parentId && (plan.assigneeId || plan.waitingOnUserId)) await WorkItemRepository.lockParentForKeyShare(db, ctx, input.parentId);
+    if (plan.assigneeId) await assertActiveMember(db, ctx, plan.assigneeId);
+    if (plan.waitingOnUserId) await assertActiveMember(db, ctx, plan.waitingOnUserId, 'The person it waits on');
     const sortKey = await sortKeyForPosition(db, ctx, project.id, input.position);
     const now = new Date();
     // A new item is created INTO its state: the timestamps a move from
@@ -1405,6 +1416,9 @@ export async function assignWorkItem(ctx: RequestContext, id: string, input: { a
     assertCanAssignWorkItems(ctx);
     const outcome = await runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
+        await loadWritableItem(db, ctx, v, id);
+        // The item's row first, then the person's membership (issue #113).
+        await WorkItemRepository.lockForWrite(db, ctx, [id]);
         const item = await loadWritableItem(db, ctx, v, id);
         if (item.assigneeId === input.assigneeId) return { item, changed: false, typeName: null as string | null, reviewNotices: [] as ReviewNoticeOut[] };
         await assertFieldWrite(db, ctx, item, { assigneeId: input.assigneeId });

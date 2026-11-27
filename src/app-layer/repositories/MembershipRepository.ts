@@ -44,6 +44,20 @@ export class MembershipRepository {
     }
 
     /**
+     * Lock one membership row `FOR UPDATE` before its delete (issue #113,
+     * owner decision 280): a writer that already read the person
+     * `FOR KEY SHARE` ({@link lockActiveUserIds}) is waited for, and one that
+     * comes later waits for this transaction and then finds the row gone.
+     */
+    static async lockForDelete(db: PrismaTx, ctx: RequestContext, membershipId: string): Promise<boolean> {
+        const rows = await db.$queryRaw<Array<{ id: string }>>`
+            SELECT "id" FROM "TenantMembership"
+             WHERE "tenantId" = ${ctx.tenantId} AND "id" = ${membershipId}
+               FOR UPDATE`;
+        return rows.length === 1;
+    }
+
+    /**
      * The given users' ACTIVE memberships with their role and custom role, so
      * a caller can predict what each may do (`permissionsForMembership`):
      * the intake bells re-check `intake.view` before they ring (2.6a).

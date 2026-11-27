@@ -345,7 +345,10 @@ async function valueRows(
             return parsed.optionIds.map((optionId) => ({ optionId }));
         }
         case 'person': {
-            const active = await MembershipRepository.listActiveUserIds(db, ctx, [parsed.userId]);
+            // `FOR KEY SHARE` (issue #113): the caller holds the item's row
+            // first, so a member's removal in flight is waited for and the
+            // person refused, never the value's key refusing the removal.
+            const active = await MembershipRepository.lockActiveUserIds(db, ctx, [parsed.userId]);
             if (!active.has(parsed.userId)) throw badRequest(`${field.name} must name an active member of this workspace.`);
             return [{ userId: parsed.userId }];
         }
@@ -430,6 +433,9 @@ export async function setWorkItemCustomFieldValue(
     assertCanEditWorkItems(ctx);
     await runInTenantContext(ctx, async (db) => {
         const v = await visibleProjects(ctx, db);
+        await loadWritableItem(db, ctx, v, workItemId);
+        // The item's row first, then a person value's membership (issue #113).
+        await WorkItemRepository.lockForWrite(db, ctx, [workItemId]);
         const item = await loadWritableItem(db, ctx, v, workItemId);
         const field = await CustomFieldRepository.getField(db, ctx, fieldId);
         if (!field || field.projectId !== item.projectId) throw notFound('Field not found');

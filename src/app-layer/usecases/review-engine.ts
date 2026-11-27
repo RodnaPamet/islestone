@@ -109,6 +109,13 @@ export async function eligibleReviewers(
         alsoUserIds: memberIds,
         may: (p) => p.work_items?.view === true,
     });
+    // Their memberships `FOR KEY SHARE` (issue #113, owner decision 280):
+    // every caller holds the item's row first (`ReviewRepository.lockItem`,
+    // or the create's own new row), so a member's removal past its
+    // membership lock is waited for and the person not asked, and one that
+    // comes later withdraws the row again before its delete. A reviewer row
+    // has no key to the membership to refuse it.
+    const stillMembers = await MembershipRepository.lockActiveUserIds(db, ctx, resolved.userIds);
     const via = new Map<string, string | null>();
     for (const id of memberIds) via.set(id, null);
     if (listIds.length > 0) {
@@ -117,7 +124,7 @@ export async function eligibleReviewers(
         const sorted = [...members].sort((a, b) => (order.get(a.listId) ?? 0) - (order.get(b.listId) ?? 0));
         for (const m of sorted) if (!via.has(m.userId)) via.set(m.userId, m.listId);
     }
-    const allowed = new Set(resolved.userIds);
+    const allowed = new Set(resolved.userIds.filter((id) => stillMembers.has(id)));
     const excluded = new Set(excludeUserIds);
     const userIds: string[] = [];
     const dropped: EligibleReviewers['dropped'] = [];
@@ -219,7 +226,8 @@ async function copiedSteps(db: PrismaTx, ctx: RequestContext, item: ReviewItem, 
             ),
         ],
     }));
-    const active = await MembershipRepository.listActiveUserIds(db, ctx, [...new Set(wanted.flatMap((w) => w.members))]);
+    // `FOR KEY SHARE`, under the item's lock (issue #113): a removal in flight is waited for.
+    const active = await MembershipRepository.lockActiveUserIds(db, ctx, [...new Set(wanted.flatMap((w) => w.members))]);
     return wanted.map((w, i) => ({
         position: i + 1,
         name: w.step.name,
@@ -245,7 +253,8 @@ async function planNextRound(db: PrismaTx, ctx: RequestContext, item: ReviewItem
  */
 async function waitOnAssigneeAfterRound(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, item: ReviewItem, reason: 'review_round_completed' | 'review_round_returned') {
     if (isClosed(item) || !item.assigneeId || item.waitingOnUserId === item.assigneeId) return;
-    const active = await MembershipRepository.listActiveUserIds(db, ctx, [item.assigneeId]);
+    // `FOR KEY SHARE`, under the item's lock (issue #113): a removal in flight is waited for.
+    const active = await MembershipRepository.lockActiveUserIds(db, ctx, [item.assigneeId]);
     if (!active.has(item.assigneeId)) return;
     const count = await WorkItemRepository.updateVersioned(db, ctx, v, item.id, undefined, { waitingOnUserId: item.assigneeId });
     if (count === 0) return;

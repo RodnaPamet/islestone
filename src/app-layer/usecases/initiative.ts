@@ -220,6 +220,8 @@ export async function updateInitiative(ctx: RequestContext, id: string, input: U
     const dueDate = parseDueDate(input.dueDate);
     return runInTenantContext(ctx, async (db) => {
         if (input.goalId !== undefined) await lockGoalTree(db, ctx.tenantId);
+        // A new Lead: the initiative's row, then the person's membership (issue #113).
+        if (input.leadUserId) await InitiativeRepository.lock(db, ctx, id);
         const row = await loadLiveInitiative(db, ctx, id);
         if (row.archivedAt) refuseArchived('initiative');
         const patch: InitiativePatch = {};

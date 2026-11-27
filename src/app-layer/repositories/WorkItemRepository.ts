@@ -941,6 +941,18 @@ export class WorkItemRepository {
      * values. Visibility and `deletedAt` are the read's and the write's to
      * apply: locking a row the caller then leaves alone costs nothing.
      */
+    /**
+     * Read a new item's parent `FOR KEY SHARE` before the create names any
+     * person (issue #113): the insert's own key check would take the same
+     * lock later, after the people's memberships, and a member's removal
+     * holding the parent while it waits on one of those memberships would be
+     * a deadlock. Taken after the project's sequence row, the order across
+     * kinds.
+     */
+    static async lockParentForKeyShare(db: PrismaTx, ctx: RequestContext, id: string): Promise<void> {
+        await db.$queryRaw`SELECT "id" FROM "WorkItem" WHERE "tenantId" = ${ctx.tenantId} AND "id" = ${id} FOR KEY SHARE`;
+    }
+
     static async lockForWrite(db: PrismaTx, ctx: RequestContext, ids: readonly string[]): Promise<LockedWorkItemIds> {
         const unique = [...new Set(ids)];
         if (unique.length === 0) return mintLockedWorkItemIds([]);

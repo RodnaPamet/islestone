@@ -244,6 +244,8 @@ export async function updateGoal(ctx: RequestContext, id: string, input: UpdateG
     const dueDate = parseDueDate(input.dueDate);
     return runInTenantContext(ctx, async (db) => {
         if (input.parentId !== undefined) await lockGoalTree(db, ctx.tenantId);
+        // A new Lead: the goal's row, then the person's membership (issue #113).
+        if (input.leadUserId) await GoalRepository.lock(db, ctx, id);
         const goal = await loadLiveGoal(db, ctx, id);
         if (goal.archivedAt) refuseArchived('goal');
         const patch: GoalPatch = {};
