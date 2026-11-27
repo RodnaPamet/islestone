@@ -49,6 +49,7 @@ async function main(): Promise<number> {
             console.log(
                 `  ${w.slug}: ${w.items} items (${w.liveItems} live), ${w.comments} comments, ${w.searchVectors} search vectors, ` +
                     `${w.labels} labels, ${w.relations} relations, ${w.customFieldValues} field values, ${w.watchers} watchers, ${w.timeEntries} time entries, ` +
+                    `${w.estimatedItems} estimated items, ${w.capacityRows} capacity rows, ${w.timeOffDates} dates of time off, ` +
                     `${w.auditEntries} audit entries; ${w.decryptedChecked} descriptions decrypted and found`,
             );
         }

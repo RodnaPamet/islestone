@@ -11,6 +11,7 @@ import { BATCH_SIZE, seedProjectBulk } from './bulk';
 import { planProject } from './plan';
 import { stream } from './random';
 import { seedTimeEntries } from './time';
+import { seedCapacityAndTimeOff } from './workload';
 import { seedProjectSample } from './sample';
 import { sampleCount, shapeItemCount, type Shape } from './shapes';
 import { verifySeed, type SeedReport } from './verify';
@@ -82,6 +83,8 @@ export async function seedScale(opts: {
             }
             // Sub-phase 3.4b: time entries over the items just written.
             await seedTimeEntries(env, bulk, ws);
+            // Sub-phase 3.5b: capacity and time off for the Workload page.
+            await seedCapacityAndTimeOff(env, bulk, ws);
             seededSlugs.push(slug);
         }
         if (seededSlugs.length > 0) {

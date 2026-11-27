@@ -45,6 +45,10 @@ describeFn('the scale seeder (mini shape)', () => {
             expect(w.timeEntries).toBeGreaterThan(w.liveItems * 2);
             // Sub-phase 3.4d: approved weeks with their rates stamped (the seed's own checks hold the rest).
             expect(w.approvedWeeks).toBeGreaterThan(20);
+            // Sub-phase 3.5b: estimates on about 60 % of the hours team's items, capacity and time off.
+            expect(w.estimatedItems).toBeGreaterThan(w.items * 0.5);
+            expect(w.capacityRows).toBeGreaterThan(0);
+            expect(w.timeOffDates).toBeGreaterThanOrEqual(25);
         }
 
         const second = await seedScale({ shape: SHAPES.mini, bulkUrl: getTestDirectDatabaseUrl() });

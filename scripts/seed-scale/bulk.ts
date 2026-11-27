@@ -38,6 +38,7 @@ import { isClosedState } from './plan';
 import { stream } from './random';
 import type { SeedEnv, SeedProject, SeedWorkspace } from './workspace';
 import { DAY_MS } from './workspace';
+import { estimateFor } from './workload';
 
 export const BATCH_SIZE = 5_000;
 const TX = { timeout: 600_000, maxWait: 60_000 } as const;
@@ -131,6 +132,8 @@ export async function seedProjectBulk(
                 sortKey: sortKeys[i]!,
                 startDate: plan.startDate ? new Date(`${plan.startDate}T00:00:00Z`) : null,
                 dueDate: plan.dueDate ? new Date(`${plan.dueDate}T00:00:00Z`) : null,
+                // Sub-phase 3.5b: an estimate in the team's unit, from its own stream.
+                ...estimateFor(env.seed, ws.slug, project.keyPrefix, plan.index, team.estimateUnit),
                 startedAt: startedAt && startedAt.getTime() <= plan.updatedAt.getTime() ? startedAt : startedAt ? plan.updatedAt : null,
                 completedAt: state.category === 'DONE' ? plan.updatedAt : null,
                 cancelledAt: state.category === 'CANCELLED' ? plan.updatedAt : null,

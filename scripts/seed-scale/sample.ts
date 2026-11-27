@@ -22,6 +22,7 @@ import { stream } from './random';
 import { RATIOS } from './shapes';
 import type { SeedEnv, SeedProject, SeedWorkspace } from './workspace';
 import { contextOf } from './workspace';
+import { estimateFor } from './workload';
 
 export interface SampleResult {
     ids: string[];
@@ -77,6 +78,8 @@ export async function seedProjectSample(
             labelIds: plan.labels.map((l) => ws.labelIds[l]!),
             startDate: plan.startDate,
             dueDate: plan.dueDate,
+            // Sub-phase 3.5b: an estimate in the team's unit, from its own stream.
+            ...estimateFor(env.seed, ws.slug, project.keyPrefix, plan.index, team.estimateUnit),
             customFields: fieldInput(ws, project, plan.fields),
             // A completed cycle takes no new items (2.5a).
             cycleId: cycle && !cycle.past ? cycle.id : null,
