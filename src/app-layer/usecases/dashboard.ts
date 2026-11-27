@@ -28,9 +28,10 @@
  *     `_DELETED`, `_MODERATED`. Names and titles are sanitised plaintext,
  *     like saved views'.
  *   - **A member's removal** deletes their personal dashboards in its
- *     transaction (`deletePersonalDashboardsOfRemovedMember`); a create locks
- *     the creator's membership `FOR KEY SHARE` first (decision 280's rule),
- *     so it never outlives the removal.
+ *     transaction (`deletePersonalDashboardsOfRemovedMember`); a create takes
+ *     a per-person advisory lock first (so the 50 a person's bound holds
+ *     under concurrent creates), then locks the creator's membership
+ *     `FOR KEY SHARE` (decision 280's rule), so it never outlives the removal.
  *
  * Written fresh for Islestone.
  */
@@ -222,7 +223,9 @@ export async function createDashboard(ctx: RequestContext, input: CreateDashboar
     const widgets = (input.widgets ?? []).map((w) => widgetWrite(w, false));
     assertWidgetCount(widgets.length);
     return runInTenantContext(ctx, async (db) => {
-        // Decision 280's rule: the creator's membership first, so a removal in
+        // One person's creates one after another, so the 50 a person's bound holds under concurrency.
+        await DashboardRepository.lockCreatesOf(db, ctx, ctx.userId);
+        // Decision 280's rule: the creator's membership next, so a removal in
         // flight either deletes what this writes or finds it never written.
         const active = await MembershipRepository.lockActiveUserIds(db, ctx, [ctx.userId]);
         if (!active.has(ctx.userId)) throw badRequest('Only an active member keeps dashboards.');

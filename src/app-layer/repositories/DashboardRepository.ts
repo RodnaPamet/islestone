@@ -82,6 +82,18 @@ export class DashboardRepository {
         });
     }
 
+    /**
+     * Serialise one person's creates (the 50 a person's bound): a
+     * transaction-scoped advisory lock on the workspace and the creator, taken
+     * FIRST in the create's transaction, before the membership's `FOR KEY
+     * SHARE` and the count, so two creates at once count one after the other.
+     * Nothing else takes it (a member's removal locks the membership alone),
+     * so the order advisory lock, then membership row never meets its reverse.
+     */
+    static async lockCreatesOf(db: PrismaTx, ctx: RequestContext, userId: string): Promise<void> {
+        await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`dashboard-create:${ctx.tenantId}:${userId}`}))`;
+    }
+
     /** The dashboards one person has created, personal and shared (the 50 a person's bound). */
     static async countCreatedBy(db: PrismaTx, ctx: RequestContext, userId: string): Promise<number> {
         return db.dashboard.count({ where: { tenantId: ctx.tenantId, createdByUserId: userId } });
