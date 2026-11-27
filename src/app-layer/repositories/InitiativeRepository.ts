@@ -118,6 +118,13 @@ export class InitiativeRepository {
         return db.initiative.findMany({ where: { tenantId: ctx.tenantId, id: { in: [...ids] } }, take: INITIATIVES_LIST_TAKE, select: initiativeLiteSelect });
     }
 
+    /** Lock one initiative's row for a versioned write. */
+    static async lock(db: PrismaTx, ctx: Ctx, id: string): Promise<boolean> {
+        const rows = await db.$queryRaw<{ id: string }[]>`
+            SELECT "id" FROM "Initiative" WHERE "id" = ${id} AND "tenantId" = ${ctx.tenantId} FOR UPDATE`;
+        return rows.length === 1;
+    }
+
     /** Read an initiative `FOR KEY SHARE`: a concurrent purge cannot delete it before the caller's link commits. */
     static async lockForKeyShare(db: PrismaTx, ctx: Ctx, id: string): Promise<{ id: string; name: string; archivedAt: Date | null; deletedAt: Date | null } | null> {
         const rows = await db.$queryRaw<Array<{ id: string; name: string; archivedAt: Date | null; deletedAt: Date | null }>>`

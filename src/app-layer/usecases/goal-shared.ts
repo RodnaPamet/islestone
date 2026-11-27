@@ -127,10 +127,15 @@ export function checkedDescription(sanitised: string | null | undefined): string
 
 /**
  * A Lead (decision 209): one ACTIVE member, any role but GUEST (a Viewer may
- * lead). Never an agent: agents are not members.
+ * lead). Never an agent: agents are not members. Their membership is read
+ * `FOR KEY SHARE` (issue #113, owner decision 280), after the goal's or
+ * initiative's own row when it exists: a member's removal past its
+ * membership lock is waited for and the Lead refused, never the key
+ * refusing the removal.
  */
 export async function assertLeadMember(db: PrismaTx, ctx: RequestContext, userId: string): Promise<void> {
-    const [m] = await MembershipRepository.activeMembershipsWithRoles(db, ctx, [userId]);
+    const locked = await MembershipRepository.lockActiveUserIds(db, ctx, [userId]);
+    const [m] = locked.has(userId) ? await MembershipRepository.activeMembershipsWithRoles(db, ctx, [userId]) : [];
     if (!m || m.role === 'GUEST') throw badRequest('The lead must be an active member of this workspace.', { reason: 'LEAD_NOT_MEMBER' });
 }
 

@@ -54,7 +54,8 @@ import { clearPersonValuesInTx } from './custom-field';
 import { GoalRepository } from '../repositories/GoalRepository';
 import { InitiativeRepository } from '../repositories/InitiativeRepository';
 import { WorkItemTemplateRepository } from '../repositories/TemplateRepository';
-import { withdrawReviewerRowsOfUser } from './review-engine';
+import { withdrawReviewerRowsOfUser, type ReviewNoticeOut } from './review-engine';
+import { MembershipRepository } from '../repositories/MembershipRepository';
 import { emitReviewNotices } from './work-item-shared';
 import { CalendarSyncRepository } from '../repositories/CalendarSyncRepository';
 import { enqueueTeardowns } from './calendar-sync-enqueue';
@@ -512,6 +513,135 @@ export async function deactivateTenantMember(
 }
 
 /**
+ * Clear every row that names a member through a key that refuses the
+ * membership's delete, or no key at all (ADR 0003 §1, 2.4, 2.4b, 2.5c, 3.2a,
+ * 2.8a): the items assigned to them or waiting on them, their person values,
+ * the item templates that would assign them, the goals and initiatives they
+ * lead, and their reviewer rows still asked. The items it writes are locked
+ * in id order in ONE statement before any step writes (decision 173). Run
+ * twice by `removeTenantMember` (issue #113, owner decision 280): before the
+ * membership is locked, and again after, for what a writer that had already
+ * read the person `FOR KEY SHARE` committed in between.
+ */
+async function clearRowsNamingMember(
+    db: PrismaTx,
+    ctx: RequestContext,
+    membershipId: string,
+    userId: string,
+    pass: 1 | 2,
+): Promise<{ notices: ReviewNoticeOut[] }> {
+    // The second pass is named in its entries; the first writes them as before.
+    const passMeta = pass === 2 ? { afterMembershipLock: true } : {};
+    // ADR 0003 §1, step 2: unassign every work item assigned to them, so
+    // the RESTRICT foreign key from `WorkItem.assigneeId` does not refuse
+    // the delete. Every item the removal writes (assigned, waiting on, a
+    // person value, a pending reviewer row), locked in id order in ONE
+    // statement before any of the steps below writes (decision 173). The
+    // second pass locks again: a row a writer named them on between the
+    // passes was not among the first pass's, and once the membership is
+    // locked no writer can name them on another, so the set is settled.
+    const reviewerItemIds = (await ReviewRepository.pendingRowsOf(db, ctx, userId)).map((r) => r.workItemId);
+    const locked = await WorkItemRepository.lockItemsOfPerson(db, ctx, userId, reviewerItemIds);
+    const unassigned = await WorkItemRepository.unassignAll(db, ctx, userId, locked);
+    if (unassigned > 0) {
+        await logEvent(db, ctx, {
+            action: 'WORK_ITEMS_UNASSIGNED_ON_MEMBER_REMOVAL',
+            entityType: 'TenantMembership',
+            entityId: membershipId,
+            details: `Unassigned ${unassigned} work item(s) before removing a member`,
+            detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'updated', changedFields: ['assigneeId'] },
+            metadata: { unassignedCount: unassigned, ...passMeta },
+        });
+    }
+
+    // Sub-phase 2.4b: waiting on naming them is cleared (its member FK is
+    // RESTRICT, as the assignee's), each item's version increased.
+    const clearedWaitingOn = await WorkItemRepository.clearWaitingOnAll(db, ctx, userId, locked);
+    if (clearedWaitingOn > 0) {
+        await logEvent(db, ctx, {
+            action: 'WORK_ITEMS_WAITING_ON_CLEARED_ON_MEMBER_REMOVAL',
+            entityType: 'TenantMembership',
+            entityId: membershipId,
+            details: `Cleared waiting on for ${clearedWaitingOn} work item(s) before removing a member`,
+            detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'updated', changedFields: ['waitingOnUserId'] },
+            metadata: { clearedCount: clearedWaitingOn, ...passMeta },
+        });
+    }
+
+    // Sub-phase 2.4: person custom-field values naming them go too (the
+    // value's member FK is NO ACTION, as the assignee's is RESTRICT), and
+    // those items' versions increase.
+    const clearedPersonValues = await clearPersonValuesInTx(db, ctx, userId);
+    if (clearedPersonValues > 0) {
+        await logEvent(db, ctx, {
+            action: 'CUSTOM_FIELD_VALUES_CLEARED_ON_MEMBER_REMOVAL',
+            entityType: 'TenantMembership',
+            entityId: membershipId,
+            details: `Cleared ${clearedPersonValues} person field value(s) before removing a member`,
+            detailsJson: { category: 'entity_lifecycle', entityName: 'CustomFieldValue', operation: 'deleted' },
+            metadata: { clearedCount: clearedPersonValues, ...passMeta },
+        });
+    }
+
+    // Sub-phase 2.5c: item templates that would assign them stop doing so.
+    const clearedTemplates = await WorkItemTemplateRepository.clearAssignee(db, ctx, userId);
+    if (clearedTemplates > 0) {
+        await logEvent(db, ctx, {
+            action: 'ITEM_TEMPLATES_CLEARED_ON_MEMBER_REMOVAL',
+            entityType: 'TenantMembership',
+            entityId: membershipId,
+            details: `Cleared the assignee of ${clearedTemplates} item template(s) before removing a member`,
+            detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItemTemplate', operation: 'updated', changedFields: ['assigneeId'] },
+            metadata: { clearedCount: clearedTemplates, ...passMeta },
+        });
+    }
+
+    // Sub-phase 3.2a (decision 209): goals and initiatives they lead lose
+    // their Lead (the member FK is RESTRICT), deleted ones included, each
+    // audited and its version increased.
+    const ledGoals = await GoalRepository.clearLead(db, ctx, userId);
+    for (const g of ledGoals) {
+        // guardrail-allow: n+1 — one audit entry per goal they led (bounded by GOALS_LIST_TAKE).
+        await logEvent(db, ctx, {
+            action: 'GOAL_UPDATED',
+            entityType: 'Goal',
+            entityId: g.id,
+            details: `Cleared the lead of goal ${g.title} before removing a member`,
+            detailsJson: { category: 'entity_lifecycle', entityName: 'Goal', operation: 'updated', changedFields: ['leadUserId'] },
+            metadata: { reason: 'member_removed', fromLeadUserId: userId, toLeadUserId: null, ...passMeta },
+        });
+    }
+    const ledInitiatives = await InitiativeRepository.clearLead(db, ctx, userId);
+    for (const i of ledInitiatives) {
+        // guardrail-allow: n+1 — one audit entry per initiative they led (bounded by INITIATIVES_LIST_TAKE).
+        await logEvent(db, ctx, {
+            action: 'INITIATIVE_UPDATED',
+            entityType: 'Initiative',
+            entityId: i.id,
+            details: `Cleared the lead of initiative ${i.name} before removing a member`,
+            detailsJson: { category: 'entity_lifecycle', entityName: 'Initiative', operation: 'updated', changedFields: ['leadUserId'] },
+            metadata: { reason: 'member_removed', fromLeadUserId: userId, toLeadUserId: null, ...passMeta },
+        });
+    }
+
+    // Sub-phase 2.8a (ADR 0009): their reviewer rows still asked are
+    // withdrawn, never deleted, and each open step they were on is decided
+    // again; a step left with nobody stays open, flagged, never completed.
+    const reviews = await withdrawReviewerRowsOfUser(db, ctx, userId);
+    if (reviews.withdrawn > 0) {
+        await logEvent(db, ctx, {
+            action: 'WORK_ITEM_REVIEWERS_WITHDRAWN_ON_MEMBER_REMOVAL',
+            entityType: 'TenantMembership',
+            entityId: membershipId,
+            details: `Withdrew ${reviews.withdrawn} pending review(s) before removing a member`,
+            detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItemReviewer', operation: 'updated', changedFields: ['withdrawnAt'] },
+            metadata: { withdrawnCount: reviews.withdrawn, ...passMeta },
+        });
+    }
+    return { notices: reviews.notices };
+}
+
+/**
  * Hard-remove a member from the tenant (deletes the TenantMembership row).
  * Distinct from deactivate (soft, revocable): this fully detaches the user.
  * Works on ACTIVE or already-DEACTIVATED members. Same guardrails as
@@ -571,111 +701,10 @@ export async function removeTenantMember(
             await assertNotLastActiveAdmin(db, ctx, 'Cannot remove the last admin. Promote another member first.');
         }
 
-        // ADR 0003 §1, step 2: unassign every work item assigned to them, so
-        // the RESTRICT foreign key from `WorkItem.assigneeId` does not refuse
-        // the delete. (Step 1, ending delegated agent sessions, and step 3,
-        // suspending the agents they own, arrive with agents in 6.3.)
-        // Every item the removal writes (assigned, waiting on, a person
-        // value, a pending reviewer row), locked in id order in ONE statement
-        // before any of the steps below writes (decision 173).
-        const reviewerItemIds = (await ReviewRepository.pendingRowsOf(db, ctx, membership.userId)).map((r) => r.workItemId);
-        const locked = await WorkItemRepository.lockItemsOfPerson(db, ctx, membership.userId, reviewerItemIds);
-        const unassigned = await WorkItemRepository.unassignAll(db, ctx, membership.userId, locked);
-        if (unassigned > 0) {
-            await logEvent(db, ctx, {
-                action: 'WORK_ITEMS_UNASSIGNED_ON_MEMBER_REMOVAL',
-                entityType: 'TenantMembership',
-                entityId: membership.id,
-                details: `Unassigned ${unassigned} work item(s) before removing a member`,
-                detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'updated', changedFields: ['assigneeId'] },
-                metadata: { unassignedCount: unassigned },
-            });
-        }
-
-        // Sub-phase 2.4b: waiting on naming them is cleared (its member FK is
-        // RESTRICT, as the assignee's), each item's version increased.
-        const clearedWaitingOn = await WorkItemRepository.clearWaitingOnAll(db, ctx, membership.userId, locked);
-        if (clearedWaitingOn > 0) {
-            await logEvent(db, ctx, {
-                action: 'WORK_ITEMS_WAITING_ON_CLEARED_ON_MEMBER_REMOVAL',
-                entityType: 'TenantMembership',
-                entityId: membership.id,
-                details: `Cleared waiting on for ${clearedWaitingOn} work item(s) before removing a member`,
-                detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItem', operation: 'updated', changedFields: ['waitingOnUserId'] },
-                metadata: { clearedCount: clearedWaitingOn },
-            });
-        }
-
-        // Sub-phase 2.4: person custom-field values naming them go too (the
-        // value's member FK is NO ACTION, as the assignee's is RESTRICT), and
-        // those items' versions increase.
-        const clearedPersonValues = await clearPersonValuesInTx(db, ctx, membership.userId);
-        if (clearedPersonValues > 0) {
-            await logEvent(db, ctx, {
-                action: 'CUSTOM_FIELD_VALUES_CLEARED_ON_MEMBER_REMOVAL',
-                entityType: 'TenantMembership',
-                entityId: membership.id,
-                details: `Cleared ${clearedPersonValues} person field value(s) before removing a member`,
-                detailsJson: { category: 'entity_lifecycle', entityName: 'CustomFieldValue', operation: 'deleted' },
-                metadata: { clearedCount: clearedPersonValues },
-            });
-        }
-
-        // Sub-phase 2.5c: item templates that would assign them stop doing so.
-        const clearedTemplates = await WorkItemTemplateRepository.clearAssignee(db, ctx, membership.userId);
-        if (clearedTemplates > 0) {
-            await logEvent(db, ctx, {
-                action: 'ITEM_TEMPLATES_CLEARED_ON_MEMBER_REMOVAL',
-                entityType: 'TenantMembership',
-                entityId: membership.id,
-                details: `Cleared the assignee of ${clearedTemplates} item template(s) before removing a member`,
-                detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItemTemplate', operation: 'updated', changedFields: ['assigneeId'] },
-                metadata: { clearedCount: clearedTemplates },
-            });
-        }
-
-        // Sub-phase 3.2a (decision 209): goals and initiatives they lead lose
-        // their Lead (the member FK is RESTRICT), deleted ones included, each
-        // audited and its version increased.
-        const ledGoals = await GoalRepository.clearLead(db, ctx, membership.userId);
-        for (const g of ledGoals) {
-            // guardrail-allow: n+1 — one audit entry per goal they led (bounded by GOALS_LIST_TAKE).
-            await logEvent(db, ctx, {
-                action: 'GOAL_UPDATED',
-                entityType: 'Goal',
-                entityId: g.id,
-                details: `Cleared the lead of goal ${g.title} before removing a member`,
-                detailsJson: { category: 'entity_lifecycle', entityName: 'Goal', operation: 'updated', changedFields: ['leadUserId'] },
-                metadata: { reason: 'member_removed', fromLeadUserId: membership.userId, toLeadUserId: null },
-            });
-        }
-        const ledInitiatives = await InitiativeRepository.clearLead(db, ctx, membership.userId);
-        for (const i of ledInitiatives) {
-            // guardrail-allow: n+1 — one audit entry per initiative they led (bounded by INITIATIVES_LIST_TAKE).
-            await logEvent(db, ctx, {
-                action: 'INITIATIVE_UPDATED',
-                entityType: 'Initiative',
-                entityId: i.id,
-                details: `Cleared the lead of initiative ${i.name} before removing a member`,
-                detailsJson: { category: 'entity_lifecycle', entityName: 'Initiative', operation: 'updated', changedFields: ['leadUserId'] },
-                metadata: { reason: 'member_removed', fromLeadUserId: membership.userId, toLeadUserId: null },
-            });
-        }
-
-        // Sub-phase 2.8a (ADR 0009): their reviewer rows still asked are
-        // withdrawn, never deleted, and each open step they were on is decided
-        // again; a step left with nobody stays open, flagged, never completed.
-        const reviews = await withdrawReviewerRowsOfUser(db, ctx, membership.userId);
-        if (reviews.withdrawn > 0) {
-            await logEvent(db, ctx, {
-                action: 'WORK_ITEM_REVIEWERS_WITHDRAWN_ON_MEMBER_REMOVAL',
-                entityType: 'TenantMembership',
-                entityId: membership.id,
-                details: `Withdrew ${reviews.withdrawn} pending review(s) before removing a member`,
-                detailsJson: { category: 'entity_lifecycle', entityName: 'WorkItemReviewer', operation: 'updated', changedFields: ['withdrawnAt'] },
-                metadata: { withdrawnCount: reviews.withdrawn },
-            });
-        }
+        // Every row naming them, cleared (ADR 0003 §1, step 2; the first pass).
+        // (Step 1, ending delegated agent sessions, and step 3, suspending
+        // the agents they own, arrive with agents in 6.3.)
+        const first = await clearRowsNamingMember(db, ctx, membership.id, membership.userId, 1);
 
         // Roadmap 3.3b (decision 239): their calendar connections move to
         // DISCONNECTING here; the teardown after the commit deletes Islestone's
@@ -691,6 +720,14 @@ export async function removeTenantMember(
                 metadata: { connectionCount: calendarConnections.length },
             });
         }
+
+        // Decision 280 (issue #113): lock the membership, then clear once
+        // more, in this transaction. A writer that read the person
+        // `FOR KEY SHARE` before this lock (`lockActiveUserIds`) has committed
+        // by now, and what it named is cleared here; one that comes later
+        // waits for this transaction and finds the person gone, a 400.
+        await MembershipRepository.lockForDelete(db, ctx, membership.id);
+        const second = await clearRowsNamingMember(db, ctx, membership.id, membership.userId, 2);
 
         await db.tenantMembership.delete({
             where: { id: input.membershipId },
@@ -713,7 +750,7 @@ export async function removeTenantMember(
             },
         });
 
-        return { id: membership.id, userId: membership.userId, reviewNotices: reviews.notices, calendarConnections };
+        return { id: membership.id, userId: membership.userId, reviewNotices: [...first.notices, ...second.notices], calendarConnections };
     });
     // After the commit: the review steps the removal decided, or left with nobody.
     await emitReviewNotices(ctx, removed.reviewNotices);

@@ -200,7 +200,10 @@ async function checkedColumns(
     if (input.priority !== undefined) data.priority = input.priority;
     if (input.assigneeId !== undefined) {
         if (input.assigneeId) {
-            const active = await MembershipRepository.listActiveUserIds(db, ctx, [input.assigneeId]);
+            // `FOR KEY SHARE`, after the template's own row (issue #113): a
+            // member's removal past its membership lock is waited for and the
+            // assignee refused; one that comes later clears it again.
+            const active = await MembershipRepository.lockActiveUserIds(db, ctx, [input.assigneeId]);
             if (!active.has(input.assigneeId)) throw badRequest('The assignee must be an active member of this workspace.');
         }
         data.assigneeId = input.assigneeId;
@@ -302,6 +305,8 @@ export async function updateWorkItemTemplate(
         const project = await loadProject(db, ctx, await visibleProjects(ctx, db), projectId);
         assertProjectWritable(project);
         await ProjectRepository.lock(db, ctx, project.id);
+        // The template's row before any person it names (issue #113).
+        await WorkItemTemplateRepository.lock(db, ctx, templateId);
         const row = await loadTemplate(db, ctx, project.id, templateId);
         const { data, labelIds } = await checkedColumns(db, ctx, project, input);
         if (data.name !== undefined && data.name !== row.name && (await WorkItemTemplateRepository.nameTaken(db, ctx, project.id, data.name, row.id))) {

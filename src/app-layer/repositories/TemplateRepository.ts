@@ -75,6 +75,13 @@ export class WorkItemTemplateRepository {
         });
     }
 
+    /** Lock one item template's row for a write that may name a person (issue #113: the row, then the membership). */
+    static async lock(db: PrismaTx, ctx: Ctx, id: string): Promise<boolean> {
+        const rows = await db.$queryRaw<Array<{ id: string }>>`
+            SELECT "id" FROM "WorkItemTemplate" WHERE "id" = ${id} AND "tenantId" = ${ctx.tenantId} FOR UPDATE`;
+        return rows.length === 1;
+    }
+
     static async getById(db: PrismaTx, ctx: Ctx, id: string): Promise<WorkItemTemplateRow | null> {
         return db.workItemTemplate.findFirst({ where: { id, tenantId: ctx.tenantId }, select: workItemTemplateSelect });
     }
