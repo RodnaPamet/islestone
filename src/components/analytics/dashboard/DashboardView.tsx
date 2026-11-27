@@ -95,6 +95,8 @@ export function DashboardView({ dashboard, affordances, today, startEditing = fa
     const versionRef = useRef(dashboard?.version ?? 1);
     const savesRef = useRef(0);
     const pendingRef = useRef(0);
+    /** Removals waiting in the undo toast: the grid's compaction meanwhile is placed, and sent with the removal's own write. */
+    const removalsRef = useRef(0);
     const chainRef = useRef<Promise<unknown>>(Promise.resolve());
     const [pickerOpen, setPickerOpen] = useState(false);
     const [editing, setEditing] = useState<DashboardWidgetData | null>(null);
@@ -162,6 +164,7 @@ export function DashboardView({ dashboard, affordances, today, startEditing = fa
                 return c ? { ...w, position: c.position, size: c.size } : w;
             });
             place(next);
+            if (removalsRef.current > 0) return;
             void save(next).then((refusal) => refusal && toast.error(refusal));
         },
         [editMode, place, save, toast],
@@ -184,13 +187,25 @@ export function DashboardView({ dashboard, affordances, today, startEditing = fa
             const index = widgetsRef.current.findIndex((w) => w.id === widget.id);
             if (index < 0) return;
             const savesAtRemoval = savesRef.current;
+            let pending = false;
+            const settle = () => {
+                if (pending) removalsRef.current -= 1;
+                pending = false;
+            };
             writes.removeWidget(title, {
-                onLeave: () => place(widgetsRef.current.filter((w) => w.id !== widget.id)),
+                onLeave: () => {
+                    pending = true;
+                    removalsRef.current += 1;
+                    place(widgetsRef.current.filter((w) => w.id !== widget.id));
+                },
                 commit: async () => {
+                    settle();
                     const refusal = await save(widgetsRef.current);
                     if (refusal) throw new Error(refusal);
                 },
                 onUndo: () => {
+                    // Undo, or a refused write: the toast is settled either way.
+                    settle();
                     if (widgetsRef.current.some((w) => w.id === widget.id)) return;
                     const next = [...widgetsRef.current];
                     next.splice(Math.min(index, next.length), 0, widget);
