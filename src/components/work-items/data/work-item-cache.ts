@@ -92,6 +92,30 @@ export function registerWorkItemCalendar(calendar: RegisteredCalendar): () => vo
     };
 }
 
+/**
+ * A mounted workload read (3.5b, `useWorkload`): a change of assignee, dates,
+ * estimate or state moves hours between rows and weeks that only the
+ * server's read recomputes, so a work-item write re-reads it, never places
+ * a row in it.
+ */
+export interface RegisteredWorkload {
+    revalidate: () => void;
+}
+
+const workloads = new Set<RegisteredWorkload>();
+
+/** Register a mounted workload read; returns the unregister function. */
+export function registerWorkload(workload: RegisteredWorkload): () => void {
+    workloads.add(workload);
+    return () => {
+        workloads.delete(workload);
+    };
+}
+
+function revalidateWorkloads(): void {
+    for (const workload of workloads) workload.revalidate();
+}
+
 /** Register a mounted list; returns the unregister function. */
 export function registerWorkItemList(list: RegisteredList): () => void {
     lists.add(list);
@@ -187,6 +211,7 @@ export function useWorkItemCache(): WorkItemCache {
                 for (const list of lists) list.update((pages) => placeRow(pages, list.filters, row));
                 for (const timeline of timelines) timeline.update((current) => placeRowInTimeline(current, row));
                 for (const calendar of calendars) calendar.update((current) => placeRowInCalendar(current, row, rowBelongs(calendar.filters, row)));
+                revalidateWorkloads();
                 // Only a detail that is loaded: SWR drops an in-flight fetch's
                 // answer when its key is mutated after the fetch began, so a
                 // write landing while a sheet was still loading left it
@@ -201,12 +226,14 @@ export function useWorkItemCache(): WorkItemCache {
                 for (const list of lists) list.update((pages) => removeRowFromPages(pages, id));
                 for (const timeline of timelines) timeline.update((current) => removeRowFromTimeline(current, id));
                 for (const calendar of calendars) calendar.update((current) => removeRowFromCalendar(current, id) ?? current);
+                revalidateWorkloads();
             },
             revalidateLists(match) {
                 for (const list of lists) if (!match || match(list.filters)) list.revalidate();
                 // A timeline reads its whole scope: any change a list re-reads for may move it.
                 for (const timeline of timelines) timeline.revalidate();
                 for (const calendar of calendars) calendar.revalidate();
+                revalidateWorkloads();
             },
             revalidateItem(id) {
                 return mutate(apiUrl(workItemDetailPath(id)));
@@ -228,10 +255,12 @@ export function useWorkItemCache(): WorkItemCache {
             placeDates(changes) {
                 for (const timeline of timelines) timeline.update((current) => withRowDates(current, changes));
                 for (const calendar of calendars) calendar.update((current) => withCalendarDates(current, changes));
+                revalidateWorkloads();
             },
             revalidateDated() {
                 for (const timeline of timelines) timeline.revalidate();
                 for (const calendar of calendars) calendar.revalidate();
+                revalidateWorkloads();
             },
         }),
         [mutate, cache, apiUrl],

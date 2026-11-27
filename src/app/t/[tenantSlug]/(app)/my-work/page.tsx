@@ -25,7 +25,7 @@ export default async function MyWorkPage({ params }: { params: Promise<{ tenantS
     }
     return (
         <WorkConfigProvider config={page.config}>
-            <MyWorkView userId={page.ctx.userId} title={tNav('myWork')} />
+            <MyWorkView userId={page.ctx.userId} title={tNav('myWork')} showWorkload={page.workload} />
         </WorkConfigProvider>
     );
 }

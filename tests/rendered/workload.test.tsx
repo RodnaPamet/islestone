@@ -1,9 +1,12 @@
 /** @jest-environment jsdom */
 
 /**
- * Capacity and time off in the browser (sub-phase 3.5a; owner decisions 284
- * to 288, 297, 298 and 303): the Workload page's capacity grid (a real grid
- * with a roving tabindex and labelled cells), "My capacity and time off"
+ * Capacity, time off and allocation in the browser (sub-phases 3.5a and 3.5b;
+ * owner decisions 284 to 300 and 303): the Workload page's grid (a real grid
+ * with a roving tabindex and labelled cells carrying allocation, capacity,
+ * over capacity, time off and a filter's share; the row's figures; the
+ * Unassigned row; the filters sent; a cell opening the week's items in a
+ * sheet, its items listed or withheld), My Work's line, "My capacity and time off"
  * (the person's dates with their type, "Add time off" previewing the working
  * days and sending one batch with the versions of the dates it replaces, a
  * date changed in place, a removal held behind the undo toast), nothing
@@ -26,21 +29,80 @@ jest.mock('next/navigation', () => ({
 import { __resetPendingUndoToastsForTest } from '@/components/ui/hooks/use-toast-with-undo';
 import { TimeOffCalendar } from '@/components/workload/TimeOffCalendar';
 import { WorkloadSettings } from '@/components/workload/WorkloadSettings';
+import { MyWorkloadLine } from '@/components/workload/MyWorkloadLine';
 import { WorkloadView } from '@/components/workload/WorkloadView';
-import type { TimeOffDayData, WorkloadData, WorkloadMembersData } from '@/lib/workload/types';
+import type { TimeOffDayData, WorkloadCellData, WorkloadData, WorkloadMembersData, WorkloadPersonRow } from '@/lib/workload/types';
 
 import { installFetch, renderWorkspace } from '../helpers/work-items-harness';
 
 const ALL = { view: true, recordOwnTimeOff: true, manage: true };
+
+const person = (over: Partial<WorkloadPersonRow> & Pick<WorkloadPersonRow, 'userId' | 'name'>): WorkloadPersonRow => ({
+    active: true,
+    capacity: [2400, 2400],
+    weeklyMinutes: [2400, 2400],
+    timeOffMinutes: [0, 0],
+    timeOffDays: [[], []],
+    allocated: [0, 0],
+    over: [0, 0],
+    share: null,
+    later: 0,
+    noDates: { count: 0, minutes: 0 },
+    notEstimated: 0,
+    pointsWork: { count: 0, points: 0 },
+    ...over,
+});
 
 const workload: WorkloadData = {
     weeks: ['2026-11-23', '2026-11-30'],
     today: '2026-11-27',
     timeZone: 'Europe/Sofia',
     people: [
-        { userId: 'u-ada', name: 'Ada', active: true, capacity: [2400, 1920], weeklyMinutes: [2400, 2400], timeOffMinutes: [0, 480], timeOffDays: [[], ['2026-12-01']] },
-        { userId: 'u-bob', name: 'Bob', active: true, capacity: [1440, 1440], weeklyMinutes: [1440, 1440], timeOffMinutes: [0, 0], timeOffDays: [[], []] },
+        person({
+            userId: 'u-ada',
+            name: 'Ada',
+            capacity: [2400, 1920],
+            timeOffMinutes: [0, 480],
+            timeOffDays: [[], ['2026-12-01']],
+            allocated: [2040, 2760],
+            over: [0, 840],
+            later: 600,
+            noDates: { count: 2, minutes: 180 },
+            notEstimated: 3,
+            pointsWork: { count: 1, points: 5 },
+        }),
+        person({ userId: 'u-bob', name: 'Bob', capacity: [1440, 1440], weeklyMinutes: [1440, 1440] }),
+        person({ userId: 'u-cy', name: 'Cy', active: false, capacity: [0, 0], allocated: [60, 0], over: [60, 0] }),
     ],
+    unassigned: { allocated: [300, 0], share: null, later: 0, noDates: { count: 0, minutes: 0 } },
+    calendars: [{ id: 'workspace-default', timeZone: 'Europe/Sofia' }],
+    timeSpentCounted: true,
+    filters: { userIds: null, projectId: null, teamId: null, recipientListId: null, over: false },
+};
+
+const cellOfAda: WorkloadCellData = {
+    userId: 'u-ada',
+    name: 'Ada',
+    active: true,
+    week: '2026-11-30',
+    capacityMinutes: 1920,
+    weeklyMinutes: 2400,
+    allocatedMinutes: 2760,
+    overMinutes: 840,
+    timeOff: [{ day: '2026-12-01', minutes: null }],
+    items: [
+        {
+            id: 'w-1', key: 'WEB-12', title: 'Launch page', projectId: 'p-web', projectName: 'Website', startDate: '2026-11-30', dueDate: '2026-12-04',
+            estimateMinutes: 2400, remainingMinutes: 2400, minutes: 2400, reason: 'SPREAD', workingDays: 5, from: '2026-11-30', to: '2026-12-04',
+        },
+        {
+            id: 'w-2', key: 'WEB-3', title: 'Old bug', projectId: 'p-web', projectName: 'Website', startDate: null, dueDate: '2026-11-10',
+            estimateMinutes: 480, remainingMinutes: 360, minutes: 360, reason: 'OVERDUE', workingDays: 1, from: '2026-11-30', to: '2026-11-30',
+        },
+    ],
+    moreItems: 0,
+    itemsShown: true,
+    timeSpentCounted: true,
 };
 
 function day(over: Partial<TimeOffDayData> = {}): TimeOffDayData {
@@ -71,23 +133,117 @@ beforeEach(() => {
 });
 
 describe('the Workload page', () => {
-    it('shows capacity by week in a labelled grid, moves focus by arrow keys, and has no axe violations', async () => {
+    it('shows allocation against capacity by week in a labelled grid, moves focus by arrow keys, and has no axe violations', async () => {
         installFetch({ 'GET /workload': { body: workload }, 'GET /time-off': timeOffAnswer([day()]), 'GET /members/u-ada/capacity': capacity });
         const { container } = renderWorkspace(<WorkloadView affordances={ALL} userId="u-ada" today="2026-11-27" />);
-        const grid = await screen.findByRole('grid', { name: /Capacity by week/ });
-        const first = within(grid).getByRole('gridcell', { name: 'Ada, week of 23 Nov 2026: 40h capacity of 40h a week' });
+        const grid = await screen.findByRole('grid', { name: /Workload by week/ });
+        const first = within(grid).getByRole('gridcell', { name: 'Ada, week of 23 Nov 2026: 34h allocated of 40h' });
         expect(first).toHaveAttribute('tabindex', '0');
-        const off = within(grid).getByRole('gridcell', { name: 'Ada, week of 30 Nov 2026: 32h capacity of 40h a week; time off on 1 day, 8h' });
-        expect(off).toHaveTextContent('Time off 8h');
+        expect(first).toHaveTextContent('34h / 40h');
+        const over = within(grid).getByRole('gridcell', { name: 'Ada, week of 30 Nov 2026: 46h allocated of 32h, over by 14h; time off on 1 day, 8h' });
+        expect(over).toHaveTextContent('Over by 14h');
+        expect(over).toHaveTextContent('Time off 8h');
+        expect(over).toHaveAttribute('data-over', 'true');
+        expect(first).not.toHaveAttribute('data-over');
+        // The row ends with what could not be placed.
+        const figures = screen.getByTestId('workload-figures-u-ada');
+        expect(figures).toHaveTextContent('No dates: 2 · 3h');
+        expect(figures).toHaveTextContent('Not estimated: 3');
+        expect(figures).toHaveTextContent('Points work: 1 · 5 points');
+        expect(figures).toHaveTextContent('Later: 10h');
+        // A deactivated member with work, and the work assigned to nobody.
+        expect(within(grid).getByRole('gridcell', { name: 'Cy, week of 23 Nov 2026: 1h allocated of 0h, over by 1h' })).toBeInTheDocument();
+        expect(within(grid).getByTestId('workload-row-u-cy')).toHaveTextContent('Deactivated');
+        expect(within(grid).getByRole('gridcell', { name: 'Unassigned, week of 23 Nov 2026: 5h allocated' })).toBeInTheDocument();
         act(() => first.focus());
         fireEvent.keyDown(first, { key: 'ArrowRight' });
-        expect(off).toHaveFocus();
-        fireEvent.keyDown(off, { key: 'ArrowDown' });
+        expect(over).toHaveFocus();
+        fireEvent.keyDown(over, { key: 'ArrowDown' });
         expect(within(grid).getByRole('gridcell', { name: /^Bob, week of 30 Nov 2026/ })).toHaveFocus();
         expect(await screen.findByTestId('my-capacity')).toHaveTextContent("40h a week (the workspace's default)");
         expect(await axe(container)).toHaveNoViolations();
     });
 
+    it("opens a week's items in a sheet, each opening the item, and has no axe violations", async () => {
+        const { calls } = installFetch({
+            'GET /workload': { body: workload },
+            'GET /workload/cell': { body: cellOfAda },
+            'GET /time-off': timeOffAnswer([]),
+            'GET /members/u-ada/capacity': capacity,
+        });
+        renderWorkspace(<WorkloadView affordances={ALL} userId="u-ada" today="2026-11-27" />);
+        const grid = await screen.findByRole('grid', { name: /Workload by week/ });
+        fireEvent.keyDown(within(grid).getByRole('gridcell', { name: /^Ada, week of 30 Nov 2026/ }), { key: 'Enter' });
+        const sheet = await screen.findByTestId('workload-cell-sheet');
+        await waitFor(() => expect(within(sheet).getByTestId('workload-cell-summary')).toHaveTextContent('46h allocated of 32h, over by 14h'));
+        const cell = calls.find((c) => c.path === '/workload/cell')!;
+        expect(cell.search.get('userId')).toBe('u-ada');
+        expect(cell.search.get('week')).toBe('2026-11-30');
+        expect(sheet).toHaveTextContent('Time off: 1 Dec (whole day)');
+        const table = within(sheet).getByTestId('workload-cell-table');
+        expect(table).toHaveTextContent('WEB-12');
+        expect(table).toHaveTextContent('Spread over 5 working days, 30 Nov to 4 Dec');
+        expect(table).toHaveTextContent('Overdue: on the next working day');
+        expect(table).toHaveTextContent('6h left of 8h');
+        expect(await axe(sheet)).toHaveNoViolations();
+    });
+
+    it('withholds the items from a caller who may not read work items', async () => {
+        installFetch({
+            'GET /workload': { body: workload },
+            'GET /workload/cell': { body: { ...cellOfAda, items: [], itemsShown: false } },
+            'GET /time-off': timeOffAnswer([]),
+            'GET /members/u-ada/capacity': capacity,
+        });
+        renderWorkspace(<WorkloadView affordances={ALL} userId="u-ada" today="2026-11-27" />);
+        const grid = await screen.findByRole('grid', { name: /Workload by week/ });
+        fireEvent.click(within(grid).getByRole('gridcell', { name: /^Ada, week of 30 Nov 2026/ }));
+        const sheet = await screen.findByTestId('workload-cell-sheet');
+        expect(await within(sheet).findByText('You cannot see work items, so the items are not listed.')).toBeInTheDocument();
+        expect(within(sheet).queryByTestId('workload-cell-table')).toBeNull();
+    });
+
+    it("sends the filters from the address and shows a project's share", async () => {
+        // The filters are read from the address (synced to the URL).
+        window.history.replaceState(null, '', '/t/acme/workload?projectId=p-web&over=true');
+        const shared: WorkloadData = { ...workload, people: [{ ...workload.people[0]!, share: [600, 0] }], unassigned: null, filters: { ...workload.filters, projectId: 'p-web', over: true } };
+        const { calls } = installFetch({ 'GET /workload': { body: shared }, 'GET /time-off': timeOffAnswer([]), 'GET /members/u-ada/capacity': capacity });
+        renderWorkspace(
+            <WorkloadView affordances={ALL} userId="u-ada" today="2026-11-27" options={{ projects: [{ id: 'p-web', name: 'Website' }], teams: [], recipientLists: [], readsItems: false }} />,
+        );
+        const grid = await screen.findByRole('grid', { name: /Workload by week/ });
+        const read = calls.find((c) => c.path === '/workload')!;
+        expect(read.search.get('projectId')).toBe('p-web');
+        expect(read.search.get('over')).toBe('true');
+        const first = within(grid).getByRole('gridcell', { name: 'Ada, week of 23 Nov 2026: 34h allocated of 40h; 10h in Website' });
+        expect(first).toHaveTextContent('10h of 34h in Website');
+        expect(within(grid).queryByTestId('workload-row-unassigned')).toBeNull();
+    });
+});
+
+describe("My Work's line (decision 300)", () => {
+    it("says this week's and next week's load, the over week as such, and links to the Workload page", async () => {
+        const mine: WorkloadData = { ...workload, people: [workload.people[0]!], unassigned: null };
+        const { calls } = installFetch({ 'GET /workload': { body: mine } });
+        renderWorkspace(<MyWorkloadLine userId="u-ada" />);
+        const line = await screen.findByTestId('my-workload-line');
+        expect(line).toHaveTextContent('This week 34h of 40h · next week over by 14h');
+        expect(within(line).getByRole('link', { name: 'Open Workload' })).toHaveAttribute('href', '/t/acme/workload?userId=u-ada');
+        const read = calls.find((c) => c.path === '/workload')!;
+        expect(read.search.get('userId')).toBe('me');
+        expect(read.search.get('weeks')).toBe('2');
+    });
+
+    it('is hidden when the person has no counted work in either week', async () => {
+        const idle: WorkloadData = { ...workload, people: [person({ userId: 'u-ada', name: 'Ada' })], unassigned: null };
+        const { calls } = installFetch({ 'GET /workload': { body: idle } });
+        renderWorkspace(<MyWorkloadLine userId="u-ada" />);
+        await waitFor(() => expect(calls.some((c) => c.path === '/workload')).toBe(true));
+        expect(screen.queryByTestId('my-workload-line')).toBeNull();
+    });
+});
+
+describe('the Workload page, time off', () => {
     it("shows the person's own dates with their type", async () => {
         installFetch({ 'GET /time-off': timeOffAnswer([day(), day({ day: '2026-11-25', minutes: 240, type: 'VACATION' })]) });
         const { container } = renderWorkspace(<TimeOffCalendar personId="u-ada" today="2026-11-27" canWrite idPrefix="t" />);

@@ -1,10 +1,14 @@
 'use client';
 
 /**
- * Capacity and the workload read in the browser (sub-phase 3.5a; owner
- * decisions 284, 285 and 298): the one place the Workload page and Settings →
- * Workload read the grid, the default and members' capacity, and change them.
+ * Capacity and the workload read in the browser (sub-phases 3.5a and 3.5b;
+ * owner decisions 284, 285, 297 and 298): the one place the Workload page,
+ * My Work's line and Settings → Workload read the grid, a week's items, the
+ * default and members' capacity, and change them.
  *
+ *   - A work-item write anywhere re-reads every mounted workload read
+ *     (`registerWorkload` in `work-item-cache.ts`): allocation is computed by
+ *     the server, never placed in the cache.
  *   - Reads through `use-tenant-swr.ts` at the routes' own paths.
  *   - Writes through `apiSend`; a change names the version read (`If-Match`).
  *     Removing a future capacity change goes through the undo toast and is
@@ -14,17 +18,37 @@
  * Written fresh for Islestone.
  */
 import { useTranslations } from 'next-intl';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSWRConfig } from 'swr';
 
 import { useToast, useToastWithUndo } from '@/components/ui/hooks';
 import { ApiClientError, apiSend } from '@/lib/data/api-client';
 import { useTenantSWR } from '@/lib/data/use-tenant-swr';
 import { useTenantApiUrl } from '@/lib/tenant-context-provider';
-import type { MemberCapacityData, MemberCapacityHistory, WorkloadData, WorkloadMembersData, WorkloadSettingsData } from '@/lib/workload/types';
+import { registerWorkload } from '@/components/work-items/data/work-item-cache';
+import type { Member } from '@/lib/work-items/types';
+import type { MemberCapacityData, MemberCapacityHistory, WorkloadCellData, WorkloadData, WorkloadMembersData, WorkloadSettingsData } from '@/lib/workload/types';
 
-export const WORKLOAD_PATH = (from: string | null, weeks: number, userId?: string) =>
-    `/workload?weeks=${weeks}${from ? `&from=${encodeURIComponent(from)}` : ''}${userId ? `&userId=${encodeURIComponent(userId)}` : ''}`;
+/** The people a workload read narrows to (3.5b): never the figures of those shown. */
+export interface WorkloadFilters {
+    userId?: string;
+    projectId?: string;
+    teamId?: string;
+    recipientListId?: string;
+    over?: boolean;
+}
+
+export const WORKLOAD_PATH = (from: string | null, weeks: number, filters: WorkloadFilters = {}) => {
+    const q = new URLSearchParams({ weeks: String(weeks) });
+    if (from) q.set('from', from);
+    if (filters.userId) q.set('userId', filters.userId);
+    if (filters.projectId) q.set('projectId', filters.projectId);
+    if (filters.teamId) q.set('teamId', filters.teamId);
+    if (filters.recipientListId) q.set('recipientListId', filters.recipientListId);
+    if (filters.over) q.set('over', 'true');
+    return `/workload?${q.toString()}`;
+};
+export const WORKLOAD_CELL_PATH = (userId: string, week: string) => `/workload/cell?userId=${encodeURIComponent(userId)}&week=${encodeURIComponent(week)}`;
 export const WORKLOAD_SETTINGS_PATH = '/workload-settings';
 export const WORKLOAD_MEMBERS_PATH = '/workload/members';
 export const MEMBER_CAPACITY_PATH = (userId: string) => `/members/${encodeURIComponent(userId)}/capacity`;
@@ -35,8 +59,51 @@ export function isWorkloadKey(key: unknown): boolean {
     return key.includes('/workload') || key.includes('/time-off') || /\/members\/[^/?]+\/capacity/.test(key);
 }
 
-export function useWorkload(from: string | null, weeks: number, userId?: string) {
-    return useTenantSWR<WorkloadData>(WORKLOAD_PATH(from, weeks, userId));
+/** A work-item write re-reads `mutate`, coalesced so a burst of writes costs one read. */
+function useReReadOnWorkItemWrites(mutate: () => unknown) {
+    const latest = useRef(mutate);
+    useEffect(() => {
+        latest.current = mutate;
+    }, [mutate]);
+    useEffect(() => {
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        const unregister = registerWorkload({
+            revalidate: () => {
+                if (timer) clearTimeout(timer);
+                timer = setTimeout(() => {
+                    timer = null;
+                    void latest.current();
+                }, 300);
+            },
+        });
+        return () => {
+            if (timer) clearTimeout(timer);
+            unregister();
+        };
+    }, []);
+}
+
+export function useWorkload(from: string | null, weeks: number, filters: WorkloadFilters = {}) {
+    const swr = useTenantSWR<WorkloadData>(WORKLOAD_PATH(from, weeks, filters));
+    useReReadOnWorkItemWrites(swr.mutate);
+    return swr;
+}
+
+/**
+ * The people filter's options (3.5b): the roster the pickers read (`GET
+ * /users/assignable`, the same key, so one read serves both), read only for a
+ * caller who reads work items (`enabled`), so nobody else is refused by it.
+ */
+export function useWorkloadPeople(enabled: boolean): Member[] {
+    const { data } = useTenantSWR<Member[]>(enabled ? '/users/assignable' : null);
+    return useMemo(() => data ?? [], [data]);
+}
+
+/** The items that fill one person's week (3.5b); `null` reads nothing. */
+export function useWorkloadCell(cell: { userId: string; week: string } | null) {
+    const swr = useTenantSWR<WorkloadCellData>(cell ? WORKLOAD_CELL_PATH(cell.userId, cell.week) : null);
+    useReReadOnWorkItemWrites(swr.mutate);
+    return swr;
 }
 
 export function useWorkloadSettings() {

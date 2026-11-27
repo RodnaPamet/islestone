@@ -210,7 +210,9 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
         maxBuffers100k: 25000,
     },
     { name: 'time: totals for a set of items', methods: ['TimeEntryRepository.totalsForItems'], indexes: ['TimeEntry_tenantId_workItemId_workDate_idx'], maxBuffers: 5100, maxBuffers100k: 51000 },
-    { name: 'workload: time-off dates in a window', methods: ['TimeOffRepository.daysForPeople'], indexes: ['TimeOff_tenantId_userId_day_key'], maxBuffers: 100, maxBuffers100k: 500 },
+    // `TimeOff` is not a guarded table, so the check names no method (the registry's methods are the guarded readers);
+    // its runner reads `TimeOffRepository.daysForPeople`.
+    { name: 'workload: time-off dates in a window', methods: [], indexes: ['TimeOff_tenantId_userId_day_key'], maxBuffers: 100, maxBuffers100k: 500 },
     // ── Writes' reads: placement, moves, a member's removal ────────────────
     { name: 'placement: sort keys around a position', methods: ['WorkItemRepository.lastSortKey', 'WorkItemRepository.nextSortKeyAfter', 'WorkItemRepository.prevSortKeyBefore', 'WorkItemRepository.liveSortKeysAmong'], indexes: ['WorkItem_tenantId_projectId_sortKey_id_idx'], maxBuffers: 100, maxBuffers100k: 100 },
     { name: 'removal: a member\'s items', methods: ['WorkItemRepository.lockItemsOfPerson'], indexes: ['WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx|WorkItem_tenantId_assigneeId_sortKey_id_idx', 'WorkItem_tenantId_waitingOnUserId_stateCategory_dueDate_idx', 'CustomFieldValue_tenantId_userId_idx|CustomFieldValue_tenantId_fieldId_userId_idx'], maxBuffers: 7500, maxBuffers100k: 88000 },

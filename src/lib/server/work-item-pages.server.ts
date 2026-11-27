@@ -15,6 +15,7 @@ import { getWorkItemViewConfig } from '@/app-layer/usecases/work-item-views';
 import { isAppError } from '@/lib/errors/types';
 import { savedViewAffordances } from '@/app-layer/policies/saved-view.policies';
 import { mayReadWorkItems } from '@/app-layer/policies/work-item.policies';
+import { mayViewWorkload } from '@/app-layer/policies/workload.policies';
 import { workConfigAffordances } from '@/app-layer/policies/work-config.policies';
 import type { SavedViewAffordances, WorkConfigAffordances, WorkItemViewConfig } from '@/lib/work-items/types';
 
@@ -42,12 +43,13 @@ export async function workItemPageContext(
  */
 export async function myWorkPageContext(
     tenantSlug: string,
-): Promise<{ noAccess: true } | { noAccess: false; ctx: RequestContext; config: WorkItemViewConfig }> {
+): Promise<{ noAccess: true } | { noAccess: false; ctx: RequestContext; config: WorkItemViewConfig; workload: boolean }> {
     try {
         const ctx = await getTenantCtx({ tenantSlug });
         if (!mayReadWorkItems(ctx)) return { noAccess: true };
         const config = await getWorkItemViewConfig(ctx);
-        return { noAccess: false, ctx, config };
+        // The line of the person's load (3.5b, decision 300) for a holder of workload.view.
+        return { noAccess: false, ctx, config, workload: mayViewWorkload(ctx) };
     } catch (err) {
         if (isAppError(err) && (err.status === 404 || err.status === 403)) notFound();
         throw err;

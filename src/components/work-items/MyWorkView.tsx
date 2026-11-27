@@ -48,6 +48,7 @@ import { RecentMatchesNote } from './RecentMatchesNote';
 import { useWorkItemColumns } from './use-work-item-columns';
 import { useListFiltersFromContext, useWorkItemFilterContext } from './use-work-item-filter-context';
 import { WorkItemSheet } from './WorkItemSheet';
+import { MyWorkloadLine } from '@/components/workload/MyWorkloadLine';
 
 /** Rows per page in each section. */
 export const MY_WORK_PAGE_SIZE = 25;
@@ -76,6 +77,8 @@ export interface MyWorkViewProps {
     /** The signed-in member, from the server page's context. */
     userId: string;
     title: string;
+    /** Whether the line of the person's load shows (3.5b; `workload.view`, asked on the server). */
+    showWorkload?: boolean;
 }
 
 export function MyWorkView(props: MyWorkViewProps) {
@@ -87,7 +90,7 @@ export function MyWorkView(props: MyWorkViewProps) {
     );
 }
 
-function MyWorkBody({ userId, title }: MyWorkViewProps) {
+function MyWorkBody({ userId, title, showWorkload = false }: MyWorkViewProps) {
     const tMyWork = useTranslations('workItems');
     const perms = usePermissions().work_items;
     const [sheetId, setSheetId] = useState<string | null>(null);
@@ -120,6 +123,7 @@ function MyWorkBody({ userId, title }: MyWorkViewProps) {
             data-testid="my-work"
         >
             <div className="space-y-tight">
+                {showWorkload && <MyWorkloadLine userId={userId} />}
                 <FilterToolbar
                     filters={filterDefs}
                     searchId="work-items-search"
