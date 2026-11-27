@@ -89,6 +89,12 @@ export interface WorkItemsViewProps {
     headerLinks?: React.ReactNode;
     /** The Forecast action for the current filters (3.6c, decision 324; `mayViewAnalytics`, asked on the server). */
     forecast?: boolean;
+    /**
+     * Shown under the filter toolbar (a project's or a milestone's one-line
+     * Forecast, 3.6c), where it leaves the toolbar's popovers the height they
+     * open into.
+     */
+    belowFilters?: React.ReactNode;
 }
 
 const NO_SAVED_VIEWS: SavedViewAffordances = { savePersonal: false, saveShared: false, moderate: false };
@@ -234,6 +240,7 @@ function WorkItemsViewBody({
     summary,
     headerLinks,
     forecast = false,
+    belowFilters,
 }: WorkItemsViewProps & { filterDefs: ReturnType<typeof buildWorkItemFilterDefs>['filters'] }) {
     const tBody = useTranslations('workItems');
     const searchParams = useSearchParams();
@@ -441,6 +448,7 @@ function WorkItemsViewBody({
                             <ListPageShell.Filters className="space-y-section">
                                 {summary}
                                 {toolbar(createButton)}
+                                {belowFilters}
                             </ListPageShell.Filters>
                             <ListPageShell.Body>
                                 <TimelineView
@@ -468,6 +476,7 @@ function WorkItemsViewBody({
                             <ListPageShell.Filters className="space-y-section">
                                 {summary}
                                 {toolbar(createButton)}
+                                {belowFilters}
                             </ListPageShell.Filters>
                             <ListPageShell.Body>
                                 <CalendarView
@@ -492,6 +501,7 @@ function WorkItemsViewBody({
                             <ListPageShell.Filters className="space-y-section">
                                 {summary}
                                 {toolbar(createButton)}
+                                {belowFilters}
                             </ListPageShell.Filters>
                             <ListPageShell.Body>
                                 <WorkItemBoard
@@ -519,6 +529,7 @@ function WorkItemsViewBody({
                         onOpen={openRow}
                         teamId={scope.teamId}
                         summary={summary}
+                        belowFilters={belowFilters}
                         onPublish={(keys) => publishListOrder(tenantSlug, keys)}
                     >
                         {sheet}
@@ -572,10 +583,12 @@ function ListLayout({
     onOpen,
     teamId,
     summary,
+    belowFilters,
     onPublish,
     children,
 }: {
     summary?: React.ReactNode;
+    belowFilters?: React.ReactNode;
     filters: WorkItemListFilters;
     columnVisibility: ColumnVisibilityState;
     orderColumns: <T extends object>(columns: ReadonlyArray<T>) => T[];
@@ -604,7 +617,14 @@ function ListLayout({
             header={header}
             kpis={summary}
             filters={{ defs: filterDefs, searchId: 'work-items-search', searchPlaceholder: tList('list.searchPlaceholder'), toolbarLeading: createButton }}
-            banner={list.contentMatchesBounded ? <RecentMatchesNote /> : undefined}
+            banner={
+                belowFilters || list.contentMatchesBounded ? (
+                    <>
+                        {belowFilters}
+                        {list.contentMatchesBounded && <RecentMatchesNote />}
+                    </>
+                ) : undefined
+            }
             table={{
                 data: list.items,
                 columns,

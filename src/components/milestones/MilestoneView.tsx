@@ -110,16 +110,14 @@ export function MilestoneView({
             viewKey={`milestone:${milestone.id}`}
             savedViews={savedViews}
             summary={
-                <div className="space-y-default">
-                    <MilestoneSummary
-                        milestone={milestone}
-                        projectId={project.id}
-                        milestonesHref={tenantHref(`/projects/${encodeURIComponent(project.keyPrefix)}/milestones`)}
-                        editable={affordances.manageMilestones && !project.archived}
-                    />
-                    {forecast && !project.archived && <ForecastSection filters={{ projectId: project.id, milestoneId: milestone.id }} compact />}
-                </div>
+                <MilestoneSummary
+                    milestone={milestone}
+                    projectId={project.id}
+                    milestonesHref={tenantHref(`/projects/${encodeURIComponent(project.keyPrefix)}/milestones`)}
+                    editable={affordances.manageMilestones && !project.archived}
+                />
             }
+            belowFilters={forecast && !project.archived ? <ForecastSection filters={{ projectId: project.id, milestoneId: milestone.id }} compact /> : undefined}
         />
     );
 }
