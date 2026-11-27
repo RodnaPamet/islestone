@@ -24,8 +24,10 @@ const runSource = fs.readFileSync(path.join(ROOT, 'scripts/perf/run.mjs'), 'utf8
  * roadmap 3.2c's (docs/porting/maps/3.2.md, "The read"), and for time 3.4's
  * in decision 167's terms (docs/porting/maps/3.4.md, "Performance": a week
  * at the list's first page, an item's time p95 200, the totals at the board
- * load's, adding time at a write's): the ceiling of every budget. A budget
- * may go down; it never goes above these.
+ * load's, adding time at a write's), and for the workload read and the
+ * time-off write 3.5's (docs/porting/maps/3.5.md, "Performance"; the write
+ * at the other writes' 400 ms): the ceiling of every budget. A budget may go
+ * down; it never goes above these.
  */
 const DECIDED: Record<string, Record<'10k' | '100k', { p50?: number; p95: number }>> = {
     'list-project': { '10k': { p50: 80, p95: 200 }, '100k': { p50: 100, p95: 250 } },
@@ -40,6 +42,8 @@ const DECIDED: Record<string, Record<'10k' | '100k', { p50?: number; p95: number
     'my-work': { '10k': { p50: 300, p95: 600 }, '100k': { p50: 400, p95: 800 } },
     timeline: { '10k': { p50: 400, p95: 900 }, '100k': { p50: 400, p95: 900 } },
     roadmap: { '10k': { p50: 300, p95: 700 }, '100k': { p50: 300, p95: 700 } },
+    workload: { '10k': { p50: 250, p95: 600 }, '100k': { p50: 400, p95: 900 } },
+    'time-off-set': { '10k': { p95: 400 }, '100k': { p95: 400 } },
     create: { '10k': { p95: 400 }, '100k': { p95: 400 } },
     edit: { '10k': { p95: 400 }, '100k': { p95: 400 } },
     move: { '10k': { p95: 400 }, '100k': { p95: 400 } },
@@ -106,7 +110,7 @@ describe('budgets.json', () => {
     });
 
     it('marks the writes, which run after every read so their rows and vacuum never sit under a read', () => {
-        expect(Object.entries(budgets.scenarios).filter(([, b]) => b.write).map(([id]) => id).sort()).toEqual(['bulk-state', 'create', 'edit', 'move', 'reorder', 'time-add']);
+        expect(Object.entries(budgets.scenarios).filter(([, b]) => b.write).map(([id]) => id).sort()).toEqual(['bulk-state', 'create', 'edit', 'move', 'reorder', 'time-add', 'time-off-set']);
         const main = runSource.slice(runSource.indexOf('// ── Main'));
         expect(main.indexOf('await runApi(world, false)')).toBeGreaterThan(0);
         expect(main.indexOf('await runApi(world, false)')).toBeLessThan(main.indexOf('await runBrowser('));

@@ -261,6 +261,10 @@ const documentThen = (doc, paths) => async () => {
     return { ok: !bad, status: bad ? bad.status : 200, ms };
 };
 
+/** A date of time off far ahead (3.5b's write scenario): one per sample, never one an earlier run recorded. */
+const TIME_OFF_BASE = Date.UTC(2120, 0, 1) + (Math.floor(Date.now() / 60_000) % 100_000) * 4 * 86_400_000;
+const timeOffDay = (run) => new Date(TIME_OFF_BASE + run * 86_400_000).toISOString().slice(0, 10);
+
 function scenarioRunners(w) {
     const listQ = (q) => api(`/work-items?${q}`);
     const p = w.project.id;
@@ -315,6 +319,8 @@ function scenarioRunners(w) {
             api(`/time-totals?from=${dayOf(Date.parse(w.timeWeek + 'T00:00:00Z') + 6 * DAY_MS - 90 * DAY_MS)}&to=${dayOf(Date.parse(w.timeWeek + 'T00:00:00Z') + 6 * DAY_MS)}&groupBy=project`),
             (b) => (Array.isArray(b?.groups) && b.groups.length > 0 ? null : 'Time totals answered no groups'),
         ),
+        // Workload (3.5b): every member's twelve weeks from this week, as the Workload page first reads it.
+        workload: single('GET', api('/workload?weeks=12'), (b) => (Array.isArray(b?.people) && Array.isArray(b?.weeks) && b.weeks.length === 12 ? null : 'the workload answered no people')),
         create: single('POST', (run) => ({ path: api('/work-items'), body: { projectId: p, typeId: w.typeId, title: `Perf harness create ${run}`, description: 'Задачата на проекта and a description to index.' } }), null),
         edit: single(
             'PATCH',
@@ -324,6 +330,8 @@ function scenarioRunners(w) {
         ),
         move: single('POST', (run) => ({ path: api(`/work-items/${moveItem.id}/move`), body: { stateId: run % 2 === 0 ? w.started.id : w.unstarted.id } }), null),
         reorder: single('POST', (run) => ({ path: api(`/work-items/${reorderItem.id}/move`), body: { position: run % 2 === 0 ? { afterId: anchor.id } : { beforeId: anchor.id } } }), null),
+        // Time off (3.5a), run last: one whole day of the heavy member's own, a date no earlier run recorded.
+        'time-off-set': single('PUT', (run) => ({ path: api('/time-off/days'), body: { days: [{ day: timeOffDay(run), minutes: null, type: 'VACATION' }] } }), null),
         'bulk-state': single('POST', (run) => ({ path: api('/work-items/bulk/state'), body: { workItemIds: bulkIds, stateId: run % 2 === 0 ? w.unstarted.id : w.backlog.id } }), null),
         // Adding time (3.4d's write scenario): one minute on a day of its own far ahead, so no day fills across runs.
         'time-add': single('POST', (run) => ({ path: api('/time-entries'), body: { workItemId: w.timeItem.id, workDate: dayOf(Date.UTC(2099, 0, 1) + (Math.abs(run) % 1000) * DAY_MS), minutes: 1 } }), null),
