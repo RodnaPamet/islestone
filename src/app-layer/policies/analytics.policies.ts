@@ -18,6 +18,7 @@
  */
 import type { RequestContext } from '../types';
 import { forbidden } from '@/lib/errors/types';
+import { isTenantSystemUserId } from '@/lib/tenant-system-user';
 import type { AnalyticsAffordances } from '@/lib/analytics/types';
 
 export type AnalyticsViewer = Pick<RequestContext, 'permissions' | 'appPermissions'>;
@@ -40,6 +41,17 @@ export function mayShareAnalytics(ctx: AnalyticsViewer): boolean {
 /** Time waiting per person beyond one's own row (3.6b). */
 export function mayReadAnalyticsPeople(ctx: AnalyticsViewer): boolean {
     return mayViewAnalytics(ctx) && key(ctx, 'people', ctx.permissions.canAdmin);
+}
+
+/**
+ * Does the caller read time waiting per person at all (decision 332)? Only a
+ * person does: an API key (5.2) or an agent (6.x) reads the totals and never
+ * a party's row, its own authorising person's included, and the workspace's
+ * system user is nobody. Phase 6 adds the agent term when `RequestContext`
+ * gains it.
+ */
+export function readsWaitingAsPerson(ctx: Pick<RequestContext, 'apiKeyId' | 'userId'>): boolean {
+    return !ctx.apiKeyId && !isTenantSystemUserId(ctx.userId);
 }
 
 /** What the Analytics page offers the caller (asked on the server; never in a component). */

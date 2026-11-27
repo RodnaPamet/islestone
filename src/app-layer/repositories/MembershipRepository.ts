@@ -10,6 +10,21 @@ import type { PrismaTx } from '@/lib/db-context';
 import type { RequestContext } from '../types';
 
 export class MembershipRepository {
+    /**
+     * The memberships of `userIds` in the workspace, any status, with each
+     * person's name (time waiting's parties, 3.6b): a person with no row is a
+     * removed member, shown only as one anonymous row.
+     */
+    static async partiesOf(db: PrismaTx, ctx: RequestContext, userIds: readonly string[]): Promise<Array<{ userId: string; name: string | null; active: boolean }>> {
+        if (userIds.length === 0) return [];
+        const rows = await db.tenantMembership.findMany({
+            where: { tenantId: ctx.tenantId, userId: { in: [...userIds] } },
+            take: userIds.length,
+            select: { userId: true, status: true, user: { select: { name: true } } },
+        });
+        return rows.map((r) => ({ userId: r.userId, name: r.user.name, active: r.status === 'ACTIVE' }));
+    }
+
     /** The user ids among `userIds` that hold an ACTIVE membership in the workspace. */
     static async listActiveUserIds(db: PrismaTx, ctx: RequestContext, userIds: readonly string[]): Promise<Set<string>> {
         if (userIds.length === 0) return new Set();

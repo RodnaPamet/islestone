@@ -1,0 +1,151 @@
+/**
+ * Time waiting (sub-phase 3.6b; docs/porting/maps/3.6.md, "Time waiting",
+ * "Reads, routes and keys", "Privacy"; ADR 0014 §6, §11 and §12; owner
+ * decisions 76, 313, 317, 329, 330 and 332).
+ *
+ *   - **The record and the review rows are the source**: a field wait is a
+ *     run of an item's recorded rows naming one person in waiting on; a
+ *     review wait is a reviewer's time asked on an open step (decision 317).
+ *     Both count only while the item is live and its recorded project is in
+ *     the scope and visible (decision 315), as elapsed working time on the
+ *     item's own calendar (decision 313). Computed on every read by
+ *     `domain/analytics/waiting.ts`; nothing stored, cached or audited.
+ *   - **The scope** is every other analytics read's (`resolveScope`: the
+ *     list's filters through `resolveListFiltersInTx`, status filters set
+ *     aside, the scope's calendar zone for its days), bounded by the flow's
+ *     item limit (20,000) and 50,000 review spans in the window (422
+ *     `ANALYTICS_TOO_LARGE`, never cut).
+ *   - **Who sees what** (decisions 329 and 335): every holder of
+ *     `analytics.view` reads their own row; every party's row (and the one
+ *     anonymous row of removed members) and the totals only with
+ *     `analytics.people`, absent otherwise, in any scope (the totals less
+ *     one's own row would be another person's in a small scope). A caller
+ *     who is not a person (an API key, the system user, later an agent)
+ *     reads nothing of time waiting but the frame: no row and no totals
+ *     (decisions 332 and 335).
+ *   - **No figure per assignee** (decision 330): waits are grouped by whom an
+ *     item waited on, never by its assignee.
+ *
+ * Never logs a person's figures. The waiting-now items' keys and titles come
+ * with the record's statement, read under the caller's visibility; no
+ * description, comment or response text. Written fresh for Islestone.
+ */
+import { WorkingTimeMeter } from '../domain/analytics/elapsed';
+import { fieldWaits, reviewWaits, waitingFigures, type PartyWaits } from '../domain/analytics/waiting';
+import { formatKey } from '../domain/work-item-key';
+import { assertCanViewAnalytics, mayReadAnalyticsPeople, readsWaitingAsPerson } from '../policies/analytics.policies';
+import { MembershipRepository } from '../repositories/MembershipRepository';
+import { ReviewRepository } from '../repositories/ReviewRepository';
+import { WorkItemTransitionRepository } from '../repositories/WorkItemTransitionRepository';
+import type { RequestContext } from '../types';
+import { resolveScope, tooLarge, type AnalyticsQuery } from './analytics';
+import { runInTenantContext } from '@/lib/db-context';
+import {
+    ANALYTICS_FLOW_ITEM_LIMIT,
+    ANALYTICS_REVIEW_SPAN_LIMIT,
+    WAITING_NOW_LISTED,
+    WAITING_NOW_LISTED_TOTAL,
+    type WaitingParty,
+    type WaitingPartyRow,
+    type WaitingResponse,
+} from '@/lib/analytics/types';
+
+/** The one key every removed member's waits are grouped under (never a person's id). */
+const FORMER = '\u0000former';
+
+const ZERO: PartyWaits = { waited: 0, asReviewer: 0, items: 0, ended: { count: 0, p50: null, p85: null }, waitingNow: 0, now: [] };
+
+/** Time waiting over the scope and window: the caller's row, and the totals and every party's row for `analytics.people`. */
+export async function getTimeWaiting(ctx: RequestContext, query: AnalyticsQuery, now: Date = new Date()): Promise<WaitingResponse> {
+    assertCanViewAnalytics(ctx);
+    const asPerson = readsWaitingAsPerson(ctx);
+    const everyone = asPerson && mayReadAnalyticsPeople(ctx);
+    return runInTenantContext(ctx, async (db) => {
+        const s = await resolveScope(db, ctx, query, now, { allCalendars: true });
+        // Not a person: nothing per person and no totals (decisions 332 and 335), so nothing is read.
+        if (!asPerson) return { ...s.frame, waitingNowCut: false };
+        const empty = s.toDay < s.fromDay;
+        // The review spans first (the review rows have one seam, ReviewRepository), then the record's segments of
+        // the items in scope, those with a review span among them.
+        const spans = empty ? [] : await ReviewRepository.reviewSpans(db, ctx, { start: s.start, asOf: s.asOf, itemIds: s.record.itemIds, take: ANALYTICS_REVIEW_SPAN_LIMIT + 1 });
+        if (spans.length > ANALYTICS_REVIEW_SPAN_LIMIT) throw tooLarge('reviews', spans.length, ANALYTICS_REVIEW_SPAN_LIMIT);
+        const read = empty
+            ? { items: 0, segments: [], labels: new Map<string, { number: number; title: string; keyPrefix: string }>() }
+            : await WorkItemTransitionRepository.waitSpans(db, ctx, s.record, {
+                  start: s.start,
+                  asOf: s.asOf,
+                  itemLimit: ANALYTICS_FLOW_ITEM_LIMIT,
+                  reviewItemIds: [...new Set(spans.map((sp) => sp.workItemId))],
+                  openReviewItemIds: [...new Set(spans.filter((sp) => sp.end === null || sp.end > s.asOf.getTime()).map((sp) => sp.workItemId))],
+              });
+        if (read.items > ANALYTICS_FLOW_ITEM_LIMIT) throw tooLarge('items', read.items, ANALYTICS_FLOW_ITEM_LIMIT);
+
+        const meters = new Map<string, WorkingTimeMeter>();
+        const meterFor = (teamId: string) => {
+            const cal = s.calendars.forTeam(teamId);
+            let m = meters.get(cal.id);
+            if (!m) {
+                m = new WorkingTimeMeter({ compiled: cal.compiled, timeZone: cal.timeZone });
+                meters.set(cal.id, m);
+            }
+            return m;
+        };
+        const R = s.asOf.getTime();
+        const waits = [...fieldWaits(read.segments), ...reviewWaits(spans, read.segments, R)];
+
+        // The parties: members by id (any status), every removed member as one row.
+        const waitedOn = [...new Set(waits.map((w) => w.userId))];
+        const lookup = asPerson ? [...new Set([...(everyone ? waitedOn : waitedOn.filter((u) => u === ctx.userId)), ctx.userId])] : [];
+        const members = new Map((await MembershipRepository.partiesOf(db, ctx, lookup)).map((m) => [m.userId, m]));
+        // Without the people key the other parties are never named, so they are never looked up: an unread id stays its own key.
+        const partyOf = (userId: string) => (!everyone && userId !== ctx.userId ? userId : members.has(userId) ? userId : FORMER);
+        const figures = waitingFigures(waits, read.segments, { start: s.start.getTime(), asOf: R }, meterFor, partyOf);
+
+        // The rows shown, and their waiting-now items (keys and titles came with the record's statement).
+        const shown: Array<[string, PartyWaits]> = [];
+        if (everyone) shown.push(...[...figures.parties].filter(([k]) => k === FORMER || members.has(k)));
+        else if (asPerson) shown.push([ctx.userId, figures.parties.get(ctx.userId) ?? ZERO]);
+        if (asPerson && !shown.some(([k]) => k === ctx.userId)) shown.push([ctx.userId, ZERO]);
+        let budget = WAITING_NOW_LISTED_TOTAL;
+        let cut = false;
+        const listed = new Map<string, PartyWaits['now']>();
+        for (const [k, p] of shown) {
+            const take = Math.min(WAITING_NOW_LISTED, p.now.length, budget);
+            if (take < Math.min(WAITING_NOW_LISTED, p.now.length)) cut = true;
+            listed.set(k, p.now.slice(0, take));
+            budget -= take;
+        }
+        const labels = read.labels;
+
+        const rowOf = (k: string, p: PartyWaits): WaitingPartyRow => {
+            const m = members.get(k);
+            const party: WaitingParty = k === FORMER || !m ? { kind: 'former' } : { kind: 'member', userId: m.userId, name: m.name, active: m.active };
+            return {
+                party,
+                waited: p.waited,
+                asReviewer: p.asReviewer,
+                items: p.items,
+                ended: p.ended,
+                waitingNow: p.waitingNow,
+                waitingNowItems: (listed.get(k) ?? []).flatMap((n) => {
+                    const w = labels.get(n.workItemId);
+                    return w ? [{ workItemId: n.workItemId, key: formatKey(w.keyPrefix, w.number), title: w.title, asReviewer: n.review, age: n.age }] : [];
+                }),
+            };
+        };
+        const byName = (a: WaitingPartyRow, b: WaitingPartyRow) => {
+            const n = (r: WaitingPartyRow) => (r.party.kind === 'member' ? (r.party.name ?? '') : '￿');
+            return n(a) < n(b) ? -1 : n(a) > n(b) ? 1 : 0;
+        };
+        const self = asPerson ? rowOf(ctx.userId, figures.parties.get(ctx.userId) ?? ZERO) : undefined;
+        return {
+            ...s.frame,
+            // The totals only with the people key (decision 335).
+            ...(everyone ? { totals: figures.totals } : {}),
+            ...(self ? { self } : {}),
+            ...(everyone ? { people: shown.map(([k, p]) => rowOf(k, p)).sort((a, b) => b.waited - a.waited || byName(a, b)) } : {}),
+            waitingNowCut: cut,
+            items: read.items,
+        };
+    });
+}

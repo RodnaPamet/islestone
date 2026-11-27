@@ -330,6 +330,8 @@ function scenarioRunners(w) {
         // Analytics (3.6a): the page's default window, the twelve weeks ending today.
         'analytics-throughput': single('GET', api(`/analytics/throughput?${analyticsWindow()}&bin=week`), (b) => (Array.isArray(b?.bins) ? null : 'throughput answered no bins')),
         'analytics-flow': single('GET', api(`/analytics/flow?projectId=${w.big.id}&${analyticsWindow()}&burnUp=1`), (b) => (Array.isArray(b?.days) && b?.burnUp ? null : 'flow answered no days')),
+        // Time waiting (3.6b, decision 337): the largest project's twelve weeks, as the page first reads it (the heavy member: its own row).
+        'analytics-waiting': single('GET', api(`/analytics/waiting?projectId=${w.big.id}&${analyticsWindow()}`), (b) => (b?.self && Array.isArray(b.self.waitingNowItems) ? null : 'time waiting answered no row')),
         create: single('POST', (run) => ({ path: api('/work-items'), body: { projectId: p, typeId: w.typeId, title: `Perf harness create ${run}`, description: 'Задачата на проекта and a description to index.' } }), null),
         edit: single(
             'PATCH',

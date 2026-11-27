@@ -24,6 +24,7 @@ import { Prisma, type WorkflowStateCategory } from '@prisma/client';
 import type { PrismaTx } from '@/lib/db-context';
 import type { EpochDay } from '../domain/schedule/calendar';
 import type { FlowBucket, FlowDelta } from '../domain/analytics/flow';
+import type { WaitSegment } from '../domain/analytics/waiting';
 import type { ProjectVisibility } from '../policies/project-visibility';
 import type { RequestContext } from '../types';
 
@@ -304,6 +305,113 @@ export class WorkItemTransitionRepository {
               FROM signed s
              GROUP BY s."day", s."bucket"`);
         return rows.map((r) => ({ day: Number(r.day), bucket: r.bucket, count: Number(r.count), weight: Number(r.weight), unestimated: Number(r.unestimated) }));
+    }
+
+    /**
+     * Time waiting (3.6b; decisions 317 and 331), in ONE statement: the items
+     * the read follows (every item with a row in scope at or before `asOf`,
+     * at most `itemLimit`; the count alone when there are more), and of them
+     * the segments `domain/analytics/waiting.ts` needs (`relevantSegments`):
+     * each row up to `asOf` whose item is live and in scope, to its next row
+     * or to `asOf`, with its position among the item's rows, when it names
+     * someone in waiting on, is open (Unstarted or Started, decision 336) and reaches into the window, or belongs
+     * to an item with a review span (`reviewItemIds`, from
+     * `ReviewRepository.reviewSpans`). The scope's predicate is COALESCEd (a
+     * NULL recorded cycle or milestone against an id filter is out of scope).
+     *
+     * With them, the key and title of every item that may be waiting at
+     * `asOf` (its last row live and in scope, naming someone in waiting on or
+     * with a review span still open, `openReviewItemIds`), read from
+     * `WorkItem` with its own `deletedAt` and the caller's visibility, so the
+     * waiting-now lists need no read of their own. Never a description.
+     */
+    static async waitSpans(
+        db: PrismaTx,
+        ctx: Ctx,
+        s: RecordScope,
+        window: { start: Date; asOf: Date; itemLimit: number; reviewItemIds: readonly string[]; openReviewItemIds: readonly string[] },
+    ): Promise<{ items: number; segments: WaitSegment[]; labels: Map<string, { number: number; title: string; keyPrefix: string }> }> {
+        const t = ctx.tenantId;
+        const all = s.visibility.kind === 'ALL';
+        const granted = s.visibility.kind === 'GRANTED' ? [...s.visibility.projectIds] : [];
+        const R = ts(window.asOf);
+        const start = ts(window.start);
+        const rows = await db.$queryRaw<
+            Array<{
+                kind: 'n' | 's';
+                workItemId: string | null;
+                teamId: string | null;
+                start: Date | null;
+                end: Date | null;
+                last: boolean | null;
+                ord: bigint | number | null;
+                open: boolean | null;
+                userId: string | null;
+                n: number | null;
+                number: number | null;
+                title: string | null;
+                keyPrefix: string | null;
+            }>
+        >(Prisma.sql`
+            WITH items AS (
+                SELECT DISTINCT t."workItemId"
+                  FROM "WorkItemTransition" t
+                 WHERE t."tenantId" = ${t} AND t."at" <= ${R}
+                   AND ${scopeSql(ctx, 't', s)}
+                   ${itemSql('t', s)}
+                 LIMIT ${window.itemLimit + 1}
+            ), counted AS (
+                SELECT count(*)::int AS "n" FROM items
+            ), r AS (
+                SELECT t."workItemId", t."teamId", t."at", t."stateCategory", t."waitingOnUserId",
+                       (NOT t."deleted" AND COALESCE((${scopeSql(ctx, 't', s)}), false)) AS "live",
+                       row_number() OVER w AS "ord",
+                       LEAD(t."at") OVER w AS "nextAt"
+                  FROM "WorkItemTransition" t
+                 WHERE t."tenantId" = ${t} AND t."at" <= ${R}
+                   AND t."workItemId" = ANY(ARRAY(SELECT i."workItemId" FROM items i))
+                   AND (SELECT c."n" FROM counted c) <= ${window.itemLimit}
+                WINDOW w AS (PARTITION BY t."workItemId" ORDER BY t."at", t."id")
+            )
+            SELECT 'n' AS "kind", NULL AS "workItemId", NULL AS "teamId", NULL::timestamp AS "start", NULL::timestamp AS "end",
+                   NULL::boolean AS "last", NULL::bigint AS "ord", NULL::boolean AS "open", NULL AS "userId", c."n",
+                   NULL::int AS "number", NULL AS "title", NULL AS "keyPrefix"
+              FROM counted c
+            UNION ALL
+            SELECT 's', r."workItemId", r."teamId", r."at", COALESCE(r."nextAt", ${R}), r."nextAt" IS NULL, r."ord",
+                   r."stateCategory" IN ('UNSTARTED', 'STARTED'), r."waitingOnUserId", NULL,
+                   w."number", w."title", p."keyPrefix"
+              FROM r
+              LEFT JOIN "WorkItem" w
+                     ON r."nextAt" IS NULL
+                    AND (r."waitingOnUserId" IS NOT NULL OR r."workItemId" = ANY(${[...window.openReviewItemIds]}::text[]))
+                    AND w."tenantId" = ${t} AND w."id" = r."workItemId" AND w."deletedAt" IS NULL
+                    AND (${all}::boolean OR w."projectId" = ANY(${granted}::text[]))
+              LEFT JOIN "Project" p ON p."tenantId" = ${t} AND p."id" = w."projectId" AND p."deletedAt" IS NULL
+             WHERE r."live"
+               AND (r."waitingOnUserId" IS NOT NULL
+                    OR (r."stateCategory" IN ('UNSTARTED', 'STARTED') AND COALESCE(r."nextAt", ${R}) > ${start})
+                    OR r."workItemId" = ANY(${[...window.reviewItemIds]}::text[]))`);
+        let items = 0;
+        const segments: WaitSegment[] = [];
+        const labels = new Map<string, { number: number; title: string; keyPrefix: string }>();
+        for (const row of rows) {
+            if (row.kind === 'n') items = Number(row.n);
+            else {
+                if (row.title !== null && row.keyPrefix !== null) labels.set(row.workItemId!, { number: Number(row.number), title: row.title, keyPrefix: row.keyPrefix });
+                segments.push({
+                    workItemId: row.workItemId!,
+                    ord: Number(row.ord),
+                    teamId: row.teamId!,
+                    start: row.start!.getTime(),
+                    end: row.end!.getTime(),
+                    last: row.last === true,
+                    open: row.open === true,
+                    waitingOnUserId: row.userId,
+                });
+            }
+        }
+        return { items, segments, labels };
     }
 
     /**

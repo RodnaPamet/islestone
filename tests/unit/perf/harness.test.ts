@@ -48,6 +48,8 @@ const DECIDED: Record<string, Record<'10k' | '100k', { p50?: number; p95: number
     // 3.6a's (docs/porting/maps/3.6.md, "Performance"): the workspace's throughput and the largest project's flow.
     'analytics-throughput': { '10k': { p50: 200, p95: 400 }, '100k': { p50: 200, p95: 400 } },
     'analytics-flow': { '10k': { p50: 350, p95: 700 }, '100k': { p50: 350, p95: 700 } },
+    // Decision 337 (3.6b): time waiting in the largest project, at the flow's budget.
+    'analytics-waiting': { '10k': { p50: 350, p95: 700 }, '100k': { p50: 350, p95: 700 } },
     create: { '10k': { p95: 400 }, '100k': { p95: 400 } },
     edit: { '10k': { p95: 400 }, '100k': { p95: 400 } },
     move: { '10k': { p95: 400 }, '100k': { p95: 400 } },

@@ -87,6 +87,8 @@ model WorkItemReviewStep {
   @@index([tenantId, roundId, workItemId])
   /// The reminder job: open steps by due day.
   @@index([tenantId, status, dueOn])
+  /// Time waiting (3.6b) finds the steps that ended in a window by it.
+  @@index([tenantId, endedAt])
 }
 
 /// A recipient list a step names, resolved to reviewer rows when the step

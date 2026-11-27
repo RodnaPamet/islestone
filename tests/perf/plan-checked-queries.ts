@@ -248,6 +248,15 @@ export const PLAN_CHECKED_QUERIES: readonly PlanCheckedQuery[] = [
     { name: 'analytics: counts now and a filter on current values', methods: ['WorkItemRepository.countsByCategory', 'WorkItemRepository.idsMatchingCurrentValues'], indexes: ['WorkItemLabel_tenantId_labelId_workItemId_idx'], maxBuffers: 2500, maxBuffers100k: 25000 },
     { name: "cycles: the burn-up's items and rows", methods: ['WorkItemTransitionRepository.itemIdsEverInCycle', 'WorkItemTransitionRepository.transitionsOf'], indexes: ['WorkItemTransition_tenantId_cycleId_workItemId_idx', 'WorkItemTransition_tenantId_workItemId_at_idx|WorkItemTransition_tenantId_cycleId_workItemId_idx'], maxBuffers: 4500, maxBuffers100k: 45000 },
     // ── end of the 3.6a analytics block ──
+    // ── Time waiting (3.6b, decision 331): the largest project's twelve weeks: the workspace's review spans in the window
+    // (the review rows' own seam), then in one statement the items followed, their rows with each one's position and
+    // next instant, and the key and title of each item that may be waiting now (by primary key) ──
+    // 10k measured on a fresh seed: 13,198 buffers since decision 336 (15,557 before, with Backlog rows read as open):
+    // the project's rows on its index for the items, then every row of its 1,277 items by item, and the waiting-now
+    // items' keys by primary key; the budget about twice that. 100k: NOT MEASURED, twenty times the 10k (the largest
+    // project's twenty times the items), about twice that, as the flow's.
+    { name: 'analytics: waits over a project', methods: ['WorkItemTransitionRepository.waitSpans'], indexes: ['WorkItemTransition_tenantId_projectId_at_idx', 'WorkItemTransition_tenantId_workItemId_at_idx'], maxBuffers: 27000, maxBuffers100k: 540000 },
+    // ── end of the 3.6b time-waiting block ──
 ];
 
 /**

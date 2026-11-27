@@ -1,6 +1,6 @@
 /**
- * The H2 permission matrix: the analytics reads of sub-phase 3.6a
- * (owner decisions 175, 176 and 329). The expected table is
+ * The H2 permission matrix: the analytics reads of sub-phases 3.6a and 3.6b
+ * (owner decisions 175, 176 and 329; time waiting's rows for other people). The expected table is
  * `table.ts`; the driver is `harness.ts`. Only NextAuth's cookie decode and
  * the job queue are replaced.
  */
