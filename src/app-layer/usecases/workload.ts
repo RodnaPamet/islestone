@@ -26,7 +26,7 @@ import type { RequestContext } from '../types';
 import { fromEpochDay, isoWeekday, toEpochDay } from '../domain/schedule/calendar';
 import { capacityByWeek, type CapacityRowSpec, type TimeOffDaySpec } from '../domain/workload/capacity';
 import { DEFAULT_WEEKLY_MINUTES } from './workload-capacity';
-import { workspaceToday } from './workload-shared';
+import { todayOfCalendars, workspaceToday } from './workload-shared';
 import { resolveWorkingCalendars } from './working-calendar';
 import { runInTenantReadContext } from '@/lib/db-context';
 import { AppError, badRequest } from '@/lib/errors/types';
@@ -51,7 +51,9 @@ export async function getWorkload(ctx: RequestContext, query: WorkloadQuery): Pr
     const only = query.userId === 'me' ? ctx.userId : query.userId;
 
     return runInTenantReadContext(ctx, async (db) => {
-        const { today, currentWeek, timeZone } = await workspaceToday(db, ctx);
+        // Every calendar of the workspace in one read (bounded): today's zone and the people's calendars.
+        const calendars = await resolveWorkingCalendars(db, ctx);
+        const { today, currentWeek, timeZone } = todayOfCalendars(calendars);
         const from = query.from ? toEpochDay(query.from) : currentWeek;
         if (isoWeekday(from) !== 1 || from < currentWeek) {
             throw badRequest('A workload read starts on a Monday, from the current week on.', { reason: 'WORKLOAD_RANGE' });
@@ -70,8 +72,6 @@ export async function getWorkload(ctx: RequestContext, query: WorkloadQuery): Pr
         const settings = await WorkloadRepository.getSettings(db, ctx);
         const rows = await WorkloadRepository.rowsOf(db, ctx, ids, CAPACITY_ROWS_TAKE);
         const offRows = await TimeOffRepository.daysForPeople(db, ctx, ids, dateOnlyValue(fromEpochDay(from)), dateOnlyValue(fromEpochDay(lastDay)), TIME_OFF_ROWS_TAKE);
-        const teamIds = [...new Set(rows.map((r) => r.calendarTeamId).filter((t): t is string => t !== null))];
-        const calendars = await resolveWorkingCalendars(db, ctx, teamIds);
 
         const rowsBy = new Map<string, CapacityRowSpec[]>();
         for (const r of rows) {

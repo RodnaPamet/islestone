@@ -12,7 +12,7 @@ import { MembershipRepository } from '../repositories/MembershipRepository';
 import type { RequestContext } from '../types';
 import { fromEpochDay, todayIn, type EpochDay } from '../domain/schedule/calendar';
 import { mondayOf } from '../domain/workload/capacity';
-import { resolveWorkingCalendars } from './working-calendar';
+import { resolveWorkingCalendars, type WorkingCalendarSet } from './working-calendar';
 import type { PrismaTx } from '@/lib/db-context';
 import { appendAuditEntryOrQueue } from '@/lib/audit';
 import { todayClock } from '@/lib/clock';
@@ -53,12 +53,16 @@ export async function refuseManageRequired(ctx: RequestContext, userId: string, 
     throw forbidden("Another member's time off is recorded by whoever manages workload (workload.manage).", { reason: WORKLOAD_MANAGE_REQUIRED });
 }
 
-/** Today and the current week's Monday in the workspace calendar's zone (the workspace's "today"). */
-export async function workspaceToday(db: PrismaTx, ctx: RequestContext): Promise<{ today: EpochDay; currentWeek: EpochDay; timeZone: string }> {
-    const calendars = await resolveWorkingCalendars(db, ctx, []);
+/** Today and the current week's Monday in the zone of a set's workspace calendar. */
+export function todayOfCalendars(calendars: WorkingCalendarSet): { today: EpochDay; currentWeek: EpochDay; timeZone: string } {
     const timeZone = calendars.workspace.timeZone;
     const today = todayIn(timeZone, todayClock(timeZone));
     return { today, currentWeek: mondayOf(today), timeZone };
+}
+
+/** Today and the current week's Monday in the workspace calendar's zone (the workspace's "today"). */
+export async function workspaceToday(db: PrismaTx, ctx: RequestContext): Promise<{ today: EpochDay; currentWeek: EpochDay; timeZone: string }> {
+    return todayOfCalendars(await resolveWorkingCalendars(db, ctx, []));
 }
 
 /** `YYYY-MM-DD` of the current week's Monday. */

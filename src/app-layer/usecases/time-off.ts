@@ -40,8 +40,8 @@ import { WorkloadRepository } from '../repositories/WorkloadRepository';
 import type { RequestContext } from '../types';
 import { fromEpochDay, isoWeekday, isWorkingDay, toEpochDay, type IsoWeekday } from '../domain/schedule/calendar';
 import { rowInForce } from '../domain/workload/capacity';
-import { resolveWorkingCalendars } from './working-calendar';
-import { assertWritesAsPerson, lockActivePerson, refuseManageRequired, workspaceToday } from './workload-shared';
+import { resolveWorkingCalendars, type WorkingCalendarSet } from './working-calendar';
+import { assertWritesAsPerson, lockActivePerson, refuseManageRequired, todayOfCalendars } from './workload-shared';
 import type { PrismaTx } from '@/lib/db-context';
 import { runInTenantContext, runInTenantReadContext } from '@/lib/db-context';
 import { AppError, ConflictError, badRequest, forbidden, notFound } from '@/lib/errors/types';
@@ -125,15 +125,13 @@ async function ringIfOther(ctx: RequestContext, userId: string, change: 'set' | 
 // ─── Reads ─────────────────────────────────────────────────────────
 
 /** The person's calendar in force at `day`: the team named by their capacity row, else the workspace's. */
-async function personCalendar(db: PrismaTx, ctx: RequestContext, userId: string, day: number) {
+async function personCalendar(db: PrismaTx, ctx: RequestContext, calendars: WorkingCalendarSet, userId: string, day: number) {
     const rows = await WorkloadRepository.historyOf(db, ctx, userId);
     const row = rowInForce(
         rows.map((r) => ({ effectiveFrom: toEpochDay(r.effectiveFrom), weeklyMinutes: r.weeklyMinutes, calendarTeamId: r.calendarTeamId })),
         day,
     );
-    const teamId = row?.calendarTeamId ?? null;
-    const calendars = await resolveWorkingCalendars(db, ctx, teamId ? [teamId] : []);
-    return calendars.forTeam(teamId);
+    return calendars.forTeam(row?.calendarTeamId ?? null);
 }
 
 export interface TimeOffWindowData extends TimeOffData {
@@ -152,7 +150,7 @@ export async function listTimeOff(ctx: RequestContext, input: { from: string; to
     }
     const withType = mayReadTimeOffType(ctx, userId);
     return runInTenantReadContext(ctx, async (db) => {
-        const person = await WorkloadRepository.personOf(db, ctx, userId);
+        const person = await WorkloadRepository.isPerson(db, ctx, userId);
         if (!person) throw notFound('Member not found');
         const take = WORKLOAD_LIMITS.timeOffReadRows + 1;
         const rows = withType
@@ -164,8 +162,10 @@ export async function listTimeOff(ctx: RequestContext, input: { from: string; to
                 limit: WORKLOAD_LIMITS.timeOffReadRows,
             });
         }
-        const { today } = await workspaceToday(db, ctx);
-        const cal = await personCalendar(db, ctx, userId, Math.max(today, from));
+        // Every calendar of the workspace in one read (bounded): today's zone and the person's calendar.
+        const calendars = await resolveWorkingCalendars(db, ctx);
+        const { today } = todayOfCalendars(calendars);
+        const cal = await personCalendar(db, ctx, calendars, userId, Math.max(today, from));
         const holidays: string[] = [];
         for (let d = from; d <= to; d += 1) if (cal.compiled.mask[isoWeekday(d)] === true && !isWorkingDay(cal.compiled, d)) holidays.push(fromEpochDay(d));
         return {

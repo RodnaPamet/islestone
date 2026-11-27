@@ -151,6 +151,12 @@ export class WorkloadRepository {
         return { userId: m.userId, name: m.user.name, active: m.status === 'ACTIVE' };
     }
 
+    /** Whether `userId` holds a membership of the workspace that is not a GUEST's (any status). */
+    static async isPerson(db: PrismaTx, ctx: Ctx, userId: string): Promise<boolean> {
+        const m = await db.tenantMembership.findUnique({ where: { tenantId_userId: { tenantId: ctx.tenantId, userId } }, select: { role: true } });
+        return m !== null && m.role !== 'GUEST';
+    }
+
     /** Whether `teamId` is a team of the workspace (a capacity's calendar). */
     static async teamExists(db: PrismaTx, ctx: Ctx, teamId: string): Promise<boolean> {
         const t = await db.team.findFirst({ where: { tenantId: ctx.tenantId, id: teamId }, select: { id: true } });
