@@ -43,17 +43,32 @@ const GUARDED_SEARCH_FUNCTION = new RegExp(
         .join('|')})\\s*\\(`,
 );
 
+/**
+ * The names of a file's top-level functions whose body names a guarded table
+ * (a SQL fragment helper, such as 3.6a's `completionsCte`): a method that runs
+ * raw SQL and calls one reads that table though its own text never names it.
+ */
+function guardedHelpers(sf: ts.SourceFile): Set<string> {
+    const out = new Set<string>();
+    for (const statement of sf.statements) {
+        if (ts.isFunctionDeclaration(statement) && statement.name && statement.body && GUARDED_TABLE.test(statement.body.getText(sf))) out.add(statement.name.text);
+    }
+    return out;
+}
+
 /** `Class.method` of every repository method that reads a guarded table. */
 function readers(root: string): string[] {
     const out = new Set<string>();
     for (const rel of gitFiles(root).filter((r) => r.startsWith('src/app-layer/repositories/') && r.endsWith('.ts'))) {
         const sf = ts.createSourceFile(rel, fs.readFileSync(path.join(root, rel), 'utf8'), ts.ScriptTarget.Latest, true);
+        const helpers = guardedHelpers(sf);
+        const callsHelper = (body: string) => [...helpers].some((h) => new RegExp(`\\b${h}\\s*\\(`).test(body));
         const visit = (node: ts.Node) => {
             if (ts.isClassDeclaration(node) && node.name) {
                 for (const member of node.members) {
                     if (!ts.isMethodDeclaration(member) || !member.body) continue;
                     const body = member.body.getText(sf);
-                    if (PRISMA_READ.test(body) || (RAW_READ.test(body) && (GUARDED_TABLE.test(body) || GUARDED_SEARCH_FUNCTION.test(body)))) out.add(`${node.name.text}.${member.name.getText(sf)}`);
+                    if (PRISMA_READ.test(body) || (RAW_READ.test(body) && (GUARDED_TABLE.test(body) || GUARDED_SEARCH_FUNCTION.test(body) || callsHelper(body)))) out.add(`${node.name.text}.${member.name.getText(sf)}`);
                 }
                 return;
             }
@@ -112,7 +127,11 @@ describe('the detector, against a planted repository', () => {
         plant(
             'src/app-layer/repositories/Planted.ts',
             [
+                'function fragment() { return Prisma.sql`SELECT 1 FROM "WorkItemTransition"`; }',
+                'function harmless() { return Prisma.sql`SELECT 1 FROM "Label"`; }',
                 'export class PlantedRepository {',
+                '    static async viaHelper(db) { return db.$queryRaw`WITH d AS (${fragment()}) SELECT * FROM d`; }',
+                '    static async viaHarmless(db) { return db.$queryRaw`WITH d AS (${harmless()}) SELECT * FROM d`; }',
                 '    static async list(db) { return db.workItem.findMany({ take: 1 }); }',
                 '    static async raw(db) { return db.$queryRaw`SELECT 1 FROM "Comment"`; }',
                 '    static async write(db) { return db.workItem.create({ data: {} }); }',
@@ -128,7 +147,7 @@ describe('the detector, against a planted repository', () => {
 
     afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
-    it('finds Prisma reads, raw reads of a guarded table and calls of a search function reading one, in repositories only', () => {
-        expect(readers(root)).toEqual(['PlantedRepository.list', 'PlantedRepository.raw', 'PlantedRepository.viaFunction']);
+    it('finds Prisma reads, raw reads of a guarded table (also through a SQL helper naming one) and calls of a search function reading one, in repositories only', () => {
+        expect(readers(root)).toEqual(['PlantedRepository.list', 'PlantedRepository.raw', 'PlantedRepository.viaFunction', 'PlantedRepository.viaHelper']);
     });
 });
