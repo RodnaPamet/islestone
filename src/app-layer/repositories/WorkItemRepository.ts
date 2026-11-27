@@ -790,31 +790,30 @@ export class WorkItemRepository {
     /**
      * The counted work of the Workload page (sub-phase 3.5b; decision 292):
      * live, open, assigned or unassigned items in visible, unarchived
-     * projects of the teams that estimate in hours (`hoursTeamIds`), with a
-     * counted estimate. `assigneeIds` narrows to those people (no unassigned
-     * work), `unassignedOnly` to the unassigned; neither, every assignee and
-     * the unassigned. `dueOnOrAfter` (a
-     * window that starts after the current week) leaves out items due
-     * earlier, which only the current week can show; undated and start-only
-     * items are always read. By id, at most `take` (the caller reads one past
-     * its limit). Read on `WorkItem_tenantId_assigneeId_stateCategory_dueDate_idx`.
-     * No description, comment or field value.
+     * projects of teams that estimate in hours (read through the team in the
+     * same statement), with a counted estimate. `assigneeIds` narrows to those
+     * people (no unassigned work), `unassignedOnly` to the unassigned;
+     * neither, every assignee and the unassigned. `dueOnOrAfter` (a window
+     * that starts after the current week) leaves out items due earlier, which
+     * only the current week can show; undated and start-only items are always
+     * read. By id, at most `take` (the caller reads one past its limit). No
+     * description, comment or field value.
      */
     static async listForWorkload(
         db: PrismaTx,
         ctx: RequestContext,
         v: ProjectVisibility,
-        query: { hoursTeamIds: readonly string[]; assigneeIds?: readonly string[]; unassignedOnly?: boolean; dueOnOrAfter?: Date | null; take: number },
+        query: { assigneeIds?: readonly string[]; unassignedOnly?: boolean; dueOnOrAfter?: Date | null; take: number },
     ): Promise<WorkItemWorkloadRow[]> {
-        if (query.hoursTeamIds.length === 0 || (query.assigneeIds && query.assigneeIds.length === 0)) return [];
-        const and: Prisma.WorkItemWhereInput[] = [projectVisibilityWhere(v)];
+        if (query.assigneeIds && query.assigneeIds.length === 0) return [];
+        // The item's team is its project's (the composite key), so the project's team carries the unit.
+        const and: Prisma.WorkItemWhereInput[] = [projectVisibilityWhere(v), { project: { team: { estimateUnit: 'HOURS' } } }];
         if (query.dueOnOrAfter) and.push({ OR: [{ dueDate: { gte: query.dueOnOrAfter } }, { dueDate: null }] });
         return db.workItem.findMany({
             where: {
                 tenantId: ctx.tenantId,
                 deletedAt: null,
                 stateCategory: OPEN_CATEGORY_FILTER,
-                teamId: { in: [...query.hoursTeamIds] },
                 estimateMinutes: { not: null },
                 ...(query.unassignedOnly ? { assigneeId: null } : query.assigneeIds ? { assigneeId: { in: [...query.assigneeIds] } } : {}),
                 AND: and,
@@ -827,37 +826,42 @@ export class WorkItemRepository {
 
     /**
      * What the Workload page names beside the hours (sub-phase 3.5b; decisions
-     * 292 and 294): per assignee and team, the live, open items in visible,
-     * unarchived projects, how many carry an hours estimate and how many and
-     * how many points a points estimate. The caller reads each team's unit:
-     * an hours team's items without an estimate and every item of a team that
-     * does not estimate are "Not estimated"; a points team's are "Points
-     * work". One grouped statement, never a row per item.
+     * 292 and 294), per assignee of live, open items in visible, unarchived
+     * projects, in ONE statement with each item's team's unit: "Not
+     * estimated" (an hours team's items without an hours estimate, and every
+     * item of a team that does not estimate) and "Points work" (a points
+     * team's items and their points, never converted). Every assignee with an
+     * open item is a row, so the caller also learns who holds open work (a
+     * deactivated member is shown). Raw SQL so the unit is read by a join,
+     * not a second statement; `tenantId`, `deletedAt` (the item's and the
+     * project's), the archived filter and the caller's visibility are in its
+     * own `WHERE`.
      */
     static async workloadUnplacedCounts(db: PrismaTx, ctx: RequestContext, v: ProjectVisibility, query: { assigneeIds?: readonly string[]; take: number }) {
         if (query.assigneeIds && query.assigneeIds.length === 0) return [];
-        const rows = await db.workItem.groupBy({
-            by: ['assigneeId', 'teamId'],
-            where: {
-                tenantId: ctx.tenantId,
-                deletedAt: null,
-                stateCategory: OPEN_CATEGORY_FILTER,
-                assigneeId: query.assigneeIds ? { in: [...query.assigneeIds] } : { not: null },
-                AND: [projectVisibilityWhere(v)],
-            },
-            _count: { _all: true, estimateMinutes: true, estimatePoints: true },
-            _sum: { estimatePoints: true },
-            orderBy: [{ assigneeId: 'asc' }, { teamId: 'asc' }],
-            take: query.take,
-        });
-        return rows.map((r) => ({
-            assigneeId: r.assigneeId!,
-            teamId: r.teamId,
-            items: r._count._all,
-            withMinutes: r._count.estimateMinutes,
-            withPoints: r._count.estimatePoints,
-            points: r._sum.estimatePoints ?? 0,
-        }));
+        const all = v.kind === 'ALL';
+        const granted = v.kind === 'GRANTED' ? [...v.projectIds] : [];
+        // A named set is its own condition (never `$everyone OR …`), so a generic plan can still use the assignee index.
+        const narrowed = query.assigneeIds ? Prisma.sql`AND w."assigneeId" = ANY(${[...query.assigneeIds]}::text[])` : Prisma.empty;
+        const t = ctx.tenantId;
+        const rows = await db.$queryRaw<Array<{ assigneeId: string; notEstimated: number; pointsCount: number; points: number }>>(Prisma.sql`
+            SELECT w."assigneeId",
+                   (count(*) FILTER (WHERE tm."estimateUnit" IS NULL OR (tm."estimateUnit" = 'HOURS' AND w."estimateMinutes" IS NULL)))::int AS "notEstimated",
+                   (count(*) FILTER (WHERE tm."estimateUnit" = 'POINTS'))::int AS "pointsCount",
+                   (COALESCE(sum(w."estimatePoints") FILTER (WHERE tm."estimateUnit" = 'POINTS'), 0))::int AS "points"
+              FROM "WorkItem" w
+              JOIN "Project" p ON p."id" = w."projectId" AND p."tenantId" = ${t} AND p."deletedAt" IS NULL AND p."archivedAt" IS NULL
+              JOIN "Team" tm ON tm."id" = w."teamId" AND tm."tenantId" = ${t}
+             WHERE w."tenantId" = ${t}
+               AND w."deletedAt" IS NULL
+               AND w."stateCategory" IN ('BACKLOG', 'UNSTARTED', 'STARTED')
+               AND w."assigneeId" IS NOT NULL
+               ${narrowed}
+               AND (${all}::boolean OR w."projectId" = ANY(${granted}::text[]))
+             GROUP BY w."assigneeId"
+             ORDER BY w."assigneeId"
+             LIMIT ${query.take}`);
+        return rows.map((r) => ({ assigneeId: r.assigneeId, notEstimated: Number(r.notEstimated), pointsWork: { count: Number(r.pointsCount), points: Number(r.points) } }));
     }
 
     /**

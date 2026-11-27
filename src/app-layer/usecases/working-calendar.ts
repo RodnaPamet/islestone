@@ -35,7 +35,7 @@ import {
 } from '../domain/schedule/calendar';
 import { assertCanManageWorkConfig, assertCanReadWorkConfig } from '../policies/work-config.policies';
 import { TeamRepository } from '../repositories/TeamRepository';
-import { WorkingCalendarRepository, type WorkingCalendarRow } from '../repositories/WorkingCalendarRepository';
+import { WorkingCalendarRepository, type WorkingCalendarArithmeticRow, type WorkingCalendarRow } from '../repositories/WorkingCalendarRepository';
 import type { RequestContext } from '../types';
 import { env } from '@/env';
 import { runInTenantContext, type PrismaTx } from '@/lib/db-context';
@@ -81,11 +81,11 @@ export interface WorkingCalendarSet {
 
 const DEFAULT_ID = 'workspace-default';
 
-function resolvedOf(row: WorkingCalendarRow): ResolvedCalendar {
+function resolvedOf(row: WorkingCalendarArithmeticRow): ResolvedCalendar {
     const spec: CalendarSpec = {
         id: row.id,
         workingWeekdays: row.workingWeekdays as IsoWeekday[],
-        holidays: row.holidays.map((h) => toEpochDay(h.day)),
+        holidays: row.holidayDays.map((d) => toEpochDay(d)),
     };
     return { id: row.id, saved: true, timeZone: row.timeZone, spec, compiled: compileCalendar(spec) };
 }
@@ -96,7 +96,7 @@ export function defaultResolvedCalendar(): ResolvedCalendar {
     return { id: DEFAULT_ID, saved: false, timeZone: notificationsTz(), spec, compiled: compileCalendar(spec) };
 }
 
-function setOf(rows: readonly WorkingCalendarRow[]): WorkingCalendarSet {
+function setOf(rows: readonly WorkingCalendarArithmeticRow[]): WorkingCalendarSet {
     const ws = rows.find((r) => r.teamId === null);
     const workspace = ws ? resolvedOf(ws) : defaultResolvedCalendar();
     const teams = new Map(rows.filter((r) => r.teamId !== null).map((r) => [r.teamId!, resolvedOf(r)]));
@@ -113,7 +113,8 @@ function setOf(rows: readonly WorkingCalendarRow[]): WorkingCalendarSet {
  * caller's transaction.
  */
 export async function resolveWorkingCalendars(db: PrismaTx, ctx: Pick<RequestContext, 'tenantId'>, teamIds?: readonly string[]): Promise<WorkingCalendarSet> {
-    const rows = teamIds ? await WorkingCalendarRepository.listForTeams(db, ctx, [...new Set(teamIds)]) : await WorkingCalendarRepository.listAll(db, ctx);
+    // One statement, the holidays' dates aggregated per calendar.
+    const rows = await WorkingCalendarRepository.listForArithmetic(db, ctx, teamIds ? [...new Set(teamIds)] : undefined);
     return setOf(rows);
 }
 

@@ -37,9 +37,7 @@ import { mayViewTime } from '../policies/time.policies';
 import { mayReadWorkItems } from '../policies/work-item.policies';
 import { assertCanViewWorkload } from '../policies/workload.policies';
 import { ProjectRepository } from '../repositories/ProjectRepository';
-import { TeamRepository } from '../repositories/TeamRepository';
 import { TimeEntryRepository } from '../repositories/TimeEntryRepository';
-import { TimeOffRepository } from '../repositories/TimeOffRepository';
 import { WorkItemRepository, type WorkItemWorkloadRow } from '../repositories/WorkItemRepository';
 import { WorkloadRepository, type WorkloadPersonRecord } from '../repositories/WorkloadRepository';
 import type { RequestContext } from '../types';
@@ -61,10 +59,8 @@ import type { WorkloadCellData, WorkloadCellItem, WorkloadData, WorkloadFiltersA
 /** The most capacity rows and time-off dates one read takes (500 people, 26 weeks). */
 const CAPACITY_ROWS_TAKE = 20_000;
 const TIME_OFF_ROWS_TAKE = 100_000;
-/** The most (assignee, team) groups the unplaced counts return. */
+/** The most assignees the unplaced counts return. */
 const UNPLACED_GROUPS_TAKE = 50_000;
-/** The most deactivated members holding open work one read names. */
-const DEACTIVATED_TAKE = 500;
 
 /** The `userId` of the cell for work assigned to nobody. */
 export const UNASSIGNED_CELL = 'unassigned';
@@ -104,26 +100,29 @@ function itemCalendars(calendars: WorkingCalendarSet): (teamId: string) => ItemC
     };
 }
 
-/** The capacity inputs of several people, read in three statements (settings, rows, time-off dates). */
+/** The capacity inputs of several people, read in ONE statement (the default, their rows, their time-off dates). */
 async function capacityInputs(db: PrismaTx, ctx: RequestContext, people: readonly WorkloadPersonRecord[], first: EpochDay, last: EpochDay) {
-    const ids = people.map((p) => p.userId);
-    const settings = await WorkloadRepository.getSettings(db, ctx);
-    const rows = await WorkloadRepository.rowsOf(db, ctx, ids, CAPACITY_ROWS_TAKE);
-    const offRows = await TimeOffRepository.daysForPeople(db, ctx, ids, dateOnlyValue(fromEpochDay(first)), dateOnlyValue(fromEpochDay(last)), TIME_OFF_ROWS_TAKE);
+    const read = await WorkloadRepository.capacityInputs(db, ctx, {
+        userIds: people.map((p) => p.userId),
+        from: fromEpochDay(first),
+        to: fromEpochDay(last),
+        rowsTake: CAPACITY_ROWS_TAKE,
+        timeOffTake: TIME_OFF_ROWS_TAKE,
+    });
     const rowsBy = new Map<string, CapacityRowSpec[]>();
-    for (const r of rows) {
+    for (const r of read.rows) {
         const list = rowsBy.get(r.userId) ?? [];
         list.push({ effectiveFrom: toEpochDay(r.effectiveFrom), weeklyMinutes: r.weeklyMinutes, calendarTeamId: r.calendarTeamId });
         rowsBy.set(r.userId, list);
     }
     const offBy = new Map<string, TimeOffDaySpec[]>();
-    for (const r of offRows) {
+    for (const r of read.timeOff) {
         const list = offBy.get(r.userId) ?? [];
         list.push({ day: toEpochDay(r.day), minutes: r.minutes });
         offBy.set(r.userId, list);
     }
     const person = (p: WorkloadPersonRecord): CapacityPerson => ({ active: p.active, rows: rowsBy.get(p.userId) ?? [], timeOff: offBy.get(p.userId) ?? [] });
-    return { defaultWeeklyMinutes: settings?.defaultWeeklyMinutes ?? DEFAULT_WEEKLY_MINUTES, person };
+    return { defaultWeeklyMinutes: read.defaultWeeklyMinutes ?? DEFAULT_WEEKLY_MINUTES, person };
 }
 
 /** The counted items as plain data, each with its time spent when the caller may see it (decision 295). */
@@ -143,31 +142,6 @@ async function countedItems(db: PrismaTx, ctx: RequestContext, rows: readonly Wo
             spentMinutes: timeSpentCounted ? (spent.get(r.id) ?? 0) : null,
         })),
     };
-}
-
-/** The teams' estimate units: hours teams place work; a points team's is "Points work"; the others "Not estimated". */
-async function teamUnits(db: PrismaTx, ctx: RequestContext) {
-    const teams = await TeamRepository.list(db, ctx);
-    return new Map(teams.map((t) => [t.id, t.estimateUnit] as const));
-}
-
-/** "Not estimated" and "Points work" per assignee, from the grouped counts. */
-function unplacedBy(groups: Awaited<ReturnType<typeof WorkItemRepository.workloadUnplacedCounts>>, units: ReadonlyMap<string, 'POINTS' | 'HOURS' | null>) {
-    const out = new Map<string, { notEstimated: number; pointsWork: { count: number; points: number } }>();
-    for (const g of groups) {
-        const row = out.get(g.assigneeId) ?? { notEstimated: 0, pointsWork: { count: 0, points: 0 } };
-        const unit = units.get(g.teamId) ?? null;
-        if (unit === 'POINTS') {
-            row.pointsWork.count += g.items;
-            row.pointsWork.points += g.points;
-        } else if (unit === 'HOURS') {
-            row.notEstimated += g.items - g.withMinutes;
-        } else {
-            row.notEstimated += g.items;
-        }
-        out.set(g.assigneeId, row);
-    }
-    return out;
 }
 
 function personRow(p: WorkloadPersonRecord, figures: WorkloadRowFigures, unplaced: { notEstimated: number; pointsWork: { count: number; points: number } } | undefined): WorkloadPersonRow {
@@ -222,21 +196,18 @@ export async function getWorkload(ctx: RequestContext, query: WorkloadQuery): Pr
             const listed = resolved.userIds;
             only = only ? only.filter((id) => listed.includes(id)) : [...listed];
         }
-        const active = await WorkloadRepository.activePeople(db, ctx, WORKLOAD_LIMITS.personLimit + 1, only ?? undefined);
-        if (active.length > WORKLOAD_LIMITS.personLimit) throw tooLarge(`shows at most ${WORKLOAD_LIMITS.personLimit} people`, WORKLOAD_LIMITS.personLimit);
-
-        const units = await teamUnits(db, ctx);
-        const groups = await WorkItemRepository.workloadUnplacedCounts(db, ctx, v, { assigneeIds: only ?? undefined, take: UNPLACED_GROUPS_TAKE });
-        // Deactivated members who still hold open work are shown (with no capacity) so it can be handed on.
-        const activeIds = new Set(active.map((p) => p.userId));
-        const holders = [...new Set(groups.map((g) => g.assigneeId))].filter((id) => !activeIds.has(id));
-        const deactivated = holders.length > 0 ? await WorkloadRepository.deactivatedPeople(db, ctx, holders, DEACTIVATED_TAKE) : [];
-        const people = [...active, ...deactivated];
+        // The unplaced counts first: every assignee with open work is a row of them, so the one people read can also
+        // take the deactivated members who still hold some.
+        const counts = await WorkItemRepository.workloadUnplacedCounts(db, ctx, v, { assigneeIds: only ?? undefined, take: UNPLACED_GROUPS_TAKE });
+        const people = await WorkloadRepository.people(db, ctx, {
+            take: WORKLOAD_LIMITS.personLimit + 1 + counts.length,
+            userIds: only ?? undefined,
+            holders: counts.map((c) => c.assigneeId),
+        });
+        if (people.filter((p) => p.active).length > WORKLOAD_LIMITS.personLimit) throw tooLarge(`shows at most ${WORKLOAD_LIMITS.personLimit} people`, WORKLOAD_LIMITS.personLimit);
 
         const capacity = await capacityInputs(db, ctx, people, win.first, win.last);
-        const hoursTeamIds = [...units].filter(([, unit]) => unit === 'HOURS').map(([id]) => id);
         const rows = await WorkItemRepository.listForWorkload(db, ctx, v, {
-            hoursTeamIds,
             assigneeIds: only ? people.map((p) => p.userId) : undefined,
             // Only the current week shows overdue work (on today); a later window reads what is due in it or after.
             dueOnOrAfter: win.first > win.currentWeek ? dateOnlyValue(fromEpochDay(win.first)) : null,
@@ -255,7 +226,7 @@ export async function getWorkload(ctx: RequestContext, query: WorkloadQuery): Pr
             calendarOfTeam: itemCalendars(calendars),
             share,
         });
-        const unplaced = unplacedBy(groups, units);
+        const unplaced = new Map(counts.map((c) => [c.assigneeId, c] as const));
 
         const shown = people.filter((p) => {
             const row = figures.rows.get(p.userId)!;
@@ -294,10 +265,7 @@ export async function getWorkloadCell(ctx: RequestContext, query: { userId: stri
         if (!forUnassigned && !person) throw notFound('That person is not a member of this workspace.');
 
         const capacity = person ? await capacityInputs(db, ctx, [person], win.first, win.last) : null;
-        const units = await teamUnits(db, ctx);
-        const hoursTeamIds = [...units].filter(([, unit]) => unit === 'HOURS').map(([id]) => id);
         const rows = await WorkItemRepository.listForWorkload(db, ctx, v, {
-            hoursTeamIds,
             ...(person ? { assigneeIds: [person.userId] } : { unassignedOnly: true }),
             dueOnOrAfter: win.first > win.currentWeek ? dateOnlyValue(fromEpochDay(win.first)) : null,
             take: WORKLOAD_LIMITS.itemLimit + 1,
